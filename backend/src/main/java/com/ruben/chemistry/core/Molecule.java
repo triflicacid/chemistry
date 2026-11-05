@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Molecule
 {
@@ -17,6 +18,7 @@ public final class Molecule
     private final Map<Atom, List<Bond>> incidentBonds;
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
+    private Set<Bond> ringBonds;
 
     /**
      * Creates a molecule from an already-built atom and bond list.
@@ -106,6 +108,73 @@ public final class Molecule
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Finds every bond that lies on some cycle: a bond is a bridge, and so excluded here,
+     * if its child subtree has no back-edge reaching back to or above the bond's other
+     * endpoint. Computed once and cached, since this molecule's structure never changes.
+     *
+     * @return this molecule's ring bonds, by reference identity
+     */
+    public Set<Bond> ringBonds()
+    {
+        if (ringBonds == null)
+        {
+            ringBonds = computeRingBonds();
+        }
+        return ringBonds;
+    }
+
+    private Set<Bond> computeRingBonds()
+    {
+        Set<Bond> result = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Atom> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Map<Atom, Integer> discoveryTime = new IdentityHashMap<>();
+        Map<Atom, Integer> low = new IdentityHashMap<>();
+        AtomicInteger clock = new AtomicInteger(); // single shared counter, incremented as the DFS below visits each atom
+
+        for (Atom atom : atoms)
+        {
+            if (!visited.contains(atom))
+            {
+                computeRingBonds(atom, null, result, visited, discoveryTime, low, clock);
+            }
+        }
+        return result;
+    }
+
+    private void computeRingBonds(Atom atom, Bond arrivingBond, Set<Bond> ringBonds, Set<Atom> visited, Map<Atom, Integer> discoveryTime, Map<Atom, Integer> low, AtomicInteger clock)
+    {
+        visited.add(atom);
+        discoveryTime.put(atom, clock.get());
+        low.put(atom, clock.get());
+        clock.incrementAndGet();
+
+        for (Bond bond : bondsOf(atom))
+        {
+            if (bond == arrivingBond)
+            {
+                continue;
+            }
+
+            Atom neighbour = bond.getOther(atom);
+            if (!visited.contains(neighbour))
+            {
+                computeRingBonds(neighbour, bond, ringBonds, visited, discoveryTime, low, clock);
+                low.put(atom, Math.min(low.get(atom), low.get(neighbour)));
+                if (low.get(neighbour) <= discoveryTime.get(atom))
+                {
+                    ringBonds.add(bond);
+                }
+            }
+            else
+            {
+                // back edge: neighbour is an ancestor, so this bond closes a cycle
+                low.put(atom, Math.min(low.get(atom), discoveryTime.get(neighbour)));
+                ringBonds.add(bond);
+            }
+        }
     }
 
     /**

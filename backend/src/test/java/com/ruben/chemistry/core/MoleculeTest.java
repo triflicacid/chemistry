@@ -159,6 +159,70 @@ class MoleculeTest
     }
 
     @Nested
+    class RingBonds
+    {
+        @Test
+        void is_empty_for_an_acyclic_molecule()
+        {
+            // propane: C-C-C
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Atom c3 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2, c3)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .addBond(c2, c3, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.ringBonds()).isEmpty();
+        }
+
+        @Test
+        void contains_every_bond_of_a_simple_ring()
+        {
+            // cyclopropane: C1CC1
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Atom c3 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2, c3)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .addBond(c2, c3, BondOrder.SINGLE)
+                .addBond(c3, c1, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.ringBonds()).hasSize(3);
+        }
+
+        @Test
+        void excludes_a_bond_connecting_two_separate_rings()
+        {
+            // bicyclopropyl: two cyclopropane rings joined by a single bond
+            Atom a1 = Atom.organic("C");
+            Atom a2 = Atom.organic("C");
+            Atom a3 = Atom.organic("C");
+            Atom b1 = Atom.organic("C");
+            Atom b2 = Atom.organic("C");
+            Atom b3 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(a1, a2, a3, b1, b2, b3)
+                .addBond(a1, a2, BondOrder.SINGLE)
+                .addBond(a2, a3, BondOrder.SINGLE)
+                .addBond(a3, a1, BondOrder.SINGLE)
+                .addBond(a3, b1, BondOrder.SINGLE)
+                .addBond(b1, b2, BondOrder.SINGLE)
+                .addBond(b2, b3, BondOrder.SINGLE)
+                .addBond(b3, b1, BondOrder.SINGLE)
+                .build();
+
+            Bond connecting = molecule.bondBetween(a3, b1).orElseThrow();
+
+            assertThat(molecule.ringBonds()).hasSize(6);
+            assertThat(molecule.ringBonds()).noneMatch(bond -> bond == connecting);
+        }
+    }
+
+    @Nested
     class Chirality
     {
         // Stereocentre with one implicit hydrogen and three explicit substituents, bonded in this order.
