@@ -106,50 +106,49 @@ class MoleculeComparatorTest
         @Test
         void treats_the_same_declared_chirality_as_unequal_when_insertion_order_makes_it_mean_the_opposite_configuration()
         {
-            // Both molecules declare the stereocentre ANTICLOCKWISE, but relative to different
-            // bond-insertion orders: swapping N and Br's insertion order is a single
-            // transposition, so once both are reprojected onto the same canonical neighbour
-            // order (by element: Br, Cl, N), they actually represent opposite configurations.
+            // N[C@@H](Br)Cl, H is to the left or Br
             Atom n1 = Atom.organic("N");
             Atom c1 = stereocentreCarbon();
             Atom br1 = Atom.organic("Br");
             Atom cl1 = Atom.organic("Cl");
-            Molecule.Builder builderA = new Molecule.Builder()
-                .addAtoms(n1, c1, br1, cl1)
-                .addBond(c1, n1, BondOrder.SINGLE)
-                .addBond(c1, br1, BondOrder.SINGLE)
-                .addBond(c1, cl1, BondOrder.SINGLE);
-            builderA.setChirality(c1, Chirality.ANTICLOCKWISE);
-            Molecule declaredNFirst = builderA.build();
+            Molecule declaredNFirst = new Molecule.Builder()
+                    .addAtoms(n1, c1, br1, cl1)
+                    .addBond(c1, n1, BondOrder.SINGLE)
+                    .addBond(c1, br1, BondOrder.SINGLE)
+                    .addBond(c1, cl1, BondOrder.SINGLE)
+                    .setChirality(c1, Chirality.ANTICLOCKWISE)
+                    .build();
 
+            // Br[C@@H](N)Cl, H and Br are opposite
             Atom br2 = Atom.organic("Br");
             Atom c2 = stereocentreCarbon();
             Atom n2 = Atom.organic("N");
             Atom cl2 = Atom.organic("Cl");
-            Molecule.Builder builderB = new Molecule.Builder()
-                .addAtoms(br2, c2, n2, cl2)
-                .addBond(c2, br2, BondOrder.SINGLE)
-                .addBond(c2, n2, BondOrder.SINGLE)
-                .addBond(c2, cl2, BondOrder.SINGLE);
-            builderB.setChirality(c2, Chirality.ANTICLOCKWISE);
-            Molecule declaredBrFirst = builderB.build();
+            Molecule declaredBrFirst = new Molecule.Builder()
+                    .addAtoms(br2, c2, n2, cl2)
+                    .addBond(c2, br2, BondOrder.SINGLE)
+                    .addBond(c2, n2, BondOrder.SINGLE)
+                    .addBond(c2, cl2, BondOrder.SINGLE)
+                    .setChirality(c2, Chirality.ANTICLOCKWISE)
+                    .build();
 
             assertThat(compare(declaredNFirst, declaredBrFirst)).isNotZero();
         }
 
         private Molecule bromochlorofluoromethane(Chirality chirality)
         {
+            // N[C?H](Br)Cl
             Atom n = Atom.organic("N");
             Atom c = stereocentreCarbon();
             Atom br = Atom.organic("Br");
             Atom cl = Atom.organic("Cl");
-            Molecule.Builder builder = new Molecule.Builder()
-                .addAtoms(n, c, br, cl)
-                .addBond(c, n, BondOrder.SINGLE)
-                .addBond(c, br, BondOrder.SINGLE)
-                .addBond(c, cl, BondOrder.SINGLE);
-            builder.setChirality(c, chirality);
-            return builder.build();
+            return new Molecule.Builder()
+                    .addAtoms(n, c, br, cl)
+                    .addBond(c, n, BondOrder.SINGLE)
+                    .addBond(c, br, BondOrder.SINGLE)
+                    .addBond(c, cl, BondOrder.SINGLE)
+                    .setChirality(c, chirality)
+                    .build();
         }
 
         private Atom stereocentreCarbon()
