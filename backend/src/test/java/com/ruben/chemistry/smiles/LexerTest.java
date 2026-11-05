@@ -1,6 +1,5 @@
 package com.ruben.chemistry.smiles;
 
-import com.ruben.chemistry.core.InvalidSmilesException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 

@@ -4,7 +4,6 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
-import com.ruben.chemistry.core.InvalidSmilesException;
 import com.ruben.chemistry.core.Molecule;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
