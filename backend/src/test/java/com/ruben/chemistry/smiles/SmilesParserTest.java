@@ -605,31 +605,129 @@ class SmilesParserTest
     class RingClosures
     {
         @Test
-        void throws_for_a_single_digit_ring_closure()
+        void parses_a_single_digit_ring_closure()
         {
-            assertThatThrownBy(() -> parse("C1CC1"))
-                .isInstanceOf(InvalidSmilesException.class)
-                .hasMessageContaining("Ring closures are not yet supported");
+            Molecule molecule = parse("C1CC1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(molecule.atomCount()).isEqualTo(3);
+            assertThat(molecule.bondCount()).isEqualTo(3);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
         }
 
         @Test
-        void throws_for_a_percent_prefixed_ring_closure()
+        void parses_cyclohexane()
         {
-            assertThatThrownBy(() -> parse("C%12CC%12"))
-                .isInstanceOf(InvalidSmilesException.class)
-                .hasMessageContaining("Ring closures are not yet supported");
+            Molecule molecule = parse("C1CCCCC1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(molecule.atomCount()).isEqualTo(6);
+            assertThat(molecule.bondCount()).isEqualTo(6);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.SINGLE);
         }
 
-        // PLACEHOLDER rings not implemented
+        @Test
+        void parses_a_percent_prefixed_ring_closure()
+        {
+            Molecule molecule = parse("C%12CC%12");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(molecule.atomCount()).isEqualTo(3);
+            assertThat(molecule.bondCount()).isEqualTo(3);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void infers_an_aromatic_ring_closure_bond_between_two_aromatic_atoms()
+        {
+            Molecule molecule = parse("c1ccccc1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.AROMATIC);
+        }
+
+        @Test
+        void uses_the_bond_symbol_written_at_the_opening_end()
+        {
+            Molecule molecule = parse("C=1CCCCC1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.DOUBLE);
+        }
+
+        @Test
+        void uses_the_bond_symbol_written_at_the_closing_end()
+        {
+            Molecule molecule = parse("C1CCCCC=1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.DOUBLE);
+        }
+
+        @Test
+        void accepts_matching_bond_symbols_at_both_ends()
+        {
+            Molecule molecule = parse("C=1CCCCC=1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.DOUBLE);
+        }
+
+        @Test
+        void throws_for_mismatched_bond_symbols_at_each_end()
+        {
+            assertThatThrownBy(() -> parse("C=1CCCCC-1"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("does not match");
+        }
+
+        @Test
+        void throws_for_a_ring_closure_bonding_an_atom_to_itself()
+        {
+            assertThatThrownBy(() -> parse("C11"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("bonds an atom to itself");
+        }
+
+        @Test
+        void throws_for_a_ring_closure_with_no_preceding_atom()
+        {
+            assertThatThrownBy(() -> parse("1CC1"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Ring closure not preceded by an atom");
+        }
+
         @Test
         void throws_for_an_unpaired_ring_closure_digit()
         {
-            // a single ring-bond digit with no matching partner; still expected to be
-            // rejected as "not yet supported" rather than any other kind of error, since
-            // ring closures are rejected as soon as they're encountered
             assertThatThrownBy(() -> parse("C1"))
                 .isInstanceOf(InvalidSmilesException.class)
-                .hasMessageContaining("Ring closures are not yet supported");
+                .hasMessageContaining("Unpaired ring closure digit");
+        }
+
+        @Test
+        void reuses_a_ring_closure_digit_within_the_same_connected_molecule()
+        {
+            Molecule molecule = parse("C1CC1C1CC1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(molecule.atomCount()).isEqualTo(6);
+            assertThat(molecule.bondCount()).isEqualTo(7);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, atoms.get(2), atoms.get(3))).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, atoms.get(3), atoms.get(5))).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void reuses_a_ring_closure_digit_in_a_disconnected_fragment()
+        {
+            Molecule molecule = parse("C1CC1.C1CC1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(molecule.atomCount()).isEqualTo(6);
+            assertThat(molecule.bondCount()).isEqualTo(6);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, atoms.get(3), atoms.get(5))).isEqualTo(BondOrder.SINGLE);
         }
     }
 

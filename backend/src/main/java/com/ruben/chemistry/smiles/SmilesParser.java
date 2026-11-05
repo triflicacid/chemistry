@@ -10,15 +10,13 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 
 /**
  * Parses a SMILES string into a {@link Molecule}, driven token-by-token by a {@link Lexer}.
- *
- * <p>Ring closures are recognised by the lexer but not yet supported by this parser;
- * encountering one raises an {@link InvalidSmilesException}.
  */
 public final class SmilesParser
 {
@@ -29,6 +27,7 @@ public final class SmilesParser
     private final Map<Atom, List<Atom>> substituentOrderOf = new IdentityHashMap<>();
     private final Map<Atom, Atom> doubleBondPartnerOf = new IdentityHashMap<>();
     private final Map<Atom, DirectionalEdge> directionalEdgeOf = new IdentityHashMap<>();
+    private final Map<String, PendingRingClosure> openRingBonds = new LinkedHashMap<>();
 
     private Atom previousAtom;
     private String pendingBondSymbol;
@@ -50,7 +49,7 @@ public final class SmilesParser
      * Parses the source string into a molecule.
      *
      * @return the parsed molecule
-     * @throws InvalidSmilesException if the source is not valid SMILES, or uses a ring closure
+     * @throws InvalidSmilesException if the source is not valid SMILES
      */
     public Molecule parse()
     {
@@ -71,6 +70,11 @@ public final class SmilesParser
         if (pendingBondSymbol != null)
         {
             throw new InvalidSmilesException("Bond symbol not followed by an atom", source, pendingBondPosition);
+        }
+        if (!openRingBonds.isEmpty())
+        {
+            PendingRingClosure firstUnpaired = openRingBonds.values().iterator().next();
+            throw new InvalidSmilesException("Unpaired ring closure digit", source, firstUnpaired.position());
         }
 
         return builder.build();
@@ -94,11 +98,11 @@ public final class SmilesParser
             case BRANCH_OPEN -> parseBranchOpen(token);
             case BRANCH_CLOSE -> parseBranchClose(token);
             case DOT -> parseDot();
-            // TODO: support ring closures. Once added, a directional bond adjacent to a
-            // ring-closure digit will also need its own reconciliation - mirroring the
-            // ring-opening/ring-closing convention SmilesWriter uses - separate from the
-            // tree-bond case recordDirectionalEdge below already handles.
-            case RING_BOND -> throw new InvalidSmilesException("Ring closures are not yet supported", source, token.position());
+            // TODO: a directional symbol ('/' or '\') adjacent to a ring-closure digit is
+            // accepted by parseRingBond below but not yet reconciled into a declared
+            // DoubleBondStereo - that needs its own ring-opening/ring-closing convention,
+            // mirroring SmilesWriter, separate from the tree-bond case recordDirectionalEdge handles.
+            case RING_BOND -> parseRingBond(token);
             default -> throw new InvalidSmilesException("Unexpected token '" + token.text() + "'", source, token.position());
         }
     }
@@ -344,6 +348,83 @@ public final class SmilesParser
         }
 
         previousAtom = null;
+    }
+
+    /**
+     * Consumes a ring-closure digit (or {@code %nn} number): either opens a new ring or
+     * closes an existing one.
+     *
+     * @param token the peeked {@link TokenType#RING_BOND} token
+     * @throws InvalidSmilesException if there is no preceding atom, the closure would bond
+     *     an atom to itself, or its bond symbol doesn't match the one it was opened with
+     */
+    private void parseRingBond(Token token)
+    {
+        lexer.next();
+        if (previousAtom == null)
+        {
+            throw new InvalidSmilesException("Ring closure not preceded by an atom", source, token.position());
+        }
+
+        String symbolHere = pendingBondSymbol;
+        pendingBondSymbol = null;
+
+        PendingRingClosure opened = openRingBonds.remove(token.text());
+        if (opened == null)
+        {
+            openRingBonds.put(token.text(), new PendingRingClosure(previousAtom, symbolHere, token.position()));
+            return;
+        }
+
+        if (opened.atom() == previousAtom)
+        {
+            throw new InvalidSmilesException("Ring closure bonds an atom to itself", source, token.position());
+        }
+
+        BondOrder order = resolveRingBondOrder(opened.bondSymbol(), symbolHere, opened.atom(), previousAtom, token);
+        builder.addBond(opened.atom(), previousAtom, order);
+        recordSubstituent(opened.atom(), previousAtom);
+        recordSubstituent(previousAtom, opened.atom());
+
+        if (order == BondOrder.DOUBLE)
+        {
+            doubleBondPartnerOf.put(opened.atom(), previousAtom);
+            doubleBondPartnerOf.put(previousAtom, opened.atom());
+        }
+    }
+
+    /**
+     * Resolves a ring-closure bond's order from the bond symbols seen at its opening and closing.
+     *
+     * @param openingSymbol the bond symbol written at the opening occurrence, or {@code null}
+     * @param closingSymbol the bond symbol written at the closing occurrence, or {@code null}
+     * @param first one endpoint, used to infer a default order if neither symbol is present
+     * @param second the other endpoint
+     * @param closingToken the closing digit's token, for error reporting
+     * @return the resolved bond order
+     * @throws InvalidSmilesException if both symbols are present and don't match
+     */
+    private BondOrder resolveRingBondOrder(String openingSymbol, String closingSymbol, Atom first, Atom second, Token closingToken)
+    {
+        if (openingSymbol != null && closingSymbol != null && !openingSymbol.equals(closingSymbol))
+        {
+            throw new InvalidSmilesException("Ring closure bond symbol '" + closingSymbol
+                + "' does not match its opening symbol '" + openingSymbol + "'", source, closingToken.position());
+        }
+
+        String symbol = openingSymbol != null ? openingSymbol : closingSymbol;
+        return symbol != null ? bondOrderOf(symbol) : BondOrder.inferredBetween(first, second);
+    }
+
+    /**
+     * An as-yet-unmatched ring-closure digit, recorded at the atom it was opened on.
+     *
+     * @param atom the atom the ring closure was opened on
+     * @param bondSymbol the bond symbol written immediately before the digit when it was opened, or {@code null}
+     * @param position the opening digit's source position, for error reporting if it's never closed
+     */
+    private record PendingRingClosure(Atom atom, String bondSymbol, int position)
+    {
     }
 
     /**
