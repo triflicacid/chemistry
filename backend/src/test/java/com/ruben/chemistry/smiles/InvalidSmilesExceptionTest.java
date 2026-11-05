@@ -1,8 +1,7 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.smiles;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
