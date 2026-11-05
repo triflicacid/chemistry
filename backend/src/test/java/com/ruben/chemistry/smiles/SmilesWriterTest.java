@@ -1,0 +1,246 @@
+package com.ruben.chemistry.smiles;
+
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Molecule;
+import org.junit.jupiter.api.Test;
+
+import java.util.OptionalInt;
+
+import static com.ruben.chemistry.smiles.SmilesWriter.write;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class SmilesWriterTest
+{
+    @Test
+    void writes_a_single_atom()
+    {
+        Atom c = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(c)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C");
+    }
+
+    @Test
+    void writes_a_simple_chain_with_default_single_bonds()
+    {
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom o = Atom.organic("O");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, o)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, o, BondOrder.SINGLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("CCO");
+    }
+
+    @Test
+    void writes_a_double_bond_symbol()
+    {
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(c1)
+            .addAtom(c2)
+            .addBond(c1, c2, BondOrder.DOUBLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C=C");
+    }
+
+    @Test
+    void writes_a_triple_bond_symbol()
+    {
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(c1)
+            .addAtom(c2)
+            .addBond(c1, c2, BondOrder.TRIPLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C#C");
+    }
+
+    @Test
+    void omits_the_aromatic_bond_symbol_between_two_aromatic_atoms()
+    {
+        Atom c1 = Atom.organic("c", true);
+        Atom c2 = Atom.organic("c", true);
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(c1)
+            .addAtom(c2)
+            .addBond(c1, c2, BondOrder.AROMATIC)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("cc");
+    }
+
+    @Test
+    void writes_a_branch_in_parentheses()
+    {
+        // CC(O)C : propan-2-ol skeleton
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom o = Atom.organic("O");
+        Atom c3 = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, o, c3)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, o, BondOrder.SINGLE)
+            .addBond(c2, c3, BondOrder.SINGLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("CC(O)C");
+    }
+
+    @Test
+    void writes_a_ring_closure_for_a_cycle()
+    {
+        // C1CC1 : cyclopropane
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom c3 = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, c3)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, c3, BondOrder.SINGLE)
+            .addBond(c3, c1, BondOrder.SINGLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C1CC1");
+    }
+
+    @Test
+    void writes_a_second_ring_closure_number_when_two_rings_share_an_atom()
+    {
+        // bicyclic: two fused three-membered rings sharing atom c1
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom c3 = Atom.organic("C");
+        Atom c4 = Atom.organic("C");
+        Atom c5 = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, c3, c4, c5)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, c3, BondOrder.SINGLE)
+            .addBond(c3, c1, BondOrder.SINGLE)
+            .addBond(c1, c4, BondOrder.SINGLE)
+            .addBond(c4, c5, BondOrder.SINGLE)
+            .addBond(c5, c1, BondOrder.SINGLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C12(CC1)CC2");
+    }
+
+    @Test
+    void writes_both_ring_closures_from_a_bridgehead_atom_without_a_branch()
+    {
+        // fused bicyclic: c1 and c3 are bridgeheads, so c1 has only one chain
+        // branch (c1-c2) left after its two ring-closure bonds (to c3 and c5)
+        // looks like a house
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom c3 = Atom.organic("C");
+        Atom c4 = Atom.organic("C");
+        Atom c5 = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, c3, c4, c5)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, c3, BondOrder.SINGLE)
+            .addBond(c3, c1, BondOrder.SINGLE)
+            .addBond(c3, c4, BondOrder.SINGLE)
+            .addBond(c4, c5, BondOrder.SINGLE)
+            .addBond(c5, c1, BondOrder.SINGLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C12CC1CC2");
+    }
+
+    @Test
+    void writes_triflic_acid()
+    {
+        Atom c = Atom.organic("C");
+        Atom f1 = Atom.organic("F");
+        Atom f2 = Atom.organic("F");
+        Atom f3 = Atom.organic("F");
+        Atom s = Atom.organic("S");
+        Atom o1 = Atom.organic("O");
+        Atom o2 = Atom.organic("O");
+        Atom o3 = Atom.organic("O");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c, f1, f2, f3, s, o1, o2, o3)
+            .addBond(c, f1, BondOrder.SINGLE)
+            .addBond(c, f2, BondOrder.SINGLE)
+            .addBond(c, f3, BondOrder.SINGLE)
+            .addBond(c, s, BondOrder.SINGLE)
+            .addBond(s, o1, BondOrder.DOUBLE)
+            .addBond(s, o2, BondOrder.DOUBLE)
+            .addBond(s, o3, BondOrder.SINGLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C(F)(F)(F)S(=O)(=O)O");
+    }
+
+    @Test
+    void writes_disconnected_fragments_separated_by_a_dot()
+    {
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(Atom.organic("C"), Atom.organic("O"))
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C.O");
+    }
+
+    @Test
+    void writes_a_bracketed_atom_for_a_charge()
+    {
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(new Atom("O", false, -1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty()))
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("[O-]");
+    }
+
+    @Test
+    void writes_a_bracketed_atom_for_an_isotope()
+    {
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(new Atom("C", false, 0, OptionalInt.of(13), OptionalInt.empty(), OptionalInt.empty()))
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("[13C]");
+    }
+
+    @Test
+    void writes_a_bracketed_atom_for_an_explicit_hydrogen_count()
+    {
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(new Atom("N", false, 0, OptionalInt.empty(), OptionalInt.of(2), OptionalInt.empty()))
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("[NH2]");
+    }
+
+    @Test
+    void writes_a_wildcard_atom()
+    {
+        Molecule molecule = new Molecule.Builder()
+            .addAtom(Atom.organic("*"))
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("*");
+    }
+
+    @Test
+    void writes_nothing_for_an_empty_molecule()
+    {
+        Molecule molecule = new Molecule.Builder().build();
+
+        assertThat(write(molecule)).isEmpty();
+    }
+}
