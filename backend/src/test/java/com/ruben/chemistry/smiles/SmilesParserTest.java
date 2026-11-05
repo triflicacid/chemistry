@@ -4,7 +4,9 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -156,11 +158,14 @@ class SmilesParserTest
         }
 
         @Test
-        void throws_for_a_directional_bond()
+        void parses_a_directional_bond_as_a_single_bond()
         {
-            assertThatThrownBy(() -> parse("C/C"))
-                .isInstanceOf(InvalidSmilesException.class)
-                .hasMessageContaining("Directional bonds are not yet supported");
+            // the stereo configuration this '/' implies is covered by DoubleBondStereoParsing;
+            // here we're just confirming it doesn't change the bond order itself
+            Molecule molecule = parse("C/C");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
         }
 
         @Test
@@ -536,6 +541,63 @@ class SmilesParserTest
 
             Atom c = atomsOf(molecule).getFirst();
             assertThat(molecule.chiralityOf(c)).isEmpty();
+        }
+    }
+
+    @Nested
+    class DoubleBondStereoParsing
+    {
+        @Test
+        void parses_opposite_side_substituents_as_a_trans_configuration()
+        {
+            Molecule molecule = parse("F/C=C/F");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Bond doubleBond = molecule.bondBetween(atoms.get(1), atoms.get(2)).orElseThrow();
+            assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.OPPOSITE_SIDE);
+        }
+
+        @Test
+        void parses_same_side_substituents_as_a_cis_configuration()
+        {
+            Molecule molecule = parse("F/C=C\\F");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Bond doubleBond = molecule.bondBetween(atoms.get(1), atoms.get(2)).orElseThrow();
+            assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.SAME_SIDE);
+        }
+
+        @Test
+        void parses_an_alternating_chain_as_a_consistent_configuration_on_every_double_bond()
+        {
+            // F/C=C\C=C/F
+            Molecule molecule = parse("F/C=C\\C=C/F");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Bond firstDoubleBond = molecule.bondBetween(atoms.get(1), atoms.get(2)).orElseThrow();
+            Bond secondDoubleBond = molecule.bondBetween(atoms.get(3), atoms.get(4)).orElseThrow();
+            assertThat(molecule.doubleBondStereoOf(firstDoubleBond)).contains(DoubleBondStereo.SAME_SIDE);
+            assertThat(molecule.doubleBondStereoOf(secondDoubleBond)).contains(DoubleBondStereo.SAME_SIDE);
+        }
+
+        @Test
+        @Disabled("ring closures aren't supported by the parser yet")
+        void parses_directional_bonds_through_a_ring_closure()
+        {
+            // https://github.com/timvdm/OpenSMILES/blob/master/opensmiles.asciidoc
+            Molecule molecule = parse("C/1=C\\C=C/C=C\\1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Atom a1 = atoms.get(0);
+            Atom a2 = atoms.get(1);
+            Atom a3 = atoms.get(2);
+            Atom a4 = atoms.get(3);
+            Atom a5 = atoms.get(4);
+            Atom a6 = atoms.get(5);
+
+            assertThat(molecule.doubleBondStereoOf(molecule.bondBetween(a1, a2).orElseThrow())).contains(DoubleBondStereo.OPPOSITE_SIDE);
+            assertThat(molecule.doubleBondStereoOf(molecule.bondBetween(a3, a4).orElseThrow())).contains(DoubleBondStereo.SAME_SIDE);
+            assertThat(molecule.doubleBondStereoOf(molecule.bondBetween(a5, a6).orElseThrow())).contains(DoubleBondStereo.SAME_SIDE);
         }
     }
 

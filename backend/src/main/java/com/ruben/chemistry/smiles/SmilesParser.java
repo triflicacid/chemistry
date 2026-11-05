@@ -3,10 +3,15 @@ package com.ruben.chemistry.smiles;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.OptionalInt;
 
 /**
@@ -21,6 +26,9 @@ public final class SmilesParser
     private final Lexer lexer;
     private final Molecule.Builder builder = new Molecule.Builder();
     private final Deque<Atom> branchStack = new ArrayDeque<>();
+    private final Map<Atom, List<Atom>> substituentOrderOf = new IdentityHashMap<>();
+    private final Map<Atom, Atom> doubleBondPartnerOf = new IdentityHashMap<>();
+    private final Map<Atom, DirectionalEdge> directionalEdgeOf = new IdentityHashMap<>();
 
     private Atom previousAtom;
     private String pendingBondSymbol;
@@ -86,6 +94,10 @@ public final class SmilesParser
             case BRANCH_OPEN -> parseBranchOpen(token);
             case BRANCH_CLOSE -> parseBranchClose(token);
             case DOT -> parseDot();
+            // TODO: support ring closures. Once added, a directional bond adjacent to a
+            // ring-closure digit will also need its own reconciliation - mirroring the
+            // ring-opening/ring-closing convention SmilesWriter uses - separate from the
+            // tree-bond case recordDirectionalEdge below already handles.
             case RING_BOND -> throw new InvalidSmilesException("Ring closures are not yet supported", source, token.position());
             default -> throw new InvalidSmilesException("Unexpected token '" + token.text() + "'", source, token.position());
         }
@@ -275,16 +287,10 @@ public final class SmilesParser
      * Consumes a bond token, recording its order for the atom that follows.
      *
      * @param token the peeked {@link TokenType#BOND} token
-     * @throws InvalidSmilesException if the bond symbol denotes an unsupported directional bond
      */
     private void parseBond(Token token)
     {
         lexer.next();
-        if (token.text().equals("/") || token.text().equals("\\"))
-        {
-            throw new InvalidSmilesException("Directional bonds are not yet supported", source, token.position());
-        }
-
         pendingBondSymbol = token.text();
         pendingBondPosition = token.position();
     }
@@ -361,6 +367,18 @@ public final class SmilesParser
                 ? bondOrderOf(pendingBondSymbol)
                 : BondOrder.inferredBetween(previousAtom, atom);
             builder.addBond(previousAtom, atom, order);
+            recordSubstituent(previousAtom, atom);
+            recordSubstituent(atom, previousAtom);
+
+            if (order == BondOrder.DOUBLE)
+            {
+                doubleBondPartnerOf.put(previousAtom, atom);
+                doubleBondPartnerOf.put(atom, previousAtom);
+            }
+            else if (isDirectional(pendingBondSymbol))
+            {
+                recordDirectionalEdge(previousAtom, atom, pendingBondSymbol.charAt(0));
+            }
         }
 
         pendingBondSymbol = null;
@@ -368,14 +386,131 @@ public final class SmilesParser
     }
 
     /**
+     * Records {@code other} as one of {@code atom}'s substituents, in the order its bonds are parse
+     */
+    private void recordSubstituent(Atom atom, Atom other)
+    {
+        substituentOrderOf.computeIfAbsent(atom, ignored -> new ArrayList<>()).add(other);
+    }
+
+    /**
+     * Records one directional single bond ({@code '/'} or {@code '\'}) between two
+     * just-bonded atoms, then attempts to complete the stereo declaration of either atom's
+     * double bond, if it has one and its other reference is already known too.
+     *
+     * @param writtenFirst the earlier-written of the bond's two atoms
+     * @param writtenSecond the later-written of the bond's two atoms
+     * @param symbol the literal {@code '/'} or {@code '\'} character as written
+     */
+    private void recordDirectionalEdge(Atom writtenFirst, Atom writtenSecond, char symbol)
+    {
+        directionalEdgeOf.put(writtenFirst, new DirectionalEdge(writtenSecond, symbol, true));
+        directionalEdgeOf.put(writtenSecond, new DirectionalEdge(writtenFirst, symbol, false));
+
+        reconcileIfDoubleBondAtom(writtenFirst);
+        reconcileIfDoubleBondAtom(writtenSecond);
+    }
+
+    /**
+     * If {@code atom} is one endpoint of a double bond, attempts to complete that double
+     * bond's stereo declaration now that one more of its two reference substituents is known.
+     *
+     * @param atom the atom to check
+     */
+    private void reconcileIfDoubleBondAtom(Atom atom)
+    {
+        Atom partner = doubleBondPartnerOf.get(atom);
+        if (partner != null)
+        {
+            tryReconcileDoubleBondStereo(atom, partner);
+        }
+    }
+
+    /**
+     * Reconciles the two directional edges flanking the double bond between {@code first}
+     * and {@code second} into its declared stereo configuration, if both of its endpoints
+     * now have one recorded; does nothing otherwise. The declared value is reprojected onto
+     * the default references.
+     *
+     * @param first one endpoint of the double bond
+     * @param second the other endpoint
+     */
+    private void tryReconcileDoubleBondStereo(Atom first, Atom second)
+    {
+        DirectionalEdge firstEdge = directionalEdgeOf.get(first);
+        DirectionalEdge secondEdge = directionalEdgeOf.get(second);
+        if (firstEdge == null || secondEdge == null)
+        {
+            return;
+        }
+
+        char firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.symbol() : flipDirection(firstEdge.symbol());
+        char secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.symbol() : flipDirection(secondEdge.symbol());
+        DoubleBondStereo relativeToEdges = firstOutward == secondOutward ? DoubleBondStereo.SAME_SIDE : DoubleBondStereo.OPPOSITE_SIDE;
+
+        Atom firstDefault = defaultSubstituentOf(first, second);
+        Atom secondDefault = defaultSubstituentOf(second, first);
+        boolean flipped = (firstEdge.other() != firstDefault) ^ (secondEdge.other() != secondDefault);
+
+        builder.setDoubleBondStereo(first, second, flipped ? relativeToEdges.flip() : relativeToEdges);
+    }
+
+    /**
+     * @param atom an atom of a double bond
+     * @param excluding the double bond's other atom, excluded as a candidate
+     * @return the first of {@code atom}'s substituents, other than {@code excluding}, in
+     *     parsed order, or {@code null} if it has none (its default reference is then its implicit hydrogen)
+     */
+    private Atom defaultSubstituentOf(Atom atom, Atom excluding)
+    {
+        for (Atom candidate : substituentOrderOf.getOrDefault(atom, List.of()))
+        {
+            if (candidate != excluding)
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param bondSymbol a bond symbol, or {@code null}
+     * @return {@code true} if {@code bondSymbol} is a directional bond, {@code '/'} or {@code '\'}
+     */
+    private static boolean isDirectional(String bondSymbol)
+    {
+        return "/".equals(bondSymbol) || "\\".equals(bondSymbol);
+    }
+
+    /**
+     * @param symbol a direction symbol, {@code '/'} or {@code '\'}
+     * @return the other direction symbol
+     */
+    private static char flipDirection(char symbol)
+    {
+        return symbol == '/' ? '\\' : '/';
+    }
+
+    /**
+     * One atom's end of a directional single bond.
+     *
+     * @param other the atom at the other end of this directional bond
+     * @param symbol the literal {@code '/'} or {@code '\'} character as written
+     * @param thisAtomWrittenFirst whether the atom this edge is recorded for was written before {@code other}
+     */
+    private record DirectionalEdge(Atom other, char symbol, boolean thisAtomWrittenFirst)
+    {
+    }
+
+    /**
      * Maps a bond symbol to its {@link BondOrder}.
      *
-     * @param symbol the bond symbol: one of {@code - = # $ :}
+     * @param symbol the bond symbol: one of {@code - = # $ : / \}
      * @return the corresponding bond order
      */
     private BondOrder bondOrderOf(String symbol)
     {
-        return BondOrder.fromSymbol(symbol.charAt(0));
+        return isDirectional(symbol) ? BondOrder.SINGLE : BondOrder.fromSymbol(symbol.charAt(0));
     }
 
     /**
