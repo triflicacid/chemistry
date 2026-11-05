@@ -10,21 +10,27 @@ import java.util.Set;
 
 public final class Molecule
 {
+    /** Sentinel standing in for an atom's implicit hydrogen within a neighbour-order list passed to {@link #chiralityOf(Atom, List)}. */
+    public static final Object IMPLICIT_HYDROGEN = new Object();
+
     private final List<Atom> atoms;
     private final List<Bond> bonds;
     private final Map<Atom, List<Bond>> incidentBonds;
+    private final Map<Atom, Chirality> chiralityByAtom;
 
     /**
      * Creates a molecule from an already-built atom and bond list.
      *
      * @param atoms the atoms of the molecule, in index order
      * @param bonds the bonds of the molecule
+     * @param chirality each stereocentre's declared chirality, keyed by atom identity
      */
-    Molecule(List<Atom> atoms, List<Bond> bonds)
+    Molecule(List<Atom> atoms, List<Bond> bonds, Map<Atom, Chirality> chirality)
     {
         this.atoms = List.copyOf(atoms);
         this.bonds = List.copyOf(bonds);
         this.incidentBonds = buildIncidentBonds(this.atoms, this.bonds);
+        this.chiralityByAtom = new IdentityHashMap<>(chirality);
     }
 
     /**
@@ -83,6 +89,109 @@ public final class Molecule
     }
 
     /**
+     * Returns the declared chirality of a stereocentre, if any.
+     * The value is relative to bond-addition order, so depends on how this
+     * molecule was built, and could vary based on which atom was added first,
+     * or which bond was added first to a given atom.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return the declared chirality, or empty if {@code atom} is not a stereocentre
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    public Optional<Chirality> chiralityOf(Atom atom)
+    {
+        return chiralityOf(atom, declaredOrder(atom));
+    }
+
+    /**
+     * Returns the declared chirality of a stereocentre, reprojected onto a caller-supplied
+     * neighbour order.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @param order {@code atom}'s neighbours in the order chirality should be resolved against,
+     *     each either a {@link Bond} incident to {@code atom} or {@link #IMPLICIT_HYDROGEN}.
+     * @return the declared chirality relative to {@code order}, or empty if {@code atom} is not a stereocentre
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     * @throws IllegalStateException if {@code order} does not match the stored order in size
+     */
+    public Optional<Chirality> chiralityOf(Atom atom, List<Object> order)
+    {
+        if (!incidentBonds.containsKey(atom))
+        {
+            throw new IllegalArgumentException("Atom is not part of this molecule: " + atom);
+        }
+        Chirality declared = chiralityByAtom.get(atom);
+        if (declared == null)
+        {
+            return Optional.empty();
+        }
+        return Optional.of(isOddPermutation(declaredOrder(atom), order) ? declared.flip() : declared);
+    }
+
+    /**
+     * Builds the fixed neighbour order chirality is stored relative to: {@code atom}'s
+     * implicit hydrogen, followed by {@link #bondsOf(Atom)} in insertion order.
+     *
+     * @param atom an atom of this molecule
+     * @return the stored neighbour order for {@code atom}
+     */
+    private List<Object> declaredOrder(Atom atom)
+    {
+        List<Object> order = new ArrayList<>();
+        if (atom.hydrogenCount().orElse(0) > 0)
+        {
+            order.add(IMPLICIT_HYDROGEN);
+        }
+        for (Bond bond : bondsOf(atom))
+        {
+            order.add(bond);
+        }
+        return order;
+    }
+
+    /**
+     * Determines whether rearranging {@code from} into the order of {@code to} is an odd
+     * permutation (an odd number of pairwise swaps), by counting inversions.
+     *
+     * @param from a list of neighbour-slot identities
+     * @param to the same identities, in a possibly different order
+     * @return {@code true} if the permutation from {@code from} to {@code to} is odd
+     * @throws IllegalStateException if {@code from} and {@code to} are not the same size
+     */
+    private static boolean isOddPermutation(List<Object> from, List<Object> to)
+    {
+        if (from.size() != to.size())
+        {
+            throw new IllegalStateException("Stereocentre's declared neighbour count (" + from.size() + ") does not match its given neighbour count (" + to.size() + ")");
+        }
+
+        Map<Object, Integer> positionInTo = new IdentityHashMap<>();
+        for (int i = 0; i < to.size(); i++)
+        {
+            positionInTo.put(to.get(i), i);
+        }
+
+        int[] permutation = new int[from.size()];
+        for (int i = 0; i < from.size(); i++)
+        {
+            permutation[i] = positionInTo.get(from.get(i));
+        }
+
+        int inversions = 0;
+        for (int i = 0; i < permutation.length; i++)
+        {
+            for (int j = i + 1; j < permutation.length; j++)
+            {
+                if (permutation[i] > permutation[j])
+                {
+                    inversions++;
+                }
+            }
+        }
+        return inversions % 2 != 0;
+    }
+
+    /**
      * @param atom an atom of this molecule, by reference identity
      * @return the atoms directly bonded to {@code atom}
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
@@ -113,6 +222,10 @@ public final class Molecule
         for (Bond bond : bonds)
         {
             builder.addBond(bond.first(), bond.second(), bond.order());
+        }
+        for (Map.Entry<Atom, Chirality> entry : chiralityByAtom.entrySet())
+        {
+            builder.setChirality(entry.getKey(), entry.getValue());
         }
         return builder;
     }
@@ -157,6 +270,7 @@ public final class Molecule
         private final List<Atom> atoms = new ArrayList<>();
         private final List<Bond> bonds = new ArrayList<>();
         private final Set<Atom> added = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Map<Atom, Chirality> chirality = new IdentityHashMap<>();
 
         /**
          * Adds an atom to the molecule being built.
@@ -209,7 +323,31 @@ public final class Molecule
         }
 
         /**
-         * Removes a previously added atom, along with any bonds incident to it.
+         * Declares a previously added atom as a stereocentre with the given chirality,
+         * relative to the fixed neighbour order documented on {@link Molecule#chiralityOf(Atom)}.
+         *
+         * @param atom a previously added atom, by reference identity
+         * @param chirality the declared chirality, or {@code null} to remove any previously declared chirality
+         * @return this builder, for chaining
+         * @throws IllegalArgumentException if {@code atom} was not added via {@link #addAtom}
+         */
+        public Builder setChirality(Atom atom, Chirality chirality)
+        {
+            requireAdded(atom);
+            if (chirality == null)
+            {
+                this.chirality.remove(atom);
+            }
+            else
+            {
+                this.chirality.put(atom, chirality);
+            }
+            return this;
+        }
+
+        /**
+         * Removes a previously added atom, along with any bonds incident to it and any
+         * chirality declared for it.
          *
          * @param atom the atom to remove, by reference identity
          * @return this builder, for chaining
@@ -221,6 +359,7 @@ public final class Molecule
             atoms.remove(indexOfAtom(atom));
             added.remove(atom);
             bonds.removeIf(bond -> bond.first() == atom || bond.second() == atom);
+            chirality.remove(atom);
             return this;
         }
 
@@ -251,7 +390,7 @@ public final class Molecule
          */
         public Molecule build()
         {
-            return new Molecule(atoms, bonds);
+            return new Molecule(atoms, bonds, chirality);
         }
 
         /**

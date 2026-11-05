@@ -2,7 +2,9 @@ package com.ruben.chemistry.smiles;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.Molecule;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.OptionalInt;
@@ -242,5 +244,99 @@ class SmilesWriterTest
         Molecule molecule = new Molecule.Builder().build();
 
         assertThat(write(molecule)).isEmpty();
+    }
+
+    @Nested
+    class ChiralityRendering
+    {
+        @Test
+        void flips_the_declared_chirality_when_the_implicit_hydrogen_displaces_the_arriving_bond()
+        {
+            // a non-root stereocentre: the declared order is H-first, but the written
+            // order has the arriving bond from N before the implicit hydrogen, an odd
+            // reordering, so the declared chirality must be flipped when written
+            Atom n = Atom.organic("N");
+            Atom c = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+            Atom br = Atom.organic("Br");
+            Atom cl = Atom.organic("Cl");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(n, c, br, cl)
+                .addBond(n, c, BondOrder.SINGLE)
+                .addBond(c, br, BondOrder.SINGLE)
+                .addBond(c, cl, BondOrder.SINGLE);
+            builder.setChirality(c, Chirality.ANTICLOCKWISE);
+            Molecule molecule = builder.build();
+
+            assertThat(write(molecule)).isEqualTo("N[C@@H](Br)Cl");
+        }
+
+        @Test
+        void keeps_the_declared_chirality_when_the_stereocentre_is_the_root_atom()
+        {
+            // a root stereocentre has no arriving bond, so the written order (implicit
+            // hydrogen, then bonds in declaration order) exactly matches the declared
+            // order, leaving the chirality unchanged
+            Atom c = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+            Atom n = Atom.organic("N");
+            Atom br = Atom.organic("Br");
+            Atom cl = Atom.organic("Cl");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(c, n, br, cl)
+                .addBond(c, n, BondOrder.SINGLE)
+                .addBond(c, br, BondOrder.SINGLE)
+                .addBond(c, cl, BondOrder.SINGLE);
+            builder.setChirality(c, Chirality.ANTICLOCKWISE);
+            Molecule molecule = builder.build();
+
+            // stored/declared order: [H, N, Br, Cl]; written order, starting the walk at C itself: [H, N, Br, Cl]
+            // the two orders are identical, so no flip is needed
+            assertThat(write(molecule)).isEqualTo("[C@H](N)(Br)Cl");
+        }
+
+        @Test
+        void flips_the_declared_chirality_when_a_different_bond_is_visited_first()
+        {
+            // four explicit substituents, no implicit hydrogen: writing from Br instead
+            // of N moves the arriving bond ahead of N in the written order, an odd
+            // reordering relative to the declared bond order
+            Atom c = Atom.organic("C");
+            Atom n = Atom.organic("N");
+            Atom br = Atom.organic("Br");
+            Atom cl = Atom.organic("Cl");
+            Atom f = Atom.organic("F");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(br, c, n, cl, f)
+                .addBond(c, n, BondOrder.SINGLE)
+                .addBond(c, br, BondOrder.SINGLE)
+                .addBond(c, cl, BondOrder.SINGLE)
+                .addBond(c, f, BondOrder.SINGLE);
+            builder.setChirality(c, Chirality.ANTICLOCKWISE);
+            Molecule molecule = builder.build();
+
+            // stored/declared order: [N, Br, Cl, F]; written order, starting the walk from Br: [Br, N, Cl, F]
+            // (Br arrives first, the rest follow in declared order)
+            // swapping N and Br is a single transposition (odd), so the written token must be the flip of the declared one
+            assertThat(write(molecule)).isEqualTo("Br[C@@](N)(Cl)F");
+        }
+
+        @Test
+        void omits_the_chirality_marker_when_rendering_is_disabled()
+        {
+            Atom n = Atom.organic("N");
+            Atom c = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+            Atom br = Atom.organic("Br");
+            Atom cl = Atom.organic("Cl");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(n, c, br, cl)
+                .addBond(n, c, BondOrder.SINGLE)
+                .addBond(c, br, BondOrder.SINGLE)
+                .addBond(c, cl, BondOrder.SINGLE);
+            builder.setChirality(c, Chirality.ANTICLOCKWISE);
+            Molecule molecule = builder.build();
+
+            String smiles = new SmilesWriter(molecule).setRenderChirality(false).write();
+
+            assertThat(smiles).isEqualTo("N[CH](Br)Cl");
+        }
     }
 }

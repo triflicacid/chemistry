@@ -3,6 +3,7 @@ package com.ruben.chemistry.smiles;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.Molecule;
 
 import java.util.ArrayList;
@@ -28,10 +29,22 @@ public final class SmilesWriter
     private final Map<Bond, Integer> ringNumberOfBond = new IdentityHashMap<>();
     private final Map<Atom, List<Bond>> ringBondsOfAtom = new IdentityHashMap<>();
     private int nextRingNumber = 1;
+    private boolean renderChirality = true;
 
     public SmilesWriter(Molecule molecule)
     {
         this.molecule = molecule;
+    }
+
+    public boolean isRenderChirality()
+    {
+        return renderChirality;
+    }
+
+    public SmilesWriter setRenderChirality(boolean renderChirality)
+    {
+        this.renderChirality = renderChirality;
+        return this;
     }
 
     /**
@@ -137,9 +150,8 @@ public final class SmilesWriter
         {
             text.append(bondSymbolPrefix(arrivingBond));
         }
-        text.append(atom.toString(ringClosureTokens(atom)));
 
-        // Ring bonds are already represented by numbers, so don't consider them
+        // Ring bonds are already represented by numbers, so don't consider them as branches
         List<Bond> branches = new ArrayList<>();
         for (Bond bond : molecule.bondsOf(atom))
         {
@@ -149,6 +161,8 @@ public final class SmilesWriter
             }
             branches.add(bond);
         }
+
+        text.append(atom.toString(ringClosureTokens(atom), resolveChirality(atom, arrivingBond, branches)));
 
         // All but the last branch are wrapped in brackets so the chain can resume from this atom afterwards
         for (int i = 0; i < branches.size(); i++)
@@ -168,6 +182,44 @@ public final class SmilesWriter
                 text.append(')');
             }
         }
+    }
+
+    /**
+     * Resolves the chirality to render for an atom, if it is a stereocentre.
+     *
+     * <p>{@link Molecule} stores chirality relative to a fixed neighbour order
+     * which may differ from the order neighbours are actually written in here, so this
+     * reprojects the declared chirality onto the written order via {@link Molecule#chiralityOf(Atom, List)}.
+     *
+     * @param atom the atom about to be written
+     * @param arrivingBond the bond traversed to reach {@code atom}, or {@code null} for a root atom
+     * @param branches the bonds to be written as this atom's branches, in emission order
+     * @return the chirality to render, or {@code null} if {@code atom} is not a stereocentre or rendering is disabled
+     */
+    private Chirality resolveChirality(Atom atom, Bond arrivingBond, List<Bond> branches)
+    {
+        if (!renderChirality)
+        {
+            return null;
+        }
+
+        List<Object> writtenOrder = new ArrayList<>();
+        // start from our arrival
+        if (arrivingBond != null)
+        {
+            writtenOrder.add(arrivingBond);
+        }
+        // then any implicit hydrogens
+        if (atom.hydrogenCount().orElse(0) > 0)
+        {
+            writtenOrder.add(Molecule.IMPLICIT_HYDROGEN);
+        }
+        // then any ring bonds
+        writtenOrder.addAll(ringBondsOfAtom.get(atom));
+        // then any branches
+        writtenOrder.addAll(branches);
+
+        return molecule.chiralityOf(atom, writtenOrder).orElse(null);
     }
 
     /**

@@ -47,20 +47,22 @@ public record Atom(
     @Override
     public String toString()
     {
-        return toString(List.of());
+        return toString(List.of(), null);
     }
 
     /**
-     * Renders this atom as a SMILES token, followed by the given ring-closure tokens.
+     * Renders this atom as a SMILES token, with an optional chirality marker rendered
+     * immediately after the element symbol, followed by the given ring-closure tokens.
      *
      * @param ringClosureTokens the pre-formatted ring-closure tokens to append, e.g. {@code "1"} or {@code "%12"}
+     * @param chirality the chirality to render as a marker, or {@code null} if not a stereocentre
      */
-    public String toString(List<String> ringClosureTokens)
+    public String toString(List<String> ringClosureTokens, Chirality chirality)
     {
         String symbol = element.equals("*") ? element : aromatic ? element.toLowerCase() : element;
 
         StringBuilder text = new StringBuilder();
-        if (charge == 0 && isotope.isEmpty() && hydrogenCount.isEmpty() && atomClass.isEmpty())
+        if (charge == 0 && isotope.isEmpty() && hydrogenCount.isEmpty() && atomClass.isEmpty() && chirality == null)
         {
             text.append(symbol);
         }
@@ -69,6 +71,10 @@ public record Atom(
             text.append('[');
             isotope.ifPresent(text::append);
             text.append(symbol);
+            if (chirality != null)
+            {
+                text.append(chirality.symbol());
+            }
             hydrogenCount.ifPresent(count ->
             {
                 if (count > 0)

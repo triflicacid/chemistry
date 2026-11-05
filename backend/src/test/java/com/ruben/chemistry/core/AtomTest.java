@@ -118,7 +118,7 @@ class AtomTest
     {
         Atom atom = Atom.organic("C");
 
-        assertThat(atom.toString(List.of("1", "%12"))).isEqualTo("C1%12");
+        assertThat(atom.toString(List.of("1", "%12"), null)).isEqualTo("C1%12");
     }
 
     @Test
@@ -126,6 +126,46 @@ class AtomTest
     {
         Atom atom = new Atom("O", false, -1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
 
-        assertThat(atom.toString(List.of("1"))).isEqualTo("[O-]1");
+        assertThat(atom.toString(List.of("1"), null)).isEqualTo("[O-]1");
+    }
+
+    @Test
+    void chirality_token_is_rendered_immediately_after_the_symbol()
+    {
+        Atom atom = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+
+        assertThat(atom.toString(List.of(), Chirality.ANTICLOCKWISE)).isEqualTo("[C@H]");
+    }
+
+    @Test
+    void double_chirality_token_renders_as_at_at()
+    {
+        Atom atom = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+
+        assertThat(atom.toString(List.of(), Chirality.CLOCKWISE)).isEqualTo("[C@@H]");
+    }
+
+    @Test
+    void chirality_token_forces_bracket_form_even_without_charge_isotope_hydrogens_or_atom_class()
+    {
+        Atom atom = Atom.organic("C");
+
+        assertThat(atom.toString(List.of(), Chirality.ANTICLOCKWISE)).isEqualTo("[C@]");
+    }
+
+    @Test
+    void chirality_token_combines_with_ring_closure_tokens()
+    {
+        Atom atom = Atom.organic("C");
+
+        assertThat(atom.toString(List.of("1"), Chirality.ANTICLOCKWISE)).isEqualTo("[C@]1");
+    }
+
+    @Test
+    void null_chirality_token_renders_as_before()
+    {
+        Atom atom = Atom.organic("C");
+
+        assertThat(atom.toString(List.of(), null)).isEqualTo("C");
     }
 }
