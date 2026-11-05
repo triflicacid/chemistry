@@ -1,4 +1,4 @@
-package com.ruben.utils;
+package com.ruben.chemistry;
 
 import org.junit.jupiter.api.Test;
 
