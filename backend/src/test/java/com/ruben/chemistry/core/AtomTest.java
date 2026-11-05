@@ -10,22 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AtomTest
 {
     @Test
-    void organic_factory_has_no_charge_isotope_hydrogen_count_or_atom_class()
-    {
-        Atom atom = Atom.organic("C", false);
-
-        assertThat(atom.element()).isEqualTo("C");
-        assertThat(atom.aromatic()).isFalse();
-        assertThat(atom.charge()).isZero();
-        assertThat(atom.isotope()).isEmpty();
-        assertThat(atom.hydrogenCount()).isEmpty();
-        assertThat(atom.atomClass()).isEmpty();
-    }
-
-    @Test
     void plain_atom_renders_as_bare_element_symbol()
     {
-        Atom atom = Atom.organic("C", false);
+        Atom atom = Atom.organic("C");
 
         assertThat(atom.toString()).isEqualTo("C");
     }
@@ -129,7 +116,7 @@ class AtomTest
     @Test
     void ring_closure_tokens_are_appended_verbatim_in_order()
     {
-        Atom atom = Atom.organic("C", false);
+        Atom atom = Atom.organic("C");
 
         assertThat(atom.toString(List.of("1", "%12"))).isEqualTo("C1%12");
     }

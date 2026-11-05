@@ -22,6 +22,17 @@ public record Atom(
     OptionalInt atomClass)
 {
     /**
+     * Creates a non-aromatic atom with no charge, isotope, or atom class, and an implicit hydrogen count.
+     *
+     * @param element the canonical element symbol
+     * @return the built atom
+     */
+    public static Atom organic(String element)
+    {
+        return organic(element, false);
+    }
+
+    /**
      * Creates an atom with no charge, isotope, or atom class, and an implicit hydrogen count.
      *
      * @param element the canonical element symbol
