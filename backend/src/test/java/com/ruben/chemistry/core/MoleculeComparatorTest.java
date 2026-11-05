@@ -174,7 +174,6 @@ class MoleculeComparatorTest
         void treats_the_same_declared_configuration_as_unequal_when_insertion_order_makes_it_mean_the_opposite_configuration()
         {
             // Cl/C(Br)=C/F: Ca's reference is Cl (added first)
-            // TODO SmilesWrites produces Cl/C(=C/F)Br instead...
             Atom cl1 = Atom.organic("Cl");
             Atom ca1 = Atom.organic("C");
             Atom cb1 = Atom.organic("C");
