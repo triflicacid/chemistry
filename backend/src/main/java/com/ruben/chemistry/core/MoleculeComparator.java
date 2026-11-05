@@ -75,7 +75,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
     // the atom's declared chirality, if any, reprojected onto its rank-ordered neighbours
     private Chirality chiralityOf(Molecule molecule, Ranking ranking, Atom atom)
     {
-        List<Object> order = new ArrayList<>();
+        List<NeighbourReference> order = new ArrayList<>();
         if (atom.hydrogenCount().orElse(0) > 0)
         {
             order.add(Molecule.IMPLICIT_HYDROGEN);

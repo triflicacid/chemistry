@@ -10,13 +10,13 @@ import java.util.Set;
 
 public final class Molecule
 {
-    /** Sentinel standing in for an atom's implicit hydrogen within a neighbour-order list passed to {@link #chiralityOf(Atom, List)}. */
-    public static final Object IMPLICIT_HYDROGEN = new Object();
+    public static final NeighbourReference IMPLICIT_HYDROGEN = ImplicitHydrogen.INSTANCE;
 
     private final List<Atom> atoms;
     private final List<Bond> bonds;
     private final Map<Atom, List<Bond>> incidentBonds;
     private final Map<Atom, Chirality> chiralityByAtom;
+    private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
 
     /**
      * Creates a molecule from an already-built atom and bond list.
@@ -24,13 +24,15 @@ public final class Molecule
      * @param atoms the atoms of the molecule, in index order
      * @param bonds the bonds of the molecule
      * @param chirality each stereocentre's declared chirality, keyed by atom identity
+     * @param doubleBondStereo each double bond's declared stereo configuration, keyed by bond identity
      */
-    Molecule(List<Atom> atoms, List<Bond> bonds, Map<Atom, Chirality> chirality)
+    Molecule(List<Atom> atoms, List<Bond> bonds, Map<Atom, Chirality> chirality, Map<Bond, DoubleBondStereo> doubleBondStereo)
     {
         this.atoms = List.copyOf(atoms);
         this.bonds = List.copyOf(bonds);
         this.incidentBonds = buildIncidentBonds(this.atoms, this.bonds);
         this.chiralityByAtom = new IdentityHashMap<>(chirality);
+        this.doubleBondStereoByBond = new IdentityHashMap<>(doubleBondStereo);
     }
 
     /**
@@ -89,6 +91,24 @@ public final class Molecule
     }
 
     /**
+     * @param first one atom, by reference identity
+     * @param second the other atom, by reference identity
+     * @return the bond between {@code first} and {@code second}, or empty if they are not directly bonded
+     * @throws IllegalArgumentException if {@code first} is not part of this molecule
+     */
+    public Optional<Bond> bondBetween(Atom first, Atom second)
+    {
+        for (Bond bond : bondsOf(first))
+        {
+            if (bond.getOther(first) == second)
+            {
+                return Optional.of(bond);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Returns the declared chirality of a stereocentre, if any.
      * The value is relative to bond-addition order, so depends on how this
      * molecule was built, and could vary based on which atom was added first,
@@ -108,13 +128,12 @@ public final class Molecule
      * neighbour order.
      *
      * @param atom an atom of this molecule, by reference identity
-     * @param order {@code atom}'s neighbours in the order chirality should be resolved against,
-     *     each either a {@link Bond} incident to {@code atom} or {@link #IMPLICIT_HYDROGEN}.
+     * @param order {@code atom}'s neighbours, as {@link NeighbourReference}s, in the order chirality should be resolved against
      * @return the declared chirality relative to {@code order}, or empty if {@code atom} is not a stereocentre
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      * @throws IllegalStateException if {@code order} does not match the stored order in size
      */
-    public Optional<Chirality> chiralityOf(Atom atom, List<Object> order)
+    public Optional<Chirality> chiralityOf(Atom atom, List<NeighbourReference> order)
     {
         if (!incidentBonds.containsKey(atom))
         {
@@ -135,9 +154,9 @@ public final class Molecule
      * @param atom an atom of this molecule
      * @return the stored neighbour order for {@code atom}
      */
-    private List<Object> declaredOrder(Atom atom)
+    private List<NeighbourReference> declaredOrder(Atom atom)
     {
-        List<Object> order = new ArrayList<>();
+        List<NeighbourReference> order = new ArrayList<>();
         if (atom.hydrogenCount().orElse(0) > 0)
         {
             order.add(IMPLICIT_HYDROGEN);
@@ -158,14 +177,14 @@ public final class Molecule
      * @return {@code true} if the permutation from {@code from} to {@code to} is odd
      * @throws IllegalStateException if {@code from} and {@code to} are not the same size
      */
-    private static boolean isOddPermutation(List<Object> from, List<Object> to)
+    private static boolean isOddPermutation(List<NeighbourReference> from, List<NeighbourReference> to)
     {
         if (from.size() != to.size())
         {
             throw new IllegalStateException("Stereocentre's declared neighbour count (" + from.size() + ") does not match its given neighbour count (" + to.size() + ")");
         }
 
-        Map<Object, Integer> positionInTo = new IdentityHashMap<>();
+        Map<NeighbourReference, Integer> positionInTo = new IdentityHashMap<>();
         for (int i = 0; i < to.size(); i++)
         {
             positionInTo.put(to.get(i), i);
@@ -189,6 +208,110 @@ public final class Molecule
             }
         }
         return inversions % 2 != 0;
+    }
+
+    /**
+     * Returns the declared stereo configuration of a double bond, if any.
+     * The value is relative to each endpoint's default reference substituent: the first
+     * bond other than {@code bond} itself in {@link #bondsOf(Atom)} insertion order, or
+     * {@link #IMPLICIT_HYDROGEN} if the endpoint has no other bond.
+     *
+     * @param bond a bond of this molecule, by reference identity
+     * @return the declared configuration, or empty if {@code bond} has no declared stereo
+     * @throws IllegalArgumentException if {@code bond} is not part of this molecule
+     */
+    public Optional<DoubleBondStereo> doubleBondStereoOf(Bond bond)
+    {
+        return doubleBondStereoOf(bond, defaultReference(bond, bond.first()), defaultReference(bond, bond.second()));
+    }
+
+    /**
+     * Returns the declared stereo configuration of a double bond, reprojected onto a
+     * caller-supplied reference substituent at each end.
+     *
+     * @param bond a bond of this molecule, by reference identity
+     * @param firstReference the {@link NeighbourReference} of {@code bond.first()} to resolve the
+     *     configuration against, other than {@code bond} itself
+     * @param secondReference the reference substituent of {@code bond.second()}, in the same form
+     * @return the declared configuration relative to the given references, or empty if {@code bond} has no declared stereo
+     * @throws IllegalArgumentException if {@code bond} is not part of this molecule, or either
+     *     reference does not identify a substituent of the corresponding endpoint
+     */
+    public Optional<DoubleBondStereo> doubleBondStereoOf(Bond bond, NeighbourReference firstReference, NeighbourReference secondReference)
+    {
+        requireBond(bond);
+        DoubleBondStereo declared = doubleBondStereoByBond.get(bond);
+        if (declared == null)
+        {
+            return Optional.empty();
+        }
+
+        requireReference(bond, bond.first(), firstReference);
+        requireReference(bond, bond.second(), secondReference);
+
+        boolean flipped = (firstReference != defaultReference(bond, bond.first())) ^ (secondReference != defaultReference(bond, bond.second()));
+        return Optional.of(flipped ? declared.flip() : declared);
+    }
+
+    /**
+     * Finds the default reference substituent used to declare a double bond's stereo.
+     *
+     * @param doubleBond the double bond being resolved
+     * @param atom one endpoint of {@code doubleBond}
+     * @return the default reference substituent for {@code atom}
+     */
+    private NeighbourReference defaultReference(Bond doubleBond, Atom atom)
+    {
+        for (Bond candidate : bondsOf(atom))
+        {
+            if (candidate != doubleBond)
+            {
+                return candidate;
+            }
+        }
+        return IMPLICIT_HYDROGEN;
+    }
+
+    /**
+     * Checks that a reference substituent given to {@link #doubleBondStereoOf(Bond, NeighbourReference, NeighbourReference)}
+     * actually identifies a substituent of {@code atom} other than {@code doubleBond} itself.
+     *
+     * @throws IllegalArgumentException if {@code reference} does not identify such a substituent
+     */
+    private void requireReference(Bond doubleBond, Atom atom, NeighbourReference reference)
+    {
+        if (reference instanceof ImplicitHydrogen)
+        {
+            return;
+        }
+        if (reference instanceof Bond referenceBond && referenceBond != doubleBond)
+        {
+            for (Bond candidate : bondsOf(atom))
+            {
+                if (candidate == referenceBond)
+                {
+                    return;
+                }
+            }
+        }
+        throw new IllegalArgumentException("Reference does not identify a substituent of " + atom + " other than " + doubleBond);
+    }
+
+    /**
+     * Checks that a bond is part of this molecule, by reference identity.
+     *
+     * @throws IllegalArgumentException if {@code bond} is not one of this molecule's bonds
+     */
+    private void requireBond(Bond bond)
+    {
+        for (Bond candidate : bonds)
+        {
+            if (candidate == bond)
+            {
+                return;
+            }
+        }
+        throw new IllegalArgumentException("Bond is not part of this molecule: " + bond);
     }
 
     /**
@@ -226,6 +349,11 @@ public final class Molecule
         for (Map.Entry<Atom, Chirality> entry : chiralityByAtom.entrySet())
         {
             builder.setChirality(entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<Bond, DoubleBondStereo> entry : doubleBondStereoByBond.entrySet())
+        {
+            Bond bond = entry.getKey();
+            builder.setDoubleBondStereo(bond.first(), bond.second(), entry.getValue());
         }
         return builder;
     }
@@ -271,6 +399,7 @@ public final class Molecule
         private final List<Bond> bonds = new ArrayList<>();
         private final Set<Atom> added = Collections.newSetFromMap(new IdentityHashMap<>());
         private final Map<Atom, Chirality> chirality = new IdentityHashMap<>();
+        private final Map<Bond, DoubleBondStereo> doubleBondStereo = new IdentityHashMap<>();
 
         /**
          * Adds an atom to the molecule being built.
@@ -346,8 +475,41 @@ public final class Molecule
         }
 
         /**
+         * Declares the stereo configuration of the double bond between two previously bonded
+         * atoms, relative to the default reference substituent documented on {@link Molecule#doubleBondStereoOf(Bond)}.
+         *
+         * @param first one endpoint atom
+         * @param second the other endpoint atom
+         * @param stereo the declared configuration, or {@code null} to remove any previously declared stereo
+         * @return this builder, for chaining
+         * @throws IllegalArgumentException if no bond exists between {@code first} and {@code second}, or it is not a double bond
+         */
+        public Builder setDoubleBondStereo(Atom first, Atom second, DoubleBondStereo stereo)
+        {
+            int index = indexOfBond(first, second);
+            if (index == -1)
+            {
+                throw new IllegalArgumentException("No bond exists between the given atoms");
+            }
+            Bond bond = bonds.get(index);
+            if (bond.order() != BondOrder.DOUBLE)
+            {
+                throw new IllegalArgumentException("Bond between " + first + " and " + second + " is not a double bond");
+            }
+            if (stereo == null)
+            {
+                doubleBondStereo.remove(bond);
+            }
+            else
+            {
+                doubleBondStereo.put(bond, stereo);
+            }
+            return this;
+        }
+
+        /**
          * Removes a previously added atom, along with any bonds incident to it and any
-         * chirality declared for it.
+         * chirality or double bond stereo declared for it.
          *
          * @param atom the atom to remove, by reference identity
          * @return this builder, for chaining
@@ -358,14 +520,22 @@ public final class Molecule
             requireAdded(atom);
             atoms.remove(indexOfAtom(atom));
             added.remove(atom);
-            bonds.removeIf(bond -> bond.first() == atom || bond.second() == atom);
+            bonds.removeIf(bond -> {
+                boolean incident = bond.first() == atom || bond.second() == atom;
+                if (incident)
+                {
+                    doubleBondStereo.remove(bond);
+                }
+                return incident;
+            });
             chirality.remove(atom);
             return this;
         }
 
         /**
-         * Removes the bond between two atoms. Since a molecule is a simple graph, at most
-         * one bond can exist between any pair of atoms, so no bond order needs to be given.
+         * Removes the bond between two atoms, along with any declared stereo for it. Since a
+         * molecule is a simple graph, at most one bond can exist between any pair of atoms, so
+         * no bond order needs to be given.
          *
          * @param first one endpoint atom
          * @param second the other endpoint atom
@@ -379,7 +549,8 @@ public final class Molecule
             {
                 throw new IllegalArgumentException("No bond exists between the given atoms");
             }
-            bonds.remove(index);
+            Bond removed = bonds.remove(index);
+            doubleBondStereo.remove(removed);
             return this;
         }
 
@@ -390,7 +561,7 @@ public final class Molecule
          */
         public Molecule build()
         {
-            return new Molecule(atoms, bonds, chirality);
+            return new Molecule(atoms, bonds, chirality, doubleBondStereo);
         }
 
         /**

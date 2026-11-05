@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.CanonicalRanker;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.core.Ranker;
 import com.ruben.chemistry.core.Ranking;
 
@@ -280,7 +281,7 @@ public final class SmilesWriter
             return null;
         }
 
-        List<Object> writtenOrder = new ArrayList<>();
+        List<NeighbourReference> writtenOrder = new ArrayList<>();
         // start from our arrival
         if (arrivingBond != null)
         {

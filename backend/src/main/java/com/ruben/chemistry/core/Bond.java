@@ -7,7 +7,7 @@ package com.ruben.chemistry.core;
  * @param second the other endpoint atom
  * @param order the bond order
  */
-public record Bond(Atom first, Atom second, BondOrder order)
+public record Bond(Atom first, Atom second, BondOrder order) implements NeighbourReference
 {
     /**
      * @param first one atom to check, by reference identity
