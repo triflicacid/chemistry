@@ -3,6 +3,7 @@ package com.ruben.chemistry.smiles;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.Ranker;
 import com.ruben.chemistry.core.Ranking;
@@ -397,6 +398,190 @@ class SmilesWriterTest
             String smiles = new SmilesWriter(molecule).setRenderChirality(false).write();
 
             assertThat(smiles).isEqualTo("N[CH](Br)Cl");
+        }
+    }
+
+    @Nested
+    class DoubleBondStereoRendering
+    {
+        @Test
+        void renders_opposite_side_substituents_as_a_trans_pair_of_matching_symbols()
+        {
+            Atom f1 = Atom.organic("F");
+            Atom ca = Atom.organic("C");
+            Atom cb = Atom.organic("C");
+            Atom f2 = Atom.organic("F");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(f1, ca, cb, f2)
+                .addBond(f1, ca, BondOrder.SINGLE)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(cb, f2, BondOrder.SINGLE)
+                .setDoubleBondStereo(ca, cb, DoubleBondStereo.OPPOSITE_SIDE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("F/C=C/F");
+        }
+
+        @Test
+        void renders_same_side_substituents_as_a_cis_pair_of_opposite_symbols()
+        {
+            Atom f1 = Atom.organic("F");
+            Atom ca = Atom.organic("C");
+            Atom cb = Atom.organic("C");
+            Atom f2 = Atom.organic("F");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(f1, ca, cb, f2)
+                .addBond(f1, ca, BondOrder.SINGLE)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(cb, f2, BondOrder.SINGLE)
+                .setDoubleBondStereo(ca, cb, DoubleBondStereo.SAME_SIDE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("F/C=C\\F");
+        }
+
+        @Test
+        void propagates_a_shared_reference_bond_through_a_conjugated_diene()
+        {
+            // F-Ca=Cb-Cc=Cd-F2: the Cb-Cc single bond is a reference substituent for both
+            // double bonds (Cb's side of the first, Cc's side of the second), so its one
+            // written character must satisfy both declared configurations at once
+            Atom f1 = Atom.organic("F");
+            Atom ca = Atom.organic("C");
+            Atom cb = Atom.organic("C");
+            Atom cc = Atom.organic("C");
+            Atom cd = Atom.organic("C");
+            Atom f2 = Atom.organic("F");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(f1, ca, cb, cc, cd, f2)
+                .addBond(f1, ca, BondOrder.SINGLE)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(cb, cc, BondOrder.SINGLE)
+                .addBond(cc, cd, BondOrder.DOUBLE)
+                .addBond(cd, f2, BondOrder.SINGLE)
+                .setDoubleBondStereo(ca, cb, DoubleBondStereo.OPPOSITE_SIDE)
+                .setDoubleBondStereo(cc, cd, DoubleBondStereo.OPPOSITE_SIDE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("F/C=C/C=C/F");
+        }
+
+        @Test
+        void resolves_consistently_regardless_of_double_bond_processing_order()
+        {
+            // Same all-trans conjugated triene as above but with one extra double bond, with
+            // the two outer double bonds added to the builder before the middle one
+            Atom f1 = Atom.organic("F");
+            Atom ca = Atom.organic("C");
+            Atom cb = Atom.organic("C");
+            Atom cc = Atom.organic("C");
+            Atom cd = Atom.organic("C");
+            Atom ce = Atom.organic("C");
+            Atom cf = Atom.organic("C");
+            Atom f2 = Atom.organic("F");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(f1, ca, cb, cc, cd, ce, cf, f2)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(ce, cf, BondOrder.DOUBLE)
+                .addBond(f1, ca, BondOrder.SINGLE)
+                .addBond(cb, cc, BondOrder.SINGLE)
+                .addBond(cc, cd, BondOrder.DOUBLE)
+                .addBond(cd, ce, BondOrder.SINGLE)
+                .addBond(cf, f2, BondOrder.SINGLE)
+                .setDoubleBondStereo(ca, cb, DoubleBondStereo.OPPOSITE_SIDE)
+                .setDoubleBondStereo(ce, cf, DoubleBondStereo.OPPOSITE_SIDE)
+                .setDoubleBondStereo(cc, cd, DoubleBondStereo.OPPOSITE_SIDE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("F/C=C/C=C/C=C/F");
+        }
+
+        @Test
+        void falls_back_to_a_ring_closure_bond_as_the_reference_when_no_other_substituent_exists()
+        {
+            // Cyclobutene-shaped ring A=B-C-D-A: A's only non-double-bond substituent is the
+            // ring-closure bond back to A itself, so the reference falls back to it
+            Atom a = Atom.organic("C");
+            Atom b = Atom.organic("C");
+            Atom c = Atom.organic("C");
+            Atom d = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(a, b, c, d)
+                .addBond(a, b, BondOrder.DOUBLE)
+                .addBond(b, c, BondOrder.SINGLE)
+                .addBond(c, d, BondOrder.SINGLE)
+                .addBond(d, a, BondOrder.SINGLE)
+                .setDoubleBondStereo(a, b, DoubleBondStereo.SAME_SIDE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("C/1=C/CC\\1");
+        }
+
+        // Structurally the same pattern as the OpenSMILES spec's own cyclooctatetraene example
+        // (C/1=C/C=C\C=C/C=C\1), just a 6-membered ring instead of 8 - see the Proposed
+        // Extensions section: https://github.com/timvdm/OpenSMILES/blob/master/opensmiles.asciidoc
+        @Test
+        void alternates_direction_symbols_across_a_ring_closure_in_a_conjugated_ring()
+        {
+            // A1=A2-A3=A4-A5=A6-A1: every reference bond is shared between two double
+            // bonds, closing into a full cycle of constraints, so the ring-closure
+            // bond's declared configuration is pinned down by the other two rather than freely chosen.
+            Atom a1 = Atom.organic("C");
+            Atom a2 = Atom.organic("C");
+            Atom a3 = Atom.organic("C");
+            Atom a4 = Atom.organic("C");
+            Atom a5 = Atom.organic("C");
+            Atom a6 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(a1, a2, a3, a4, a5, a6)
+                .addBond(a1, a2, BondOrder.DOUBLE)
+                .addBond(a2, a3, BondOrder.SINGLE)
+                .addBond(a3, a4, BondOrder.DOUBLE)
+                .addBond(a4, a5, BondOrder.SINGLE)
+                .addBond(a5, a6, BondOrder.DOUBLE)
+                .addBond(a6, a1, BondOrder.SINGLE)
+                .setDoubleBondStereo(a1, a2, DoubleBondStereo.OPPOSITE_SIDE)
+                .setDoubleBondStereo(a3, a4, DoubleBondStereo.SAME_SIDE)
+                .setDoubleBondStereo(a5, a6, DoubleBondStereo.SAME_SIDE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("C/1=C\\C=C/C=C\\1");
+        }
+
+        @Test
+        void omits_the_direction_symbol_when_an_endpoint_has_no_explicit_substituent()
+        {
+            Atom ca = Atom.organic("C");
+            Atom cb = Atom.organic("C");
+            Atom f = Atom.organic("F");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(ca, cb, f)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(cb, f, BondOrder.SINGLE)
+                .setDoubleBondStereo(ca, cb, DoubleBondStereo.SAME_SIDE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("C=CF");
+        }
+
+        @Test
+        void omits_the_direction_symbols_when_rendering_is_disabled()
+        {
+            Atom f1 = Atom.organic("F");
+            Atom ca = Atom.organic("C");
+            Atom cb = Atom.organic("C");
+            Atom f2 = Atom.organic("F");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(f1, ca, cb, f2)
+                .addBond(f1, ca, BondOrder.SINGLE)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(cb, f2, BondOrder.SINGLE)
+                .setDoubleBondStereo(ca, cb, DoubleBondStereo.OPPOSITE_SIDE)
+                .build();
+
+            String smiles = new SmilesWriter(molecule).setRenderDoubleBondStereo(false).write();
+
+            assertThat(smiles).isEqualTo("FC=CF");
         }
     }
 }

@@ -5,6 +5,7 @@ import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.CanonicalRanker;
 import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.core.Ranker;
@@ -16,6 +17,7 @@ import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -33,8 +35,12 @@ public final class SmilesWriter
     private final Set<Atom> visited = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<Bond, Integer> ringNumberOfBond = new IdentityHashMap<>();
     private final Map<Atom, List<Bond>> ringBondsOfAtom = new IdentityHashMap<>();
+    private final Map<Atom, Bond> arrivingBondOf = new IdentityHashMap<>();
+    private final Map<Bond, Atom> openingAtomOfRingBond = new IdentityHashMap<>();
+    private final Map<Bond, Character> directionalSymbolOf = new IdentityHashMap<>();
     private int nextRingNumber = 1;
     private boolean renderChirality = true;
+    private boolean renderDoubleBondStereo = true;
     private Ranker ranker;
     private Ranking ranking;
 
@@ -51,6 +57,17 @@ public final class SmilesWriter
     public SmilesWriter setRenderChirality(boolean renderChirality)
     {
         this.renderChirality = renderChirality;
+        return this;
+    }
+
+    public boolean isRenderDoubleBondStereo()
+    {
+        return renderDoubleBondStereo;
+    }
+
+    public SmilesWriter setRenderDoubleBondStereo(boolean renderDoubleBondStereo)
+    {
+        this.renderDoubleBondStereo = renderDoubleBondStereo;
         return this;
     }
 
@@ -121,6 +138,11 @@ public final class SmilesWriter
             }
         }
 
+        if (renderDoubleBondStereo)
+        {
+            assignDirectionalSymbols();
+        }
+
         // Second pass: reuse the atom-visiting order above to emit text
         visited.clear();
 
@@ -186,6 +208,10 @@ public final class SmilesWriter
     private void discoverRingClosures(Atom atom, Bond arrivingBond)
     {
         visited.add(atom);
+        if (arrivingBond != null)
+        {
+            arrivingBondOf.put(atom, arrivingBond);
+        }
 
         for (Bond bond : orderedBondsOf(atom))
         {
@@ -203,6 +229,8 @@ public final class SmilesWriter
                     ringNumberOfBond.put(bond, nextRingNumber++);
                     ringBondsOfAtom.get(atom).add(bond);
                     ringBondsOfAtom.get(neighbour).add(bond);
+                    // neighbour was visited (and so written) first, so it's the ring-opening atom
+                    openingAtomOfRingBond.put(bond, neighbour);
                 }
             }
             else
@@ -210,6 +238,145 @@ public final class SmilesWriter
                 discoverRingClosures(neighbour, bond);
             }
         }
+    }
+
+    /**
+     * Assigns a {@code '/'} or {@code '\'} character to each bond chosen as a stereo
+     * double bond's reference substituent (see {@link #referenceBondFor}), for every declared
+     * {@link DoubleBondStereo} in the molecule.
+     *
+     * @throws IllegalStateException if two declared double bond configurations cannot both be
+     *     satisfied by a single character on a reference bond they share
+     */
+    private void assignDirectionalSymbols()
+    {
+        for (Bond bond : molecule.bonds())
+        {
+            Optional<DoubleBondStereo> declared = molecule.doubleBondStereoOf(bond);
+            if (declared.isEmpty())
+            {
+                continue;
+            }
+
+            Bond firstReference = referenceBondFor(bond, bond.first());
+            Bond secondReference = referenceBondFor(bond, bond.second());
+            if (firstReference == null || secondReference == null)
+            {
+                // one endpoint has no explicit substituent to carry a direction symbol
+                continue;
+            }
+
+            boolean sameSide = molecule.doubleBondStereoOf(bond, firstReference, secondReference).orElseThrow() == DoubleBondStereo.SAME_SIDE;
+            reconcile(bond.first(), firstReference, bond.second(), secondReference, sameSide);
+        }
+    }
+
+    /**
+     * Finds the bond to carry a direction symbol for one side of a stereo double bond.
+     *
+     * @param doubleBond the stereo double bond being resolved
+     * @param atom one endpoint of {@code doubleBond}
+     * @return the chosen reference bond, or {@code null} if {@code atom} has none available
+     */
+    private Bond referenceBondFor(Bond doubleBond, Atom atom)
+    {
+        // first non-ring bond, or use a ring bond if no alternative found
+        Bond ringFallback = null;
+        for (Bond candidate : orderedBondsOf(atom))
+        {
+            if (candidate == doubleBond)
+            {
+                continue;
+            }
+            if (!ringNumberOfBond.containsKey(candidate))
+            {
+                return candidate;
+            }
+            if (ringFallback == null)
+            {
+                ringFallback = candidate;
+            }
+        }
+        return ringFallback;
+    }
+
+    /**
+     * Assigns or checks the characters of two reference bonds so that, traced outward from
+     * their respective stereocentres, they are equal if {@code sameSide}, or differ otherwise.
+     *
+     * @throws IllegalStateException if both references are already assigned and don't satisfy {@code sameSide}
+     */
+    private void reconcile(Atom firstAtom, Bond firstReference, Atom secondAtom, Bond secondReference, boolean sameSide)
+    {
+        // neither reference has been assigned by an earlier double bond, so start the chain off arbitrarily
+        if (!directionalSymbolOf.containsKey(firstReference) && !directionalSymbolOf.containsKey(secondReference))
+        {
+            directionalSymbolOf.put(firstReference, '/');
+        }
+        // firstReference is still unassigned, so derive it from secondReference
+        if (!directionalSymbolOf.containsKey(firstReference))
+        {
+            char secondOutward = reorient(secondReference, secondAtom, directionalSymbolOf.get(secondReference));
+            char firstOutward = sameSide ? secondOutward : flip(secondOutward);
+            directionalSymbolOf.put(firstReference, reorient(firstReference, firstAtom, firstOutward));
+        }
+        // firstReference was already assigned (by this double bond or an earlier one) but secondReference wasn't, so derive it from firstReference
+        else if (!directionalSymbolOf.containsKey(secondReference))
+        {
+            char firstOutward = reorient(firstReference, firstAtom, directionalSymbolOf.get(firstReference));
+            char secondOutward = sameSide ? firstOutward : flip(firstOutward);
+            directionalSymbolOf.put(secondReference, reorient(secondReference, secondAtom, secondOutward));
+        }
+
+        // both references are now assigned, so verify they actually satisfy sameSide
+        char firstOutward = reorient(firstReference, firstAtom, directionalSymbolOf.get(firstReference));
+        char secondOutward = reorient(secondReference, secondAtom, directionalSymbolOf.get(secondReference));
+        if ((firstOutward == secondOutward) != sameSide)
+        {
+            throw new IllegalStateException("Bond " + firstReference + " and bond " + secondReference
+                + " cannot both carry a direction symbol satisfying every declared double bond configuration they are a reference for");
+        }
+    }
+
+    /**
+     * Converts a reference bond's character between its written form and its "outward" form,
+     * as traced starting from {@code atom} (the stereocentre) toward its substituent,
+     * regardless of which of the bond's two atoms is actually written first.
+     *
+     * @param reference the reference bond
+     * @param atom the endpoint of {@code reference} whose perspective {@code symbol} is relative to
+     * @param symbol the character to reorient
+     * @return the reoriented character
+     */
+    private char reorient(Bond reference, Atom atom, char symbol)
+    {
+        return isWrittenFirst(reference, atom) ? symbol : flip(symbol);
+    }
+
+    /**
+     * Determines whether {@code atom} is written first for {@code reference}'s occurrence.
+     *
+     * @param reference the bond to check
+     * @param atom one of {@code reference}'s two endpoints
+     * @return {@code true} if {@code atom} is written first
+     */
+    private boolean isWrittenFirst(Bond reference, Atom atom)
+    {
+        Atom openingAtom = openingAtomOfRingBond.get(reference);
+        if (openingAtom != null)
+        {
+            return openingAtom == atom;
+        }
+        return arrivingBondOf.get(atom) != reference;
+    }
+
+    /**
+     * @param symbol a direction symbol, {@code '/'} or {@code '\'}
+     * @return the other direction symbol
+     */
+    private static char flip(char symbol)
+    {
+        return symbol == '/' ? '\\' : '/';
     }
 
     /**
@@ -313,7 +480,7 @@ public final class SmilesWriter
         {
             int ringNumber = ringNumberOfBond.get(bond);
             String digits = ringNumber >= 10 ? "%" + ringNumber : String.valueOf(ringNumber);
-            tokens.add(bondSymbolPrefix(bond) + digits);
+            tokens.add(ringBondSymbolPrefix(bond, atom) + digits);
         }
         return tokens;
     }
@@ -327,7 +494,33 @@ public final class SmilesWriter
      */
     private String bondSymbolPrefix(Bond bond)
     {
+        Character directional = directionalSymbolOf.get(bond);
+        if (directional != null)
+        {
+            return String.valueOf(directional);
+        }
         BondOrder defaultOrder = BondOrder.inferredBetween(bond.first(), bond.second());
         return bond.order() == defaultOrder ? "" : String.valueOf(bond.order().symbol());
+    }
+
+    /**
+     * Like {@link #bondSymbolPrefix}, but for a ring-closure bond specifically: prints the
+     * flipped character at the ring-closing occurrence, so a chain of alternating
+     * {@code '/'}/{@code '\'} characters keeps alternating across the ring closure instead of
+     * resetting: e.g. {@code C/1=C/C=C\C=C/C=C\1}.
+     *
+     * @param bond the ring-closure bond to be written
+     * @param atom the endpoint currently being written: the ring-opening or ring-closing atom
+     * @return the bond's symbol at {@code atom}'s occurrence, or an empty if its order is the default
+     */
+    private String ringBondSymbolPrefix(Bond bond, Atom atom)
+    {
+        Character directional = directionalSymbolOf.get(bond);
+        if (directional == null)
+        {
+            return bondSymbolPrefix(bond);
+        }
+        boolean isOpeningOccurrence = openingAtomOfRingBond.get(bond) == atom;
+        return String.valueOf(isOpeningOccurrence ? directional : flip(directional));
     }
 }
