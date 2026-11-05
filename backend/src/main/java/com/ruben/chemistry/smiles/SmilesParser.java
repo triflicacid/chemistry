@@ -3,7 +3,6 @@ package com.ruben.chemistry.smiles;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
-import com.ruben.chemistry.core.InvalidSmilesException;
 import com.ruben.chemistry.core.Molecule;
 
 import java.util.ArrayDeque;

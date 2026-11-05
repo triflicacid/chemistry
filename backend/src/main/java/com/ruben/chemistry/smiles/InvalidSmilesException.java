@@ -1,4 +1,6 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.smiles;
+
+import com.ruben.chemistry.core.Molecule;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -1,7 +1,5 @@
 package com.ruben.chemistry.smiles;
 
-import com.ruben.chemistry.core.InvalidSmilesException;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
