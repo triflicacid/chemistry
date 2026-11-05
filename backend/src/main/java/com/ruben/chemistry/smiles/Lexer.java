@@ -67,7 +67,7 @@ public final class Lexer
     public Token next()
     {
         ensureBuffered(1);
-        return lookahead.remove(0);
+        return lookahead.removeFirst();
     }
 
     /**
@@ -150,17 +150,12 @@ public final class Lexer
      * Lexes the single next token from the current scan position, advancing it.
      *
      * @return the lexed token, or a {@link TokenType#EOF} token if the source is exhausted
-     * @throws InvalidSmilesException if the source is exhausted inside an unterminated
-     *     bracket atom, or the upcoming text is not a valid token
+     * @throws InvalidSmilesException if the upcoming text is not a valid token
      */
     private Token lexNext()
     {
         if (position >= source.length())
         {
-            if (inBracket)
-            {
-                throw new InvalidSmilesException("Unterminated bracket atom", source, source.length());
-            }
             return new Token(TokenType.EOF, "", source.length());
         }
 
@@ -168,7 +163,9 @@ public final class Lexer
         {
             if (source.charAt(position) == ']')
             {
-                return emit(TokenType.BRACKET_CLOSE, "]");
+                Token token = emit(TokenType.BRACKET_CLOSE, "]");
+                inBracket = false;
+                return token;
             }
             return lexBracketToken();
         }
