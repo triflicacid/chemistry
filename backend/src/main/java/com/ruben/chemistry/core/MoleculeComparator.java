@@ -16,8 +16,8 @@ import java.util.List;
  *     <li>bond count</li>
  *     <li>each atom's own properties (element, charge, isotope, aromaticity, hydrogen
  *     count, chirality), atom-for-atom in ascending canonical rank order</li>
- *     <li>each bond, as its endpoints' canonical ranks and its order, sorted and
- *     compared entry-by-entry</li>
+ *     <li>each bond, as its endpoints' canonical ranks, its order, and its declared double
+ *     bond stereo configuration, sorted and compared entry-by-entry</li>
  * </ol>
  *  This ordering has no chemical meaning: "ranks higher" just means "differs first, at
  *  an earlier tier or earlier rank, with a larger value there".
@@ -61,7 +61,10 @@ public final class MoleculeComparator implements Comparator<Molecule>
         return compareLists(bondSignatures(first, firstRanking), bondSignatures(second, secondRanking));
     }
 
-    // every atom's own properties, in ascending-rank order; independent of atom identity or insertion order
+    /**
+     * @return every atom's own properties, in ascending-rank order; independent of atom
+     *     identity or insertion order
+     */
     private List<AtomSignature> atomSignatures(Molecule molecule, Ranking ranking)
     {
         List<AtomSignature> signatures = new ArrayList<>();
@@ -72,8 +75,11 @@ public final class MoleculeComparator implements Comparator<Molecule>
         return signatures;
     }
 
-    // the atom's declared chirality, if any, reprojected onto its rank-ordered neighbours
-    private Chirality chiralityOf(Molecule molecule, Ranking ranking, Atom atom)
+    /**
+     * @return {@code atom}'s implicit hydrogen (if any) followed by its bonds, sorted by the
+     *     rank of the neighbour at the other end (ties broken by bond order).
+     */
+    private List<NeighbourReference> rankedNeighbourOrder(Molecule molecule, Ranking ranking, Atom atom)
     {
         List<NeighbourReference> order = new ArrayList<>();
         if (atom.hydrogenCount().orElse(0) > 0)
@@ -87,11 +93,52 @@ public final class MoleculeComparator implements Comparator<Molecule>
         }
         bonds.sort(Comparator.<Bond>comparingInt(bond -> ranking.rankOf(bond.getOther(atom))).thenComparingInt(bond -> bond.order().ordinal()));
         order.addAll(bonds);
-
-        return molecule.chiralityOf(atom, order).orElse(null);
+        return order;
     }
 
-    // every bond, described by its endpoints' ranks rather than atom identity, sorted for a deterministic order
+    /**
+     * @return {@code atom}'s declared chirality, if any, reprojected onto its rank-ordered neighbours
+     */
+    private Chirality chiralityOf(Molecule molecule, Ranking ranking, Atom atom)
+    {
+        return molecule.chiralityOf(atom, rankedNeighbourOrder(molecule, ranking, atom)).orElse(null);
+    }
+
+    /**
+     * @return {@code bond}'s declared stereo configuration, if any, reprojected onto its
+     *     endpoints' rank-ordered reference substituents (the first ranked neighbour, other
+     *     than the bond itself, on each side); {@code null} if either endpoint has no other
+     *     substituent to use as one
+     */
+    private DoubleBondStereo doubleBondStereoOf(Molecule molecule, Ranking ranking, Bond bond)
+    {
+        NeighbourReference firstReference = firstOtherThan(rankedNeighbourOrder(molecule, ranking, bond.first()), bond);
+        NeighbourReference secondReference = firstOtherThan(rankedNeighbourOrder(molecule, ranking, bond.second()), bond);
+        if (firstReference == null || secondReference == null)
+        {
+            return null;
+        }
+        return molecule.doubleBondStereoOf(bond, firstReference, secondReference).orElse(null);
+    }
+
+    /**
+     * @return the first entry in {@code order} that isn't {@code excluded}, or {@code null} if there is none
+     */
+    private static NeighbourReference firstOtherThan(List<NeighbourReference> order, Bond excluded)
+    {
+        for (NeighbourReference candidate : order)
+        {
+            if (candidate != excluded)
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return every bond, described by its endpoints' ranks rather than atom identity, sorted deterministically
+     */
     private List<BondSignature> bondSignatures(Molecule molecule, Ranking ranking)
     {
         List<BondSignature> signatures = new ArrayList<>();
@@ -99,7 +146,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
         {
             int rankA = ranking.rankOf(bond.first());
             int rankB = ranking.rankOf(bond.second());
-            signatures.add(new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order()));
+            signatures.add(new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order(), doubleBondStereoOf(molecule, ranking, bond)));
         }
         signatures.sort(Comparator.naturalOrder());
         return signatures;
@@ -152,7 +199,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
         }
     }
 
-    private record BondSignature(int lowerRank, int higherRank, BondOrder order) implements Comparable<BondSignature>
+    private record BondSignature(int lowerRank, int higherRank, BondOrder order, DoubleBondStereo doubleBondStereo) implements Comparable<BondSignature>
     {
         @Override
         public int compareTo(BondSignature other)
@@ -167,7 +214,12 @@ public final class MoleculeComparator implements Comparator<Molecule>
             {
                 return diff;
             }
-            return order.compareTo(other.order);
+            diff = order.compareTo(other.order);
+            if (diff != 0)
+            {
+                return diff;
+            }
+            return Comparator.nullsFirst(Comparator.<DoubleBondStereo>naturalOrder()).compare(doubleBondStereo, other.doubleBondStereo);
         }
     }
 }

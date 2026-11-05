@@ -159,6 +159,97 @@ class MoleculeComparatorTest
     }
 
     @Nested
+    class DoubleBondStereoComparison
+    {
+        @Test
+        void treats_the_same_connectivity_with_opposite_declared_configuration_as_unequal()
+        {
+            // F/C=C/F (trans) vs F/C=C\F (cis)
+            Molecule trans = difluoroethene(DoubleBondStereo.OPPOSITE_SIDE);
+            Molecule cis = difluoroethene(DoubleBondStereo.SAME_SIDE);
+
+            assertThat(compare(trans, cis)).isNotZero();
+        }
+
+        @Test
+        void treats_the_same_declared_configuration_as_unequal_when_insertion_order_makes_it_mean_the_opposite_configuration()
+        {
+            // Cl/C(Br)=C/F: Ca's reference is Cl (added first)
+            // TODO SmilesWrites produces Cl/C(=C/F)Br instead...
+            Atom cl1 = Atom.organic("Cl");
+            Atom ca1 = Atom.organic("C");
+            Atom cb1 = Atom.organic("C");
+            Atom br1 = Atom.organic("Br");
+            Atom f1 = Atom.organic("F");
+            Molecule declaredRelativeToCl = new Molecule.Builder()
+                    .addAtoms(cl1, ca1, cb1, br1, f1)
+                    .addBond(ca1, cl1, BondOrder.SINGLE)
+                    .addBond(ca1, cb1, BondOrder.DOUBLE)
+                    .addBond(ca1, br1, BondOrder.SINGLE)
+                    .addBond(cb1, f1, BondOrder.SINGLE)
+                    .setDoubleBondStereo(ca1, cb1, DoubleBondStereo.OPPOSITE_SIDE)
+                    .build();
+
+            // Br/C(Cl)=C/F: Ca's reference is Br (added first here)
+            Atom br2 = Atom.organic("Br");
+            Atom ca2 = Atom.organic("C");
+            Atom cb2 = Atom.organic("C");
+            Atom cl2 = Atom.organic("Cl");
+            Atom f2 = Atom.organic("F");
+            Molecule declaredRelativeToBr = new Molecule.Builder()
+                    .addAtoms(br2, ca2, cb2, cl2, f2)
+                    .addBond(ca2, br2, BondOrder.SINGLE)
+                    .addBond(ca2, cb2, BondOrder.DOUBLE)
+                    .addBond(ca2, cl2, BondOrder.SINGLE)
+                    .addBond(cb2, f2, BondOrder.SINGLE)
+                    .setDoubleBondStereo(ca2, cb2, DoubleBondStereo.OPPOSITE_SIDE)
+                    .build();
+
+            assertThat(compare(declaredRelativeToCl, declaredRelativeToBr)).isNotZero();
+        }
+
+        @Test
+        void treats_the_same_declared_configuration_built_in_reverse_order_as_equal()
+        {
+            // Both represent F/C=C/F (trans), just built atom-by-atom in opposite order
+            Molecule forwards = difluoroethene(DoubleBondStereo.OPPOSITE_SIDE);
+            Molecule backwards = difluoroetheneBuiltBackwards(DoubleBondStereo.OPPOSITE_SIDE);
+
+            assertThat(compare(forwards, backwards)).isZero();
+        }
+
+        private Molecule difluoroethene(DoubleBondStereo stereo)
+        {
+            Atom f1 = Atom.organic("F");
+            Atom ca = Atom.organic("C");
+            Atom cb = Atom.organic("C");
+            Atom f2 = Atom.organic("F");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(f1, ca, cb, f2)
+                .addBond(f1, ca, BondOrder.SINGLE)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(cb, f2, BondOrder.SINGLE);
+            builder.setDoubleBondStereo(ca, cb, stereo);
+            return builder.build();
+        }
+
+        private Molecule difluoroetheneBuiltBackwards(DoubleBondStereo stereo)
+        {
+            Atom f2 = Atom.organic("F");
+            Atom cb = Atom.organic("C");
+            Atom ca = Atom.organic("C");
+            Atom f1 = Atom.organic("F");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(f2, cb, ca, f1)
+                .addBond(cb, f2, BondOrder.SINGLE)
+                .addBond(ca, cb, BondOrder.DOUBLE)
+                .addBond(f1, ca, BondOrder.SINGLE);
+            builder.setDoubleBondStereo(ca, cb, stereo);
+            return builder.build();
+        }
+    }
+
+    @Nested
     class TotalOrdering
     {
         @Test
