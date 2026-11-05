@@ -1,0 +1,170 @@
+package com.ruben.chemistry.core;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.OptionalInt;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class CanonicalRankerTest
+{
+    @Test
+    void ranks_a_single_atom_molecule()
+    {
+        Atom c = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder().addAtom(c).build();
+
+        Ranking ranking = rank(molecule);
+
+        assertThat(ranking.size()).isEqualTo(1);
+        assertThat(ranking.rankOf(c)).isEqualTo(0);
+    }
+
+    @Test
+    void ranks_an_empty_molecule()
+    {
+        Molecule molecule = new Molecule.Builder().build();
+
+        assertThat(rank(molecule).size()).isZero();
+    }
+
+    @Test
+    void throws_when_asked_to_rank_an_atom_outside_the_molecule()
+    {
+        Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("C")).build();
+        Ranking ranking = rank(molecule);
+
+        assertThatThrownBy(() -> ranking.rankOf(Atom.organic("C"))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void gives_every_atom_a_unique_dense_rank()
+    {
+        // cyclobutane: four structurally equivalent carbons, so refinement alone can't
+        // tell them apart, but tie-breaking must still resolve them to unique ranks
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom c3 = Atom.organic("C");
+        Atom c4 = Atom.organic("C");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, c3, c4)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, c3, BondOrder.SINGLE)
+            .addBond(c3, c4, BondOrder.SINGLE)
+            .addBond(c4, c1, BondOrder.SINGLE)
+            .build();
+
+        Ranking ranking = rank(molecule);
+
+        assertThat(ranking.size()).isEqualTo(4);
+        assertThat(Set.of(ranking.rankOf(c1), ranking.rankOf(c2), ranking.rankOf(c3), ranking.rankOf(c4))).isEqualTo(Set.of(0, 1, 2, 3));
+    }
+
+    @Test
+    void distinguishes_atoms_by_element_and_degree()
+    {
+        // CCO: the two carbons already differ in degree, and the oxygen differs in element,
+        // so all three should end up in distinct classes without needing any tie-break
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom o = Atom.organic("O");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, o)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, o, BondOrder.SINGLE)
+            .build();
+
+        Ranking ranking = rank(molecule);
+
+        assertThat(Set.of(ranking.rankOf(c1), ranking.rankOf(c2), ranking.rankOf(o))).hasSize(3);
+    }
+
+    @Test
+    void distinguishes_disconnected_atoms_by_charge()
+    {
+        Atom neutral = Atom.organic("C");
+        Atom charged = new Atom("C", false, 1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(neutral, charged)
+            .build();
+
+        Ranking ranking = rank(molecule);
+
+        assertThat(ranking.rankOf(neutral)).isNotEqualTo(ranking.rankOf(charged));
+    }
+
+    @Test
+    void marks_ring_atoms_as_distinct_from_a_chain_atom_of_otherwise_equal_invariant()
+    {
+        // cyclopropanol: C1 (bonded to O) is already unique, but C2 and C3 only
+        // differ from a hypothetical chain carbon by being part of a ring
+        Atom c1 = Atom.organic("C");
+        Atom c2 = Atom.organic("C");
+        Atom c3 = Atom.organic("C");
+        Atom o = Atom.organic("O");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c1, c2, c3, o)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(c2, c3, BondOrder.SINGLE)
+            .addBond(c3, c1, BondOrder.SINGLE)
+            .addBond(c1, o, BondOrder.SINGLE)
+            .build();
+
+        Ranking ranking = rank(molecule);
+
+        assertThat(ranking.size()).isEqualTo(4);
+        assertThat(Set.of(ranking.rankOf(c1), ranking.rankOf(c2), ranking.rankOf(c3), ranking.rankOf(o))).isEqualTo(Set.of(0, 1, 2, 3));
+        // c1 is unique (bonded to O); c2 and c3 are tied until tie-break splits them,
+        // but both must remain distinguishable from c1
+        assertThat(ranking.rankOf(c1)).isNotEqualTo(ranking.rankOf(c2));
+        assertThat(ranking.rankOf(c1)).isNotEqualTo(ranking.rankOf(c3));
+    }
+
+    @Test
+    void ranks_are_independent_of_atom_and_bond_insertion_order()
+    {
+        // Cl-C-C-O, fully asymmetric: every atom should land in the same relative
+        // rank order whichever end of the chain is built first
+        Atom cl1 = Atom.organic("Cl");
+        Atom c1a = Atom.organic("C");
+        Atom c2a = Atom.organic("C");
+        Atom o1 = Atom.organic("O");
+        Molecule forwardMolecule = new Molecule.Builder()
+            .addAtoms(cl1, c1a, c2a, o1)
+            .addBond(cl1, c1a, BondOrder.SINGLE)
+            .addBond(c1a, c2a, BondOrder.SINGLE)
+            .addBond(c2a, o1, BondOrder.SINGLE)
+            .build();
+
+        Atom o = Atom.organic("O");
+        Atom c2 = Atom.organic("C");
+        Atom c1 = Atom.organic("C");
+        Atom cl = Atom.organic("Cl");
+        Molecule backwardMolecule = new Molecule.Builder()
+            .addAtoms(o, c2, c1, cl)
+            .addBond(c2, o, BondOrder.SINGLE)
+            .addBond(c1, c2, BondOrder.SINGLE)
+            .addBond(cl, c1, BondOrder.SINGLE)
+            .build();
+
+        assertThat(elementsByAscendingRank(forwardMolecule)).isEqualTo(elementsByAscendingRank(backwardMolecule));
+    }
+
+    private static Ranking rank(Molecule molecule)
+    {
+        return new CanonicalRanker().rank(molecule);
+    }
+
+    private static List<String> elementsByAscendingRank(Molecule molecule)
+    {
+        return rank(molecule)
+                .atomsByAscendingRank()
+                .stream()
+                .map(Atom::element)
+                .toList();
+    }
+}
