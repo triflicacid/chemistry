@@ -3,7 +3,6 @@ package com.ruben.chemistry.core;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.OptionalInt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +27,7 @@ class AtomTest
     @Test
     void charged_atom_is_rendered_in_brackets()
     {
-        Atom atom = new Atom("O", false, -1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Atom atom = Atom.builder("O").charge(-1).build();
 
         assertThat(atom.toString()).isEqualTo("[O-]");
     }
@@ -36,7 +35,7 @@ class AtomTest
     @Test
     void single_unit_positive_charge_omits_the_magnitude()
     {
-        Atom atom = new Atom("N", false, 1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Atom atom = Atom.builder("N").charge(1).build();
 
         assertThat(atom.toString()).isEqualTo("[N+]");
     }
@@ -44,7 +43,7 @@ class AtomTest
     @Test
     void single_unit_negative_charge_omits_the_magnitude()
     {
-        Atom atom = new Atom("N", false, -1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Atom atom = Atom.builder("N").charge(-1).build();
 
         assertThat(atom.toString()).isEqualTo("[N-]");
     }
@@ -52,7 +51,7 @@ class AtomTest
     @Test
     void multi_unit_positive_charge_includes_the_magnitude()
     {
-        Atom atom = new Atom("Mg", false, 2, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Atom atom = Atom.builder("Mg").charge(2).build();
 
         assertThat(atom.toString()).isEqualTo("[Mg+2]");
     }
@@ -60,7 +59,7 @@ class AtomTest
     @Test
     void multi_unit_negative_charge_includes_the_magnitude()
     {
-        Atom atom = new Atom("O", false, -2, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Atom atom = Atom.builder("O").charge(-2).build();
 
         assertThat(atom.toString()).isEqualTo("[O-2]");
     }
@@ -68,7 +67,7 @@ class AtomTest
     @Test
     void single_hydrogen_count_renders_without_a_number()
     {
-        Atom atom = new Atom("N", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+        Atom atom = Atom.builder("N").hydrogenCount(1).build();
 
         assertThat(atom.toString()).isEqualTo("[NH]");
     }
@@ -76,7 +75,7 @@ class AtomTest
     @Test
     void multiple_hydrogen_count_renders_with_a_number()
     {
-        Atom atom = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(3), OptionalInt.empty());
+        Atom atom = Atom.builder("C").hydrogenCount(3).build();
 
         assertThat(atom.toString()).isEqualTo("[CH3]");
     }
@@ -84,7 +83,7 @@ class AtomTest
     @Test
     void zero_hydrogen_count_renders_as_no_hydrogens_at_all()
     {
-        Atom atom = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(0), OptionalInt.empty());
+        Atom atom = Atom.builder("C").hydrogenCount(0).build();
 
         assertThat(atom.toString()).isEqualTo("[C]");
     }
@@ -92,7 +91,7 @@ class AtomTest
     @Test
     void isotope_is_rendered_as_a_prefix()
     {
-        Atom atom = new Atom("C", false, 0, OptionalInt.of(13), OptionalInt.empty(), OptionalInt.empty());
+        Atom atom = Atom.builder("C").isotope(13).build();
 
         assertThat(atom.toString()).isEqualTo("[13C]");
     }
@@ -100,7 +99,7 @@ class AtomTest
     @Test
     void atom_class_is_rendered_as_a_colon_suffix()
     {
-        Atom atom = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.of(1));
+        Atom atom = Atom.builder("C").atomClass(1).build();
 
         assertThat(atom.toString()).isEqualTo("[C:1]");
     }
@@ -108,7 +107,7 @@ class AtomTest
     @Test
     void bracket_form_combines_isotope_symbol_hydrogens_charge_and_atom_class_in_order()
     {
-        Atom atom = new Atom("N", false, 1, OptionalInt.of(15), OptionalInt.of(1), OptionalInt.of(2));
+        Atom atom = Atom.builder("N").charge(1).isotope(15).hydrogenCount(1).atomClass(2).build();
 
         assertThat(atom.toString()).isEqualTo("[15NH+:2]");
     }
@@ -124,7 +123,7 @@ class AtomTest
     @Test
     void ring_closure_tokens_are_appended_after_bracket_form()
     {
-        Atom atom = new Atom("O", false, -1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Atom atom = Atom.builder("O").charge(-1).build();
 
         assertThat(atom.toString(List.of("1"), null)).isEqualTo("[O-]1");
     }
@@ -132,7 +131,7 @@ class AtomTest
     @Test
     void chirality_token_is_rendered_immediately_after_the_symbol()
     {
-        Atom atom = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+        Atom atom = Atom.builder("C").hydrogenCount(1).build();
 
         assertThat(atom.toString(List.of(), Chirality.ANTICLOCKWISE)).isEqualTo("[C@H]");
     }
@@ -140,7 +139,7 @@ class AtomTest
     @Test
     void double_chirality_token_renders_as_at_at()
     {
-        Atom atom = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+        Atom atom = Atom.builder("C").hydrogenCount(1).build();
 
         assertThat(atom.toString(List.of(), Chirality.CLOCKWISE)).isEqualTo("[C@@H]");
     }

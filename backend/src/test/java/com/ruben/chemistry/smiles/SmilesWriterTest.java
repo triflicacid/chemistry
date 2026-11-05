@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.OptionalInt;
 
 import static com.ruben.chemistry.smiles.SmilesWriter.write;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -207,7 +206,7 @@ class SmilesWriterTest
     void writes_a_bracketed_atom_for_a_charge()
     {
         Molecule molecule = new Molecule.Builder()
-            .addAtom(new Atom("O", false, -1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty()))
+            .addAtom(Atom.builder("O").charge(-1).build())
             .build();
 
         assertThat(write(molecule)).isEqualTo("[O-]");
@@ -217,7 +216,7 @@ class SmilesWriterTest
     void writes_a_bracketed_atom_for_an_isotope()
     {
         Molecule molecule = new Molecule.Builder()
-            .addAtom(new Atom("C", false, 0, OptionalInt.of(13), OptionalInt.empty(), OptionalInt.empty()))
+            .addAtom(Atom.builder("C").isotope(13).build())
             .build();
 
         assertThat(write(molecule)).isEqualTo("[13C]");
@@ -227,7 +226,7 @@ class SmilesWriterTest
     void writes_a_bracketed_atom_for_an_explicit_hydrogen_count()
     {
         Molecule molecule = new Molecule.Builder()
-            .addAtom(new Atom("N", false, 0, OptionalInt.empty(), OptionalInt.of(2), OptionalInt.empty()))
+            .addAtom(Atom.builder("N").hydrogenCount(2).build())
             .build();
 
         assertThat(write(molecule)).isEqualTo("[NH2]");
@@ -317,7 +316,7 @@ class SmilesWriterTest
             // order has the arriving bond from N before the implicit hydrogen, an odd
             // reordering, so the declared chirality must be flipped when written
             Atom n = Atom.organic("N");
-            Atom c = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+            Atom c = Atom.builder("C").hydrogenCount(1).build();
             Atom br = Atom.organic("Br");
             Atom cl = Atom.organic("Cl");
             Molecule.Builder builder = new Molecule.Builder()
@@ -337,7 +336,7 @@ class SmilesWriterTest
             // a root stereocentre has no arriving bond, so the written order (implicit
             // hydrogen, then bonds in declaration order) exactly matches the declared
             // order, leaving the chirality unchanged
-            Atom c = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+            Atom c = Atom.builder("C").hydrogenCount(1).build();
             Atom n = Atom.organic("N");
             Atom br = Atom.organic("Br");
             Atom cl = Atom.organic("Cl");
@@ -384,7 +383,7 @@ class SmilesWriterTest
         void omits_the_chirality_marker_when_rendering_is_disabled()
         {
             Atom n = Atom.organic("N");
-            Atom c = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+            Atom c = Atom.builder("C").hydrogenCount(1).build();
             Atom br = Atom.organic("Br");
             Atom cl = Atom.organic("Cl");
             Molecule.Builder builder = new Molecule.Builder()

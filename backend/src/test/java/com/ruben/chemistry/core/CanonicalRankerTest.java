@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.OptionalInt;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,7 +86,7 @@ class CanonicalRankerTest
     void distinguishes_disconnected_atoms_by_charge()
     {
         Atom neutral = Atom.organic("C");
-        Atom charged = new Atom("C", false, 1, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        Atom charged = Atom.builder("C").charge(1).build();
         Molecule molecule = new Molecule.Builder()
             .addAtoms(neutral, charged)
             .build();

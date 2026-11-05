@@ -44,6 +44,15 @@ public record Atom(
         return new Atom(element, aromatic, 0, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
     }
 
+    /**
+     * @param element the canonical element symbol
+     * @return a new builder for an atom with no charge, isotope, hydrogen count, or atom class
+     */
+    public static Builder builder(String element)
+    {
+        return new Builder(element);
+    }
+
     @Override
     public String toString()
     {
@@ -103,5 +112,73 @@ public record Atom(
             text.append(ringClosureToken);
         }
         return text.toString();
+    }
+
+    public static final class Builder
+    {
+        private final String element;
+        private boolean aromatic;
+        private int charge;
+        private OptionalInt isotope = OptionalInt.empty();
+        private OptionalInt hydrogenCount = OptionalInt.empty();
+        private OptionalInt atomClass = OptionalInt.empty();
+
+        private Builder(String element)
+        {
+            this.element = element;
+        }
+
+        public Builder aromatic(boolean aromatic)
+        {
+            this.aromatic = aromatic;
+            return this;
+        }
+
+        public Builder charge(int charge)
+        {
+            this.charge = charge;
+            return this;
+        }
+
+        public Builder isotope(int isotope)
+        {
+            this.isotope = OptionalInt.of(isotope);
+            return this;
+        }
+
+        public Builder isotope(OptionalInt isotope)
+        {
+            this.isotope = isotope;
+            return this;
+        }
+
+        public Builder hydrogenCount(int hydrogenCount)
+        {
+            this.hydrogenCount = OptionalInt.of(hydrogenCount);
+            return this;
+        }
+
+        public Builder hydrogenCount(OptionalInt hydrogenCount)
+        {
+            this.hydrogenCount = hydrogenCount;
+            return this;
+        }
+
+        public Builder atomClass(int atomClass)
+        {
+            this.atomClass = OptionalInt.of(atomClass);
+            return this;
+        }
+
+        public Builder atomClass(OptionalInt atomClass)
+        {
+            this.atomClass = atomClass;
+            return this;
+        }
+
+        public Atom build()
+        {
+            return new Atom(element, aromatic, charge, isotope, hydrogenCount, atomClass);
+        }
     }
 }

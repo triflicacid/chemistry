@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.OptionalInt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -118,7 +117,7 @@ class MoleculeTest
     class Chirality
     {
         // Stereocentre with one implicit hydrogen and three explicit substituents, bonded in this order.
-        private final Atom c = new Atom("C", false, 0, OptionalInt.empty(), OptionalInt.of(1), OptionalInt.empty());
+        private final Atom c = Atom.builder("C").hydrogenCount(1).build();
         private final Atom n = Atom.organic("N");
         private final Atom br = Atom.organic("Br");
         private final Atom cl = Atom.organic("Cl");
