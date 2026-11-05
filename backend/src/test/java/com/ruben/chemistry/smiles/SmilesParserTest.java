@@ -6,7 +6,6 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -581,7 +580,6 @@ class SmilesParserTest
         }
 
         @Test
-        @Disabled("ring closures aren't supported by the parser yet")
         void parses_directional_bonds_through_a_ring_closure()
         {
             // https://github.com/timvdm/OpenSMILES/blob/master/opensmiles.asciidoc
@@ -598,6 +596,24 @@ class SmilesParserTest
             assertThat(molecule.doubleBondStereoOf(molecule.bondBetween(a1, a2).orElseThrow())).contains(DoubleBondStereo.OPPOSITE_SIDE);
             assertThat(molecule.doubleBondStereoOf(molecule.bondBetween(a3, a4).orElseThrow())).contains(DoubleBondStereo.SAME_SIDE);
             assertThat(molecule.doubleBondStereoOf(molecule.bondBetween(a5, a6).orElseThrow())).contains(DoubleBondStereo.SAME_SIDE);
+        }
+
+        @Test
+        void parses_a_directional_ring_closure_bond_as_the_only_reference_on_one_side()
+        {
+            Molecule molecule = parse("C/1=C/CC\\1");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Bond doubleBond = molecule.bondBetween(atoms.get(0), atoms.get(1)).orElseThrow();
+            assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.SAME_SIDE);
+        }
+
+        @Test
+        void throws_when_a_ring_closure_bonds_direction_symbol_matches_its_opening_symbol()
+        {
+            assertThatThrownBy(() -> parse("C/1=CCC/1"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("must be the opposite");
         }
     }
 

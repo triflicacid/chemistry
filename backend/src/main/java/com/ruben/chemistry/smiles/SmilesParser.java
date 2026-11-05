@@ -98,10 +98,6 @@ public final class SmilesParser
             case BRANCH_OPEN -> parseBranchOpen(token);
             case BRANCH_CLOSE -> parseBranchClose(token);
             case DOT -> parseDot();
-            // TODO: a directional symbol ('/' or '\') adjacent to a ring-closure digit is
-            // accepted by parseRingBond below but not yet reconciled into a declared
-            // DoubleBondStereo - that needs its own ring-opening/ring-closing convention,
-            // mirroring SmilesWriter, separate from the tree-bond case recordDirectionalEdge handles.
             case RING_BOND -> parseRingBond(token);
             default -> throw new InvalidSmilesException("Unexpected token '" + token.text() + "'", source, token.position());
         }
@@ -391,6 +387,8 @@ public final class SmilesParser
             doubleBondPartnerOf.put(opened.atom(), previousAtom);
             doubleBondPartnerOf.put(previousAtom, opened.atom());
         }
+
+        registerRingClosureDirectionalEdges(opened.atom(), previousAtom, opened.bondSymbol(), symbolHere, token);
     }
 
     /**
@@ -402,18 +400,63 @@ public final class SmilesParser
      * @param second the other endpoint
      * @param closingToken the closing digit's token, for error reporting
      * @return the resolved bond order
-     * @throws InvalidSmilesException if both symbols are present and don't match
+     * @throws InvalidSmilesException if both symbols are present and resolve to different orders
      */
     private BondOrder resolveRingBondOrder(String openingSymbol, String closingSymbol, Atom first, Atom second, Token closingToken)
     {
-        if (openingSymbol != null && closingSymbol != null && !openingSymbol.equals(closingSymbol))
+        BondOrder openingOrder = openingSymbol != null ? bondOrderOf(openingSymbol) : null;
+        BondOrder closingOrder = closingSymbol != null ? bondOrderOf(closingSymbol) : null;
+
+        if (openingOrder != null && closingOrder != null && openingOrder != closingOrder)
         {
             throw new InvalidSmilesException("Ring closure bond symbol '" + closingSymbol
                 + "' does not match its opening symbol '" + openingSymbol + "'", source, closingToken.position());
         }
 
-        String symbol = openingSymbol != null ? openingSymbol : closingSymbol;
-        return symbol != null ? bondOrderOf(symbol) : BondOrder.inferredBetween(first, second);
+        if (openingOrder != null)
+        {
+            return openingOrder;
+        }
+        return closingOrder != null ? closingOrder : BondOrder.inferredBetween(first, second);
+    }
+
+    /**
+     * Registers directional edges for a just-closed ring-closure bond, if either of its two
+     * occurrences had a directional symbol, then attempts to reconcile any double bond either
+     * atom belongs to.
+     *
+     * @param openingAtom the atom the ring closure was opened on
+     * @param closingAtom the atom the ring closure was closed on
+     * @param openingSymbol the bond symbol written at the opening occurrence, or {@code null}
+     * @param closingSymbol the bond symbol written at the closing occurrence, or {@code null}
+     * @param closingToken the closing digit's token, for error reporting
+     * @throws InvalidSmilesException if both occurrences are directional with the same character
+     */
+    private void registerRingClosureDirectionalEdges(Atom openingAtom, Atom closingAtom, String openingSymbol, String closingSymbol, Token closingToken)
+    {
+        boolean openingIsDirectional = isDirectional(openingSymbol);
+        boolean closingIsDirectional = isDirectional(closingSymbol);
+        if (!openingIsDirectional && !closingIsDirectional)
+        {
+            return;
+        }
+        if (openingIsDirectional && closingIsDirectional && openingSymbol.charAt(0) == closingSymbol.charAt(0))
+        {
+            throw new InvalidSmilesException("Ring closure direction symbol '" + closingSymbol
+                + "' must be the opposite of its opening symbol '" + openingSymbol + "', not the same", source, closingToken.position());
+        }
+
+        if (openingIsDirectional)
+        {
+            directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, openingSymbol.charAt(0), true));
+        }
+        if (closingIsDirectional)
+        {
+            directionalEdgeOf.put(closingAtom, new DirectionalEdge(openingAtom, closingSymbol.charAt(0), true));
+        }
+
+        reconcileIfDoubleBondAtom(openingAtom);
+        reconcileIfDoubleBondAtom(closingAtom);
     }
 
     /**
