@@ -1,0 +1,659 @@
+package com.ruben.chemistry.smiles;
+
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.InvalidSmilesException;
+import com.ruben.chemistry.core.Molecule;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class SmilesParserTest
+{
+    private static Molecule parse(String smiles)
+    {
+        return new SmilesParser(smiles).parse();
+    }
+
+    private static List<Atom> atomsOf(Molecule molecule)
+    {
+        List<Atom> atoms = new ArrayList<>();
+        molecule.atoms().forEach(atoms::add);
+        return atoms;
+    }
+
+    private static BondOrder orderBetween(Molecule molecule, Atom first, Atom second)
+    {
+        for (Bond bond : molecule.bondsOf(first))
+        {
+            if (bond.getOther(first) == second)
+            {
+                return bond.order();
+            }
+        }
+        throw new AssertionError("No bond between given atoms");
+    }
+
+    @Nested
+    class OrganicAtoms
+    {
+        @Test
+        void parses_a_single_atom()
+        {
+            Molecule molecule = parse("C");
+
+            assertThat(molecule.atomCount()).isEqualTo(1);
+            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("C");
+        }
+
+        @Test
+        void parses_a_chain_with_default_single_bonds()
+        {
+            Molecule molecule = parse("CCO");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(atoms).extracting(Atom::element).containsExactly("C", "C", "O");
+            assertThat(molecule.bondCount()).isEqualTo(2);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, atoms.get(1), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void parses_two_character_organic_atoms()
+        {
+            Molecule molecule = parse("ClBr");
+
+            assertThat(atomsOf(molecule)).extracting(Atom::element).containsExactly("Cl", "Br");
+        }
+
+        @Test
+        void parses_a_wildcard_atom()
+        {
+            Molecule molecule = parse("*");
+
+            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("*");
+        }
+
+        @Test
+        void parses_lowercase_organic_atoms_as_aromatic()
+        {
+            Molecule molecule = parse("c");
+
+            assertThat(atomsOf(molecule).getFirst().aromatic()).isTrue();
+        }
+
+        @Test
+        void infers_an_aromatic_bond_between_two_aromatic_atoms()
+        {
+            Molecule molecule = parse("cc");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.AROMATIC);
+        }
+
+        @Test
+        void infers_a_single_bond_between_a_non_aromatic_atom_and_an_aromatic_atom()
+        {
+            Molecule molecule = parse("Cc");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
+        }
+    }
+
+    @Nested
+    class ExplicitBonds
+    {
+        @Test
+        void parses_a_double_bond()
+        {
+            Molecule molecule = parse("C=C");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.DOUBLE);
+        }
+
+        @Test
+        void parses_a_triple_bond()
+        {
+            Molecule molecule = parse("C#C");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.TRIPLE);
+        }
+
+        @Test
+        void parses_a_quadruple_bond()
+        {
+            Molecule molecule = parse("C$C");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.QUADRUPLE);
+        }
+
+        @Test
+        void parses_an_explicit_aromatic_bond()
+        {
+            Molecule molecule = parse("C:C");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.AROMATIC);
+        }
+
+        @Test
+        void an_explicit_single_bond_overrides_aromatic_inference()
+        {
+            Molecule molecule = parse("c-c");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void throws_for_a_directional_bond()
+        {
+            assertThatThrownBy(() -> parse("C/C"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Directional bonds are not yet supported");
+        }
+
+        @Test
+        void throws_when_a_bond_symbol_is_not_followed_by_an_atom()
+        {
+            assertThatThrownBy(() -> parse("C="))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Bond symbol not followed by an atom");
+        }
+
+        @Test
+        void throws_when_a_bond_symbol_has_no_preceding_atom()
+        {
+            assertThatThrownBy(() -> parse("=C"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Bond symbol not preceded by an atom");
+        }
+
+        @Test
+        void throws_when_a_bond_symbol_is_immediately_followed_by_an_unclosed_branch()
+        {
+            // the pending '=' is never attached to an atom, but the unmatched '(' is
+            // detected first since it is still open when the input is exhausted
+            assertThatThrownBy(() -> parse("C=("))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Unmatched '('");
+        }
+
+        @Test
+        void throws_when_a_bond_symbol_is_followed_by_an_empty_branch()
+        {
+            // the branch opens and closes with no atom in between, so the pending '='
+            // is still dangling once the branch is closed and the input is exhausted
+            assertThatThrownBy(() -> parse("C=()"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Bond symbol not followed by an atom");
+        }
+    }
+
+    @Nested
+    class Branches
+    {
+        @Test
+        void parses_a_simple_branch()
+        {
+            // CC(O)C : propan-2-ol skeleton
+            Molecule molecule = parse("CC(O)C");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Atom c1 = atoms.get(0);
+            Atom c2 = atoms.get(1);
+            Atom o = atoms.get(2);
+            Atom c3 = atoms.get(3);
+
+            assertThat(molecule.bondCount()).isEqualTo(3);
+            assertThat(orderBetween(molecule, c1, c2)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c2, o)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c2, c3)).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void parses_multiple_sibling_branches()
+        {
+            // C(F)(Cl)Br
+            Molecule molecule = parse("C(F)(Cl)Br");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Atom c = atoms.get(0);
+            Atom f = atoms.get(1);
+            Atom cl = atoms.get(2);
+            Atom br = atoms.get(3);
+
+            assertThat(molecule.bondCount()).isEqualTo(3);
+            assertThat(orderBetween(molecule, c, f)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c, cl)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c, br)).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void parses_nested_branches()
+        {
+            // CC(C(F)Cl)O
+            Molecule molecule = parse("CC(C(F)Cl)O");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Atom c1 = atoms.get(0);
+            Atom c2 = atoms.get(1);
+            Atom c3 = atoms.get(2);
+            Atom f = atoms.get(3);
+            Atom cl = atoms.get(4);
+            Atom o = atoms.get(5);
+
+            assertThat(orderBetween(molecule, c1, c2)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c2, c3)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c3, f)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c3, cl)).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, c2, o)).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void parses_a_branch_with_an_explicit_bond()
+        {
+            Molecule molecule = parse("C(=O)O");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Atom c = atoms.get(0);
+            Atom o1 = atoms.get(1);
+            Atom o2 = atoms.get(2);
+
+            assertThat(orderBetween(molecule, c, o1)).isEqualTo(BondOrder.DOUBLE);
+            assertThat(orderBetween(molecule, c, o2)).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void throws_when_a_branch_opens_with_no_preceding_atom()
+        {
+            assertThatThrownBy(() -> parse("(C)C"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Branch opened with no preceding atom");
+        }
+
+        @Test
+        void throws_for_an_unmatched_closing_parenthesis()
+        {
+            assertThatThrownBy(() -> parse("C)C"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Unmatched ')'");
+        }
+
+        @Test
+        void throws_for_an_unmatched_opening_parenthesis()
+        {
+            assertThatThrownBy(() -> parse("C(C"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Unmatched '('");
+        }
+    }
+
+    @Nested
+    class DisconnectedStructures
+    {
+        @Test
+        void parses_a_dot_as_disconnecting_two_fragments()
+        {
+            Molecule molecule = parse("C.O");
+
+            assertThat(molecule.atomCount()).isEqualTo(2);
+            assertThat(molecule.bondCount()).isZero();
+        }
+
+        @Test
+        void resumes_bonding_within_the_fragment_following_a_dot()
+        {
+            Molecule molecule = parse("CC.OC");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(molecule.bondCount()).isEqualTo(2);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, atoms.get(2), atoms.get(3))).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void throws_when_a_pending_bond_symbol_precedes_a_dot()
+        {
+            assertThatThrownBy(() -> parse("C=.C"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Bond symbol not followed by an atom");
+        }
+    }
+
+    @Nested
+    class BracketAtoms
+    {
+        @Test
+        void parses_a_bare_bracket_atom()
+        {
+            Molecule molecule = parse("[C]");
+
+            Atom atom = atomsOf(molecule).getFirst();
+            assertThat(atom.element()).isEqualTo("C");
+            assertThat(atom.charge()).isZero();
+            assertThat(atom.isotope()).isEmpty();
+            assertThat(atom.hydrogenCount()).hasValue(0);
+            assertThat(atom.atomClass()).isEmpty();
+        }
+
+        @Test
+        void parses_an_isotope()
+        {
+            Molecule molecule = parse("[13C]");
+
+            assertThat(atomsOf(molecule).getFirst().isotope()).hasValue(13);
+        }
+
+        @Test
+        void parses_an_implicit_single_hydrogen()
+        {
+            Molecule molecule = parse("[CH]");
+
+            assertThat(atomsOf(molecule).getFirst().hydrogenCount()).hasValue(1);
+        }
+
+        @Test
+        void parses_an_explicit_hydrogen_count()
+        {
+            Molecule molecule = parse("[CH4]");
+
+            assertThat(atomsOf(molecule).getFirst().hydrogenCount()).hasValue(4);
+        }
+
+        @Test
+        void parses_a_charge_from_a_single_sign_and_a_number()
+        {
+            Molecule molecule = parse("[N+3]");
+
+            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(3);
+        }
+
+        @Test
+        void parses_a_charge_from_a_single_sign_with_no_number()
+        {
+            Molecule molecule = parse("[NH4+]");
+
+            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(1);
+        }
+
+        @Test
+        void parses_a_negative_charge()
+        {
+            Molecule molecule = parse("[O-]");
+
+            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(-1);
+        }
+
+        @Test
+        void parses_a_charge_from_repeated_signs()
+        {
+            Molecule molecule = parse("[Fe++]");
+
+            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(2);
+        }
+
+        @Test
+        void parses_an_atom_class()
+        {
+            Molecule molecule = parse("[CH4:1]");
+
+            assertThat(atomsOf(molecule).getFirst().atomClass()).hasValue(1);
+        }
+
+        @Test
+        void parses_all_bracket_fields_together_in_order()
+        {
+            Molecule molecule = parse("[13CH3+:5]");
+
+            Atom atom = atomsOf(molecule).getFirst();
+            assertThat(atom.isotope()).hasValue(13);
+            assertThat(atom.element()).isEqualTo("C");
+            assertThat(atom.hydrogenCount()).hasValue(3);
+            assertThat(atom.charge()).isEqualTo(1);
+            assertThat(atom.atomClass()).hasValue(5);
+        }
+
+        @Test
+        void parses_a_multi_letter_element_symbol()
+        {
+            Molecule molecule = parse("[Fe]");
+
+            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("Fe");
+        }
+
+        @Test
+        void parses_a_bracketed_aromatic_extension_element()
+        {
+            Molecule molecule = parse("[se]");
+
+            Atom atom = atomsOf(molecule).getFirst();
+            assertThat(atom.element()).isEqualTo("Se");
+            assertThat(atom.aromatic()).isTrue();
+        }
+
+        @Test
+        void parses_a_bracketed_wildcard_atom()
+        {
+            Molecule molecule = parse("[*]");
+
+            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("*");
+        }
+
+        @Test
+        void bonds_a_bracket_atom_to_the_preceding_atom()
+        {
+            Molecule molecule = parse("C[O-]");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(molecule.bondCount()).isEqualTo(1);
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void throws_when_the_bracket_is_not_closed()
+        {
+            assertThatThrownBy(() -> parse("[C"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Expected ']' to close bracket atom");
+        }
+
+        @Test
+        void throws_when_no_element_symbol_is_present()
+        {
+            assertThatThrownBy(() -> parse("[+]"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Expected element symbol in bracket atom");
+        }
+
+        @Test
+        void throws_when_an_atom_class_colon_is_not_followed_by_a_number()
+        {
+            assertThatThrownBy(() -> parse("[CH4:]"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Expected a number after ':' in atom class");
+        }
+
+        @Test
+        void throws_when_bracket_contents_are_not_followed_by_a_closing_bracket()
+        {
+            assertThatThrownBy(() -> parse("[CH4"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Expected ']' to close bracket atom");
+        }
+    }
+
+    @Nested
+    class Chirality_
+    {
+        @Test
+        void stores_chirality_unchanged_for_a_root_stereocentre_with_no_implicit_hydrogen()
+        {
+            // the root atom has no preceding atom, so the written order already matches
+            // the stored order and no flip should occur
+            Molecule molecule = parse("[C@](N)(Br)(Cl)F");
+
+            Atom c = atomsOf(molecule).getFirst();
+            assertThat(molecule.chiralityOf(c)).contains(Chirality.ANTICLOCKWISE);
+        }
+
+        @Test
+        void flips_chirality_when_an_implicit_hydrogen_is_displaced_by_a_preceding_atom()
+        {
+            // a non-root stereocentre with an implicit hydrogen: the hydrogen moves from
+            // first (as written) to its fixed storage slot after the preceding atom's
+            // bond is accounted for, an odd reordering
+            Molecule molecule = parse("N[C@H](Br)Cl");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Atom c = atoms.get(1);
+            assertThat(molecule.chiralityOf(c)).contains(Chirality.CLOCKWISE);
+        }
+
+        @Test
+        void parses_the_clockwise_chirality_marker()
+        {
+            Molecule molecule = parse("[C@@](N)(Br)(Cl)F");
+
+            Atom c = atomsOf(molecule).getFirst();
+            assertThat(molecule.chiralityOf(c)).contains(Chirality.CLOCKWISE);
+        }
+
+        @Test
+        void does_not_record_chirality_when_no_marker_is_present()
+        {
+            Molecule molecule = parse("[CH4]");
+
+            Atom c = atomsOf(molecule).getFirst();
+            assertThat(molecule.chiralityOf(c)).isEmpty();
+        }
+    }
+
+    @Nested
+    class RingClosures
+    {
+        @Test
+        void throws_for_a_single_digit_ring_closure()
+        {
+            assertThatThrownBy(() -> parse("C1CC1"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Ring closures are not yet supported");
+        }
+
+        @Test
+        void throws_for_a_percent_prefixed_ring_closure()
+        {
+            assertThatThrownBy(() -> parse("C%12CC%12"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Ring closures are not yet supported");
+        }
+
+        // PLACEHOLDER rings not implemented
+        @Test
+        void throws_for_an_unpaired_ring_closure_digit()
+        {
+            // a single ring-bond digit with no matching partner; still expected to be
+            // rejected as "not yet supported" rather than any other kind of error, since
+            // ring closures are rejected as soon as they're encountered
+            assertThatThrownBy(() -> parse("C1"))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("Ring closures are not yet supported");
+        }
+    }
+
+    @Nested
+    class Errors
+    {
+        @Test
+        void throws_for_an_empty_string()
+        {
+            assertThatThrownBy(() -> parse(""))
+                .isInstanceOf(InvalidSmilesException.class)
+                .hasMessageContaining("SMILES string must not be empty");
+        }
+
+        @Test
+        void throws_for_an_unexpected_character()
+        {
+            assertThatThrownBy(() -> parse("?"))
+                .isInstanceOf(InvalidSmilesException.class);
+        }
+
+        @Test
+        void exception_carries_the_offending_source_position()
+        {
+            InvalidSmilesException exception = (InvalidSmilesException) catchParseException("CC)C");
+
+            assertThat(exception.position()).isEqualTo(2);
+            assertThat(exception.source()).isEqualTo("CC)C");
+        }
+
+        private Throwable catchParseException(String smiles)
+        {
+            try
+            {
+                parse(smiles);
+                throw new AssertionError("Expected parsing to throw");
+            }
+            catch (InvalidSmilesException e)
+            {
+                return e;
+            }
+        }
+    }
+
+    @Nested
+    class RealWorldMolecules
+    {
+        @Test
+        void parses_ethanol()
+        {
+            Molecule molecule = parse("CCO");
+
+            assertThat(molecule.atomCount()).isEqualTo(3);
+            assertThat(molecule.bondCount()).isEqualTo(2);
+        }
+
+        @Test
+        void parses_acetic_acid()
+        {
+            Molecule molecule = parse("CC(=O)O");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(atoms).extracting(Atom::element).containsExactly("C", "C", "O", "O");
+            assertThat(orderBetween(molecule, atoms.get(1), atoms.get(2))).isEqualTo(BondOrder.DOUBLE);
+            assertThat(orderBetween(molecule, atoms.get(1), atoms.get(3))).isEqualTo(BondOrder.SINGLE);
+        }
+
+        @Test
+        void parses_benzene_without_ring_closure_as_a_chain_of_aromatic_atoms()
+        {
+            Molecule molecule = parse("cccccc");
+
+            assertThat(molecule.atomCount()).isEqualTo(6);
+            assertThat(molecule.bondCount()).isEqualTo(5);
+        }
+
+        @Test
+        void parses_triflic_acid()
+        {
+            Molecule molecule = parse("C(F)(F)(F)S(=O)(=O)O");
+
+            List<Atom> atoms = atomsOf(molecule);
+            assertThat(atoms).extracting(Atom::element)
+                .containsExactly("C", "F", "F", "F", "S", "O", "O", "O");
+            assertThat(molecule.bondCount()).isEqualTo(7);
+        }
+    }
+}
