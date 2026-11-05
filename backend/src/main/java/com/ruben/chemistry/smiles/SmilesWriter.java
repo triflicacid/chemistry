@@ -3,11 +3,15 @@ package com.ruben.chemistry.smiles;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.CanonicalRanker;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.Ranker;
+import com.ruben.chemistry.core.Ranking;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,12 +19,12 @@ import java.util.Set;
 
 /**
  * Serialises a {@link Molecule} to a SMILES string.
- * The output is not canonical, and depends on the order atoms and bonds were added to the molecule, so the
- * same molecule built differently can produce a different (but equally valid) SMILES string.
  * <p>
- * TODO: Take a canonicalisation option/strategy so callers can request a
- *     canonical atom ordering (e.g. Morgan/invariant-rank based) for deterministic,
- *     comparable output across differently-constructed but equivalent molecules.
+ * By default, the output is not canonical: it depends on the order atoms and bonds were added
+ * to the molecule, so the same molecule built differently can produce a different (but equally
+ * valid) SMILES string. Supplying a {@link Ranker} via {@link #setRanker} instead drives atom and
+ * branch ordering from its {@link Ranking}, giving deterministic output across differently-built
+ * but structurally equivalent molecules.
  */
 public final class SmilesWriter
 {
@@ -30,6 +34,8 @@ public final class SmilesWriter
     private final Map<Atom, List<Bond>> ringBondsOfAtom = new IdentityHashMap<>();
     private int nextRingNumber = 1;
     private boolean renderChirality = true;
+    private Ranker ranker;
+    private Ranking ranking;
 
     public SmilesWriter(Molecule molecule)
     {
@@ -48,7 +54,28 @@ public final class SmilesWriter
     }
 
     /**
-     * Writes a molecule as a SMILES string.
+     * @return the ranker driving atom and branch order, or {@code null} if using insertion order
+     */
+    public Ranker getRanker()
+    {
+        return ranker;
+    }
+
+    /**
+     * Supplies a ranker to drive deterministic atom and branch ordering, instead of the default
+     * insertion order. {@link CanonicalRanker} is the usual choice.
+     *
+     * @param ranker the ranker to use, or {@code null} to fall back to insertion order
+     * @return this writer, for chaining
+     */
+    public SmilesWriter setRanker(Ranker ranker)
+    {
+        this.ranker = ranker;
+        return this;
+    }
+
+    /**
+     * Writes a molecule as a SMILES string, in insertion order.
      *
      * @param molecule the molecule to write
      * @return the SMILES string, with disconnected fragments separated by {@code .}
@@ -59,19 +86,33 @@ public final class SmilesWriter
     }
 
     /**
+     * Writes a molecule as a SMILES string, with deterministic atom and branch ordering
+     * driven by a {@link CanonicalRanker}.
+     *
+     * @param molecule the molecule to write
+     * @return the SMILES string, with disconnected fragments separated by {@code .}
+     */
+    public static String writeCanonical(Molecule molecule)
+    {
+        return new SmilesWriter(molecule).setRanker(new CanonicalRanker()).write();
+    }
+
+    /**
      * Writes the molecule as a SMILES string.
      *
      * @return the SMILES string, with disconnected fragments separated by {@code .}
      */
     public String write()
     {
+        ranking = ranker == null ? null : ranker.rank(molecule);
+
         for (Atom atom : molecule.atoms())
         {
             ringBondsOfAtom.put(atom, new ArrayList<>());
         }
 
         // First pass: walk the graph purely to assign ring numbers
-        for (Atom atom : molecule.atoms())
+        for (Atom atom : rootAtoms())
         {
             if (!visited.contains(atom))
             {
@@ -83,7 +124,7 @@ public final class SmilesWriter
         visited.clear();
 
         StringBuilder text = new StringBuilder();
-        for (Atom atom : molecule.atoms())
+        for (Atom atom : rootAtoms())
         {
             if (!visited.contains(atom))
             {
@@ -98,6 +139,42 @@ public final class SmilesWriter
     }
 
     /**
+     * @return the molecule's atoms, in the order fragments should be visited and rooted
+     */
+    private List<Atom> rootAtoms()
+    {
+        if (ranking == null)
+        {
+            List<Atom> atoms = new ArrayList<>();
+            for (Atom atom : molecule.atoms())
+            {
+                atoms.add(atom);
+            }
+            return atoms;
+        }
+        return ranking.atomsByAscendingRank();
+    }
+
+    /**
+     * @param atom the atom whose incident bonds are required
+     * @return {@code atom}'s incident bonds, in the order they should be considered as branches
+     */
+    private List<Bond> orderedBondsOf(Atom atom)
+    {
+        List<Bond> bonds = new ArrayList<>();
+        for (Bond bond : molecule.bondsOf(atom))
+        {
+            bonds.add(bond);
+        }
+        if (ranking != null)
+        {
+            // stable sort: ties fall back to the original bondsOf order
+            bonds.sort(Comparator.comparingInt(bond -> ranking.rankOf(bond.getOther(atom))));
+        }
+        return bonds;
+    }
+
+    /**
      * Depth-first traversal that assigns ring numbers to back-edge bonds: bonds that
      * reach an already-visited atom, i.e. bonds not part of the spanning tree rooted
      * at the first atom visited in each fragment.
@@ -109,7 +186,7 @@ public final class SmilesWriter
     {
         visited.add(atom);
 
-        for (Bond bond : molecule.bondsOf(atom))
+        for (Bond bond : orderedBondsOf(atom))
         {
             if (bond == arrivingBond)
             {
@@ -153,7 +230,7 @@ public final class SmilesWriter
 
         // Ring bonds are already represented by numbers, so don't consider them as branches
         List<Bond> branches = new ArrayList<>();
-        for (Bond bond : molecule.bondsOf(atom))
+        for (Bond bond : orderedBondsOf(atom))
         {
             if (bond == arrivingBond || ringNumberOfBond.containsKey(bond))
             {

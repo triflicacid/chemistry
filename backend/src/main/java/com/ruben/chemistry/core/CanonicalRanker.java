@@ -11,11 +11,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 /**
- * Assigns each atom of a {@link Molecule} a dense {@code 0..atomCount-1} rank, based solely
- * on each atom's own properties and its position in the bond graph. Two atoms that play the
- * same structural role always end up with the same rank, regardless of the order atoms and
- * bonds were added to the molecule.
- * <p>
  * Uses Morgan-style iterative refinement (atoms are split into classes by invariant, then
  * repeatedly re-split by their neighbours' classes until the partition stops getting finer),
  * followed by deterministic tie-breaking for any atoms refinement alone can't distinguish.

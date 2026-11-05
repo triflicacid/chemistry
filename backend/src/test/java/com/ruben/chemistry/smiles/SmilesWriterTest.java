@@ -4,13 +4,18 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.Ranker;
+import com.ruben.chemistry.core.Ranking;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.OptionalInt;
 
 import static com.ruben.chemistry.smiles.SmilesWriter.write;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class SmilesWriterTest
 {
@@ -244,6 +249,62 @@ class SmilesWriterTest
         Molecule molecule = new Molecule.Builder().build();
 
         assertThat(write(molecule)).isEmpty();
+    }
+
+    @Nested
+    class RankerDrivenOrdering
+    {
+        @Test
+        void orders_branches_by_the_supplied_rankers_rank_instead_of_bond_insertion_order()
+        {
+            // C bonded to O then N, so default insertion order would write O before N; a
+            // ranker that ranks N below O should flip the branch order
+            Atom c = Atom.organic("C");
+            Atom o = Atom.organic("O");
+            Atom n = Atom.organic("N");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c, o, n)
+                .addBond(c, o, BondOrder.SINGLE)
+                .addBond(c, n, BondOrder.SINGLE)
+                .build();
+
+            Ranking ranking = mock(Ranking.class);
+            when(ranking.rankOf(c)).thenReturn(0);
+            when(ranking.rankOf(n)).thenReturn(1);
+            when(ranking.rankOf(o)).thenReturn(2);
+            when(ranking.atomsByAscendingRank()).thenReturn(List.of(c, n, o));
+
+            Ranker ranker = mock(Ranker.class);
+            when(ranker.rank(molecule)).thenReturn(ranking);
+
+            String smiles = new SmilesWriter(molecule).setRanker(ranker).write();
+
+            assertThat(smiles).isEqualTo("C(N)O");
+        }
+
+        @Test
+        void roots_each_fragment_at_the_rankers_lowest_ranked_unvisited_atom()
+        {
+            // two disconnected single atoms; insertion order would write C first, but a
+            // ranker that ranks O below C should flip the fragment order
+            Atom c = Atom.organic("C");
+            Atom o = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c, o)
+                .build();
+
+            Ranking ranking = mock(Ranking.class);
+            when(ranking.rankOf(c)).thenReturn(1);
+            when(ranking.rankOf(o)).thenReturn(0);
+            when(ranking.atomsByAscendingRank()).thenReturn(List.of(o, c));
+
+            Ranker ranker = mock(Ranker.class);
+            when(ranker.rank(molecule)).thenReturn(ranking);
+
+            String smiles = new SmilesWriter(molecule).setRanker(ranker).write();
+
+            assertThat(smiles).isEqualTo("O.C");
+        }
     }
 
     @Nested
