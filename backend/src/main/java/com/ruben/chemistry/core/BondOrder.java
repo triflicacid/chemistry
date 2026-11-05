@@ -42,4 +42,14 @@ public enum BondOrder
         }
         throw new IllegalArgumentException("Unrecognised bond symbol '" + symbol + "'");
     }
+
+    /**
+     * @param first one endpoint atom
+     * @param second the other endpoint atom
+     * @return {@link #AROMATIC} if both atoms are aromatic, otherwise {@link #SINGLE}
+     */
+    public static BondOrder inferredBetween(Atom first, Atom second)
+    {
+        return first.aromatic() && second.aromatic() ? AROMATIC : SINGLE;
+    }
 }

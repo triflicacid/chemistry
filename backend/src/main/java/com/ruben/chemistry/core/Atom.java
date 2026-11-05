@@ -1,5 +1,6 @@
 package com.ruben.chemistry.core;
 
+import java.util.List;
 import java.util.OptionalInt;
 
 /**
@@ -35,37 +36,55 @@ public record Atom(
     @Override
     public String toString()
     {
+        return toString(List.of());
+    }
+
+    /**
+     * Renders this atom as a SMILES token, followed by the given ring-closure tokens.
+     *
+     * @param ringClosureTokens the pre-formatted ring-closure tokens to append, e.g. {@code "1"} or {@code "%12"}
+     */
+    public String toString(List<String> ringClosureTokens)
+    {
         String symbol = element.equals("*") ? element : aromatic ? element.toLowerCase() : element;
 
+        StringBuilder text = new StringBuilder();
         if (charge == 0 && isotope.isEmpty() && hydrogenCount.isEmpty() && atomClass.isEmpty())
         {
-            return symbol;
+            text.append(symbol);
         }
-
-        StringBuilder text = new StringBuilder("[");
-        isotope.ifPresent(text::append);
-        text.append(symbol);
-        hydrogenCount.ifPresent(count ->
+        else
         {
-            if (count > 0)
+            text.append('[');
+            isotope.ifPresent(text::append);
+            text.append(symbol);
+            hydrogenCount.ifPresent(count ->
             {
-                text.append('H');
-                if (count > 1)
+                if (count > 0)
                 {
-                    text.append(count);
+                    text.append('H');
+                    if (count > 1)
+                    {
+                        text.append(count);
+                    }
+                }
+            });
+            if (charge != 0)
+            {
+                text.append(charge > 0 ? '+' : '-');
+                if (Math.abs(charge) > 1)
+                {
+                    text.append(Math.abs(charge));
                 }
             }
-        });
-        if (charge != 0)
-        {
-            text.append(charge > 0 ? '+' : '-');
-            if (Math.abs(charge) > 1)
-            {
-                text.append(Math.abs(charge));
-            }
+            atomClass.ifPresent(atomClassNumber -> text.append(':').append(atomClassNumber));
+            text.append(']');
         }
-        atomClass.ifPresent(atomClassNumber -> text.append(':').append(atomClassNumber));
-        text.append(']');
+
+        for (String ringClosureToken : ringClosureTokens)
+        {
+            text.append(ringClosureToken);
+        }
         return text.toString();
     }
 }
