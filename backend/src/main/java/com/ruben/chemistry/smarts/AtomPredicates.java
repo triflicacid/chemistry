@@ -57,4 +57,18 @@ public final class AtomPredicates
         }
         return false;
     }
+
+    /**
+     * @param template the atom to match exactly
+     * @return a predicate matching an atom with the same element, aromaticity, charge, isotope, hydrogens etc.
+     */
+    public static AtomPredicate exactly(Atom template)
+    {
+        return (molecule, atom) ->
+            atom.element().equals(template.element())
+                && atom.aromatic() == template.aromatic()
+                && atom.charge() == template.charge()
+                && (template.isotope().isEmpty() || atom.isotope().equals(template.isotope()))
+                && (template.hydrogenCount().isEmpty() || atom.hydrogenCount().equals(template.hydrogenCount()));
+    }
 }

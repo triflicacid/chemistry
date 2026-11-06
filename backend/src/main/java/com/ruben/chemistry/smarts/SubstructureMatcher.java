@@ -207,22 +207,33 @@ public final class SubstructureMatcher
     }
 
     /**
-     * @return {@code true} if the real bond {@code queryBond}'s endpoints were mapped to has stereo configuration {@code required}
+     * @return {@code true} if the real bond {@code queryBond}'s endpoints were mapped to
+     *     has stereo configuration {@code required}
      */
     private boolean doubleBondStereoMatches(Query query, QueryBond queryBond, Map<QueryAtom, Atom> assignment, DoubleBondStereo required)
     {
         QueryAtom queryFirst = queryBond.first();
         QueryAtom querySecond = queryBond.second();
+        Atom realFirst = assignment.get(queryFirst);
+        Atom realSecond = assignment.get(querySecond);
 
-        Bond firstReference = defaultReferenceBond(query, queryBond, queryFirst, assignment);
-        Bond secondReference = defaultReferenceBond(query, queryBond, querySecond, assignment);
-        if (firstReference == null || secondReference == null)
+        Bond queryFirstSideReference = defaultReferenceBond(query, queryBond, queryFirst, assignment);
+        Bond querySecondSideReference = defaultReferenceBond(query, queryBond, querySecond, assignment);
+        if (queryFirstSideReference == null || querySecondSideReference == null)
         {
             return false;
         }
 
-        Bond realBond = molecule.bondBetween(assignment.get(queryFirst), assignment.get(querySecond)).orElseThrow();
-        return molecule.doubleBondStereoOf(realBond, firstReference, secondReference).filter(actual -> actual == required).isPresent();
+        Bond realBond = molecule.bondBetween(realFirst, realSecond).orElseThrow();
+
+        // Molecule.doubleBondStereoOf requires its two references relative to realBond's own
+        // fixed first()/second(), which may be the opposite of how queryBond's first()/second()
+        // happened to map onto it (e.g. a symmetric double bond matched "back to front")
+        boolean queryFirstIsRealFirst = realBond.first() == realFirst;
+        Bond realBondFirstReference = queryFirstIsRealFirst ? queryFirstSideReference : querySecondSideReference;
+        Bond realBondSecondReference = queryFirstIsRealFirst ? querySecondSideReference : queryFirstSideReference;
+
+        return molecule.doubleBondStereoOf(realBond, realBondFirstReference, realBondSecondReference).filter(actual -> actual == required).isPresent();
     }
 
     /**

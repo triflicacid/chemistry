@@ -1,5 +1,6 @@
 package com.ruben.chemistry.smarts;
 
+import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 
 /**
@@ -42,5 +43,14 @@ public final class BondPredicates
     public static BondPredicate chainBond()
     {
         return (molecule, bond) -> !molecule.ringBonds().contains(bond);
+    }
+
+    /**
+     * @param template the bond to match exactly
+     * @return a predicate matching a bond with the same order as {@code template}
+     */
+    public static BondPredicate exactly(Bond template)
+    {
+        return (molecule, bond) -> bond.order() == template.order();
     }
 }
