@@ -288,6 +288,51 @@ class SubstructureMatcherTest
             .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void substructure_is_a_standalone_molecule_over_the_matched_atoms_and_bonds()
+    {
+        Molecule molecule = new SmilesParser("CCO").parse();
+
+        QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
+        Query query = new Query.Builder()
+            .addAtom(first)
+            .addAtom(second)
+            .addBond(first, second, BondPredicates.any())
+            .build();
+
+        Match match = new SubstructureMatcher(molecule).findMatches(query).getFirst();
+        Molecule substructure = match.substructure();
+
+        assertThat(substructure.atomCount()).isEqualTo(2);
+        assertThat(substructure.bondCount()).isEqualTo(1);
+    }
+
+    @Test
+    void substructure_includes_every_real_bond_between_matched_atoms_not_just_the_querys()
+    {
+        // cyclopropane: all three atoms are pairwise bonded, but the query only chains
+        // first-second-third, leaving the first-third ring bond undeclared
+        Molecule cyclopropane = new SmilesParser("C1CC1").parse();
+
+        QueryAtom first = new QueryAtom(AtomPredicates.any());
+        QueryAtom second = new QueryAtom(AtomPredicates.any());
+        QueryAtom third = new QueryAtom(AtomPredicates.any());
+        Query query = new Query.Builder()
+            .addAtom(first)
+            .addAtom(second)
+            .addAtom(third)
+            .addBond(first, second, BondPredicates.any())
+            .addBond(second, third, BondPredicates.any())
+            .build();
+
+        Match match = new SubstructureMatcher(cyclopropane).findMatches(query).getFirst();
+        Molecule substructure = match.substructure();
+
+        assertThat(substructure.atomCount()).isEqualTo(3);
+        assertThat(substructure.bondCount()).isEqualTo(3); // the ring-closing bond is included too
+    }
+
     private static Atom nthAtom(Molecule molecule, int index)
     {
         int i = 0;

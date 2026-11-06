@@ -117,12 +117,11 @@ public final class SubstructureMatcher
     {
         if (assignment.size() == query.atomCount())
         {
-            // every query atom is mapped: a full candidate assignment
-            // so now all that's left is stereochemistry
+            // every query atom is mapped: a full candidate assignment, so now all that's left is stereochemistry
             if (satisfiesStereoConstraints(query, assignment))
             {
                 // not Map.copyOf
-                matches.add(new Match(Collections.unmodifiableMap(new IdentityHashMap<>(assignment))));
+                matches.add(new Match(Collections.unmodifiableMap(new IdentityHashMap<>(assignment)), molecule));
             }
             return;
         }

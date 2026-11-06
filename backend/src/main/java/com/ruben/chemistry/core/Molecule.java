@@ -764,7 +764,7 @@ public final class Molecule
         /**
          * Same as {@link #addBond(Atom, Atom, BondOrder)}, but accepting a {@link Bond} object itself.
          */
-        Builder addBond(Bond bond)
+        public Builder addBond(Bond bond)
         {
             return addBond(bond.first(), bond.second(), bond.order());
         }
