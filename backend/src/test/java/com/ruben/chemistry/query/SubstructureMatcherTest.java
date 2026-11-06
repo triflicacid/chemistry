@@ -183,4 +183,53 @@ class SubstructureMatcherTest
             .build();
         assertThat(new SubstructureMatcher(molecule).findMatches(nonMatching)).isEmpty();
     }
+
+    @Test
+    void findDistinctMatches_collapses_a_symmetric_querys_several_mappings_of_one_ring_into_one()
+    {
+        // c1ccccc1: a 6-fold symmetric benzene query maps onto the one real ring 12 ways
+        // (6 rotations, each in 2 directions), all of them covering the same 6 real atoms
+        Molecule molecule = new SmilesParser("c1ccccc1").parse();
+
+        QueryAtom[] ring = new QueryAtom[6];
+        for (int i = 0; i < ring.length; i++)
+        {
+            ring[i] = new QueryAtom(AtomPredicates.aromatic("C"));
+        }
+        Query.Builder builder = new Query.Builder();
+        for (QueryAtom atom : ring)
+        {
+            builder.addAtom(atom);
+        }
+        for (int i = 0; i < ring.length; i++)
+        {
+            builder.addBond(ring[i], ring[(i + 1) % ring.length], BondPredicates.order(BondOrder.AROMATIC));
+        }
+        Query benzene = builder.build();
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.findMatches(benzene)).hasSize(12);
+        assertThat(matcher.findDistinctMatches(benzene)).hasSize(1);
+    }
+
+    @Test
+    void findDistinctMatches_keeps_matches_that_cover_different_atoms()
+    {
+        // propan-1-ol (CCCO): the two C-C matches are symmetric in ORDER but cover different atoms
+        Molecule molecule = new SmilesParser("CCCO").parse();
+
+        QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
+        Query query = new Query.Builder()
+            .addAtom(first)
+            .addAtom(second)
+            .addBond(first, second, BondPredicates.order(BondOrder.SINGLE))
+            .build();
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.findMatches(query)).hasSize(4);
+        assertThat(matcher.findDistinctMatches(query)).hasSize(2);
+    }
 }

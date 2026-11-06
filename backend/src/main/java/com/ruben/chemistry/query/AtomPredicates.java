@@ -31,11 +31,20 @@ public final class AtomPredicates
     }
 
     /**
+     * @param element the element symbol to match, e.g. {@code "C"}
+     * @return a predicate matching aromatic atoms of exactly that element (the SMARTS lowercase primitives, e.g. {@code c})
+     */
+    public static AtomPredicate aromatic(String element)
+    {
+        return element(element).and((molecule, atom) -> atom.aromatic());
+    }
+
+    /**
      * @return a predicate matching an atom with at least one ring bond (the SMARTS {@code R} primitive)
      */
     public static AtomPredicate inRing()
     {
-        return (molecule, atom) -> isInRing(molecule, atom);
+        return AtomPredicates::isInRing;
     }
 
     /**

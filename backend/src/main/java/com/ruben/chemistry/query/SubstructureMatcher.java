@@ -9,10 +9,12 @@ import com.ruben.chemistry.core.NeighbourReference;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Finds occurrences of a {@link Query} as a substructure of a {@link Molecule}.
@@ -39,6 +41,28 @@ public final class SubstructureMatcher
             search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), matches);
         }
         return matches;
+    }
+
+    /**
+     * Like {@link #findMatches}, but collapses the several matches a symmetric query produces
+     * for one real substructure down to a single representative match.
+     *
+     * @param query the pattern to search for
+     * @return one match per distinct real substructure {@code query} maps onto
+     */
+    public List<Match> findDistinctMatches(Query query)
+    {
+        // TODO better to avoid duplicates in the search itself?
+        List<Match> distinct = new ArrayList<>();
+        Set<Set<Atom>> seenAtomSets = new HashSet<>();
+        for (Match match : findMatches(query))
+        {
+            if (seenAtomSets.add(match.atoms()))
+            {
+                distinct.add(match);
+            }
+        }
+        return distinct;
     }
 
     /**
