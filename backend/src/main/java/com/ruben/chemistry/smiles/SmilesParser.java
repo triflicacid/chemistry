@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.OptionalInt;
 
 /**
- * Parses a SMILES string into a {@link Molecule}, driven token-by-token by a {@link Lexer}.
+ * Parses a SMILES string into a {@link Molecule}.
  */
 public final class SmilesParser
 {
