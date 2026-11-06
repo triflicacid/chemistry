@@ -75,6 +75,24 @@ public final class AtomPredicates
     }
 
     /**
+     * @param count the required number of rings the atom belongs to
+     * @return a predicate matching an atom that belongs to exactly that many of {@link Molecule#rings()}
+     */
+    public static AtomPredicate ringCount(int count)
+    {
+        return (molecule, atom) -> molecule.ringCount(atom) == count;
+    }
+
+    /**
+     * @param size the required ring size
+     * @return a predicate matching an atom that belongs to one of {@link Molecule#rings()} of exactly that size
+     */
+    public static AtomPredicate ringSize(int size)
+    {
+        return (molecule, atom) -> molecule.ringSizes(atom).contains(size);
+    }
+
+    /**
      * @param count the required number of explicit (heavy-atom) bonds
      * @return a predicate matching an atom with exactly that many bonds (the SMARTS {@code D} primitive)
      */

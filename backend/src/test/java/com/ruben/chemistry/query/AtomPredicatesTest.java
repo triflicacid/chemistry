@@ -143,6 +143,101 @@ class AtomPredicatesTest
     }
 
     @Nested
+    class RingCount
+    {
+        @Test
+        void matches_zero_for_an_acyclic_atom()
+        {
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .build();
+
+            assertThat(AtomPredicates.ringCount(0).matches(molecule, c1)).isTrue();
+            assertThat(AtomPredicates.ringCount(1).matches(molecule, c1)).isFalse();
+        }
+
+        @Test
+        void matches_one_for_an_atom_in_a_single_simple_ring()
+        {
+            // cyclopropane: C1CC1
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Atom c3 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2, c3)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .addBond(c2, c3, BondOrder.SINGLE)
+                .addBond(c3, c1, BondOrder.SINGLE)
+                .build();
+
+            assertThat(AtomPredicates.ringCount(1).matches(molecule, c1)).isTrue();
+        }
+
+        @Test
+        void matches_two_for_the_shared_atoms_of_two_fused_rings()
+        {
+            // C1C2CC12: two cyclopropane rings fused on the b-d edge
+            Atom a = Atom.organic("C");
+            Atom b = Atom.organic("C");
+            Atom c = Atom.organic("C");
+            Atom d = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(a, b, c, d)
+                .addBond(a, b, BondOrder.SINGLE)
+                .addBond(b, c, BondOrder.SINGLE)
+                .addBond(c, d, BondOrder.SINGLE)
+                .addBond(d, a, BondOrder.SINGLE)
+                .addBond(d, b, BondOrder.SINGLE)
+                .build();
+
+            assertThat(AtomPredicates.ringCount(2).matches(molecule, b)).isTrue();
+            assertThat(AtomPredicates.ringCount(2).matches(molecule, d)).isTrue();
+            assertThat(AtomPredicates.ringCount(1).matches(molecule, a)).isTrue();
+            assertThat(AtomPredicates.ringCount(1).matches(molecule, c)).isTrue();
+        }
+    }
+
+    @Nested
+    class RingSize
+    {
+        @Test
+        void matches_an_atoms_ring_size()
+        {
+            // cyclobutane: C1CCC1
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Atom c3 = Atom.organic("C");
+            Atom c4 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2, c3, c4)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .addBond(c2, c3, BondOrder.SINGLE)
+                .addBond(c3, c4, BondOrder.SINGLE)
+                .addBond(c4, c1, BondOrder.SINGLE)
+                .build();
+
+            assertThat(AtomPredicates.ringSize(4).matches(molecule, c1)).isTrue();
+            assertThat(AtomPredicates.ringSize(3).matches(molecule, c1)).isFalse();
+        }
+
+        @Test
+        void does_not_match_an_acyclic_atom()
+        {
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .build();
+
+            assertThat(AtomPredicates.ringSize(4).matches(molecule, c1)).isFalse();
+        }
+    }
+
+    @Nested
     class Recursive
     {
         @Test

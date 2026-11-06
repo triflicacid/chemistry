@@ -1,13 +1,16 @@
 package com.ruben.chemistry.core;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public final class Molecule
@@ -31,10 +34,12 @@ public final class Molecule
 
     private final List<Atom> atoms;
     private final List<Bond> bonds;
-    private final Map<Atom, List<Bond>> incidentBonds;
+    // lazy: a Molecule built just to sit in another Molecule's rings() may never need this
+    private final CachedValue<Map<Atom, List<Bond>>> incidentBonds;
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
-    private Set<Bond> ringBonds;
+    private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
+    private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
 
     /**
      * Creates a molecule from an already-built atom and bond list.
@@ -48,7 +53,7 @@ public final class Molecule
     {
         this.atoms = List.copyOf(atoms);
         this.bonds = List.copyOf(bonds);
-        this.incidentBonds = buildIncidentBonds(this.atoms, this.bonds);
+        this.incidentBonds = new CachedValue<>(() -> buildIncidentBonds(this.atoms, this.bonds));
         this.chiralityByAtom = new IdentityHashMap<>(chirality);
         this.doubleBondStereoByBond = new IdentityHashMap<>(doubleBondStereo);
     }
@@ -94,13 +99,22 @@ public final class Molecule
     }
 
     /**
+     * @param atom an atom to test, by reference identity
+     * @return whether {@code atom} is one of this molecule's atoms
+     */
+    public boolean containsAtom(Atom atom)
+    {
+        return incidentBonds.get().containsKey(atom);
+    }
+
+    /**
      * @param atom an atom of this molecule, by reference identity
      * @return the bonds incident to {@code atom}, in no particular order
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
     public List<Bond> bondsOf(Atom atom)
     {
-        List<Bond> result = incidentBonds.get(atom);
+        List<Bond> result = incidentBonds.get().get(atom);
         if (result == null)
         {
             throw new IllegalArgumentException("Atom is not part of this molecule: " + atom);
@@ -188,7 +202,7 @@ public final class Molecule
      */
     private void requireAtom(Atom atom)
     {
-        if (!incidentBonds.containsKey(atom))
+        if (!containsAtom(atom))
         {
             throw new IllegalArgumentException("Atom is not part of this molecule: " + atom);
         }
@@ -241,11 +255,7 @@ public final class Molecule
      */
     public Set<Bond> ringBonds()
     {
-        if (ringBonds == null)
-        {
-            ringBonds = computeRingBonds();
-        }
-        return ringBonds;
+        return ringBonds.get();
     }
 
     private Set<Bond> computeRingBonds()
@@ -300,6 +310,140 @@ public final class Molecule
     }
 
     /**
+     * Enumerates a minimal set of rings covering this molecule's {@link #ringBonds()}.
+     *
+     * @return this molecule's rings, each as a sub-molecule of just that ring's atoms and bonds
+     */
+    public List<Molecule> rings()
+    {
+        return rings.get();
+    }
+
+    /**
+     * @param atom an atom of this molecule
+     * @return the number of {@link #rings()} that {@code atom} belongs to
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    public int ringCount(Atom atom)
+    {
+        requireAtom(atom);
+        return (int) rings().stream().filter(ring -> ring.containsAtom(atom)).count();
+    }
+
+    /**
+     * @param atom an atom of this molecule
+     * @return the sizes of the {@link #rings()} that {@code atom} belongs to
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    public Set<Integer> ringSizes(Atom atom)
+    {
+        requireAtom(atom);
+        return rings().stream()
+            .filter(ring -> ring.containsAtom(atom))
+            .map(Molecule::atomCount)
+            .collect(Collectors.toSet());
+    }
+
+    private List<Molecule> computeRings()
+    {
+        List<Set<Bond>> ringBondSets = new ArrayList<>();
+        for (Bond ringBond : ringBonds())
+        {
+            // skip duplicates: different ring bonds of the same ring find the same bond set
+            Set<Bond> ring = smallestRingContaining(ringBond);
+            if (ringBondSets.stream().noneMatch(existing -> existing.size() == ring.size() && existing.containsAll(ring)))
+            {
+                ringBondSets.add(ring);
+            }
+        }
+        // reconstruct the molecule from the ring's bonds
+        return ringBondSets.stream().map(Molecule::buildRingMolecule).toList();
+    }
+
+    /**
+     * Finds the shortest cycle through {@code ringBond}.
+     *
+     * @param ringBond a bond known to lie on some cycle (see {@link #ringBonds()})
+     * @return the bonds making up that cycle, by reference identity
+     */
+    private Set<Bond> smallestRingContaining(Bond ringBond)
+    {
+        Atom start = ringBond.first();
+        Atom goal = ringBond.second();
+
+        // BFS from start to goal, so the path found back is the shortest way around
+        Map<Atom, Bond> predecessorBond = new IdentityHashMap<>();
+        Set<Atom> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Deque<Atom> queue = new ArrayDeque<>();
+        visited.add(start);
+        queue.add(start);
+
+        while (!queue.isEmpty())
+        {
+            Atom current = queue.poll();
+            if (current == goal)
+            {
+                break;
+            }
+
+            for (Bond bond : bondsOf(current))
+            {
+                // never cross the very bond we're trying to find another way around
+                if (bond == ringBond)
+                {
+                    continue;
+                }
+
+                Atom neighbour = bond.getOther(current);
+                if (!visited.contains(neighbour))
+                {
+                    // remember the bond used to reach neighbour, to backtrack with below
+                    visited.add(neighbour);
+                    predecessorBond.put(neighbour, bond);
+                    queue.add(neighbour);
+                }
+            }
+        }
+
+        // backtrack from goal to start to collect the path's bonds, then close the cycle
+        Set<Bond> ring = Collections.newSetFromMap(new IdentityHashMap<>());
+        ring.add(ringBond);
+        Atom step = goal;
+        while (step != start)
+        {
+            Bond bond = predecessorBond.get(step);
+            ring.add(bond);
+            step = bond.getOther(step);
+        }
+        return ring;
+    }
+
+    /**
+     * Builds a standalone {@link Molecule} from exactly one ring's atoms and bonds.
+     *
+     * @param ringBonds one ring's bonds, as found by {@link #smallestRingContaining(Bond)}
+     * @return a sub-molecule containing just those bonds and their endpoint atoms
+     */
+    private static Molecule buildRingMolecule(Set<Bond> ringBonds)
+    {
+        Builder builder = new Builder();
+        Set<Atom> added = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Bond bond : ringBonds)
+        {
+            if (added.add(bond.first()))
+            {
+                builder.addAtom(bond.first());
+            }
+            if (added.add(bond.second()))
+            {
+                builder.addAtom(bond.second());
+            }
+        }
+        ringBonds.forEach(builder::addBond);
+        return builder.build();
+    }
+
+    /**
      * Returns the declared chirality of a stereocentre, if any.
      * The value is relative to bond-addition order, so depends on how this
      * molecule was built, and could vary based on which atom was added first,
@@ -326,7 +470,7 @@ public final class Molecule
      */
     public Optional<Chirality> chiralityOf(Atom atom, List<NeighbourReference> order)
     {
-        if (!incidentBonds.containsKey(atom))
+        if (!containsAtom(atom))
         {
             throw new IllegalArgumentException("Atom is not part of this molecule: " + atom);
         }
@@ -518,7 +662,7 @@ public final class Molecule
     {
         Builder builder = new Builder();
         atoms.forEach(builder::addAtom);
-        bonds.forEach(bond -> builder.addBond(bond.first(), bond.second(), bond.order()));
+        bonds.forEach(builder::addBond);
         chiralityByAtom.forEach(builder::setChirality);
         doubleBondStereoByBond.forEach((bond, stereo) -> builder.setDoubleBondStereo(bond.first(), bond.second(), stereo));
         return builder;
@@ -615,6 +759,14 @@ public final class Molecule
             }
             bonds.add(new Bond(first, second, order));
             return this;
+        }
+
+        /**
+         * Same as {@link #addBond(Atom, Atom, BondOrder)}, but accepting a {@link Bond} object itself.
+         */
+        Builder addBond(Bond bond)
+        {
+            return addBond(bond.first(), bond.second(), bond.order());
         }
 
         /**

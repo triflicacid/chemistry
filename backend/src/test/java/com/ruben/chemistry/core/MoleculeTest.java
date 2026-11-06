@@ -223,6 +223,108 @@ class MoleculeTest
     }
 
     @Nested
+    class Rings
+    {
+        @Test
+        void is_empty_for_an_acyclic_molecule()
+        {
+            // propane: C-C-C
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Atom c3 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2, c3)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .addBond(c2, c3, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.rings()).isEmpty();
+            assertThat(molecule.ringCount(c1)).isZero();
+            assertThat(molecule.ringSizes(c1)).isEmpty();
+        }
+
+        @Test
+        void finds_a_simple_rings_size_and_membership()
+        {
+            // cyclopropane: C1CC1
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Atom c3 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2, c3)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .addBond(c2, c3, BondOrder.SINGLE)
+                .addBond(c3, c1, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.rings()).hasSize(1);
+            assertThat(molecule.ringCount(c1)).isEqualTo(1);
+            assertThat(molecule.ringSizes(c1)).containsExactly(3);
+        }
+
+        @Test
+        void counts_two_rings_for_the_shared_atoms_of_a_fused_bicyclic_system()
+        {
+            // C1C2CC12: two cyclopropane rings fused on the b-d edge
+            Atom a = Atom.organic("C");
+            Atom b = Atom.organic("C");
+            Atom c = Atom.organic("C");
+            Atom d = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(a, b, c, d)
+                .addBond(a, b, BondOrder.SINGLE)
+                .addBond(b, c, BondOrder.SINGLE)
+                .addBond(c, d, BondOrder.SINGLE)
+                .addBond(d, a, BondOrder.SINGLE)
+                .addBond(d, b, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.rings()).hasSize(2);
+            assertThat(molecule.ringCount(b)).isEqualTo(2);
+            assertThat(molecule.ringCount(d)).isEqualTo(2);
+            assertThat(molecule.ringCount(a)).isEqualTo(1);
+            assertThat(molecule.ringCount(c)).isEqualTo(1);
+            assertThat(molecule.ringSizes(a)).containsExactly(3);
+        }
+
+        @Test
+        void does_not_double_count_the_perimeter_of_two_fused_rings_as_a_third_ring()
+        {
+            // C12CCCC1CCCC2: two fused six-membered rings sharing the shared1-shared2 edge:
+            // that edge's own shortest cycle is one of the two six-rings, not the
+            // ten-membered perimeter, so only two rings should be found overall
+            Atom a1 = Atom.organic("C");
+            Atom a2 = Atom.organic("C");
+            Atom a3 = Atom.organic("C");
+            Atom a4 = Atom.organic("C");
+            Atom shared1 = Atom.organic("C");
+            Atom shared2 = Atom.organic("C");
+            Atom b1 = Atom.organic("C");
+            Atom b2 = Atom.organic("C");
+            Atom b3 = Atom.organic("C");
+            Atom b4 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(a1, a2, a3, a4, shared1, shared2, b1, b2, b3, b4)
+                .addBond(shared1, a1, BondOrder.SINGLE)
+                .addBond(a1, a2, BondOrder.SINGLE)
+                .addBond(a2, a3, BondOrder.SINGLE)
+                .addBond(a3, a4, BondOrder.SINGLE)
+                .addBond(a4, shared2, BondOrder.SINGLE)
+                .addBond(shared2, shared1, BondOrder.SINGLE)
+                .addBond(shared1, b1, BondOrder.SINGLE)
+                .addBond(b1, b2, BondOrder.SINGLE)
+                .addBond(b2, b3, BondOrder.SINGLE)
+                .addBond(b3, b4, BondOrder.SINGLE)
+                .addBond(b4, shared2, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.rings()).hasSize(2);
+            assertThat(molecule.ringSizes(shared1)).containsExactly(6);
+            assertThat(molecule.ringCount(shared1)).isEqualTo(2);
+        }
+    }
+
+    @Nested
     class Chirality
     {
         // Stereocentre with one implicit hydrogen and three explicit substituents, bonded in this order.
