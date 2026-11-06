@@ -6,9 +6,9 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
+import com.ruben.chemistry.util.IdentityMap;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -121,7 +121,7 @@ public final class SubstructureMatcher
             if (satisfiesStereoConstraints(query, assignment))
             {
                 // not Map.copyOf
-                matches.add(new Match(Collections.unmodifiableMap(new IdentityHashMap<>(assignment)), molecule));
+                matches.add(new Match(IdentityMap.copyOf(assignment), molecule));
             }
             return;
         }

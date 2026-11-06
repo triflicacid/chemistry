@@ -1,5 +1,7 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.util.IdentitySet;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -260,8 +262,8 @@ public final class Molecule
 
     private Set<Bond> computeRingBonds()
     {
-        Set<Bond> result = Collections.newSetFromMap(new IdentityHashMap<>());
-        Set<Atom> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Bond> result = IdentitySet.of();
+        Set<Atom> visited = IdentitySet.of();
         Map<Atom, Integer> discoveryTime = new IdentityHashMap<>();
         Map<Atom, Integer> low = new IdentityHashMap<>();
         AtomicInteger clock = new AtomicInteger(); // single shared counter, incremented as the DFS below visits each atom
@@ -373,7 +375,7 @@ public final class Molecule
 
         // BFS from start to goal, so the path found back is the shortest way around
         Map<Atom, Bond> predecessorBond = new IdentityHashMap<>();
-        Set<Atom> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Atom> visited = IdentitySet.of();
         Deque<Atom> queue = new ArrayDeque<>();
         visited.add(start);
         queue.add(start);
@@ -406,7 +408,7 @@ public final class Molecule
         }
 
         // backtrack from goal to start to collect the path's bonds, then close the cycle
-        Set<Bond> ring = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Bond> ring = IdentitySet.of();
         ring.add(ringBond);
         Atom step = goal;
         while (step != start)
@@ -427,7 +429,7 @@ public final class Molecule
     private static Molecule buildRingMolecule(Set<Bond> ringBonds)
     {
         Builder builder = new Builder();
-        Set<Atom> added = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Atom> added = IdentitySet.of();
         for (Bond bond : ringBonds)
         {
             if (added.add(bond.first()))
@@ -707,7 +709,7 @@ public final class Molecule
     {
         private final List<Atom> atoms = new ArrayList<>();
         private final List<Bond> bonds = new ArrayList<>();
-        private final Set<Atom> added = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Set<Atom> added = IdentitySet.of();
         private final Map<Atom, Chirality> chirality = new IdentityHashMap<>();
         private final Map<Bond, DoubleBondStereo> doubleBondStereo = new IdentityHashMap<>();
 

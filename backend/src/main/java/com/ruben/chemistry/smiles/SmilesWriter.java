@@ -11,9 +11,9 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.core.Ranker;
 import com.ruben.chemistry.core.Ranking;
+import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -33,7 +33,7 @@ import java.util.Set;
 public final class SmilesWriter
 {
     private final Molecule molecule;
-    private final Set<Atom> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<Atom> visited = IdentitySet.of();
     private final Map<Bond, Integer> ringNumberOfBond = new IdentityHashMap<>();
     private final Map<Atom, List<Bond>> ringBondsOfAtom = new IdentityHashMap<>();
     private final Map<Atom, Bond> arrivingBondOf = new IdentityHashMap<>();

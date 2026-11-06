@@ -2,9 +2,8 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.util.IdentitySet;
 
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -41,9 +40,7 @@ public final class Match
      */
     public Set<Atom> atoms()
     {
-        Set<Atom> atoms = Collections.newSetFromMap(new IdentityHashMap<>());
-        atoms.addAll(atomOf.values());
-        return atoms;
+        return IdentitySet.copyOf(atomOf.values());
     }
 
     /**

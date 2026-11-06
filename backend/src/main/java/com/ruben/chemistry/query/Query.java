@@ -2,6 +2,7 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -163,7 +164,7 @@ public final class Query
     {
         private final List<QueryAtom> atoms = new ArrayList<>();
         private final List<QueryBond> bonds = new ArrayList<>();
-        private final Set<QueryAtom> added = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Set<QueryAtom> added = IdentitySet.of();
         private final Map<QueryAtom, Chirality> chirality = new IdentityHashMap<>();
         private final Map<QueryBond, DoubleBondStereo> doubleBondStereo = new IdentityHashMap<>();
 
