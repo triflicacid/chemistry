@@ -31,14 +31,8 @@ public enum TokenType
     /** A single-letter structural primitive inside a bracket atom. */
     STRUCTURAL,
 
-    /** The recursive-SMARTS marker {@code $} inside a bracket atom, always followed by {@link #LPAREN}. */
-    DOLLAR,
-
-    /** The opening parenthesis of a recursive sub-pattern, {@code $(}. */
-    LPAREN,
-
-    /** The closing parenthesis of a recursive sub-pattern. */
-    RPAREN,
+    /** A recursive-SMARTS primitive's {@code $(...)} contents, lexed whole: the text is everything between the parens. */
+    EXPRESSION,
 
     /** A bond symbol: one of {@code - = # $ : / \ ~ @}. */
     BOND,
@@ -52,7 +46,7 @@ public enum TokenType
     /** The logical OR, {@code ,}: combines atom primitives or bond terms. */
     OR,
 
-    /** The logical NOT, {@code !}: negates the single primitive or parenthesised term that follows it. */
+    /** The logical NOT, {@code !}: negates the single primitive that follows it. */
     NOT,
 
     /** The branch-opening character {@code (}. */
