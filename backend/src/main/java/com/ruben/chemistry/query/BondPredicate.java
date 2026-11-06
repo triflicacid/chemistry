@@ -1,4 +1,4 @@
-package com.ruben.chemistry.smarts;
+package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;

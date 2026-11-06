@@ -1,4 +1,4 @@
-package com.ruben.chemistry.smarts;
+package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;

@@ -1,4 +1,4 @@
-package com.ruben.chemistry.smarts;
+package com.ruben.chemistry.query;
 
 /**
  * One atom position in a {@link Query}, matched against real atoms by its {@link AtomPredicate}.

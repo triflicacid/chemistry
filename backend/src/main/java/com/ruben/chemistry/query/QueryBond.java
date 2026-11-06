@@ -1,4 +1,4 @@
-package com.ruben.chemistry.smarts;
+package com.ruben.chemistry.query;
 
 /**
  * A bond between two {@link QueryAtom} positions in a {@link Query}, matched against real
