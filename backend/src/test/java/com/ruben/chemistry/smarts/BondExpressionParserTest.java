@@ -25,7 +25,7 @@ class BondExpressionParserTest
 
     private static BondExpressionParser.Result result(Token... tokens)
     {
-        return new BondExpressionParser(List.of(tokens), "irrelevant for these tests").parse();
+        return new BondExpressionParser(new ListCursor(List.of(tokens)), "source").parse();
     }
 
     private static Token bond(String symbol)
@@ -238,7 +238,7 @@ class BondExpressionParserTest
         @Test
         void throws_for_an_empty_expression()
         {
-            assertThatThrownBy(() -> new BondExpressionParser(List.of(), "irrelevant").parse())
+            assertThatThrownBy(() -> new BondExpressionParser(new ListCursor(List.of()), "irrelevant").parse())
                 .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("must not be empty");
         }

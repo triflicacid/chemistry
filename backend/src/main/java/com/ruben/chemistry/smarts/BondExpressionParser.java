@@ -6,7 +6,6 @@ import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.query.BondPredicate;
 import com.ruben.chemistry.query.BondPredicates;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -21,7 +20,7 @@ import java.util.Set;
  *     <li>{@code /} - a directional single bond</li>
  * </ul>
  */
-public final class BondExpressionParser
+final class BondExpressionParser
 {
     /**
      * The result of parsing one bond.
@@ -36,18 +35,17 @@ public final class BondExpressionParser
     /** Token types that keep an {@code &}-chain going: the operator itself, or anything that can start a primitive (implicit and). */
     private static final Set<TokenType> CONTINUES_AND_CHAIN = Set.of(TokenType.AND, TokenType.BOND, TokenType.NOT);
 
-    private final List<Token> tokens;
+    private final TokenCursor cursor;
     private final String source;
     private BondDirection direction;
-    private int index;
 
     /**
-     * @param tokens the bond's tokens
-     * @param source the full source string {@code tokens} were lexed from, used only to render error messages
+     * @param cursor a cursor positioned at this bond expression's first token
+     * @param source the full source string {@code cursor}'s tokens were lexed from, used only to render error messages
      */
-    public BondExpressionParser(List<Token> tokens, String source)
+    public BondExpressionParser(TokenCursor cursor, String source)
     {
-        this.tokens = tokens;
+        this.cursor = cursor;
         this.source = source;
     }
 
@@ -63,11 +61,6 @@ public final class BondExpressionParser
         }
 
         BondPredicate predicate = parseSemiExpression();
-        if (hasMore())
-        {
-            Token trailing = peek();
-            throw new InvalidNotationException("Expected the bond expression to end, but found '" + trailing.text() + "'", source, trailing.position());
-        }
         return new Result(predicate, Optional.ofNullable(direction));
     }
 
@@ -169,16 +162,16 @@ public final class BondExpressionParser
 
     private boolean hasMore()
     {
-        return index < tokens.size();
+        return !cursor.isAtEnd();
     }
 
     private Token peek()
     {
-        return tokens.get(index);
+        return cursor.peek();
     }
 
     private Token consume()
     {
-        return tokens.get(index++);
+        return cursor.next();
     }
 }
