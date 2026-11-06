@@ -13,6 +13,79 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AtomPredicatesTest
 {
     @Nested
+    class Any
+    {
+        @Test
+        void matches_every_atom_regardless_of_element()
+        {
+            Molecule molecule = new SmilesParser("CO").parse();
+            Atom carbon = firstAtom(molecule);
+            Atom oxygen = secondAtom(molecule);
+
+            assertThat(AtomPredicates.any().matches(molecule, carbon)).isTrue();
+            assertThat(AtomPredicates.any().matches(molecule, oxygen)).isTrue();
+        }
+    }
+
+    @Nested
+    class Element
+    {
+        @Test
+        void matches_atoms_of_exactly_that_element()
+        {
+            Molecule molecule = new SmilesParser("CO").parse();
+            Atom carbon = firstAtom(molecule);
+            Atom oxygen = secondAtom(molecule);
+
+            assertThat(AtomPredicates.element("C").matches(molecule, carbon)).isTrue();
+            assertThat(AtomPredicates.element("C").matches(molecule, oxygen)).isFalse();
+        }
+    }
+
+    @Nested
+    class AtomicNumber
+    {
+        @Test
+        void matches_the_element_with_that_atomic_number()
+        {
+            Molecule molecule = new SmilesParser("C").parse();
+            Atom carbon = firstAtom(molecule);
+
+            assertThat(AtomPredicates.atomicNumber(6).matches(molecule, carbon)).isTrue();
+            assertThat(AtomPredicates.atomicNumber(7).matches(molecule, carbon)).isFalse();
+        }
+
+        @Test
+        void throws_for_an_unknown_atomic_number()
+        {
+            assertThatThrownBy(() -> AtomPredicates.atomicNumber(0))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    class Aromatic
+    {
+        @Test
+        void matches_an_aromatic_atom_of_exactly_that_element()
+        {
+            Molecule benzene = new SmilesParser("c1ccccc1").parse();
+            Atom aromaticCarbon = firstAtom(benzene);
+
+            assertThat(AtomPredicates.aromatic("C").matches(benzene, aromaticCarbon)).isTrue();
+        }
+
+        @Test
+        void does_not_match_a_non_aromatic_atom_of_the_same_element()
+        {
+            Molecule molecule = new SmilesParser("C").parse();
+            Atom aliphaticCarbon = firstAtom(molecule);
+
+            assertThat(AtomPredicates.aromatic("C").matches(molecule, aliphaticCarbon)).isFalse();
+        }
+    }
+
+    @Nested
     class Charge
     {
         @Test
@@ -78,6 +151,50 @@ class AtomPredicatesTest
             Molecule molecule = new Molecule.Builder().addAtom(unclassified).build();
 
             assertThat(AtomPredicates.atomClass(1).matches(molecule, unclassified)).isFalse();
+        }
+    }
+
+    @Nested
+    class InRing
+    {
+        @Test
+        void matches_an_atom_with_a_ring_bond()
+        {
+            Molecule molecule = new SmilesParser("C1CC1").parse();
+            Atom ringAtom = firstAtom(molecule);
+
+            assertThat(AtomPredicates.inRing().matches(molecule, ringAtom)).isTrue();
+        }
+
+        @Test
+        void does_not_match_an_acyclic_atom()
+        {
+            Molecule molecule = new SmilesParser("CCC").parse();
+            Atom chainAtom = firstAtom(molecule);
+
+            assertThat(AtomPredicates.inRing().matches(molecule, chainAtom)).isFalse();
+        }
+    }
+
+    @Nested
+    class NotInRing
+    {
+        @Test
+        void matches_an_acyclic_atom()
+        {
+            Molecule molecule = new SmilesParser("CCC").parse();
+            Atom chainAtom = firstAtom(molecule);
+
+            assertThat(AtomPredicates.notInRing().matches(molecule, chainAtom)).isTrue();
+        }
+
+        @Test
+        void does_not_match_an_atom_with_a_ring_bond()
+        {
+            Molecule molecule = new SmilesParser("C1CC1").parse();
+            Atom ringAtom = firstAtom(molecule);
+
+            assertThat(AtomPredicates.notInRing().matches(molecule, ringAtom)).isFalse();
         }
     }
 
@@ -157,6 +274,28 @@ class AtomPredicatesTest
             Atom sulfur = fourthAtom(thiophene);
 
             assertThat(AtomPredicates.hydrogenCount(0).matches(thiophene, sulfur)).isTrue();
+        }
+    }
+
+    @Nested
+    class ImplicitHydrogenCount
+    {
+        @Test
+        void matches_an_organic_subset_atoms_inferred_count()
+        {
+            Molecule molecule = new SmilesParser("CC").parse(); // ethane: each carbon has 3 implicit H
+            Atom carbon = firstAtom(molecule);
+
+            assertThat(AtomPredicates.implicitHydrogenCount(3).matches(molecule, carbon)).isTrue();
+        }
+
+        @Test
+        void matches_zero_for_a_bracket_atom_even_with_an_explicit_hydrogen_count()
+        {
+            Molecule molecule = new SmilesParser("[CH4]").parse();
+            Atom explicit = firstAtom(molecule);
+
+            assertThat(AtomPredicates.implicitHydrogenCount(0).matches(molecule, explicit)).isTrue();
         }
     }
 
@@ -341,6 +480,70 @@ class AtomPredicatesTest
 
             assertThatThrownBy(() -> AtomPredicates.recursive(empty))
                 .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    class Exactly
+    {
+        @Test
+        void matches_an_atom_with_the_same_element_and_aromaticity()
+        {
+            Atom template = Atom.organic("C");
+            Atom sameShape = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(sameShape).build();
+
+            assertThat(AtomPredicates.exactly(template).matches(molecule, sameShape)).isTrue();
+        }
+
+        @Test
+        void does_not_match_a_different_element()
+        {
+            Atom template = Atom.organic("C");
+            Atom nitrogen = Atom.organic("N");
+            Molecule molecule = new Molecule.Builder().addAtom(nitrogen).build();
+
+            assertThat(AtomPredicates.exactly(template).matches(molecule, nitrogen)).isFalse();
+        }
+
+        @Test
+        void does_not_match_a_different_aromaticity()
+        {
+            Atom template = Atom.organic("C");
+            Atom aromaticCarbon = Atom.organic("C", true);
+            Molecule molecule = new Molecule.Builder().addAtom(aromaticCarbon).build();
+
+            assertThat(AtomPredicates.exactly(template).matches(molecule, aromaticCarbon)).isFalse();
+        }
+
+        @Test
+        void does_not_match_a_different_charge()
+        {
+            Atom template = Atom.organic("N");
+            Atom charged = Atom.builder("N").charge(1).build();
+            Molecule molecule = new Molecule.Builder().addAtom(charged).build();
+
+            assertThat(AtomPredicates.exactly(template).matches(molecule, charged)).isFalse();
+        }
+
+        @Test
+        void ignores_isotope_when_the_template_has_none()
+        {
+            Atom template = Atom.organic("C");
+            Atom labelled = Atom.builder("C").isotope(13).build();
+            Molecule molecule = new Molecule.Builder().addAtom(labelled).build();
+
+            assertThat(AtomPredicates.exactly(template).matches(molecule, labelled)).isTrue();
+        }
+
+        @Test
+        void requires_the_same_isotope_when_the_template_has_one()
+        {
+            Atom template = Atom.builder("C").isotope(13).build();
+            Atom unlabelled = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(unlabelled).build();
+
+            assertThat(AtomPredicates.exactly(template).matches(molecule, unlabelled)).isFalse();
         }
     }
 
