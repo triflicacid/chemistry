@@ -4,6 +4,8 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;
 
+import java.util.Set;
+
 /**
  * Factory methods for common {@link AtomPredicate}s.
  */
@@ -57,14 +59,8 @@ public final class AtomPredicates
 
     private static boolean isInRing(Molecule molecule, Atom atom)
     {
-        for (Bond bond : molecule.bondsOf(atom))
-        {
-            if (molecule.ringBonds().contains(bond))
-            {
-                return true;
-            }
-        }
-        return false;
+        Set<Bond> ringBonds = molecule.ringBonds();
+        return molecule.bondsOf(atom).stream().anyMatch(ringBonds::contains);
     }
 
     /**
@@ -73,17 +69,7 @@ public final class AtomPredicates
      */
     public static AtomPredicate degree(int count)
     {
-        return (molecule, atom) -> degreeOf(molecule, atom) == count;
-    }
-
-    private static int degreeOf(Molecule molecule, Atom atom)
-    {
-        int degree = 0;
-        for (Bond ignored : molecule.bondsOf(atom))
-        {
-            degree++;
-        }
-        return degree;
+        return (molecule, atom) -> molecule.bondsOf(atom).size() == count;
     }
 
     /**

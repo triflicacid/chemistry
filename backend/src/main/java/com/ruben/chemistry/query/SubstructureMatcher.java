@@ -13,7 +13,6 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -119,7 +118,7 @@ public final class SubstructureMatcher
     private static QueryAtom nextQueryAtom(Query query, Map<QueryAtom, Atom> assignment)
     {
         QueryAtom best = null;
-        int bestMappedNeighbours = -1;
+        long bestMappedNeighbours = -1;
         for (QueryAtom atom : query.atoms())
         {
             if (assignment.containsKey(atom))
@@ -129,14 +128,7 @@ public final class SubstructureMatcher
             }
 
             // count how many of this atom's bonds already lead to a mapped atom
-            int mappedNeighbours = 0;
-            for (QueryBond bond : query.bondsOf(atom))
-            {
-                if (assignment.containsKey(bond.getOther(atom)))
-                {
-                    mappedNeighbours++;
-                }
-            }
+            long mappedNeighbours = query.bondsOf(atom).stream().filter(bond -> assignment.containsKey(bond.getOther(atom))).count();
 
             // keep the most-constrained atom seen so far (most bonds to mapped neighbours)
             if (mappedNeighbours > bestMappedNeighbours)
@@ -156,7 +148,7 @@ public final class SubstructureMatcher
     /**
      * @return the candidate real atoms to try {@code queryAtom} against
      */
-    private Iterable<Atom> candidateAtoms(Query query, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment)
+    private List<Atom> candidateAtoms(Query query, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment)
     {
         for (QueryBond queryBond : query.bondsOf(queryAtom))
         {
@@ -165,12 +157,7 @@ public final class SubstructureMatcher
             Atom mappedNeighbour = assignment.get(queryBond.getOther(queryAtom));
             if (mappedNeighbour != null)
             {
-                List<Atom> candidates = new ArrayList<>();
-                for (Bond realBond : molecule.bondsOf(mappedNeighbour))
-                {
-                    candidates.add(realBond.getOther(mappedNeighbour));
-                }
-                return candidates;
+                return molecule.bondsOf(mappedNeighbour).stream().map(realBond -> realBond.getOther(mappedNeighbour)).toList();
             }
         }
 
@@ -209,24 +196,12 @@ public final class SubstructureMatcher
     {
         // check each declared stereocentre by reprojecting it onto the real atoms the
         // matched neighbours ended up as, same as Molecule#chiralityOf does for any other order
-        for (QueryAtom queryAtom : query.atoms())
-        {
-            Optional<Chirality> required = query.chiralityOf(queryAtom);
-            if (required.isPresent() && !chiralityMatches(query, queryAtom, assignment, required.get()))
-            {
-                return false;
-            }
-        }
+        boolean chiralityOk = query.atoms().stream()
+            .allMatch(atom -> query.chiralityOf(atom).map(required -> chiralityMatches(query, atom, assignment, required)).orElse(true));
         // same reprojection, but for declared double bond stereo requirements
-        for (QueryBond queryBond : query.bonds())
-        {
-            Optional<DoubleBondStereo> required = query.doubleBondStereoOf(queryBond);
-            if (required.isPresent() && !doubleBondStereoMatches(query, queryBond, assignment, required.get()))
-            {
-                return false;
-            }
-        }
-        return true;
+        boolean doubleBondStereoOk = query.bonds().stream()
+            .allMatch(bond -> query.doubleBondStereoOf(bond).map(required -> doubleBondStereoMatches(query, bond, assignment, required)).orElse(true));
+        return chiralityOk && doubleBondStereoOk;
     }
 
     /**
@@ -237,12 +212,9 @@ public final class SubstructureMatcher
         Atom realAtom = assignment.get(queryAtom);
 
         // build the real bond order corresponding to queryAtom's bonds in query order
-        List<NeighbourReference> realOrder = new ArrayList<>();
-        for (QueryBond queryBond : query.bondsOf(queryAtom))
-        {
-            Atom realNeighbour = assignment.get(queryBond.getOther(queryAtom));
-            realOrder.add(molecule.bondBetween(realAtom, realNeighbour).orElseThrow());
-        }
+        List<NeighbourReference> realOrder = query.bondsOf(queryAtom).stream()
+            .<NeighbourReference>map(queryBond -> molecule.bondBetween(realAtom, assignment.get(queryBond.getOther(queryAtom))).orElseThrow())
+            .toList();
 
         // the query must specify exactly as many neighbours as the real atom actually has
         if (realOrder.size() != realNeighbourCount(realAtom))
@@ -258,12 +230,7 @@ public final class SubstructureMatcher
      */
     private int realNeighbourCount(Atom atom)
     {
-        int count = atom.hydrogenCount().orElse(0) > 0 ? 1 : 0;
-        for (Bond ignored : molecule.bondsOf(atom))
-        {
-            count++;
-        }
-        return count;
+        return (atom.hydrogenCount().orElse(0) > 0 ? 1 : 0) + molecule.bondsOf(atom).size();
     }
 
     /**
@@ -301,16 +268,11 @@ public final class SubstructureMatcher
      */
     private Bond defaultReferenceBond(Query query, QueryBond queryBond, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment)
     {
-        for (QueryBond candidate : query.bondsOf(queryAtom))
-        {
-            if (candidate == queryBond)
-            {
-                continue;
-            }
-            Atom realAtom = assignment.get(queryAtom);
-            Atom realNeighbour = assignment.get(candidate.getOther(queryAtom));
-            return molecule.bondBetween(realAtom, realNeighbour).orElseThrow();
-        }
-        return null;
+        Atom realAtom = assignment.get(queryAtom);
+        return query.bondsOf(queryAtom).stream()
+            .filter(candidate -> candidate != queryBond)
+            .findFirst()
+            .map(candidate -> molecule.bondBetween(realAtom, assignment.get(candidate.getOther(queryAtom))).orElseThrow())
+            .orElse(null);
     }
 }

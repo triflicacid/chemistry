@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 public final class Molecule
 {
@@ -55,7 +56,7 @@ public final class Molecule
     /**
      * @return the atoms of this molecule
      */
-    public Iterable<Atom> atoms()
+    public List<Atom> atoms()
     {
         return atoms;
     }
@@ -63,7 +64,7 @@ public final class Molecule
     /**
      * @return the bonds of this molecule
      */
-    public Iterable<Bond> bonds()
+    public List<Bond> bonds()
     {
         return bonds;
     }
@@ -97,7 +98,7 @@ public final class Molecule
      * @return the bonds incident to {@code atom}, in no particular order
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
-    public Iterable<Bond> bondsOf(Atom atom)
+    public List<Bond> bondsOf(Atom atom)
     {
         List<Bond> result = incidentBonds.get(atom);
         if (result == null)
@@ -115,14 +116,7 @@ public final class Molecule
      */
     public Optional<Bond> bondBetween(Atom first, Atom second)
     {
-        for (Bond bond : bondsOf(first))
-        {
-            if (bond.getOther(first) == second)
-            {
-                return Optional.of(bond);
-            }
-        }
-        return Optional.empty();
+        return bondsOf(first).stream().filter(bond -> bond.getOther(first) == second).findFirst();
     }
 
     /**
@@ -167,15 +161,11 @@ public final class Molecule
         }
 
         // escalate to a higher default valence only when required
-        int chosenValence = valences[valences.length - 1];
-        for (int valence : valences)
-        {
-            if (valence >= explicitBondSum)
-            {
-                chosenValence = valence;
-                break;
-            }
-        }
+        int requiredValence = explicitBondSum;
+        int chosenValence = IntStream.of(valences)
+            .filter(valence -> valence >= requiredValence)
+            .findFirst()
+            .orElse(valences[valences.length - 1]);
 
         // the aromatic weighting only ever spends the valence already chosen above
         int remainingAfterExplicitBonds = chosenValence - explicitBondSum;
@@ -303,10 +293,7 @@ public final class Molecule
         {
             order.add(IMPLICIT_HYDROGEN);
         }
-        for (Bond bond : bondsOf(atom))
-        {
-            order.add(bond);
-        }
+        order.addAll(bondsOf(atom));
         return order;
     }
 
@@ -446,14 +433,10 @@ public final class Molecule
      */
     private void requireBond(Bond bond)
     {
-        for (Bond candidate : bonds)
+        if (bonds.stream().noneMatch(candidate -> candidate == bond))
         {
-            if (candidate == bond)
-            {
-                return;
-            }
+            throw new IllegalArgumentException("Bond is not part of this molecule: " + bond);
         }
-        throw new IllegalArgumentException("Bond is not part of this molecule: " + bond);
     }
 
     /**
@@ -461,14 +444,9 @@ public final class Molecule
      * @return the atoms directly bonded to {@code atom}
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
-    public Iterable<Atom> neighboursOf(Atom atom)
+    public List<Atom> neighboursOf(Atom atom)
     {
-        List<Atom> neighbours = new ArrayList<>();
-        for (Bond bond : bondsOf(atom))
-        {
-            neighbours.add(bond.getOther(atom));
-        }
-        return List.copyOf(neighbours);
+        return bondsOf(atom).stream().map(bond -> bond.getOther(atom)).toList();
     }
 
     /**
@@ -480,23 +458,10 @@ public final class Molecule
     public Builder toBuilder()
     {
         Builder builder = new Builder();
-        for (Atom atom : atoms)
-        {
-            builder.addAtom(atom);
-        }
-        for (Bond bond : bonds)
-        {
-            builder.addBond(bond.first(), bond.second(), bond.order());
-        }
-        for (Map.Entry<Atom, Chirality> entry : chiralityByAtom.entrySet())
-        {
-            builder.setChirality(entry.getKey(), entry.getValue());
-        }
-        for (Map.Entry<Bond, DoubleBondStereo> entry : doubleBondStereoByBond.entrySet())
-        {
-            Bond bond = entry.getKey();
-            builder.setDoubleBondStereo(bond.first(), bond.second(), entry.getValue());
-        }
+        atoms.forEach(builder::addAtom);
+        bonds.forEach(bond -> builder.addBond(bond.first(), bond.second(), bond.order()));
+        chiralityByAtom.forEach(builder::setChirality);
+        doubleBondStereoByBond.forEach((bond, stereo) -> builder.setDoubleBondStereo(bond.first(), bond.second(), stereo));
         return builder;
     }
 
@@ -675,9 +640,7 @@ public final class Molecule
         }
 
         /**
-         * Removes the bond between two atoms, along with any declared stereo for it. Since a
-         * molecule is a simple graph, at most one bond can exist between any pair of atoms, so
-         * no bond order needs to be given.
+         * Removes the bond between two atoms, along with any declared stereo for it.
          *
          * @param first one endpoint atom
          * @param second the other endpoint atom

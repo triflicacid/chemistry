@@ -587,14 +587,10 @@ public final class SmilesParser
      */
     private Atom defaultSubstituentOf(Atom atom, Atom excluding)
     {
-        for (Atom candidate : substituentOrderOf.getOrDefault(atom, List.of()))
-        {
-            if (candidate != excluding)
-            {
-                return candidate;
-            }
-        }
-        return null;
+        return substituentOrderOf.getOrDefault(atom, List.of()).stream()
+            .filter(candidate -> candidate != excluding)
+            .findFirst()
+            .orElse(null);
     }
 
     /**

@@ -1,6 +1,5 @@
 package com.ruben.chemistry.core;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -19,11 +18,7 @@ public final class CanonicalRanker implements Ranker
     @Override
     public Ranking rank(Molecule molecule)
     {
-        List<Atom> atoms = new ArrayList<>();
-        for (Atom atom : molecule.atoms())
-        {
-            atoms.add(atom);
-        }
+        List<Atom> atoms = molecule.atoms();
 
         Set<Bond> ringBonds = molecule.ringBonds();
 
@@ -84,14 +79,10 @@ public final class CanonicalRanker implements Ranker
         {
             countByClass.merge(classOf.get(atom), 1, Integer::sum);
         }
-        for (Atom atom : atoms)
-        {
-            if (countByClass.get(classOf.get(atom)) > 1)
-            {
-                return atom;
-            }
-        }
-        throw new IllegalStateException("No tied class remains to split");
+        return atoms.stream()
+            .filter(atom -> countByClass.get(classOf.get(atom)) > 1)
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("No tied class remains to split"));
     }
 
     /**
@@ -133,28 +124,17 @@ public final class CanonicalRanker implements Ranker
 
     private AtomKey initialInvariant(Molecule molecule, Set<Bond> ringBonds, Atom atom)
     {
-        int degree = 0;
-        boolean inRing = false;
-        for (Bond bond : molecule.bondsOf(atom))
-        {
-            degree++;
-            if (ringBonds.contains(bond))
-            {
-                inRing = true;
-            }
-        }
-        return new AtomKey(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), atom.hydrogenCount().orElse(-1), degree, inRing);
+        List<Bond> bonds = molecule.bondsOf(atom);
+        boolean inRing = bonds.stream().anyMatch(ringBonds::contains);
+        return new AtomKey(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), atom.hydrogenCount().orElse(-1), bonds.size(), inRing);
     }
 
     private Object neighbourInvariant(Molecule molecule, Atom atom, Map<Atom, Integer> classOf)
     {
-        List<String> neighbours = new ArrayList<>();
-        for (Bond bond : molecule.bondsOf(atom))
-        {
-            neighbours.add(bond.order().ordinal() + ":" + classOf.get(bond.getOther(atom)));
-        }
-        Collections.sort(neighbours);
-        return neighbours;
+        return molecule.bondsOf(atom).stream()
+            .map(bond -> bond.order().ordinal() + ":" + classOf.get(bond.getOther(atom)))
+            .sorted()
+            .toList();
     }
 
     /**

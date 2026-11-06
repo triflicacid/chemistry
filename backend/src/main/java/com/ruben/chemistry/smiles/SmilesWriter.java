@@ -124,10 +124,7 @@ public final class SmilesWriter
     {
         ranking = ranker == null ? null : ranker.rank(molecule);
 
-        for (Atom atom : molecule.atoms())
-        {
-            ringBondsOfAtom.put(atom, new ArrayList<>());
-        }
+        molecule.atoms().forEach(atom -> ringBondsOfAtom.put(atom, new ArrayList<>()));
 
         // First pass: walk the graph purely to assign ring numbers
         for (Atom atom : rootAtoms())
@@ -168,12 +165,7 @@ public final class SmilesWriter
     {
         if (ranking == null)
         {
-            List<Atom> atoms = new ArrayList<>();
-            for (Atom atom : molecule.atoms())
-            {
-                atoms.add(atom);
-            }
-            return atoms;
+            return molecule.atoms();
         }
         return ranking.atomsByAscendingRank();
     }
@@ -184,11 +176,7 @@ public final class SmilesWriter
      */
     private List<Bond> orderedBondsOf(Atom atom)
     {
-        List<Bond> bonds = new ArrayList<>();
-        for (Bond bond : molecule.bondsOf(atom))
-        {
-            bonds.add(bond);
-        }
+        List<Bond> bonds = new ArrayList<>(molecule.bondsOf(atom));
         if (ranking != null)
         {
             // stable sort: ties fall back to the original bondsOf order
@@ -475,14 +463,14 @@ public final class SmilesWriter
      */
     private List<String> ringClosureTokens(Atom atom)
     {
-        List<String> tokens = new ArrayList<>();
-        for (Bond bond : ringBondsOfAtom.get(atom))
-        {
-            int ringNumber = ringNumberOfBond.get(bond);
-            String digits = ringNumber >= 10 ? "%" + ringNumber : String.valueOf(ringNumber);
-            tokens.add(ringBondSymbolPrefix(bond, atom) + digits);
-        }
-        return tokens;
+        return ringBondsOfAtom.get(atom).stream()
+            .map(bond ->
+            {
+                int ringNumber = ringNumberOfBond.get(bond);
+                String digits = ringNumber >= 10 ? "%" + ringNumber : String.valueOf(ringNumber);
+                return ringBondSymbolPrefix(bond, atom) + digits;
+            })
+            .toList();
     }
 
     /**

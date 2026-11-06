@@ -36,7 +36,7 @@ public final class Query
     /**
      * @return this query's atom positions
      */
-    public Iterable<QueryAtom> atoms()
+    public List<QueryAtom> atoms()
     {
         return atoms;
     }
@@ -44,7 +44,7 @@ public final class Query
     /**
      * @return this query's bond positions
      */
-    public Iterable<QueryBond> bonds()
+    public List<QueryBond> bonds()
     {
         return bonds;
     }
@@ -70,7 +70,7 @@ public final class Query
      * @return the bond positions incident to {@code atom}, in no particular order
      * @throws IllegalArgumentException if {@code atom} is not part of this query
      */
-    public Iterable<QueryBond> bondsOf(QueryAtom atom)
+    public List<QueryBond> bondsOf(QueryAtom atom)
     {
         List<QueryBond> result = incidentBonds.get(atom);
         if (result == null)
@@ -88,14 +88,7 @@ public final class Query
      */
     public Optional<QueryBond> bondBetween(QueryAtom first, QueryAtom second)
     {
-        for (QueryBond bond : bondsOf(first))
-        {
-            if (bond.getOther(first) == second)
-            {
-                return Optional.of(bond);
-            }
-        }
-        return Optional.empty();
+        return bondsOf(first).stream().filter(bond -> bond.getOther(first) == second).findFirst();
     }
 
     /**
@@ -132,14 +125,10 @@ public final class Query
 
     private void requireBond(QueryBond bond)
     {
-        for (QueryBond candidate : bonds)
+        if (bonds.stream().noneMatch(candidate -> candidate == bond))
         {
-            if (candidate == bond)
-            {
-                return;
-            }
+            throw new IllegalArgumentException("Query bond is not part of this query: " + bond);
         }
-        throw new IllegalArgumentException("Query bond is not part of this query: " + bond);
     }
 
     private static Map<QueryAtom, List<QueryBond>> buildIncidentBonds(List<QueryAtom> atoms, List<QueryBond> bonds)
@@ -263,14 +252,7 @@ public final class Query
 
         private QueryBond findBond(QueryAtom first, QueryAtom second)
         {
-            for (QueryBond bond : bonds)
-            {
-                if (bond.matches(first, second))
-                {
-                    return bond;
-                }
-            }
-            return null;
+            return bonds.stream().filter(bond -> bond.matches(first, second)).findFirst().orElse(null);
         }
 
         private void requireAdded(QueryAtom atom)

@@ -28,31 +28,22 @@ public final class Queries
         Query.Builder builder = new Query.Builder();
 
         // same atoms
-        for (Atom atom : molecule.atoms())
+        molecule.atoms().forEach(atom ->
         {
             QueryAtom queryAtom = new QueryAtom(AtomPredicates.exactly(atom));
             queryAtomOf.put(atom, queryAtom);
             builder.addAtom(queryAtom);
-        }
+        });
 
         // same bonds
-        for (Bond bond : molecule.bonds())
-        {
-            builder.addBond(queryAtomOf.get(bond.first()), queryAtomOf.get(bond.second()), BondPredicates.exactly(bond));
-        }
+        molecule.bonds().forEach(bond -> builder.addBond(queryAtomOf.get(bond.first()), queryAtomOf.get(bond.second()), BondPredicates.exactly(bond)));
 
         // same chiralities
-        for (Atom atom : molecule.atoms())
-        {
-            molecule.chiralityOf(atom).ifPresent(chirality -> builder.setChirality(queryAtomOf.get(atom), chirality));
-        }
+        molecule.atoms().forEach(atom -> molecule.chiralityOf(atom).ifPresent(chirality -> builder.setChirality(queryAtomOf.get(atom), chirality)));
 
         // same stereochemistry
-        for (Bond bond : molecule.bonds())
-        {
-            molecule.doubleBondStereoOf(bond)
-                .ifPresent(stereo -> builder.setDoubleBondStereo(queryAtomOf.get(bond.first()), queryAtomOf.get(bond.second()), stereo));
-        }
+        molecule.bonds().forEach(bond -> molecule.doubleBondStereoOf(bond)
+            .ifPresent(stereo -> builder.setDoubleBondStereo(queryAtomOf.get(bond.first()), queryAtomOf.get(bond.second()), stereo)));
 
         return builder.build();
     }

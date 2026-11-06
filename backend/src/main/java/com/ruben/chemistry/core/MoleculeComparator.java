@@ -67,12 +67,9 @@ public final class MoleculeComparator implements Comparator<Molecule>
      */
     private List<AtomSignature> atomSignatures(Molecule molecule, Ranking ranking)
     {
-        List<AtomSignature> signatures = new ArrayList<>();
-        for (Atom atom : ranking.atomsByAscendingRank())
-        {
-            signatures.add(new AtomSignature(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), atom.hydrogenCount().orElse(-1), chiralityOf(molecule, ranking, atom)));
-        }
-        return signatures;
+        return ranking.atomsByAscendingRank().stream()
+            .map(atom -> new AtomSignature(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), atom.hydrogenCount().orElse(-1), chiralityOf(molecule, ranking, atom)))
+            .toList();
     }
 
     /**
@@ -86,11 +83,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
         {
             order.add(Molecule.IMPLICIT_HYDROGEN);
         }
-        List<Bond> bonds = new ArrayList<>();
-        for (Bond bond : molecule.bondsOf(atom))
-        {
-            bonds.add(bond);
-        }
+        List<Bond> bonds = new ArrayList<>(molecule.bondsOf(atom));
         bonds.sort(Comparator.<Bond>comparingInt(bond -> ranking.rankOf(bond.getOther(atom))).thenComparingInt(bond -> bond.order().ordinal()));
         order.addAll(bonds);
         return order;
@@ -126,14 +119,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
      */
     private static NeighbourReference firstOtherThan(List<NeighbourReference> order, Bond excluded)
     {
-        for (NeighbourReference candidate : order)
-        {
-            if (candidate != excluded)
-            {
-                return candidate;
-            }
-        }
-        return null;
+        return order.stream().filter(candidate -> candidate != excluded).findFirst().orElse(null);
     }
 
     /**
@@ -141,15 +127,15 @@ public final class MoleculeComparator implements Comparator<Molecule>
      */
     private List<BondSignature> bondSignatures(Molecule molecule, Ranking ranking)
     {
-        List<BondSignature> signatures = new ArrayList<>();
-        for (Bond bond : molecule.bonds())
-        {
-            int rankA = ranking.rankOf(bond.first());
-            int rankB = ranking.rankOf(bond.second());
-            signatures.add(new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order(), doubleBondStereoOf(molecule, ranking, bond)));
-        }
-        signatures.sort(Comparator.naturalOrder());
-        return signatures;
+        return molecule.bonds().stream()
+            .map(bond ->
+            {
+                int rankA = ranking.rankOf(bond.first());
+                int rankB = ranking.rankOf(bond.second());
+                return new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order(), doubleBondStereoOf(molecule, ranking, bond));
+            })
+            .sorted()
+            .toList();
     }
 
     private static <T extends Comparable<T>> int compareLists(List<T> first, List<T> second)

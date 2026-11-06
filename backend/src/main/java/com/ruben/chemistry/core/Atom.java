@@ -107,10 +107,7 @@ public record Atom(
             text.append(']');
         }
 
-        for (String ringClosureToken : ringClosureTokens)
-        {
-            text.append(ringClosureToken);
-        }
+        ringClosureTokens.forEach(text::append);
         return text.toString();
     }
 
