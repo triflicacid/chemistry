@@ -31,8 +31,11 @@ public enum TokenType
     /** A single-letter structural primitive inside a bracket atom. */
     STRUCTURAL,
 
-    /** A recursive-SMARTS primitive's {@code $(...)} contents, lexed whole: the text is everything between the parens. */
-    EXPRESSION,
+    /** Marks the start of a recursive-SMARTS primitive's {@code $(...)} contents, text {@code "$("}. */
+    EXPRESSION_START,
+
+    /** Marks the end of a recursive-SMARTS primitive's {@code $(...)} contents, at its closing {@code )}. */
+    EXPRESSION_END,
 
     /** A bond symbol: one of {@code - = # $ : / \ ~ @}. */
     BOND,

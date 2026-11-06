@@ -4,13 +4,11 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.query.AtomPredicate;
 import com.ruben.chemistry.query.AtomPredicates;
-import com.ruben.chemistry.query.Query;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.function.IntFunction;
 
 /**
@@ -39,20 +37,20 @@ public final class AtomExpressionParser
     /** Token types that keep an {@code &}-chain going: the operator itself, or anything that can start a primitive (implicit and). */
     private static final Set<TokenType> CONTINUES_AND_CHAIN = Set.of(
         TokenType.AND, TokenType.ELEMENT, TokenType.HASH, TokenType.STRUCTURAL, TokenType.SIGN,
-        TokenType.COLON, TokenType.NUMBER, TokenType.NOT, TokenType.EXPRESSION);
+        TokenType.COLON, TokenType.NUMBER, TokenType.NOT, TokenType.EXPRESSION_START);
 
     private final List<Token> tokens;
     private final Chirality chirality;
     private final String source;
-    private final Function<String, Query> subPatternResolver;
+    private final SubPatternResolver subPatternResolver;
     private int index;
 
     /**
      * @param tokens the bracket atom's inner tokens
      * @param source the full source string {@code tokens} were lexed from, used to render error messages
-     * @param subPatternResolver resolves a {@link TokenType#EXPRESSION} token's text into the {@link Query} it denotes
+     * @param subPatternResolver resolves any {@code $(...)} recursive primitives found
      */
-    public AtomExpressionParser(List<Token> tokens, String source, Function<String, Query> subPatternResolver)
+    public AtomExpressionParser(List<Token> tokens, String source, SubPatternResolver subPatternResolver)
     {
         this.source = source;
         this.subPatternResolver = subPatternResolver;
@@ -176,10 +174,41 @@ public final class AtomExpressionParser
             case STRUCTURAL -> structuralPrimitive(token.text());
             case SIGN -> chargePrimitive(token);
             case COLON -> AtomPredicates.atomClass(requireNumber(':'));
-            case EXPRESSION -> AtomPredicates.recursive(subPatternResolver.apply(token.text()));
+            case EXPRESSION_START -> AtomPredicates.recursive(subPatternResolver.resolve(collectExpressionTokens()));
             default -> throw new InvalidNotationException(
                 "Unexpected token '" + token.text() + "' in atom expression", source, token.position());
         };
+    }
+
+    /**
+     * Collects the tokens between a just-consumed {@link TokenType#EXPRESSION_START} and its
+     * matching {@link TokenType#EXPRESSION_END}.
+     *
+     * @return the collected tokens, excluding both markers
+     * @throws InvalidNotationException if the matching end marker is never found
+     */
+    private List<Token> collectExpressionTokens()
+    {
+        List<Token> collected = new ArrayList<>();
+        int depth = 1;
+        while (hasMore())
+        {
+            Token token = consume();
+            if (token.type() == TokenType.EXPRESSION_START)
+            {
+                depth++;
+            }
+            else if (token.type() == TokenType.EXPRESSION_END)
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return collected;
+                }
+            }
+            collected.add(token);
+        }
+        throw new InvalidNotationException("Unterminated recursive SMARTS primitive, missing its end marker", source, source.length());
     }
 
     /**
