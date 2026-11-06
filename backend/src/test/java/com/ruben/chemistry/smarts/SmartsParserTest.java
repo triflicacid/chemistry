@@ -260,5 +260,13 @@ class SmartsParserTest
             assertThatThrownBy(() -> parse("C11"))
                 .isInstanceOf(InvalidNotationException.class);
         }
+
+        @Test
+        void throws_for_a_bond_expression_immediately_following_another_one()
+        {
+            assertThatThrownBy(() -> parse("C-(=C)C"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("immediately follows another bond expression");
+        }
     }
 }

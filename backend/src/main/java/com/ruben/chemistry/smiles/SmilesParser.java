@@ -289,9 +289,15 @@ public final class SmilesParser
      * Consumes a bond token, recording its order for the atom that follows.
      *
      * @param token the peeked {@link TokenType#BOND} token
+     * @throws InvalidNotationException if a bond symbol is already pending
      */
     private void parseBond(Token token)
     {
+        if (pendingBondSymbol != null)
+        {
+            throw new InvalidNotationException("Bond symbol immediately follows another bond symbol", source, token.position());
+        }
+
         lexer.next();
         pendingBondSymbol = token.text();
         pendingBondPosition = token.position();

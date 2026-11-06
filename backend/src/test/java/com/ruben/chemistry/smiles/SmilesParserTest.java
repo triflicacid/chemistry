@@ -775,6 +775,14 @@ class SmilesParserTest
             assertThat(exception.source()).isEqualTo("CC)C");
         }
 
+        @Test
+        void throws_for_a_bond_symbol_immediately_following_another_one()
+        {
+            assertThatThrownBy(() -> parse("C-(=C)C"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("immediately follows another bond symbol");
+        }
+
         private Throwable catchParseException(String smiles)
         {
             try

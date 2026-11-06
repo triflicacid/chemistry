@@ -78,14 +78,7 @@ public final class SmartsParser
     }
 
     /**
-     * Parses tokens up to a terminator token type, consuming it too unless it's the
-     * end-of-source marker (which is never physically present as a token to consume).
-     * Used both for a whole top-level SMARTS string (terminated by {@link TokenType#EOF}) and
-     * for a {@code $(...)} recursive primitive's span (terminated by its own
-     * {@link TokenType#EXPRESSION_END}) - either way, nothing needs to be pre-collected: a
-     * nested recursive primitive's own matching {@link TokenType#EXPRESSION_END} is consumed
-     * by its own, deeper call to this same method before control ever returns here, so this
-     * loop only ever sees the terminator that actually belongs to it.
+     * Parses tokens up to a terminator token type, consuming it too.
      *
      * @param terminator the token type that ends this parse
      * @return the parsed query
@@ -126,8 +119,7 @@ public final class SmartsParser
     }
 
     /**
-     * Parses a single grammar element at the current token position: an atom, bond
-     * expression, branch delimiter, ring closure, or disconnection dot.
+     * Parses a single grammar element at the current token position.
      *
      * @throws InvalidNotationException if the current token cannot start a valid element here
      */
@@ -149,9 +141,7 @@ public final class SmartsParser
     }
 
     /**
-     * Parses an organic-subset atom token outside brackets into an atom position whose
-     * predicate matches that element (or aromatic element), directly - no expression parsing
-     * is needed since a bare atom token can't carry logical operators.
+     * Parses an organic-subset atom token outside brackets.
      *
      * @return the added atom position
      */
@@ -164,7 +154,7 @@ public final class SmartsParser
     }
 
     /**
-     * @param rawSymbol an organic-subset atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
+     * @param rawSymbol an organic-subset atom symbol, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
      * @return the predicate it denotes
      */
     private AtomPredicate organicAtomPredicate(String rawSymbol)
@@ -177,10 +167,7 @@ public final class SmartsParser
     }
 
     /**
-     * Parses a {@code [...]} bracket atom into an atom position, delegating the primitive
-     * expression between the brackets to {@link AtomExpressionParser}, which consumes
-     * directly from this parser's own cursor and stops exactly at the matching
-     * {@link TokenType#BRACKET_CLOSE} - no separate token collection pass is needed.
+     * Parses a {@code [...]} bracket atom.
      *
      * @return the added atom position
      * @throws InvalidNotationException if the matching {@link TokenType#BRACKET_CLOSE} is never found
@@ -203,10 +190,7 @@ public final class SmartsParser
     }
 
     /**
-     * Resolves a recursive SMARTS primitive into the query it denotes, by parsing directly
-     * off the same shared cursor the primitive was found on, up to and including its own
-     * matching {@link TokenType#EXPRESSION_END} - no separate span needs to be collected
-     * first, and no re-lexing is needed either.
+     * Resolves a recursive SMARTS primitive into the query it denotes.
      *
      * @param sharedCursor the cursor positioned at the recursive primitive's first token
      * @return the pattern it denotes
@@ -217,17 +201,21 @@ public final class SmartsParser
     }
 
     /**
-     * Parses a bond expression written outside a bracket atom (bond symbols and the logical
-     * operators combining them) directly off this parser's cursor, recording its result as
-     * pending until the atom or ring closure it applies to is parsed. {@link BondExpressionParser}
-     * stops consuming on its own, exactly where the expression ends, so no separate token
-     * collection pass is needed here either.
+     * Parses a bond expression written outside a bracket atom.
+     *
+     * @throws InvalidNotationException if a bond expression is already pending
      */
     private void parseBondExpression()
     {
+        if (pendingBondResult != null)
+        {
+            throw new InvalidNotationException("Bond expression immediately follows another bond expression", source, peek().position());
+        }
+
         Token first = peek();
-        boolean isDoubleCandidate = first.type() == TokenType.BOND && first.text().equals("=")
-            && !BOND_EXPRESSION_TOKENS.contains(peek(1).type());
+        boolean isDoubleCandidate = first.type() == TokenType.BOND
+                && first.text().equals("=")
+                && !BOND_EXPRESSION_TOKENS.contains(peek(1).type());
 
         pendingBondResult = new BondExpressionParser(cursor, source).parse();
         pendingIsDoubleBond = isDoubleCandidate;
@@ -491,9 +479,8 @@ public final class SmartsParser
 
     /**
      * Reconciles the two directional edges flanking the double bond between {@code first}
-     * and {@code second} into its declared stereo configuration, if both of its endpoints
-     * now have one recorded; does nothing otherwise. The declared value is reprojected onto
-     * the default reference substituents.
+     * and {@code second} into its declared stereo configuration.
+     * The declared value is reprojected onto the default reference substituents.
      *
      * @param first one endpoint of the double bond
      * @param second the other endpoint
