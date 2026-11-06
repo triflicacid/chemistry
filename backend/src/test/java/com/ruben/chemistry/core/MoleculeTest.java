@@ -197,7 +197,7 @@ class MoleculeTest
         @Test
         void excludes_a_bond_connecting_two_separate_rings()
         {
-            // bicyclopropyl: two cyclopropane rings joined by a single bond
+            // C1CC1C1CC1: two cyclopropane rings joined by a single bond
             Atom a1 = Atom.organic("C");
             Atom a2 = Atom.organic("C");
             Atom a3 = Atom.organic("C");
