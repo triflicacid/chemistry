@@ -58,9 +58,12 @@ public final class Query
     }
 
     /**
-     * @return an arbitrary atom position, suitable as a search starting point
+     * Returns this query's first atom position - the position a recursive sub-pattern
+     * binds to the atom it's being tested against.
+     *
+     * @return this query's first atom position, or empty if it has none
      */
-    public Optional<QueryAtom> anyAtom()
+    public Optional<QueryAtom> anchorAtom()
     {
         return atoms.isEmpty() ? Optional.empty() : Optional.of(atoms.getFirst());
     }

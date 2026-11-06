@@ -43,6 +43,46 @@ public final class SubstructureMatcher
     }
 
     /**
+     * Like {@link #findMatches}, but only considers matches with {@code queryAtom} bound to {@code anchor} specifically.
+     *
+     * @param query the pattern to search for
+     * @param queryAtom a position in {@code query}, by reference identity
+     * @param anchor the real atom {@code queryAtom} must bind to
+     * @return every way {@code query} can be mapped with {@code queryAtom} bound to {@code anchor}
+     * @throws IllegalArgumentException if {@code queryAtom} is not part of {@code query}
+     */
+    public List<Match> findMatches(Query query, QueryAtom queryAtom, Atom anchor)
+    {
+        // bondsOf validates queryAtom is actually part of query, even one with no bonds at all
+        query.bondsOf(queryAtom);
+
+        List<Match> matches = new ArrayList<>();
+        // check the anchor is valid
+        if (queryAtom.predicate().matches(molecule, anchor))
+        {
+            // insert into maps, so we explore from this atom rather than a random one
+            Map<QueryAtom, Atom> assignment = new IdentityHashMap<>();
+            Map<Atom, QueryAtom> reverse = new IdentityHashMap<>();
+            assignment.put(queryAtom, anchor);
+            reverse.put(anchor, queryAtom);
+            search(query, assignment, reverse, matches);
+        }
+        return matches;
+    }
+
+    /**
+     * @param query the pattern to search for
+     * @param queryAtom a position in {@code query}, by reference identity
+     * @param anchor the real atom {@code queryAtom} must bind to
+     * @return {@code true} if some match of {@code query} exists with {@code queryAtom} bound to {@code anchor}
+     * @throws IllegalArgumentException if {@code queryAtom} is not part of {@code query}
+     */
+    public boolean matches(Query query, QueryAtom queryAtom, Atom anchor)
+    {
+        return !findMatches(query, queryAtom, anchor).isEmpty();
+    }
+
+    /**
      * Like {@link #findMatches}, but collapses the several matches a symmetric query produces
      * for one real substructure down to a single representative match.
      *

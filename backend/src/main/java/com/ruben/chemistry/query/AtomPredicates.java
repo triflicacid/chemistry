@@ -120,6 +120,19 @@ public final class AtomPredicates
     }
 
     /**
+     * @param subPattern the nested pattern to test, anchored at its own first atom position
+     * @return a predicate matching an atom if {@code subPattern} has some match with its
+     *     first atom position bound to that atom.
+     * @throws IllegalArgumentException if {@code subPattern} has no atoms
+     */
+    public static AtomPredicate recursive(Query subPattern)
+    {
+        QueryAtom anchorPosition = subPattern.anchorAtom()
+            .orElseThrow(() -> new IllegalArgumentException("Recursive sub-pattern must have at least one atom"));
+        return (molecule, atom) -> new SubstructureMatcher(molecule).matches(subPattern, anchorPosition, atom);
+    }
+
+    /**
      * @param template the atom to match exactly
      * @return a predicate matching an atom with the same element, aromaticity, charge, isotope, hydrogens etc.
      */

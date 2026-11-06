@@ -1,5 +1,6 @@
 package com.ruben.chemistry.query;
 
+import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SubstructureMatcherTest
 {
@@ -231,5 +233,72 @@ class SubstructureMatcherTest
 
         assertThat(matcher.findMatches(query)).hasSize(4);
         assertThat(matcher.findDistinctMatches(query)).hasSize(2);
+    }
+
+    @Test
+    void anchored_findMatches_only_considers_matches_with_queryAtom_bound_to_the_given_atom()
+    {
+        // acetone: CC(=O)C
+        Molecule molecule = new SmilesParser("CC(=O)C").parse();
+        Atom carbonylCarbon = nthAtom(molecule, 1);
+        Atom methylCarbon = nthAtom(molecule, 0);
+
+        QueryAtom qc = new QueryAtom(AtomPredicates.any());
+        QueryAtom qo = new QueryAtom(AtomPredicates.element("O"));
+        Query query = new Query.Builder()
+            .addAtom(qc)
+            .addAtom(qo)
+            .addBond(qc, qo, BondPredicates.order(BondOrder.DOUBLE))
+            .build();
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.findMatches(query, qc, carbonylCarbon)).hasSize(1);
+        assertThat(matcher.findMatches(query, qc, methylCarbon)).isEmpty();
+    }
+
+    @Test
+    void anchored_findMatches_rejects_an_anchor_that_fails_queryAtoms_own_predicate()
+    {
+        Molecule molecule = new SmilesParser("CC(=O)C").parse();
+        Atom carbon = nthAtom(molecule, 0);
+
+        QueryAtom qo = new QueryAtom(AtomPredicates.element("O"));
+        QueryAtom qAny = new QueryAtom(AtomPredicates.any());
+        Query query = new Query.Builder()
+            .addAtom(qo)
+            .addAtom(qAny)
+            .addBond(qo, qAny, BondPredicates.any())
+            .build();
+
+        assertThat(new SubstructureMatcher(molecule).findMatches(query, qo, carbon)).isEmpty();
+    }
+
+    @Test
+    void anchored_findMatches_throws_when_queryAtom_is_not_part_of_query()
+    {
+        Molecule molecule = new SmilesParser("C").parse();
+        Atom carbon = nthAtom(molecule, 0);
+
+        QueryAtom inQuery = new QueryAtom(AtomPredicates.any());
+        QueryAtom notInQuery = new QueryAtom(AtomPredicates.any());
+        Query query = new Query.Builder().addAtom(inQuery).build();
+
+        assertThatThrownBy(() -> new SubstructureMatcher(molecule).findMatches(query, notInQuery, carbon))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static Atom nthAtom(Molecule molecule, int index)
+    {
+        int i = 0;
+        for (Atom atom : molecule.atoms())
+        {
+            if (i == index)
+            {
+                return atom;
+            }
+            i++;
+        }
+        throw new IllegalArgumentException("Molecule has no atom at index " + index);
     }
 }

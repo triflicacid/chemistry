@@ -1,12 +1,14 @@
 package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AtomPredicatesTest
 {
@@ -137,6 +139,44 @@ class AtomPredicatesTest
             assertThat(AtomPredicates.degree(1).matches(molecule, carbon)).isTrue();
             assertThat(AtomPredicates.connectivity(1).matches(molecule, carbon)).isFalse();
             assertThat(AtomPredicates.connectivity(4).matches(molecule, carbon)).isTrue();
+        }
+    }
+
+    @Nested
+    class Recursive
+    {
+        @Test
+        void matches_an_atom_that_is_itself_the_anchor_of_a_matching_sub_pattern()
+        {
+            // $(C=O): a carbon double-bonded to oxygen - tests the carbon itself, without
+            // pulling the oxygen into whatever outer match uses this predicate
+            QueryAtom subCarbon = new QueryAtom(AtomPredicates.element("C"));
+            QueryAtom subOxygen = new QueryAtom(AtomPredicates.element("O"));
+            Query subPattern = new Query.Builder()
+                .addAtom(subCarbon)
+                .addAtom(subOxygen)
+                .addBond(subCarbon, subOxygen, BondPredicates.order(BondOrder.DOUBLE))
+                .build();
+
+            AtomPredicate isCarbonylCarbon = AtomPredicates.recursive(subPattern);
+
+            Molecule molecule = new SmilesParser("CC(=O)C").parse();
+            Atom carbonylCarbon = secondAtom(molecule);
+            Atom methylCarbon = firstAtom(molecule);
+            Atom oxygen = thirdAtom(molecule);
+
+            assertThat(isCarbonylCarbon.matches(molecule, carbonylCarbon)).isTrue();
+            assertThat(isCarbonylCarbon.matches(molecule, methylCarbon)).isFalse();
+            assertThat(isCarbonylCarbon.matches(molecule, oxygen)).isFalse();
+        }
+
+        @Test
+        void throws_when_the_sub_pattern_has_no_atoms()
+        {
+            Query empty = new Query.Builder().build();
+
+            assertThatThrownBy(() -> AtomPredicates.recursive(empty))
+                .isInstanceOf(IllegalArgumentException.class);
         }
     }
 

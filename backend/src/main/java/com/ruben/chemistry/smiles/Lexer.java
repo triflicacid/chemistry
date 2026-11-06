@@ -7,18 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Incrementally tokenizes a SMILES string into {@link Token}s, lexing each token on
- * demand.
- *
- * <p>Outside brackets, only organic-subset atoms ({@code B C N O P S F Cl Br I}, their
- * aromatic lowercase forms, and {@code *}) are recognised, alongside bonds, branches,
- * ring-closure numbers, and the disconnected-structure dot.
- *
- * <p>Inside a {@code [...]} bracket atom, contents are decomposed into element symbols
- * (the full periodic table plus a small set of aromatic extensions), digit runs,
- * chirality markers, charge signs, and the atom-class colon, so that a parser can
- * assemble isotope, element, chirality, hydrogen count, charge, and atom class without
- * re-lexing a raw string.
+ * Incrementally tokenizes a SMILES string into {@link Token}s, lexing each token on demand.
  */
 public final class Lexer
 {
