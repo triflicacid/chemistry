@@ -36,9 +36,9 @@ public final class AtomExpressionParser
     {
     }
 
-    /** Token types that can start a primitive, i.e. continue an implicit-and chain. */
-    private static final Set<TokenType> PRIMITIVE_START = Set.of(
-        TokenType.ELEMENT, TokenType.HASH, TokenType.STRUCTURAL, TokenType.SIGN,
+    /** Token types that keep an {@code &}-chain going: the operator itself, or anything that can start a primitive (implicit and). */
+    private static final Set<TokenType> CONTINUES_AND_CHAIN = Set.of(
+        TokenType.AND, TokenType.ELEMENT, TokenType.HASH, TokenType.STRUCTURAL, TokenType.SIGN,
         TokenType.COLON, TokenType.NUMBER, TokenType.NOT, TokenType.EXPRESSION);
 
     private final List<Token> tokens;
@@ -131,7 +131,7 @@ public final class AtomExpressionParser
     private AtomPredicate parseAndExpression()
     {
         AtomPredicate result = parseUnary();
-        while (hasMore() && (peek().type() == TokenType.AND || PRIMITIVE_START.contains(peek().type())))
+        while (hasMore() && CONTINUES_AND_CHAIN.contains(peek().type()))
         {
             if (peek().type() == TokenType.AND)
             {
