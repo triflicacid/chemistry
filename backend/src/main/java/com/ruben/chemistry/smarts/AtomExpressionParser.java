@@ -5,8 +5,6 @@ import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.query.AtomPredicate;
 import com.ruben.chemistry.query.AtomPredicates;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.IntFunction;
@@ -22,7 +20,7 @@ import java.util.function.IntFunction;
  *     <li>{@code [$(C=O)]} - bound to a carbon that itself has a double bond to oxygen</li>
  * </ul>
  */
-public final class AtomExpressionParser
+final class AtomExpressionParser
 {
     /**
      * The result of parsing one bracket atom.
@@ -42,20 +40,19 @@ public final class AtomExpressionParser
         TokenType.AND, TokenType.ELEMENT, TokenType.HASH, TokenType.STRUCTURAL, TokenType.SIGN,
         TokenType.COLON, TokenType.NUMBER, TokenType.NOT, TokenType.EXPRESSION_START, TokenType.CHIRALITY);
 
-    private final List<Token> tokens;
+    private final TokenCursor cursor;
     private final String source;
     private final SubPatternResolver subPatternResolver;
     private Chirality chirality;
-    private int index;
 
     /**
-     * @param tokens the bracket atom's inner tokens
-     * @param source the full source string {@code tokens} were lexed from, used to render error messages
+     * @param cursor a cursor positioned at this bracket atom's first inner token
+     * @param source the full source string {@code cursor}'s tokens were lexed from, used to render error messages
      * @param subPatternResolver resolves any {@code $(...)} recursive primitives found
      */
-    public AtomExpressionParser(List<Token> tokens, String source, SubPatternResolver subPatternResolver)
+    public AtomExpressionParser(TokenCursor cursor, String source, SubPatternResolver subPatternResolver)
     {
-        this.tokens = tokens;
+        this.cursor = cursor;
         this.source = source;
         this.subPatternResolver = subPatternResolver;
     }
@@ -72,11 +69,6 @@ public final class AtomExpressionParser
         }
 
         AtomPredicate predicate = parseSemiExpression();
-        if (hasMore())
-        {
-            Token trailing = peek();
-            throw new InvalidNotationException("Expected the atom expression to end, but found '" + trailing.text() + "'", source, trailing.position());
-        }
         return new Result(predicate, Optional.ofNullable(chirality));
     }
 
@@ -187,41 +179,10 @@ public final class AtomExpressionParser
             case STRUCTURAL -> structuralPrimitive(token.text());
             case SIGN -> chargePrimitive(token);
             case COLON -> AtomPredicates.atomClass(requireNumber(':'));
-            case EXPRESSION_START -> AtomPredicates.recursive(subPatternResolver.resolve(collectExpressionTokens()));
+            case EXPRESSION_START -> AtomPredicates.recursive(subPatternResolver.resolve(cursor));
             default -> throw new InvalidNotationException(
                 "Unexpected token '" + token.text() + "' in atom expression", source, token.position());
         };
-    }
-
-    /**
-     * Collects the tokens between a just-consumed {@link TokenType#EXPRESSION_START} and its
-     * matching {@link TokenType#EXPRESSION_END}.
-     *
-     * @return the collected tokens, excluding both markers
-     * @throws InvalidNotationException if the matching end marker is never found
-     */
-    private List<Token> collectExpressionTokens()
-    {
-        List<Token> collected = new ArrayList<>();
-        int depth = 1;
-        while (hasMore())
-        {
-            Token token = consume();
-            if (token.type() == TokenType.EXPRESSION_START)
-            {
-                depth++;
-            }
-            else if (token.type() == TokenType.EXPRESSION_END)
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return collected;
-                }
-            }
-            collected.add(token);
-        }
-        throw new InvalidNotationException("Unterminated recursive SMARTS primitive, missing its end marker", source, source.length());
     }
 
     /**
@@ -327,16 +288,16 @@ public final class AtomExpressionParser
 
     private boolean hasMore()
     {
-        return index < tokens.size();
+        return !cursor.isAtEnd();
     }
 
     private Token peek()
     {
-        return tokens.get(index);
+        return cursor.peek();
     }
 
     private Token consume()
     {
-        return tokens.get(index++);
+        return cursor.next();
     }
 }

@@ -2,20 +2,18 @@ package com.ruben.chemistry.smarts;
 
 import com.ruben.chemistry.query.Query;
 
-import java.util.List;
-
 /**
  * Resolves a recursive SMARTS primitive ({@code $(...)}) into the {@link Query} it denotes.
  * <p>
- * The tokens are the span between a matched {@link TokenType#EXPRESSION_START} and
- * {@link TokenType#EXPRESSION_END}, excluding both markers.
+ * The cursor is positioned at the first token after the {@link TokenType#EXPRESSION_START}
+ * marker. An implementation consumes everything up to and including {@link TokenType#EXPRESSION_END}.
  */
 @FunctionalInterface
-public interface SubPatternResolver
+interface SubPatternResolver
 {
     /**
-     * @param tokens the recursive primitive's tokens, excluding both markers
-     * @return the pattern they denote
+     * @param cursor a cursor positioned at the recursive primitive's first token
+     * @return the pattern it denotes
      */
-    Query resolve(List<Token> tokens);
+    Query resolve(TokenCursor cursor);
 }

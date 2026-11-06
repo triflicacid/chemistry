@@ -5,7 +5,10 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.query.AtomPredicate;
-import com.ruben.chemistry.query.Queries;
+import com.ruben.chemistry.query.AtomPredicates;
+import com.ruben.chemistry.query.BondPredicates;
+import com.ruben.chemistry.query.Query;
+import com.ruben.chemistry.query.QueryAtom;
 import com.ruben.chemistry.smiles.SmilesParser;
 
 import org.junit.jupiter.api.Nested;
@@ -21,7 +24,7 @@ class AtomExpressionParserTest
 {
     /** A resolver for tests that have no {@link TokenType#EXPRESSION_START} token and so should never call it. */
     private static final SubPatternResolver UNUSED_RESOLVER =
-        tokens -> { throw new AssertionError("sub-pattern resolver should not be called for: " + tokens); };
+        cursor -> { throw new AssertionError("sub-pattern resolver should not be called, but was"); };
 
     private static AtomPredicate parse(Token... tokens)
     {
@@ -30,7 +33,32 @@ class AtomExpressionParserTest
 
     private static AtomExpressionParser.Result result(List<Token> tokens, SubPatternResolver subPatternResolver)
     {
-        return new AtomExpressionParser(tokens, "irrelevant for these tests", subPatternResolver).parse();
+        String source = "irrelevant for these tests";
+        return new AtomExpressionParser(new ListCursor(tokens, source), source, subPatternResolver).parse();
+    }
+
+    private static List<Token> collectRecursiveSpan(TokenCursor cursor)
+    {
+        List<Token> collected = new ArrayList<>();
+        while (!cursor.isAtEnd())
+        {
+            Token token = cursor.next();
+            if (token.type() == TokenType.EXPRESSION_END)
+            {
+                return collected;
+            }
+            collected.add(token);
+        }
+        throw new InvalidNotationException("Unterminated recursive SMARTS primitive, missing its end marker", "irrelevant for these tests", 0);
+    }
+
+    private static SubPatternResolver fixedResult(Query query)
+    {
+        return cursor ->
+        {
+            collectRecursiveSpan(cursor);
+            return query;
+        };
     }
 
     private static Token element(String text)
@@ -368,10 +396,10 @@ class AtomExpressionParserTest
         {
             // "[C$([N@])]"-shaped: the @ belongs to the nitrogen, not the carbon
             List<Token> captured = new ArrayList<>();
-            SubPatternResolver capturingResolver = tokens ->
+            SubPatternResolver capturingResolver = cursor ->
             {
-                captured.addAll(tokens);
-                return Queries.fromMolecule(new SmilesParser("N").parse());
+                captured.addAll(collectRecursiveSpan(cursor));
+                return new Query.Builder().addAtom(new QueryAtom(AtomPredicates.any())).build();
             };
 
             List<Token> outer = List.of(
@@ -389,9 +417,13 @@ class AtomExpressionParserTest
     @Nested
     class Recursive
     {
-        /** Rebuilds the source text a token span was lexed from, and parses it as real SMILES - standing in for the real resolver (SmartsParser doesn't exist yet). */
-        private final SubPatternResolver smilesResolver =
-            tokens -> Queries.fromMolecule(new SmilesParser(String.join("", tokens.stream().map(Token::text).toList())).parse());
+        /** Anchored at a carbon with a bonded carbon neighbour - stands in for {@code $(CC)}. */
+        private Query carbonBondedToCarbon()
+        {
+            QueryAtom anchor = new QueryAtom(AtomPredicates.element("C"));
+            QueryAtom neighbour = new QueryAtom(AtomPredicates.element("C"));
+            return new Query.Builder().addAtom(anchor).addAtom(neighbour).addBond(anchor, neighbour, BondPredicates.any()).build();
+        }
 
         @Test
         void expression_tokens_resolve_via_the_given_function_and_match_recursively()
@@ -399,7 +431,7 @@ class AtomExpressionParserTest
             Molecule ethane = new SmilesParser("CC").parse();
             List<Token> tokens = List.of(EXPRESSION_START, atom("C"), atom("C"), EXPRESSION_END);
 
-            assertThat(result(tokens, smilesResolver).predicate().matches(ethane, firstAtom(ethane))).isTrue();
+            assertThat(result(tokens, fixedResult(carbonBondedToCarbon())).predicate().matches(ethane, firstAtom(ethane))).isTrue();
         }
 
         @Test
@@ -408,8 +440,8 @@ class AtomExpressionParserTest
             Molecule methanol = new SmilesParser("CO").parse();
             List<Token> tokens = List.of(EXPRESSION_START, atom("C"), atom("C"), EXPRESSION_END);
 
-            // anchor atom of "CC" is carbon; methanol's second atom is oxygen
-            assertThat(result(tokens, smilesResolver).predicate().matches(methanol, secondAtom(methanol))).isFalse();
+            // the sub-pattern's anchor is carbon; methanol's second atom is oxygen
+            assertThat(result(tokens, fixedResult(carbonBondedToCarbon())).predicate().matches(methanol, secondAtom(methanol))).isFalse();
         }
 
         @Test
@@ -419,29 +451,10 @@ class AtomExpressionParserTest
             Molecule chain = new SmilesParser("CC").parse();
             List<Token> tokens = List.of(EXPRESSION_START, atom("C"), atom("C"), EXPRESSION_END, structural("R"));
 
-            AtomPredicate ringCarbonNextToCarbon = result(tokens, smilesResolver).predicate();
+            AtomPredicate ringCarbonNextToCarbon = result(tokens, fixedResult(carbonBondedToCarbon())).predicate();
 
             assertThat(ringCarbonNextToCarbon.matches(ring, firstAtom(ring))).isTrue();
             assertThat(ringCarbonNextToCarbon.matches(chain, firstAtom(chain))).isFalse(); // matches "CC" but not in a ring
-        }
-
-        @Test
-        void a_nested_expression_does_not_prematurely_end_the_outer_one()
-        {
-            List<Token> captured = new ArrayList<>();
-            SubPatternResolver capturingResolver = tokens ->
-            {
-                captured.addAll(tokens);
-                return Queries.fromMolecule(new SmilesParser("C").parse());
-            };
-
-            List<Token> outer = List.of(
-                EXPRESSION_START, atom("C"), EXPRESSION_START, atom("N"), EXPRESSION_END, atom("C"), EXPRESSION_END);
-
-            result(outer, capturingResolver);
-
-            assertThat(captured).extracting(Token::type).containsExactly(
-                TokenType.ATOM, TokenType.EXPRESSION_START, TokenType.ATOM, TokenType.EXPRESSION_END, TokenType.ATOM);
         }
     }
 
@@ -451,7 +464,7 @@ class AtomExpressionParserTest
         @Test
         void throws_for_an_empty_expression()
         {
-            assertThatThrownBy(() -> new AtomExpressionParser(List.of(), "[]", UNUSED_RESOLVER).parse())
+            assertThatThrownBy(() -> new AtomExpressionParser(new ListCursor(List.of(), "[]"), "[]", UNUSED_RESOLVER).parse())
                 .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("must not be empty");
         }
@@ -476,7 +489,10 @@ class AtomExpressionParserTest
         @Test
         void throws_when_an_expression_start_has_no_matching_end_marker()
         {
-            assertThatThrownBy(() -> result(List.of(EXPRESSION_START, atom("C")), UNUSED_RESOLVER))
+            // detecting this is now the resolver's own job - it's the one walking the span
+            Query irrelevant = new Query.Builder().addAtom(new QueryAtom(AtomPredicates.any())).build();
+
+            assertThatThrownBy(() -> result(List.of(EXPRESSION_START, atom("C")), fixedResult(irrelevant)))
                 .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unterminated");
         }
