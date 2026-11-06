@@ -1,24 +1,14 @@
 package com.ruben.chemistry.smiles;
 
-import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.notation.AbstractLexer;
 import com.ruben.chemistry.notation.InvalidNotationException;
-
-import java.util.Set;
+import com.ruben.chemistry.notation.NotationSymbols;
 
 /**
  * A lexer for SMILES strings.
  */
 public final class Lexer extends AbstractLexer<Token>
 {
-    private static final Set<String> TWO_CHAR_ATOMS = Set.of("Cl", "Br");
-    private static final String SINGLE_CHAR_ATOMS = "BCNOPSFI";
-    private static final String AROMATIC_ATOMS = "bcnops";
-    private static final String BOND_SYMBOLS = "-=#$:/\\";
-
-    /** Aromatic extensions beyond the organic subset, recognised only inside brackets. */
-    private static final Set<String> AROMATIC_TWO_CHAR_ELEMENTS = Set.of("se", "as", "te");
-
     private final String source;
 
     private int position;
@@ -92,7 +82,7 @@ public final class Lexer extends AbstractLexer<Token>
         {
             return emit(TokenType.DOT, ".");
         }
-        if (BOND_SYMBOLS.indexOf(ch) >= 0)
+        if (NotationSymbols.isBondSymbol(ch))
         {
             return emit(TokenType.BOND, String.valueOf(ch));
         }
@@ -108,11 +98,11 @@ public final class Lexer extends AbstractLexer<Token>
         {
             return emit(TokenType.ATOM, "*");
         }
-        if (startsWithTwoCharAtom())
+        if (NotationSymbols.startsWithTwoCharOrganicAtom(source, position))
         {
             return emit(TokenType.ATOM, source.substring(position, position + 2));
         }
-        if (SINGLE_CHAR_ATOMS.indexOf(ch) >= 0 || AROMATIC_ATOMS.indexOf(ch) >= 0)
+        if (NotationSymbols.isSingleCharOrganicAtom(ch))
         {
             return emit(TokenType.ATOM, String.valueOf(ch));
         }
@@ -152,7 +142,7 @@ public final class Lexer extends AbstractLexer<Token>
             return emit(TokenType.ELEMENT, "*");
         }
 
-        int elementLength = matchElementSymbol();
+        int elementLength = NotationSymbols.elementSymbolLengthAt(source, position);
         if (elementLength > 0)
         {
             return emit(TokenType.ELEMENT, source.substring(position, position + elementLength));
@@ -193,49 +183,6 @@ public final class Lexer extends AbstractLexer<Token>
         String text = doubled ? "@@" : "@";
         position = start + text.length();
         return new Token(TokenType.CHIRALITY, text, start);
-    }
-
-    /**
-     * Matches an element symbol at the current scan position against the periodic table
-     * and the aromatic-extension set, preferring a two-character match over a
-     * one-character match.
-     *
-     * @return the matched length (1 or 2), or 0 if no element symbol starts there
-     */
-    private int matchElementSymbol()
-    {
-        if (position + 2 <= source.length())
-        {
-            String twoChars = source.substring(position, position + 2);
-            if (Elements.isSymbol(twoChars) || AROMATIC_TWO_CHAR_ELEMENTS.contains(twoChars))
-            {
-                return 2;
-            }
-        }
-
-        String oneChar = String.valueOf(source.charAt(position));
-        if (Elements.isSymbol(oneChar) || AROMATIC_ATOMS.indexOf(source.charAt(position)) >= 0)
-        {
-            return 1;
-        }
-
-        return 0;
-    }
-
-    /**
-     * Checks whether a two-character organic-subset atom symbol starts at the current
-     * scan position.
-     *
-     * @return {@code true} if a matching two-character symbol starts there
-     */
-    private boolean startsWithTwoCharAtom()
-    {
-        if (position + 2 > source.length())
-        {
-            return false;
-        }
-
-        return TWO_CHAR_ATOMS.contains(source.substring(position, position + 2));
     }
 
     /**
