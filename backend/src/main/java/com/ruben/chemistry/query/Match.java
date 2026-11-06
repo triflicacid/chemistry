@@ -6,16 +6,36 @@ import com.ruben.chemistry.core.Molecule;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * One way a {@link Query} was found to match a substructure of a molecule.
- *
- * @param atomOf the real atom each query atom was mapped to
- * @param molecule the molecule {@code atomOf}'s values belong to
  */
-public record Match(Map<QueryAtom, Atom> atomOf, Molecule molecule)
+public final class Match
 {
+    private final Map<QueryAtom, Atom> atomOf;
+    private final Molecule molecule;
+
+    /**
+     * @param atomOf the real atom each query atom was mapped to
+     * @param molecule the molecule {@code atomOf}'s values belong to
+     */
+    Match(Map<QueryAtom, Atom> atomOf, Molecule molecule)
+    {
+        this.atomOf = atomOf;
+        this.molecule = molecule;
+    }
+
+    /**
+     * @param queryAtom a position in the matched query, by reference
+     * @return the real atom {@code queryAtom} was mapped to, or empty if it isn't part of this match
+     */
+    public Optional<Atom> atomOf(QueryAtom queryAtom)
+    {
+        return Optional.ofNullable(atomOf.get(queryAtom));
+    }
+
     /**
      * @return the real atoms this match covers
      */
@@ -29,7 +49,7 @@ public record Match(Map<QueryAtom, Atom> atomOf, Molecule molecule)
     /**
      * Builds a standalone molecule covering this match's atoms with their actual bonds, as in the molecule.
      *
-     * @return a sub-molecule of {@link #molecule} induced by this match's atoms
+     * @return a sub-molecule of this match's molecule, induced by this match's atoms
      */
     public Molecule substructure()
     {
