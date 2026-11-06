@@ -352,6 +352,38 @@ class AtomExpressionParserTest
             assertThat(result(List.of(element("C"), chirality("@@")), UNUSED_RESOLVER).chirality())
                 .contains(Chirality.CLOCKWISE);
         }
+
+        @Test
+        void a_leading_marker_before_any_primitive_is_still_captured()
+        {
+            Molecule molecule = new SmilesParser("C").parse();
+            AtomExpressionParser.Result parsed = result(List.of(chirality("@"), element("C")), UNUSED_RESOLVER);
+
+            assertThat(parsed.chirality()).contains(Chirality.ANTICLOCKWISE);
+            assertThat(parsed.predicate().matches(molecule, firstAtom(molecule))).isTrue();
+        }
+
+        @Test
+        void a_marker_nested_inside_a_recursive_primitive_is_not_attributed_to_this_atom()
+        {
+            // "[C$([N@])]"-shaped: the @ belongs to the nitrogen, not the carbon
+            List<Token> captured = new ArrayList<>();
+            SubPatternResolver capturingResolver = tokens ->
+            {
+                captured.addAll(tokens);
+                return Queries.fromMolecule(new SmilesParser("N").parse());
+            };
+
+            List<Token> outer = List.of(
+                element("C"), EXPRESSION_START,
+                new Token(TokenType.BRACKET_OPEN, "[", 0), element("N"), chirality("@"), new Token(TokenType.BRACKET_CLOSE, "]", 0),
+                EXPRESSION_END);
+
+            AtomExpressionParser.Result parsed = result(outer, capturingResolver);
+
+            assertThat(parsed.chirality()).isEmpty();
+            assertThat(captured).extracting(Token::type).contains(TokenType.CHIRALITY);
+        }
     }
 
     @Nested
@@ -431,6 +463,14 @@ class AtomExpressionParserTest
             // this exercises the top-level leftover-token check with two complete expressions
             assertThatThrownBy(() -> parse(element("C"), element("O"), OR))
                 .isInstanceOf(InvalidNotationException.class);
+        }
+
+        @Test
+        void throws_for_a_second_chirality_marker_on_the_same_atom()
+        {
+            assertThatThrownBy(() -> parse(element("C"), chirality("@"), element("H"), chirality("@@")))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("cannot declare chirality twice");
         }
 
         @Test

@@ -34,15 +34,18 @@ public final class AtomExpressionParser
     {
     }
 
-    /** Token types that keep an {@code &}-chain going: the operator itself, or anything that can start a primitive (implicit and). */
+    /**
+     * Token types that keep an {@code &}-chain going: the operator itself, anything that can
+     * start a primitive (implicit and), or a chirality marker (absorbed).
+     */
     private static final Set<TokenType> CONTINUES_AND_CHAIN = Set.of(
         TokenType.AND, TokenType.ELEMENT, TokenType.HASH, TokenType.STRUCTURAL, TokenType.SIGN,
-        TokenType.COLON, TokenType.NUMBER, TokenType.NOT, TokenType.EXPRESSION_START);
+        TokenType.COLON, TokenType.NUMBER, TokenType.NOT, TokenType.EXPRESSION_START, TokenType.CHIRALITY);
 
     private final List<Token> tokens;
-    private final Chirality chirality;
     private final String source;
     private final SubPatternResolver subPatternResolver;
+    private Chirality chirality;
     private int index;
 
     /**
@@ -52,24 +55,9 @@ public final class AtomExpressionParser
      */
     public AtomExpressionParser(List<Token> tokens, String source, SubPatternResolver subPatternResolver)
     {
+        this.tokens = tokens;
         this.source = source;
         this.subPatternResolver = subPatternResolver;
-
-        Chirality declaredChirality = null;
-        List<Token> withoutChirality = new ArrayList<>(tokens.size());
-        for (Token token : tokens)
-        {
-            if (token.type() == TokenType.CHIRALITY)
-            {
-                declaredChirality = Chirality.fromSymbol(token.text());
-            }
-            else
-            {
-                withoutChirality.add(token);
-            }
-        }
-        this.chirality = declaredChirality;
-        this.tokens = withoutChirality;
     }
 
     /**
@@ -128,16 +116,41 @@ public final class AtomExpressionParser
      */
     private AtomPredicate parseAndExpression()
     {
+        absorbChiralityIfPresent();
         AtomPredicate result = parseUnary();
         while (hasMore() && CONTINUES_AND_CHAIN.contains(peek().type()))
         {
-            if (peek().type() == TokenType.AND)
+            if (!absorbChiralityIfPresent())
             {
-                consume();
+                if (peek().type() == TokenType.AND)
+                {
+                    consume();
+                }
+                result = result.and(parseUnary());
             }
-            result = result.and(parseUnary());
         }
         return result;
+    }
+
+    /**
+     * Consumes and records the chirality marker at the current position, if there is one.
+     *
+     * @return {@code true} if a chirality marker was there to absorb
+     * @throws InvalidNotationException if a chirality marker was already recorded
+     */
+    private boolean absorbChiralityIfPresent()
+    {
+        if (hasMore() && peek().type() == TokenType.CHIRALITY)
+        {
+            Token token = consume();
+            if (chirality != null)
+            {
+                throw new InvalidNotationException("An atom cannot declare chirality twice", source, token.position());
+            }
+            chirality = Chirality.fromSymbol(token.text());
+            return true;
+        }
+        return false;
     }
 
     /**
