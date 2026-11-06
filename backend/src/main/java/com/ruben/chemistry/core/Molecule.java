@@ -130,10 +130,7 @@ public final class Molecule
      */
     public int totalHydrogenCount(Atom atom)
     {
-        if (!incidentBonds.containsKey(atom))
-        {
-            throw new IllegalArgumentException("Atom is not part of this molecule: " + atom);
-        }
+        requireAtom(atom);
         if (atom.hydrogenCount().isPresent())
         {
             return atom.hydrogenCount().getAsInt();
@@ -146,6 +143,52 @@ public final class Molecule
             return 0;
         }
 
+        BondContribution bonding = bondContributionOf(atom);
+
+        // escalate to a higher default valence only when required
+        int requiredValence = bonding.explicitSum();
+        int chosenValence = IntStream.of(valences)
+            .filter(valence -> valence >= requiredValence)
+            .findFirst()
+            .orElse(valences[valences.length - 1]);
+
+        // the aromatic weighting only ever spends the valence already chosen above
+        int remainingAfterExplicitBonds = chosenValence - bonding.explicitSum();
+        return Math.max(0, remainingAfterExplicitBonds - bonding.aromaticContribution());
+    }
+
+    /**
+     * Returns an atom's total valence: the sum of its real bond orders plus its total
+     * hydrogen count.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return {@code atom}'s total valence
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    public int valence(Atom atom)
+    {
+        requireAtom(atom);
+        BondContribution bonding = bondContributionOf(atom);
+        return bonding.explicitSum() + bonding.aromaticContribution() + totalHydrogenCount(atom);
+    }
+
+    /**
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    private void requireAtom(Atom atom)
+    {
+        if (!incidentBonds.containsKey(atom))
+        {
+            throw new IllegalArgumentException("Atom is not part of this molecule: " + atom);
+        }
+    }
+
+    /**
+     * @return {@code atom}'s real bonding, split into its non-aromatic bond order sum and its
+     *     aromatic bond count
+     */
+    private BondContribution bondContributionOf(Atom atom)
+    {
         int explicitBondSum = 0;
         int aromaticBondCount = 0;
         for (Bond bond : bondsOf(atom))
@@ -159,18 +202,23 @@ public final class Molecule
                 case AROMATIC -> aromaticBondCount++;
             }
         }
+        return new BondContribution(explicitBondSum, aromaticBondCount);
+    }
 
-        // escalate to a higher default valence only when required
-        int requiredValence = explicitBondSum;
-        int chosenValence = IntStream.of(valences)
-            .filter(valence -> valence >= requiredValence)
-            .findFirst()
-            .orElse(valences[valences.length - 1]);
-
-        // the aromatic weighting only ever spends the valence already chosen above
-        int remainingAfterExplicitBonds = chosenValence - explicitBondSum;
-        int aromaticContribution = Math.round(1.5f * aromaticBondCount);
-        return Math.max(0, remainingAfterExplicitBonds - aromaticContribution);
+    /**
+     * @param explicitSum the sum of non-aromatic bond orders
+     * @param aromaticCount the number of aromatic bonds
+     */
+    private record BondContribution(int explicitSum, int aromaticCount)
+    {
+        /**
+         * @return the aromatic bonds' combined contribution, each weighted 1.5 as an
+         *     approximation of their real Kekule structure (see {@link #totalHydrogenCount})
+         */
+        int aromaticContribution()
+        {
+            return Math.round(1.5f * aromaticCount);
+        }
     }
 
     /**

@@ -89,6 +89,57 @@ class AtomPredicatesTest
         }
     }
 
+    @Nested
+    class Valence
+    {
+        @Test
+        void matches_an_atoms_total_valence()
+        {
+            Molecule molecule = new SmilesParser("CC").parse(); // ethane: 1 bond + 3 implicit H
+            Atom carbon = firstAtom(molecule);
+
+            assertThat(AtomPredicates.valence(4).matches(molecule, carbon)).isTrue();
+            assertThat(AtomPredicates.valence(3).matches(molecule, carbon)).isFalse();
+        }
+
+        @Test
+        void matches_the_higher_real_total_for_a_two_connected_aromatic_sulfur()
+        {
+            // thiophene: c1ccsc1 - sulfur's two aromatic bonds alone already exceed its
+            // only default valence, so its valence (3) is higher than that default (2)
+            Molecule thiophene = new SmilesParser("c1ccsc1").parse();
+            Atom sulfur = fourthAtom(thiophene);
+
+            assertThat(AtomPredicates.valence(3).matches(thiophene, sulfur)).isTrue();
+        }
+    }
+
+    @Nested
+    class Connectivity
+    {
+        @Test
+        void counts_bonds_and_hydrogens_together()
+        {
+            // acetone's carbonyl carbon: 3 bonds (2 C, 1 O), 0 hydrogens
+            Molecule molecule = new SmilesParser("CC(=O)C").parse();
+            Atom carbonylCarbon = secondAtom(molecule);
+
+            assertThat(AtomPredicates.connectivity(3).matches(molecule, carbonylCarbon)).isTrue();
+        }
+
+        @Test
+        void distinguishes_connectivity_from_degree_when_hydrogens_are_present()
+        {
+            Molecule molecule = new SmilesParser("CC").parse(); // ethane: 1 bond + 3 implicit H
+
+            Atom carbon = firstAtom(molecule);
+
+            assertThat(AtomPredicates.degree(1).matches(molecule, carbon)).isTrue();
+            assertThat(AtomPredicates.connectivity(1).matches(molecule, carbon)).isFalse();
+            assertThat(AtomPredicates.connectivity(4).matches(molecule, carbon)).isTrue();
+        }
+    }
+
     private static Atom firstAtom(Molecule molecule)
     {
         return molecule.atoms().iterator().next();

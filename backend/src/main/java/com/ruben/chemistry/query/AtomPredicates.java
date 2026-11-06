@@ -82,6 +82,24 @@ public final class AtomPredicates
     }
 
     /**
+     * @param count the required total valence
+     * @return a predicate matching an atom with exactly that total valence (the SMARTS {@code v} primitive)
+     */
+    public static AtomPredicate valence(int count)
+    {
+        return (molecule, atom) -> molecule.valence(atom) == count;
+    }
+
+    /**
+     * @param count the required total connection count
+     * @return a predicate matching an atom with exactly that many connections - its bonds plus its hydrogens
+     */
+    public static AtomPredicate connectivity(int count)
+    {
+        return (molecule, atom) -> molecule.bondsOf(atom).size() + molecule.totalHydrogenCount(atom) == count;
+    }
+
+    /**
      * @param template the atom to match exactly
      * @return a predicate matching an atom with the same element, aromaticity, charge, isotope, hydrogens etc.
      */

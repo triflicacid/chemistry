@@ -687,4 +687,99 @@ class MoleculeTest
                 .isInstanceOf(IllegalArgumentException.class);
         }
     }
+
+    @Nested
+    class Valence
+    {
+        @Test
+        void is_four_for_an_unbonded_organic_carbon()
+        {
+            // C
+            Atom carbon = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(carbon).build();
+
+            assertThat(molecule.valence(carbon)).isEqualTo(4);
+        }
+
+        @Test
+        void is_four_for_a_fully_substituted_carbonyl_carbon()
+        {
+            // CC(=O)C
+            Atom carbonylCarbon = Atom.organic("C");
+            Atom left = Atom.organic("C");
+            Atom right = Atom.organic("C");
+            Atom oxygen = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbonylCarbon, left, right, oxygen)
+                .addBond(carbonylCarbon, left, BondOrder.SINGLE)
+                .addBond(carbonylCarbon, right, BondOrder.SINGLE)
+                .addBond(carbonylCarbon, oxygen, BondOrder.DOUBLE)
+                .build();
+
+            // 1 (single) + 1 (single) + 2 (double) + 0 (no implicit H left) = 4
+            assertThat(molecule.valence(carbonylCarbon)).isEqualTo(4);
+        }
+
+        @Test
+        void matches_the_chosen_default_valence_for_an_unsubstituted_benzene_ring_carbon()
+        {
+            // c1ccccc1
+            Atom[] ring = new Atom[6];
+            for (int i = 0; i < ring.length; i++)
+            {
+                ring[i] = Atom.organic("C", true);
+            }
+            Molecule.Builder builder = new Molecule.Builder().addAtoms(ring);
+            for (int i = 0; i < ring.length; i++)
+            {
+                builder.addBond(ring[i], ring[(i + 1) % ring.length], BondOrder.AROMATIC);
+            }
+            Molecule molecule = builder.build();
+
+            // 2 aromatic bonds (weighted 1.5 each, 3 total) + 1 implicit H = 4, carbon's own valence
+            assertThat(molecule.valence(ring[0])).isEqualTo(4);
+        }
+
+        @Test
+        void exceeds_the_chosen_default_valence_for_a_two_connected_aromatic_sulfur()
+        {
+            // coc / csc fragment of c1ccsc1: two aromatic bonds = 3, so no implicit hydrogen counted
+            Atom sulfur = Atom.organic("S", true);
+            Atom left = Atom.organic("C", true);
+            Atom right = Atom.organic("C", true);
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(sulfur, left, right)
+                .addBond(sulfur, left, BondOrder.AROMATIC)
+                .addBond(sulfur, right, BondOrder.AROMATIC)
+                .build();
+
+            assertThat(molecule.totalHydrogenCount(sulfur)).isZero();
+            assertThat(molecule.valence(sulfur)).isEqualTo(3);
+        }
+
+        @Test
+        void uses_a_bracket_atoms_explicit_hydrogen_count_rather_than_any_expected_valence()
+        {
+            // [CH2]C: odd value, but use it as it was explicit
+            Atom explicit = Atom.builder("C").hydrogenCount(2).build();
+            Atom neighbour = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(explicit, neighbour)
+                .addBond(explicit, neighbour, BondOrder.SINGLE)
+                .build();
+
+            // 1 (single bond) + 2 (explicit H) = 3
+            assertThat(molecule.valence(explicit)).isEqualTo(3);
+        }
+
+        @Test
+        void throws_for_an_atom_not_part_of_the_molecule()
+        {
+            Atom carbon = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("C")).build();
+
+            assertThatThrownBy(() -> molecule.valence(carbon))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
 }
