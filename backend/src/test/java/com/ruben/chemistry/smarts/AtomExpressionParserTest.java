@@ -33,8 +33,7 @@ class AtomExpressionParserTest
 
     private static AtomExpressionParser.Result result(List<Token> tokens, SubPatternResolver subPatternResolver)
     {
-        String source = "irrelevant for these tests";
-        return new AtomExpressionParser(new ListCursor(tokens, source), source, subPatternResolver).parse();
+        return new AtomExpressionParser(new ListCursor(tokens), "source", subPatternResolver).parse();
     }
 
     private static List<Token> collectRecursiveSpan(TokenCursor cursor)
@@ -464,7 +463,7 @@ class AtomExpressionParserTest
         @Test
         void throws_for_an_empty_expression()
         {
-            assertThatThrownBy(() -> new AtomExpressionParser(new ListCursor(List.of(), "[]"), "[]", UNUSED_RESOLVER).parse())
+            assertThatThrownBy(() -> new AtomExpressionParser(new ListCursor(List.of()), "[]", UNUSED_RESOLVER).parse())
                 .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("must not be empty");
         }
