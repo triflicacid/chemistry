@@ -120,9 +120,7 @@ public final class Molecule
     }
 
     /**
-     * Returns the total number of hydrogens attached to an atom: its explicit count if one
-     * was written, otherwise the implicit count inferred from {@code atom}'s default valence and its
-     * actual bonding.
+     * Returns the total number of hydrogens attached to an atom.
      *
      * @param atom an atom of this molecule, by reference identity
      * @return {@code atom}'s total hydrogen count, explicit or inferred
@@ -131,9 +129,22 @@ public final class Molecule
     public int totalHydrogenCount(Atom atom)
     {
         requireAtom(atom);
+        return atom.hydrogenCount().orElseGet(() -> implicitHydrogenCount(atom));
+    }
+
+    /**
+     * Returns the number of an atom's hydrogens that were inferred rather than written.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return {@code atom}'s inferred hydrogen count
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    public int implicitHydrogenCount(Atom atom)
+    {
+        requireAtom(atom);
         if (atom.hydrogenCount().isPresent())
         {
-            return atom.hydrogenCount().getAsInt();
+            return 0;
         }
 
         // only ever reached for an organic-subset atom

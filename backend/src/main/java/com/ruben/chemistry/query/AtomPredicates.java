@@ -82,6 +82,15 @@ public final class AtomPredicates
     }
 
     /**
+     * @param count the required implicit hydrogen count
+     * @return a predicate matching an atom with exactly that many inferred hydrogens
+     */
+    public static AtomPredicate implicitHydrogenCount(int count)
+    {
+        return (molecule, atom) -> molecule.implicitHydrogenCount(atom) == count;
+    }
+
+    /**
      * @param count the required total valence
      * @return a predicate matching an atom with exactly that total valence (the SMARTS {@code v} primitive)
      */

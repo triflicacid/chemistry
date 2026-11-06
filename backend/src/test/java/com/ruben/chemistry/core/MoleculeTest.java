@@ -782,4 +782,57 @@ class MoleculeTest
                 .isInstanceOf(IllegalArgumentException.class);
         }
     }
+
+    @Nested
+    class ImplicitHydrogenCount
+    {
+        @Test
+        void is_zero_for_a_bracket_atoms_explicit_count()
+        {
+            // [CH2]C
+            Atom explicit = Atom.builder("C").hydrogenCount(2).build();
+            Atom neighbour = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(explicit, neighbour)
+                .addBond(explicit, neighbour, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.implicitHydrogenCount(explicit)).isZero();
+        }
+
+        @Test
+        void is_zero_for_a_bracket_atoms_explicit_zero()
+        {
+            // [C]
+            Atom explicit = Atom.builder("C").hydrogenCount(0).build();
+            Molecule molecule = new Molecule.Builder().addAtom(explicit).build();
+
+            assertThat(molecule.implicitHydrogenCount(explicit)).isZero();
+        }
+
+        @Test
+        void equals_the_total_hydrogen_count_for_an_organic_subset_atom()
+        {
+            // CC: each carbon's 3 hydrogens are entirely inferred
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.implicitHydrogenCount(c1)).isEqualTo(3);
+            assertThat(molecule.totalHydrogenCount(c1)).isEqualTo(3);
+        }
+
+        @Test
+        void throws_for_an_atom_not_part_of_the_molecule()
+        {
+            Atom carbon = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("C")).build();
+
+            assertThatThrownBy(() -> molecule.implicitHydrogenCount(carbon))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
 }
