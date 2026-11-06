@@ -1,4 +1,4 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.util;
 
 import java.util.function.Supplier;
 

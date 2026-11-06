@@ -1,5 +1,6 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayDeque;
