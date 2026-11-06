@@ -1,5 +1,6 @@
 package com.ruben.chemistry.notation;
 
+import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Elements;
 
@@ -75,6 +76,6 @@ public final class NotationSymbols
      */
     public static boolean isBondSymbol(char ch)
     {
-        return BondOrder.isSymbol(ch) || ch == '/' || ch == '\\';
+        return BondOrder.isSymbol(ch) || BondDirection.isSymbol(ch);
     }
 }

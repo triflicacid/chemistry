@@ -2,6 +2,7 @@ package com.ruben.chemistry.smiles;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.CanonicalRanker;
 import com.ruben.chemistry.core.Chirality;
@@ -37,7 +38,7 @@ public final class SmilesWriter
     private final Map<Atom, List<Bond>> ringBondsOfAtom = new IdentityHashMap<>();
     private final Map<Atom, Bond> arrivingBondOf = new IdentityHashMap<>();
     private final Map<Bond, Atom> openingAtomOfRingBond = new IdentityHashMap<>();
-    private final Map<Bond, Character> directionalSymbolOf = new IdentityHashMap<>();
+    private final Map<Bond, BondDirection> directionOf = new IdentityHashMap<>();
     private int nextRingNumber = 1;
     private boolean renderChirality = true;
     private boolean renderDoubleBondStereo = true;
@@ -289,7 +290,7 @@ public final class SmilesWriter
     }
 
     /**
-     * Assigns or checks the characters of two reference bonds so that, traced outward from
+     * Assigns or checks the directions of two reference bonds so that, traced outward from
      * their respective stereocentres, they are equal if {@code sameSide}, or differ otherwise.
      *
      * @throws IllegalStateException if both references are already assigned and don't satisfy {@code sameSide}
@@ -297,48 +298,48 @@ public final class SmilesWriter
     private void reconcile(Atom firstAtom, Bond firstReference, Atom secondAtom, Bond secondReference, boolean sameSide)
     {
         // neither reference has been assigned by an earlier double bond, so start the chain off arbitrarily
-        if (!directionalSymbolOf.containsKey(firstReference) && !directionalSymbolOf.containsKey(secondReference))
+        if (!directionOf.containsKey(firstReference) && !directionOf.containsKey(secondReference))
         {
-            directionalSymbolOf.put(firstReference, '/');
+            directionOf.put(firstReference, BondDirection.SLASH);
         }
         // firstReference is still unassigned, so derive it from secondReference
-        if (!directionalSymbolOf.containsKey(firstReference))
+        if (!directionOf.containsKey(firstReference))
         {
-            char secondOutward = reorient(secondReference, secondAtom, directionalSymbolOf.get(secondReference));
-            char firstOutward = sameSide ? secondOutward : flip(secondOutward);
-            directionalSymbolOf.put(firstReference, reorient(firstReference, firstAtom, firstOutward));
+            BondDirection secondOutward = reorient(secondReference, secondAtom, directionOf.get(secondReference));
+            BondDirection firstOutward = sameSide ? secondOutward : secondOutward.flip();
+            directionOf.put(firstReference, reorient(firstReference, firstAtom, firstOutward));
         }
         // firstReference was already assigned (by this double bond or an earlier one) but secondReference wasn't, so derive it from firstReference
-        else if (!directionalSymbolOf.containsKey(secondReference))
+        else if (!directionOf.containsKey(secondReference))
         {
-            char firstOutward = reorient(firstReference, firstAtom, directionalSymbolOf.get(firstReference));
-            char secondOutward = sameSide ? firstOutward : flip(firstOutward);
-            directionalSymbolOf.put(secondReference, reorient(secondReference, secondAtom, secondOutward));
+            BondDirection firstOutward = reorient(firstReference, firstAtom, directionOf.get(firstReference));
+            BondDirection secondOutward = sameSide ? firstOutward : firstOutward.flip();
+            directionOf.put(secondReference, reorient(secondReference, secondAtom, secondOutward));
         }
 
         // both references are now assigned, so verify they actually satisfy sameSide
-        char firstOutward = reorient(firstReference, firstAtom, directionalSymbolOf.get(firstReference));
-        char secondOutward = reorient(secondReference, secondAtom, directionalSymbolOf.get(secondReference));
+        BondDirection firstOutward = reorient(firstReference, firstAtom, directionOf.get(firstReference));
+        BondDirection secondOutward = reorient(secondReference, secondAtom, directionOf.get(secondReference));
         if ((firstOutward == secondOutward) != sameSide)
         {
             throw new IllegalStateException("Bond " + firstReference + " and bond " + secondReference
-                + " cannot both carry a direction symbol satisfying every declared double bond configuration they are a reference for");
+                + " cannot both carry a direction satisfying every declared double bond configuration they are a reference for");
         }
     }
 
     /**
-     * Converts a reference bond's character between its written form and its "outward" form,
+     * Converts a reference bond's direction between its written form and its "outward" form,
      * as traced starting from {@code atom} (the stereocentre) toward its substituent,
      * regardless of which of the bond's two atoms is actually written first.
      *
      * @param reference the reference bond
-     * @param atom the endpoint of {@code reference} whose perspective {@code symbol} is relative to
-     * @param symbol the character to reorient
-     * @return the reoriented character
+     * @param atom the endpoint of {@code reference} whose perspective {@code direction} is relative to
+     * @param direction the direction to reorient
+     * @return the reoriented direction
      */
-    private char reorient(Bond reference, Atom atom, char symbol)
+    private BondDirection reorient(Bond reference, Atom atom, BondDirection direction)
     {
-        return isWrittenFirst(reference, atom) ? symbol : flip(symbol);
+        return isWrittenFirst(reference, atom) ? direction : direction.flip();
     }
 
     /**
@@ -356,15 +357,6 @@ public final class SmilesWriter
             return openingAtom == atom;
         }
         return arrivingBondOf.get(atom) != reference;
-    }
-
-    /**
-     * @param symbol a direction symbol, {@code '/'} or {@code '\'}
-     * @return the other direction symbol
-     */
-    private static char flip(char symbol)
-    {
-        return symbol == '/' ? '\\' : '/';
     }
 
     /**
@@ -482,10 +474,10 @@ public final class SmilesWriter
      */
     private String bondSymbolPrefix(Bond bond)
     {
-        Character directional = directionalSymbolOf.get(bond);
-        if (directional != null)
+        BondDirection direction = directionOf.get(bond);
+        if (direction != null)
         {
-            return String.valueOf(directional);
+            return String.valueOf(direction.symbol());
         }
         BondOrder defaultOrder = BondOrder.inferredBetween(bond.first(), bond.second());
         return bond.order() == defaultOrder ? "" : String.valueOf(bond.order().symbol());
@@ -503,12 +495,12 @@ public final class SmilesWriter
      */
     private String ringBondSymbolPrefix(Bond bond, Atom atom)
     {
-        Character directional = directionalSymbolOf.get(bond);
-        if (directional == null)
+        BondDirection direction = directionOf.get(bond);
+        if (direction == null)
         {
             return bondSymbolPrefix(bond);
         }
         boolean isOpeningOccurrence = openingAtomOfRingBond.get(bond) == atom;
-        return String.valueOf(isOpeningOccurrence ? directional : flip(directional));
+        return String.valueOf((isOpeningOccurrence ? direction : direction.flip()).symbol());
     }
 }

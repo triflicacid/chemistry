@@ -1,6 +1,7 @@
 package com.ruben.chemistry.smiles;
 
 import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
@@ -449,11 +450,11 @@ public final class SmilesParser
 
         if (openingIsDirectional)
         {
-            directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, openingSymbol.charAt(0), true));
+            directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, BondDirection.fromSymbol(openingSymbol.charAt(0)), true));
         }
         if (closingIsDirectional)
         {
-            directionalEdgeOf.put(closingAtom, new DirectionalEdge(openingAtom, closingSymbol.charAt(0), true));
+            directionalEdgeOf.put(closingAtom, new DirectionalEdge(openingAtom, BondDirection.fromSymbol(closingSymbol.charAt(0)), true));
         }
 
         reconcileIfDoubleBondAtom(openingAtom);
@@ -502,7 +503,7 @@ public final class SmilesParser
             }
             else if (isDirectional(pendingBondSymbol))
             {
-                recordDirectionalEdge(previousAtom, atom, pendingBondSymbol.charAt(0));
+                recordDirectionalEdge(previousAtom, atom, BondDirection.fromSymbol(pendingBondSymbol.charAt(0)));
             }
         }
 
@@ -519,18 +520,18 @@ public final class SmilesParser
     }
 
     /**
-     * Records one directional single bond ({@code '/'} or {@code '\'}) between two
+     * Records one directional single bond ({@code /} or {@code \}) between two
      * just-bonded atoms, then attempts to complete the stereo declaration of either atom's
      * double bond, if it has one and its other reference is already known too.
      *
      * @param writtenFirst the earlier-written of the bond's two atoms
      * @param writtenSecond the later-written of the bond's two atoms
-     * @param symbol the literal {@code '/'} or {@code '\'} character as written
+     * @param direction the direction as written
      */
-    private void recordDirectionalEdge(Atom writtenFirst, Atom writtenSecond, char symbol)
+    private void recordDirectionalEdge(Atom writtenFirst, Atom writtenSecond, BondDirection direction)
     {
-        directionalEdgeOf.put(writtenFirst, new DirectionalEdge(writtenSecond, symbol, true));
-        directionalEdgeOf.put(writtenSecond, new DirectionalEdge(writtenFirst, symbol, false));
+        directionalEdgeOf.put(writtenFirst, new DirectionalEdge(writtenSecond, direction, true));
+        directionalEdgeOf.put(writtenSecond, new DirectionalEdge(writtenFirst, direction, false));
 
         reconcileIfDoubleBondAtom(writtenFirst);
         reconcileIfDoubleBondAtom(writtenSecond);
@@ -569,8 +570,8 @@ public final class SmilesParser
             return;
         }
 
-        char firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.symbol() : flipDirection(firstEdge.symbol());
-        char secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.symbol() : flipDirection(secondEdge.symbol());
+        BondDirection firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.direction() : firstEdge.direction().flip();
+        BondDirection secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.direction() : secondEdge.direction().flip();
         DoubleBondStereo relativeToEdges = firstOutward == secondOutward ? DoubleBondStereo.SAME_SIDE : DoubleBondStereo.OPPOSITE_SIDE;
 
         Atom firstDefault = defaultSubstituentOf(first, second);
@@ -596,30 +597,21 @@ public final class SmilesParser
 
     /**
      * @param bondSymbol a bond symbol, or {@code null}
-     * @return {@code true} if {@code bondSymbol} is a directional bond, {@code '/'} or {@code '\'}
+     * @return {@code true} if {@code bondSymbol} is a directional bond, {@code /} or {@code \}
      */
     private static boolean isDirectional(String bondSymbol)
     {
-        return "/".equals(bondSymbol) || "\\".equals(bondSymbol);
-    }
-
-    /**
-     * @param symbol a direction symbol, {@code '/'} or {@code '\'}
-     * @return the other direction symbol
-     */
-    private static char flipDirection(char symbol)
-    {
-        return symbol == '/' ? '\\' : '/';
+        return bondSymbol != null && BondDirection.isSymbol(bondSymbol.charAt(0));
     }
 
     /**
      * One atom's end of a directional single bond.
      *
      * @param other the atom at the other end of this directional bond
-     * @param symbol the literal {@code '/'} or {@code '\'} character as written
+     * @param direction the direction as written
      * @param thisAtomWrittenFirst whether the atom this edge is recorded for was written before {@code other}
      */
-    private record DirectionalEdge(Atom other, char symbol, boolean thisAtomWrittenFirst)
+    private record DirectionalEdge(Atom other, BondDirection direction, boolean thisAtomWrittenFirst)
     {
     }
 
