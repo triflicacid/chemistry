@@ -13,6 +13,75 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AtomPredicatesTest
 {
     @Nested
+    class Charge
+    {
+        @Test
+        void matches_an_atoms_formal_charge()
+        {
+            Atom charged = Atom.builder("N").charge(1).build();
+            Molecule molecule = new Molecule.Builder().addAtom(charged).build();
+
+            assertThat(AtomPredicates.charge(1).matches(molecule, charged)).isTrue();
+            assertThat(AtomPredicates.charge(0).matches(molecule, charged)).isFalse();
+        }
+
+        @Test
+        void matches_zero_for_an_atom_with_no_declared_charge()
+        {
+            Atom neutral = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(neutral).build();
+
+            assertThat(AtomPredicates.charge(0).matches(molecule, neutral)).isTrue();
+        }
+    }
+
+    @Nested
+    class Isotope
+    {
+        @Test
+        void matches_an_atoms_isotope_mass_number()
+        {
+            Atom labelled = Atom.builder("C").isotope(13).build();
+            Molecule molecule = new Molecule.Builder().addAtom(labelled).build();
+
+            assertThat(AtomPredicates.isotope(13).matches(molecule, labelled)).isTrue();
+            assertThat(AtomPredicates.isotope(12).matches(molecule, labelled)).isFalse();
+        }
+
+        @Test
+        void does_not_match_an_atom_with_no_declared_isotope()
+        {
+            Atom unlabelled = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(unlabelled).build();
+
+            assertThat(AtomPredicates.isotope(12).matches(molecule, unlabelled)).isFalse();
+        }
+    }
+
+    @Nested
+    class AtomClass
+    {
+        @Test
+        void matches_an_atoms_class_number()
+        {
+            Atom classified = Atom.builder("C").atomClass(1).build();
+            Molecule molecule = new Molecule.Builder().addAtom(classified).build();
+
+            assertThat(AtomPredicates.atomClass(1).matches(molecule, classified)).isTrue();
+            assertThat(AtomPredicates.atomClass(2).matches(molecule, classified)).isFalse();
+        }
+
+        @Test
+        void does_not_match_an_atom_with_no_declared_class()
+        {
+            Atom unclassified = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(unclassified).build();
+
+            assertThat(AtomPredicates.atomClass(1).matches(molecule, unclassified)).isFalse();
+        }
+    }
+
+    @Nested
     class Degree
     {
         @Test

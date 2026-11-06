@@ -53,6 +53,33 @@ public final class AtomPredicates
     }
 
     /**
+     * @param charge the required formal charge
+     * @return a predicate matching an atom with exactly that formal charge (the SMARTS {@code +}/{@code -} primitives)
+     */
+    public static AtomPredicate charge(int charge)
+    {
+        return (molecule, atom) -> atom.charge() == charge;
+    }
+
+    /**
+     * @param isotope the required isotope mass number
+     * @return a predicate matching an atom with exactly that isotope mass number (the SMARTS leading mass-number primitive, e.g. {@code [13C]})
+     */
+    public static AtomPredicate isotope(int isotope)
+    {
+        return (molecule, atom) -> atom.isotope().isPresent() && atom.isotope().getAsInt() == isotope;
+    }
+
+    /**
+     * @param atomClass the required atom class number
+     * @return a predicate matching an atom with exactly that atom class number (the SMARTS {@code :n} primitive)
+     */
+    public static AtomPredicate atomClass(int atomClass)
+    {
+        return (molecule, atom) -> atom.atomClass().isPresent() && atom.atomClass().getAsInt() == atomClass;
+    }
+
+    /**
      * @return a predicate matching an atom with at least one ring bond (the SMARTS {@code R} primitive)
      */
     public static AtomPredicate inRing()
