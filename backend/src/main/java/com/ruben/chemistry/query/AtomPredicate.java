@@ -16,4 +16,30 @@ public interface AtomPredicate
      * @return {@code true} if {@code atom} satisfies this predicate
      */
     boolean matches(Molecule molecule, Atom atom);
+
+    /**
+     * @param other another predicate
+     * @return a predicate matching an atom that satisfies both this predicate and {@code other}
+     */
+    default AtomPredicate and(AtomPredicate other)
+    {
+        return (molecule, atom) -> matches(molecule, atom) && other.matches(molecule, atom);
+    }
+
+    /**
+     * @param other another predicate
+     * @return a predicate matching an atom that satisfies either this predicate or {@code other}
+     */
+    default AtomPredicate or(AtomPredicate other)
+    {
+        return (molecule, atom) -> matches(molecule, atom) || other.matches(molecule, atom);
+    }
+
+    /**
+     * @return a predicate matching an atom that does not satisfy this predicate
+     */
+    default AtomPredicate negate()
+    {
+        return (molecule, atom) -> !matches(molecule, atom);
+    }
 }
