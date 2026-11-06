@@ -13,6 +13,21 @@ public final class Molecule
 {
     public static final NeighbourReference IMPLICIT_HYDROGEN = ImplicitHydrogen.INSTANCE;
 
+    /**
+     * The default valences of the SMILES organic subset elements.
+     */
+    private static final Map<String, int[]> ORGANIC_SUBSET_VALENCES = Map.of(
+        "B", new int[] {3},
+        "C", new int[] {4},
+        "N", new int[] {3, 5},
+        "O", new int[] {2},
+        "P", new int[] {3, 5},
+        "S", new int[] {2, 4, 6},
+        "F", new int[] {1},
+        "Cl", new int[] {1},
+        "Br", new int[] {1},
+        "I", new int[] {1});
+
     private final List<Atom> atoms;
     private final List<Bond> bonds;
     private final Map<Atom, List<Bond>> incidentBonds;
@@ -108,6 +123,64 @@ public final class Molecule
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Returns the total number of hydrogens attached to an atom: its explicit count if one
+     * was written, otherwise the implicit count inferred from {@code atom}'s default valence and its
+     * actual bonding.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return {@code atom}'s total hydrogen count, explicit or inferred
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    public int totalHydrogenCount(Atom atom)
+    {
+        if (!incidentBonds.containsKey(atom))
+        {
+            throw new IllegalArgumentException("Atom is not part of this molecule: " + atom);
+        }
+        if (atom.hydrogenCount().isPresent())
+        {
+            return atom.hydrogenCount().getAsInt();
+        }
+
+        // only ever reached for an organic-subset atom
+        int[] valences = ORGANIC_SUBSET_VALENCES.get(atom.element());
+        if (valences == null)
+        {
+            return 0;
+        }
+
+        int explicitBondSum = 0;
+        int aromaticBondCount = 0;
+        for (Bond bond : bondsOf(atom))
+        {
+            switch (bond.order())
+            {
+                case SINGLE -> explicitBondSum++;
+                case DOUBLE -> explicitBondSum += 2;
+                case TRIPLE -> explicitBondSum += 3;
+                case QUADRUPLE -> explicitBondSum += 4;
+                case AROMATIC -> aromaticBondCount++;
+            }
+        }
+
+        // escalate to a higher default valence only when required
+        int chosenValence = valences[valences.length - 1];
+        for (int valence : valences)
+        {
+            if (valence >= explicitBondSum)
+            {
+                chosenValence = valence;
+                break;
+            }
+        }
+
+        // the aromatic weighting only ever spends the valence already chosen above
+        int remainingAfterExplicitBonds = chosenValence - explicitBondSum;
+        int aromaticContribution = Math.round(1.5f * aromaticBondCount);
+        return Math.max(0, remainingAfterExplicitBonds - aromaticContribution);
     }
 
     /**

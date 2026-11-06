@@ -529,4 +529,162 @@ class MoleculeTest
             }
         }
     }
+
+    @Nested
+    class TotalHydrogenCount
+    {
+        @Test
+        void returns_a_bracket_atoms_explicit_count_regardless_of_its_bonding()
+        {
+            // [CH2]C
+            Atom explicit = Atom.builder("C").hydrogenCount(2).build();
+            Atom neighbour = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(explicit, neighbour)
+                .addBond(explicit, neighbour, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.totalHydrogenCount(explicit)).isEqualTo(2);
+        }
+
+        @Test
+        void returns_a_bracket_atoms_explicit_zero_rather_than_inferring_one()
+        {
+            // [C]: no H written at all means explicitly zero, not "go infer it"
+            Atom explicit = Atom.builder("C").hydrogenCount(0).build();
+            Molecule molecule = new Molecule.Builder().addAtom(explicit).build();
+
+            assertThat(molecule.totalHydrogenCount(explicit)).isZero();
+        }
+
+        @Test
+        void infers_methanes_four_hydrogens_from_an_unbonded_organic_carbon()
+        {
+            // C
+            Atom carbon = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(carbon).build();
+
+            assertThat(molecule.totalHydrogenCount(carbon)).isEqualTo(4);
+        }
+
+        @Test
+        void infers_one_hydrogen_each_for_ethanes_two_carbons()
+        {
+            // CC
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .build();
+
+            // each carbon has one other bond, leaving 3 implicit hydrogens
+            assertThat(molecule.totalHydrogenCount(c1)).isEqualTo(3);
+            assertThat(molecule.totalHydrogenCount(c2)).isEqualTo(3);
+        }
+
+        @Test
+        void infers_zero_hydrogens_for_a_fully_substituted_carbon()
+        {
+            // CC(=O)C
+            Atom carbonylCarbon = Atom.organic("C");
+            Atom left = Atom.organic("C");
+            Atom right = Atom.organic("C");
+            Atom oxygen = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbonylCarbon, left, right, oxygen)
+                .addBond(carbonylCarbon, left, BondOrder.SINGLE)
+                .addBond(carbonylCarbon, right, BondOrder.SINGLE)
+                .addBond(carbonylCarbon, oxygen, BondOrder.DOUBLE)
+                .build();
+
+            assertThat(molecule.totalHydrogenCount(carbonylCarbon)).isZero();
+        }
+
+        @Test
+        void infers_one_hydrogen_for_the_hydroxyl_oxygen_of_a_carboxylic_acid()
+        {
+            // C(=O)O
+            Atom carbon = Atom.organic("C");
+            Atom carbonylOxygen = Atom.organic("O");
+            Atom hydroxylOxygen = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbon, carbonylOxygen, hydroxylOxygen)
+                .addBond(carbon, carbonylOxygen, BondOrder.DOUBLE)
+                .addBond(carbon, hydroxylOxygen, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.totalHydrogenCount(carbonylOxygen)).isZero();
+            assertThat(molecule.totalHydrogenCount(hydroxylOxygen)).isEqualTo(1);
+        }
+
+        @Test
+        void infers_one_hydrogen_for_an_unsubstituted_benzene_ring_carbon()
+        {
+            // c1ccccc1
+            Atom[] ring = new Atom[6];
+            for (int i = 0; i < ring.length; i++)
+            {
+                ring[i] = Atom.organic("C", true);
+            }
+            Molecule.Builder builder = new Molecule.Builder().addAtoms(ring);
+            for (int i = 0; i < ring.length; i++)
+            {
+                builder.addBond(ring[i], ring[(i + 1) % ring.length], BondOrder.AROMATIC);
+            }
+            Molecule molecule = builder.build();
+
+            assertThat(molecule.totalHydrogenCount(ring[0])).isEqualTo(1);
+        }
+
+        @Test
+        void infers_zero_hydrogens_for_a_two_connected_aromatic_nitrogen_assuming_pyridine_type()
+        {
+            // cnc fragment, i.e. the ring nitrogen's local bonding in pyridine (c1ccncc1) -
+            // the same local bonding as pyrrole's N-H, which is why real SMILES spells that
+            // one out as [nH] rather than leaving it to be inferred
+            Atom nitrogen = Atom.organic("N", true);
+            Atom left = Atom.organic("C", true);
+            Atom right = Atom.organic("C", true);
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(nitrogen, left, right)
+                .addBond(nitrogen, left, BondOrder.AROMATIC)
+                .addBond(nitrogen, right, BondOrder.AROMATIC)
+                .build();
+
+            assertThat(molecule.totalHydrogenCount(nitrogen)).isZero();
+        }
+
+        @Test
+        void infers_zero_hydrogens_for_a_two_connected_aromatic_oxygen_or_sulfur()
+        {
+            // coc / csc fragment, i.e. the ring heteroatom's local bonding in furan
+            // (c1ccoc1) and thiophene (c1ccsc1): both lone-pair heteroatoms with two single
+            // Kekule bonds and never a hydrogen, despite the aromatic weighting alone
+            // suggesting more bonding than either element's lowest valence allows
+            for (String element : List.of("O", "S"))
+            {
+                Atom heteroatom = Atom.organic(element, true);
+                Atom left = Atom.organic("C", true);
+                Atom right = Atom.organic("C", true);
+                Molecule molecule = new Molecule.Builder()
+                    .addAtoms(heteroatom, left, right)
+                    .addBond(heteroatom, left, BondOrder.AROMATIC)
+                    .addBond(heteroatom, right, BondOrder.AROMATIC)
+                    .build();
+
+                assertThat(molecule.totalHydrogenCount(heteroatom)).isZero();
+            }
+        }
+
+        @Test
+        void throws_for_an_atom_not_part_of_the_molecule()
+        {
+            Atom carbon = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("C")).build();
+
+            assertThatThrownBy(() -> molecule.totalHydrogenCount(carbon))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
 }

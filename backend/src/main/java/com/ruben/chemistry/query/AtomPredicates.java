@@ -59,6 +59,34 @@ public final class AtomPredicates
     }
 
     /**
+     * @param count the required number of explicit (heavy-atom) bonds
+     * @return a predicate matching an atom with exactly that many bonds (the SMARTS {@code D} primitive)
+     */
+    public static AtomPredicate degree(int count)
+    {
+        return (molecule, atom) -> degreeOf(molecule, atom) == count;
+    }
+
+    private static int degreeOf(Molecule molecule, Atom atom)
+    {
+        int degree = 0;
+        for (Bond ignored : molecule.bondsOf(atom))
+        {
+            degree++;
+        }
+        return degree;
+    }
+
+    /**
+     * @param count the required total hydrogen count
+     * @return a predicate matching an atom with exactly that many hydrogens, explicit or inferred
+     */
+    public static AtomPredicate hydrogenCount(int count)
+    {
+        return (molecule, atom) -> molecule.totalHydrogenCount(atom) == count;
+    }
+
+    /**
      * @param template the atom to match exactly
      * @return a predicate matching an atom with the same element, aromaticity, charge, isotope, hydrogens etc.
      */
