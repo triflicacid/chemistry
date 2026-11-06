@@ -2,6 +2,7 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Molecule;
 
 import java.util.Set;
@@ -30,6 +31,16 @@ public final class AtomPredicates
     public static AtomPredicate element(String element)
     {
         return (molecule, atom) -> atom.element().equals(element);
+    }
+
+    /**
+     * @param atomicNumber the atomic number to match, e.g. {@code 6} for carbon
+     * @return a predicate matching atoms of exactly that element (the SMARTS {@code #<n>} primitive)
+     * @throws IllegalArgumentException if {@code atomicNumber} has no known element
+     */
+    public static AtomPredicate atomicNumber(int atomicNumber)
+    {
+        return element(Elements.symbolOf(atomicNumber));
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.ruben.chemistry.smiles;
 
+import com.ruben.chemistry.core.Elements;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -27,23 +29,6 @@ public final class Lexer
 
     /** Aromatic extensions beyond the organic subset, recognised only inside brackets. */
     private static final Set<String> AROMATIC_TWO_CHAR_ELEMENTS = Set.of("se", "as", "te");
-
-    /** Standard periodic table symbols, recognised only inside brackets. */
-    private static final Set<String> ELEMENT_SYMBOLS = Set.of(
-        "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
-        "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
-        "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
-        "Ga", "Ge", "As", "Se", "Br", "Kr",
-        "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
-        "In", "Sn", "Sb", "Te", "I", "Xe",
-        "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy",
-        "Ho", "Er", "Tm", "Yb", "Lu",
-        "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi",
-        "Po", "At", "Rn",
-        "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf",
-        "Es", "Fm", "Md", "No", "Lr",
-        "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Nh", "Fl", "Mc",
-        "Lv", "Ts", "Og");
 
     private final String source;
     private final List<Token> lookahead = new ArrayList<>();
@@ -315,14 +300,14 @@ public final class Lexer
         if (position + 2 <= source.length())
         {
             String twoChars = source.substring(position, position + 2);
-            if (ELEMENT_SYMBOLS.contains(twoChars) || AROMATIC_TWO_CHAR_ELEMENTS.contains(twoChars))
+            if (Elements.isSymbol(twoChars) || AROMATIC_TWO_CHAR_ELEMENTS.contains(twoChars))
             {
                 return 2;
             }
         }
 
         String oneChar = String.valueOf(source.charAt(position));
-        if (ELEMENT_SYMBOLS.contains(oneChar) || AROMATIC_ATOMS.indexOf(source.charAt(position)) >= 0)
+        if (Elements.isSymbol(oneChar) || AROMATIC_ATOMS.indexOf(source.charAt(position)) >= 0)
         {
             return 1;
         }
