@@ -1,10 +1,12 @@
 package com.ruben.chemistry.smiles;
 
 import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.notation.InvalidNotationException;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -16,7 +18,7 @@ import java.util.Map;
 import java.util.OptionalInt;
 
 /**
- * Parses a SMILES string into a {@link Molecule}, driven token-by-token by a {@link Lexer}.
+ * Parses a SMILES string into a {@link Molecule}.
  */
 public final class SmilesParser
 {
@@ -49,13 +51,13 @@ public final class SmilesParser
      * Parses the source string into a molecule.
      *
      * @return the parsed molecule
-     * @throws InvalidSmilesException if the source is not valid SMILES
+     * @throws InvalidNotationException if the source is not valid SMILES
      */
     public Molecule parse()
     {
         if (lexer.isAtEnd())
         {
-            throw new InvalidSmilesException("SMILES string must not be empty", source, 0);
+            throw new InvalidNotationException("SMILES string must not be empty", source, 0);
         }
 
         while (!lexer.isAtEnd())
@@ -65,16 +67,16 @@ public final class SmilesParser
 
         if (!branchStack.isEmpty())
         {
-            throw new InvalidSmilesException("Unmatched '('", source, source.length());
+            throw new InvalidNotationException("Unmatched '('", source, source.length());
         }
         if (pendingBondSymbol != null)
         {
-            throw new InvalidSmilesException("Bond symbol not followed by an atom", source, pendingBondPosition);
+            throw new InvalidNotationException("Bond symbol not followed by an atom", source, pendingBondPosition);
         }
         if (!openRingBonds.isEmpty())
         {
             PendingRingClosure firstUnpaired = openRingBonds.values().iterator().next();
-            throw new InvalidSmilesException("Unpaired ring closure digit", source, firstUnpaired.position());
+            throw new InvalidNotationException("Unpaired ring closure digit", source, firstUnpaired.position());
         }
 
         return builder.build();
@@ -84,7 +86,7 @@ public final class SmilesParser
      * Parses a single grammar element at the current token position: an atom, bond,
      * branch delimiter, ring closure, or disconnection dot.
      *
-     * @throws InvalidSmilesException if the current token cannot start a valid element here
+     * @throws InvalidNotationException if the current token cannot start a valid element here
      */
     private void parseNext()
     {
@@ -99,7 +101,7 @@ public final class SmilesParser
             case BRANCH_CLOSE -> parseBranchClose(token);
             case DOT -> parseDot();
             case RING_BOND -> parseRingBond(token);
-            default -> throw new InvalidSmilesException("Unexpected token '" + token.text() + "'", source, token.position());
+            default -> throw new InvalidNotationException("Unexpected token '" + token.text() + "'", source, token.position());
         }
     }
 
@@ -121,7 +123,7 @@ public final class SmilesParser
      * count, charge, and atom class, in that order.
      *
      * @return the added atom
-     * @throws InvalidSmilesException if the contents are not a valid bracket atom
+     * @throws InvalidNotationException if the contents are not a valid bracket atom
      */
     private Atom parseBracketAtom()
     {
@@ -143,7 +145,7 @@ public final class SmilesParser
         if (lexer.peek().type() != TokenType.BRACKET_CLOSE)
         {
             Token unexpected = lexer.peek();
-            throw new InvalidSmilesException("Expected ']' to close bracket atom", source, unexpected.position());
+            throw new InvalidNotationException("Expected ']' to close bracket atom", source, unexpected.position());
         }
         lexer.next();
 
@@ -198,14 +200,14 @@ public final class SmilesParser
      * Parses the required element symbol of a bracket atom.
      *
      * @return the consumed {@link TokenType#ELEMENT} token
-     * @throws InvalidSmilesException if the current token is not an element symbol
+     * @throws InvalidNotationException if the current token is not an element symbol
      */
     private Token parseElementSymbol()
     {
         if (lexer.peek().type() != TokenType.ELEMENT)
         {
             Token unexpected = lexer.peek();
-            throw new InvalidSmilesException("Expected element symbol in bracket atom", source, unexpected.position());
+            throw new InvalidNotationException("Expected element symbol in bracket atom", source, unexpected.position());
         }
         return lexer.next();
     }
@@ -265,7 +267,7 @@ public final class SmilesParser
      * Parses an optional atom class inside a bracket atom: a colon followed by a digit run.
      *
      * @return the atom class number, or empty if no colon is present
-     * @throws InvalidSmilesException if a colon is not followed by a digit run
+     * @throws InvalidNotationException if a colon is not followed by a digit run
      */
     private OptionalInt parseOptionalAtomClass()
     {
@@ -278,7 +280,7 @@ public final class SmilesParser
         if (lexer.peek().type() != TokenType.NUMBER)
         {
             Token unexpected = lexer.peek();
-            throw new InvalidSmilesException("Expected a number after ':' in atom class", source, unexpected.position());
+            throw new InvalidNotationException("Expected a number after ':' in atom class", source, unexpected.position());
         }
         return OptionalInt.of(Integer.parseInt(lexer.next().text()));
     }
@@ -287,9 +289,15 @@ public final class SmilesParser
      * Consumes a bond token, recording its order for the atom that follows.
      *
      * @param token the peeked {@link TokenType#BOND} token
+     * @throws InvalidNotationException if a bond symbol is already pending
      */
     private void parseBond(Token token)
     {
+        if (pendingBondSymbol != null)
+        {
+            throw new InvalidNotationException("Bond symbol immediately follows another bond symbol", source, token.position());
+        }
+
         lexer.next();
         pendingBondSymbol = token.text();
         pendingBondPosition = token.position();
@@ -299,13 +307,13 @@ public final class SmilesParser
      * Consumes a branch-opening token, pushing the current atom as the branch point.
      *
      * @param token the peeked {@link TokenType#BRANCH_OPEN} token
-     * @throws InvalidSmilesException if there is no preceding atom to branch from
+     * @throws InvalidNotationException if there is no preceding atom to branch from
      */
     private void parseBranchOpen(Token token)
     {
         if (previousAtom == null)
         {
-            throw new InvalidSmilesException("Branch opened with no preceding atom", source, token.position());
+            throw new InvalidNotationException("Branch opened with no preceding atom", source, token.position());
         }
 
         lexer.next();
@@ -316,13 +324,13 @@ public final class SmilesParser
      * Consumes a branch-closing token, restoring the atom the branch was opened from.
      *
      * @param token the peeked {@link TokenType#BRANCH_CLOSE} token
-     * @throws InvalidSmilesException if there is no open branch to close
+     * @throws InvalidNotationException if there is no open branch to close
      */
     private void parseBranchClose(Token token)
     {
         if (branchStack.isEmpty())
         {
-            throw new InvalidSmilesException("Unmatched ')'", source, token.position());
+            throw new InvalidNotationException("Unmatched ')'", source, token.position());
         }
 
         lexer.next();
@@ -333,14 +341,14 @@ public final class SmilesParser
      * Consumes a disconnection dot, clearing the preceding atom so the next atom begins a
      * new, unbonded fragment.
      *
-     * @throws InvalidSmilesException if a bond symbol is pending
+     * @throws InvalidNotationException if a bond symbol is pending
      */
     private void parseDot()
     {
         lexer.next();
         if (pendingBondSymbol != null)
         {
-            throw new InvalidSmilesException("Bond symbol not followed by an atom", source, pendingBondPosition);
+            throw new InvalidNotationException("Bond symbol not followed by an atom", source, pendingBondPosition);
         }
 
         previousAtom = null;
@@ -351,7 +359,7 @@ public final class SmilesParser
      * closes an existing one.
      *
      * @param token the peeked {@link TokenType#RING_BOND} token
-     * @throws InvalidSmilesException if there is no preceding atom, the closure would bond
+     * @throws InvalidNotationException if there is no preceding atom, the closure would bond
      *     an atom to itself, or its bond symbol doesn't match the one it was opened with
      */
     private void parseRingBond(Token token)
@@ -359,7 +367,7 @@ public final class SmilesParser
         lexer.next();
         if (previousAtom == null)
         {
-            throw new InvalidSmilesException("Ring closure not preceded by an atom", source, token.position());
+            throw new InvalidNotationException("Ring closure not preceded by an atom", source, token.position());
         }
 
         String symbolHere = pendingBondSymbol;
@@ -374,7 +382,7 @@ public final class SmilesParser
 
         if (opened.atom() == previousAtom)
         {
-            throw new InvalidSmilesException("Ring closure bonds an atom to itself", source, token.position());
+            throw new InvalidNotationException("Ring closure bonds an atom to itself", source, token.position());
         }
 
         BondOrder order = resolveRingBondOrder(opened.bondSymbol(), symbolHere, opened.atom(), previousAtom, token);
@@ -400,7 +408,7 @@ public final class SmilesParser
      * @param second the other endpoint
      * @param closingToken the closing digit's token, for error reporting
      * @return the resolved bond order
-     * @throws InvalidSmilesException if both symbols are present and resolve to different orders
+     * @throws InvalidNotationException if both symbols are present and resolve to different orders
      */
     private BondOrder resolveRingBondOrder(String openingSymbol, String closingSymbol, Atom first, Atom second, Token closingToken)
     {
@@ -409,7 +417,7 @@ public final class SmilesParser
 
         if (openingOrder != null && closingOrder != null && openingOrder != closingOrder)
         {
-            throw new InvalidSmilesException("Ring closure bond symbol '" + closingSymbol
+            throw new InvalidNotationException("Ring closure bond symbol '" + closingSymbol
                 + "' does not match its opening symbol '" + openingSymbol + "'", source, closingToken.position());
         }
 
@@ -430,7 +438,7 @@ public final class SmilesParser
      * @param openingSymbol the bond symbol written at the opening occurrence, or {@code null}
      * @param closingSymbol the bond symbol written at the closing occurrence, or {@code null}
      * @param closingToken the closing digit's token, for error reporting
-     * @throws InvalidSmilesException if both occurrences are directional with the same character
+     * @throws InvalidNotationException if both occurrences are directional with the same character
      */
     private void registerRingClosureDirectionalEdges(Atom openingAtom, Atom closingAtom, String openingSymbol, String closingSymbol, Token closingToken)
     {
@@ -442,17 +450,17 @@ public final class SmilesParser
         }
         if (openingIsDirectional && closingIsDirectional && openingSymbol.charAt(0) == closingSymbol.charAt(0))
         {
-            throw new InvalidSmilesException("Ring closure direction symbol '" + closingSymbol
+            throw new InvalidNotationException("Ring closure direction symbol '" + closingSymbol
                 + "' must be the opposite of its opening symbol '" + openingSymbol + "', not the same", source, closingToken.position());
         }
 
         if (openingIsDirectional)
         {
-            directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, openingSymbol.charAt(0), true));
+            directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, BondDirection.fromSymbol(openingSymbol.charAt(0)), true));
         }
         if (closingIsDirectional)
         {
-            directionalEdgeOf.put(closingAtom, new DirectionalEdge(openingAtom, closingSymbol.charAt(0), true));
+            directionalEdgeOf.put(closingAtom, new DirectionalEdge(openingAtom, BondDirection.fromSymbol(closingSymbol.charAt(0)), true));
         }
 
         reconcileIfDoubleBondAtom(openingAtom);
@@ -474,7 +482,7 @@ public final class SmilesParser
      * Bonds the given atom to the preceding atom, if any, consuming any pending bond symbol.
      *
      * @param atom the atom just parsed
-     * @throws InvalidSmilesException if a bond symbol is pending but there is no preceding atom to bond it to
+     * @throws InvalidNotationException if a bond symbol is pending but there is no preceding atom to bond it to
      */
     private void attachAtom(Atom atom)
     {
@@ -482,7 +490,7 @@ public final class SmilesParser
         {
             if (pendingBondSymbol != null)
             {
-                throw new InvalidSmilesException("Bond symbol not preceded by an atom", source, pendingBondPosition);
+                throw new InvalidNotationException("Bond symbol not preceded by an atom", source, pendingBondPosition);
             }
         }
         else
@@ -501,7 +509,7 @@ public final class SmilesParser
             }
             else if (isDirectional(pendingBondSymbol))
             {
-                recordDirectionalEdge(previousAtom, atom, pendingBondSymbol.charAt(0));
+                recordDirectionalEdge(previousAtom, atom, BondDirection.fromSymbol(pendingBondSymbol.charAt(0)));
             }
         }
 
@@ -518,18 +526,18 @@ public final class SmilesParser
     }
 
     /**
-     * Records one directional single bond ({@code '/'} or {@code '\'}) between two
+     * Records one directional single bond ({@code /} or {@code \}) between two
      * just-bonded atoms, then attempts to complete the stereo declaration of either atom's
      * double bond, if it has one and its other reference is already known too.
      *
      * @param writtenFirst the earlier-written of the bond's two atoms
      * @param writtenSecond the later-written of the bond's two atoms
-     * @param symbol the literal {@code '/'} or {@code '\'} character as written
+     * @param direction the direction as written
      */
-    private void recordDirectionalEdge(Atom writtenFirst, Atom writtenSecond, char symbol)
+    private void recordDirectionalEdge(Atom writtenFirst, Atom writtenSecond, BondDirection direction)
     {
-        directionalEdgeOf.put(writtenFirst, new DirectionalEdge(writtenSecond, symbol, true));
-        directionalEdgeOf.put(writtenSecond, new DirectionalEdge(writtenFirst, symbol, false));
+        directionalEdgeOf.put(writtenFirst, new DirectionalEdge(writtenSecond, direction, true));
+        directionalEdgeOf.put(writtenSecond, new DirectionalEdge(writtenFirst, direction, false));
 
         reconcileIfDoubleBondAtom(writtenFirst);
         reconcileIfDoubleBondAtom(writtenSecond);
@@ -568,8 +576,8 @@ public final class SmilesParser
             return;
         }
 
-        char firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.symbol() : flipDirection(firstEdge.symbol());
-        char secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.symbol() : flipDirection(secondEdge.symbol());
+        BondDirection firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.direction() : firstEdge.direction().flip();
+        BondDirection secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.direction() : secondEdge.direction().flip();
         DoubleBondStereo relativeToEdges = firstOutward == secondOutward ? DoubleBondStereo.SAME_SIDE : DoubleBondStereo.OPPOSITE_SIDE;
 
         Atom firstDefault = defaultSubstituentOf(first, second);
@@ -595,30 +603,21 @@ public final class SmilesParser
 
     /**
      * @param bondSymbol a bond symbol, or {@code null}
-     * @return {@code true} if {@code bondSymbol} is a directional bond, {@code '/'} or {@code '\'}
+     * @return {@code true} if {@code bondSymbol} is a directional bond, {@code /} or {@code \}
      */
     private static boolean isDirectional(String bondSymbol)
     {
-        return "/".equals(bondSymbol) || "\\".equals(bondSymbol);
-    }
-
-    /**
-     * @param symbol a direction symbol, {@code '/'} or {@code '\'}
-     * @return the other direction symbol
-     */
-    private static char flipDirection(char symbol)
-    {
-        return symbol == '/' ? '\\' : '/';
+        return bondSymbol != null && BondDirection.isSymbol(bondSymbol.charAt(0));
     }
 
     /**
      * One atom's end of a directional single bond.
      *
      * @param other the atom at the other end of this directional bond
-     * @param symbol the literal {@code '/'} or {@code '\'} character as written
+     * @param direction the direction as written
      * @param thisAtomWrittenFirst whether the atom this edge is recorded for was written before {@code other}
      */
-    private record DirectionalEdge(Atom other, char symbol, boolean thisAtomWrittenFirst)
+    private record DirectionalEdge(Atom other, BondDirection direction, boolean thisAtomWrittenFirst)
     {
     }
 

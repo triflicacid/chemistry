@@ -1,5 +1,7 @@
 package com.ruben.chemistry.smiles;
 
+import com.ruben.chemistry.notation.InvalidNotationException;
+
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -468,7 +470,7 @@ class LexerTest
         void throws_for_an_unexpected_character_outside_brackets()
         {
             assertThatThrownBy(() -> tokenize("?"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unexpected character");
         }
 
@@ -476,7 +478,7 @@ class LexerTest
         void throws_for_an_unexpected_character_inside_brackets()
         {
             assertThatThrownBy(() -> tokenize("[?]"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unexpected character");
         }
 
@@ -496,7 +498,7 @@ class LexerTest
         void throws_for_a_percent_sign_not_followed_by_two_digits()
         {
             assertThatThrownBy(() -> tokenize("%1"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Expected two digits after '%'");
         }
 
@@ -504,7 +506,7 @@ class LexerTest
         void throws_for_a_percent_sign_followed_by_a_non_digit()
         {
             assertThatThrownBy(() -> tokenize("%1C"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Expected two digits after '%'");
         }
 
@@ -512,26 +514,26 @@ class LexerTest
         void throws_for_a_trailing_percent_sign_with_no_digits()
         {
             assertThatThrownBy(() -> tokenize("%"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Expected two digits after '%'");
         }
 
         @Test
         void exception_carries_the_offending_source_position()
         {
-            InvalidSmilesException exception = catchInvalidSmiles(() -> tokenize("CC?"));
+            InvalidNotationException exception = catchInvalidSmiles(() -> tokenize("CC?"));
 
             assertThat(exception.position()).isEqualTo(2);
         }
 
-        private InvalidSmilesException catchInvalidSmiles(Runnable action)
+        private InvalidNotationException catchInvalidSmiles(Runnable action)
         {
             try
             {
                 action.run();
-                throw new AssertionError("Expected an InvalidSmilesException to be thrown");
+                throw new AssertionError("Expected an InvalidNotationException to be thrown");
             }
-            catch (InvalidSmilesException e)
+            catch (InvalidNotationException e)
             {
                 return e;
             }

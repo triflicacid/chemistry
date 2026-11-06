@@ -44,6 +44,22 @@ public enum BondOrder
     }
 
     /**
+     * @param symbol a candidate bond symbol
+     * @return {@code true} if {@code symbol} denotes one of {@link #values()}
+     */
+    public static boolean isSymbol(char symbol)
+    {
+        for (BondOrder order : values())
+        {
+            if (order.symbol == symbol)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @param first one endpoint atom
      * @param second the other endpoint atom
      * @return {@link #AROMATIC} if both atoms are aromatic, otherwise {@link #SINGLE}

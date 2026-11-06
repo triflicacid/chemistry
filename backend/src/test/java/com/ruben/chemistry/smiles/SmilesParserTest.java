@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.notation.InvalidNotationException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -171,7 +172,7 @@ class SmilesParserTest
         void throws_when_a_bond_symbol_is_not_followed_by_an_atom()
         {
             assertThatThrownBy(() -> parse("C="))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Bond symbol not followed by an atom");
         }
 
@@ -179,7 +180,7 @@ class SmilesParserTest
         void throws_when_a_bond_symbol_has_no_preceding_atom()
         {
             assertThatThrownBy(() -> parse("=C"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Bond symbol not preceded by an atom");
         }
 
@@ -189,7 +190,7 @@ class SmilesParserTest
             // the pending '=' is never attached to an atom, but the unmatched '(' is
             // detected first since it is still open when the input is exhausted
             assertThatThrownBy(() -> parse("C=("))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unmatched '('");
         }
 
@@ -199,7 +200,7 @@ class SmilesParserTest
             // the branch opens and closes with no atom in between, so the pending '='
             // is still dangling once the branch is closed and the input is exhausted
             assertThatThrownBy(() -> parse("C=()"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Bond symbol not followed by an atom");
         }
     }
@@ -282,7 +283,7 @@ class SmilesParserTest
         void throws_when_a_branch_opens_with_no_preceding_atom()
         {
             assertThatThrownBy(() -> parse("(C)C"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Branch opened with no preceding atom");
         }
 
@@ -290,7 +291,7 @@ class SmilesParserTest
         void throws_for_an_unmatched_closing_parenthesis()
         {
             assertThatThrownBy(() -> parse("C)C"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unmatched ')'");
         }
 
@@ -298,7 +299,7 @@ class SmilesParserTest
         void throws_for_an_unmatched_opening_parenthesis()
         {
             assertThatThrownBy(() -> parse("C(C"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unmatched '('");
         }
     }
@@ -330,7 +331,7 @@ class SmilesParserTest
         void throws_when_a_pending_bond_symbol_precedes_a_dot()
         {
             assertThatThrownBy(() -> parse("C=.C"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Bond symbol not followed by an atom");
         }
     }
@@ -468,7 +469,7 @@ class SmilesParserTest
         void throws_when_the_bracket_is_not_closed()
         {
             assertThatThrownBy(() -> parse("[C"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Expected ']' to close bracket atom");
         }
 
@@ -476,7 +477,7 @@ class SmilesParserTest
         void throws_when_no_element_symbol_is_present()
         {
             assertThatThrownBy(() -> parse("[+]"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Expected element symbol in bracket atom");
         }
 
@@ -484,7 +485,7 @@ class SmilesParserTest
         void throws_when_an_atom_class_colon_is_not_followed_by_a_number()
         {
             assertThatThrownBy(() -> parse("[CH4:]"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Expected a number after ':' in atom class");
         }
 
@@ -492,7 +493,7 @@ class SmilesParserTest
         void throws_when_bracket_contents_are_not_followed_by_a_closing_bracket()
         {
             assertThatThrownBy(() -> parse("[CH4"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Expected ']' to close bracket atom");
         }
     }
@@ -612,7 +613,7 @@ class SmilesParserTest
         void throws_when_a_ring_closure_bonds_direction_symbol_matches_its_opening_symbol()
         {
             assertThatThrownBy(() -> parse("C/1=CCC/1"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("must be the opposite");
         }
     }
@@ -693,7 +694,7 @@ class SmilesParserTest
         void throws_for_mismatched_bond_symbols_at_each_end()
         {
             assertThatThrownBy(() -> parse("C=1CCCCC-1"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("does not match");
         }
 
@@ -701,7 +702,7 @@ class SmilesParserTest
         void throws_for_a_ring_closure_bonding_an_atom_to_itself()
         {
             assertThatThrownBy(() -> parse("C11"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("bonds an atom to itself");
         }
 
@@ -709,7 +710,7 @@ class SmilesParserTest
         void throws_for_a_ring_closure_with_no_preceding_atom()
         {
             assertThatThrownBy(() -> parse("1CC1"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Ring closure not preceded by an atom");
         }
 
@@ -717,7 +718,7 @@ class SmilesParserTest
         void throws_for_an_unpaired_ring_closure_digit()
         {
             assertThatThrownBy(() -> parse("C1"))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unpaired ring closure digit");
         }
 
@@ -754,7 +755,7 @@ class SmilesParserTest
         void throws_for_an_empty_string()
         {
             assertThatThrownBy(() -> parse(""))
-                .isInstanceOf(InvalidSmilesException.class)
+                .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("SMILES string must not be empty");
         }
 
@@ -762,16 +763,24 @@ class SmilesParserTest
         void throws_for_an_unexpected_character()
         {
             assertThatThrownBy(() -> parse("?"))
-                .isInstanceOf(InvalidSmilesException.class);
+                .isInstanceOf(InvalidNotationException.class);
         }
 
         @Test
         void exception_carries_the_offending_source_position()
         {
-            InvalidSmilesException exception = (InvalidSmilesException) catchParseException("CC)C");
+            InvalidNotationException exception = (InvalidNotationException) catchParseException("CC)C");
 
             assertThat(exception.position()).isEqualTo(2);
             assertThat(exception.source()).isEqualTo("CC)C");
+        }
+
+        @Test
+        void throws_for_a_bond_symbol_immediately_following_another_one()
+        {
+            assertThatThrownBy(() -> parse("C-(=C)C"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("immediately follows another bond symbol");
         }
 
         private Throwable catchParseException(String smiles)
@@ -781,7 +790,7 @@ class SmilesParserTest
                 parse(smiles);
                 throw new AssertionError("Expected parsing to throw");
             }
-            catch (InvalidSmilesException e)
+            catch (InvalidNotationException e)
             {
                 return e;
             }

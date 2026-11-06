@@ -1,12 +1,10 @@
-package com.ruben.chemistry.smiles;
-
-import com.ruben.chemistry.core.Molecule;
+package com.ruben.chemistry.notation;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Thrown when a SMILES string cannot be parsed into a {@link Molecule}.
+ * Thrown when a chemical notation string cannot be parsed.
  *
  * <p>Carries the source text and the character offset where parsing failed,
  * optionally followed by a chain of enclosing-context frames:
@@ -20,7 +18,7 @@ import java.util.List;
  * ^
  * </pre>
  */
-public class InvalidSmilesException extends RuntimeException
+public class InvalidNotationException extends RuntimeException
 {
     public record ContextFrame(String description, int position, int endPosition)
     {
@@ -45,10 +43,10 @@ public class InvalidSmilesException extends RuntimeException
      * Creates an exception for a parse failure at a single position.
      *
      * @param message description of the parse failure
-     * @param source the SMILES string being parsed
+     * @param source the notation string being parsed
      * @param position 0-based offset into {@code source} where the failure occurred
      */
-    public InvalidSmilesException(String message, String source, int position)
+    public InvalidNotationException(String message, String source, int position)
     {
         this(message, source, position, List.of(), null);
     }
@@ -57,11 +55,11 @@ public class InvalidSmilesException extends RuntimeException
      * Creates an exception for a parse failure at a single position, caused by another throwable.
      *
      * @param message description of the parse failure
-     * @param source the SMILES string being parsed
+     * @param source the notation string being parsed
      * @param position 0-based offset into {@code source} where the failure occurred
      * @param cause the underlying cause of this exception
      */
-    public InvalidSmilesException(String message, String source, int position, Throwable cause)
+    public InvalidNotationException(String message, String source, int position, Throwable cause)
     {
         this(message, source, position, List.of(), cause);
     }
@@ -70,11 +68,11 @@ public class InvalidSmilesException extends RuntimeException
      * Creates an exception for a parse failure with enclosing-context frames.
      *
      * @param message description of the parse failure
-     * @param source the SMILES string being parsed
+     * @param source the notation string being parsed
      * @param position 0-based offset into {@code source} where the failure occurred
      * @param contextFrames enclosing-context frames, innermost first
      */
-    public InvalidSmilesException(
+    public InvalidNotationException(
         String message,
         String source,
         int position,
@@ -87,12 +85,12 @@ public class InvalidSmilesException extends RuntimeException
      * Creates an exception for a parse failure with enclosing-context frames, caused by another throwable.
      *
      * @param message description of the parse failure
-     * @param source the SMILES string being parsed
+     * @param source the notation string being parsed
      * @param position 0-based offset into {@code source} where the failure occurred
      * @param contextFrames enclosing-context frames, innermost first
      * @param cause the underlying cause of this exception
      */
-    public InvalidSmilesException(
+    public InvalidNotationException(
         String message,
         String source,
         int position,
@@ -112,15 +110,15 @@ public class InvalidSmilesException extends RuntimeException
      * @param frame the context frame to append
      * @return a new exception with the same message, source and position, and {@link #contextFrames()} extended by one entry
      */
-    public InvalidSmilesException withContext(ContextFrame frame)
+    public InvalidNotationException withContext(ContextFrame frame)
     {
         List<ContextFrame> enriched = new ArrayList<>(contextFrames);
         enriched.add(frame);
-        return new InvalidSmilesException(rawMessage, source, position, enriched, getCause());
+        return new InvalidNotationException(rawMessage, source, position, enriched, getCause());
     }
 
     /**
-     * @return the SMILES string being parsed when this exception occurred
+     * @return the notation string being parsed when this exception occurred
      */
     public String source()
     {
@@ -184,7 +182,7 @@ public class InvalidSmilesException extends RuntimeException
      * rendered block per context frame.
      *
      * @param message description of the parse failure
-     * @param source the SMILES string being parsed
+     * @param source the notation string being parsed
      * @param position 0-based offset into {@code source} where the failure occurred
      * @param contextFrames enclosing-context frames, innermost first
      * @return the fully formatted exception message
