@@ -3,6 +3,7 @@ package com.ruben.chemistry.smarts;
 import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.notation.InvalidNotationException;
+import com.ruben.chemistry.notation.NotationSymbols;
 import com.ruben.chemistry.notation.StereoTracker;
 import com.ruben.chemistry.query.AtomPredicate;
 import com.ruben.chemistry.query.AtomPredicates;
@@ -172,7 +173,8 @@ public final class SmartsParser
         {
             return AtomPredicates.any();
         }
-        return isAromatic(rawSymbol) ? AtomPredicates.aromatic(canonicalElement(rawSymbol)) : AtomPredicates.element(canonicalElement(rawSymbol));
+        String element = NotationSymbols.canonicalElement(rawSymbol);
+        return NotationSymbols.isAromaticSymbol(rawSymbol) ? AtomPredicates.aromatic(element) : AtomPredicates.element(element);
     }
 
     /**
@@ -433,32 +435,6 @@ public final class SmartsParser
     private static BondPredicate defaultBondPredicate()
     {
         return BondPredicates.order(BondOrder.SINGLE).or(BondPredicates.order(BondOrder.AROMATIC));
-    }
-
-    /**
-     * Determines whether an atom symbol as written denotes an aromatic atom.
-     *
-     * @param rawSymbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
-     * @return {@code true} if {@code rawSymbol} is lower case
-     */
-    private boolean isAromatic(String rawSymbol)
-    {
-        return !rawSymbol.equals("*") && Character.isLowerCase(rawSymbol.charAt(0));
-    }
-
-    /**
-     * Canonicalises an atom symbol as written into its standard-case element symbol.
-     *
-     * @param rawSymbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
-     * @return {@code "*"} unchanged, or {@code rawSymbol} with its first letter upper-cased and any remaining letters lower-cased
-     */
-    private String canonicalElement(String rawSymbol)
-    {
-        if (rawSymbol.equals("*"))
-        {
-            return rawSymbol;
-        }
-        return Character.toUpperCase(rawSymbol.charAt(0)) + rawSymbol.substring(1).toLowerCase();
     }
 
     /**

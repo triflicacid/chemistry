@@ -2,6 +2,7 @@ package com.ruben.chemistry.smarts;
 
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.notation.InvalidNotationException;
+import com.ruben.chemistry.notation.NotationSymbols;
 import com.ruben.chemistry.query.AtomPredicate;
 import com.ruben.chemistry.query.AtomPredicates;
 
@@ -211,9 +212,9 @@ final class AtomExpressionParser
         {
             return countedPrimitive(AtomPredicates::hydrogenCount, 1);
         }
-        if (Character.isLowerCase(text.charAt(0)))
+        if (NotationSymbols.isAromaticSymbol(text))
         {
-            return AtomPredicates.aromatic(canonicalElement(text));
+            return AtomPredicates.aromatic(NotationSymbols.canonicalElement(text));
         }
         return AtomPredicates.element(text);
     }
@@ -299,15 +300,6 @@ final class AtomExpressionParser
     private int consumeNumber()
     {
         return Integer.parseInt(consume().text());
-    }
-
-    /**
-     * @param text an element symbol as lexed, lower case
-     * @return {@code text} with its first letter upper-cased, matching {@link com.ruben.chemistry.core.Elements}'s canonical casing
-     */
-    private static String canonicalElement(String text)
-    {
-        return Character.toUpperCase(text.charAt(0)) + text.substring(1).toLowerCase();
     }
 
     /**

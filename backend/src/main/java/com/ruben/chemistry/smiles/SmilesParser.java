@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
+import com.ruben.chemistry.notation.NotationSymbols;
 import com.ruben.chemistry.notation.StereoTracker;
 
 import java.util.ArrayDeque;
@@ -42,8 +43,7 @@ public final class SmilesParser
     private int pendingBondPosition;
 
     /**
-     * Creates a parser for the given source string. Parsing itself happens lazily in
-     * {@link #parse()}.
+     * Creates a parser for the given source string.
      *
      * @param source the SMILES string to parse
      */
@@ -119,7 +119,7 @@ public final class SmilesParser
     private Atom parseOrganicAtom()
     {
         Token token = lexer.next();
-        Atom atom = Atom.organic(canonicalElement(token.text()), isAromatic(token.text()));
+        Atom atom = Atom.organic(NotationSymbols.canonicalElement(token.text()), NotationSymbols.isAromaticSymbol(token.text()));
         builder.addAtom(atom);
         return atom;
     }
@@ -157,8 +157,8 @@ public final class SmilesParser
         }
         lexer.next();
 
-        Atom atom = Atom.builder(canonicalElement(symbol.text()))
-            .aromatic(isAromatic(symbol.text()))
+        Atom atom = Atom.builder(NotationSymbols.canonicalElement(symbol.text()))
+            .aromatic(NotationSymbols.isAromaticSymbol(symbol.text()))
             .charge(charge)
             .isotope(isotope)
             .hydrogenCount(hydrogenCount)
@@ -534,31 +534,5 @@ public final class SmilesParser
     private BondOrder bondOrderOf(String symbol)
     {
         return isDirectional(symbol) ? BondOrder.SINGLE : BondOrder.fromSymbol(symbol.charAt(0));
-    }
-
-    /**
-     * Determines whether an atom symbol as written denotes an aromatic atom.
-     *
-     * @param rawSymbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
-     * @return {@code true} if {@code rawSymbol} is lower case
-     */
-    private boolean isAromatic(String rawSymbol)
-    {
-        return !rawSymbol.equals("*") && Character.isLowerCase(rawSymbol.charAt(0));
-    }
-
-    /**
-     * Canonicalises an atom symbol as written into its standard-case element symbol.
-     *
-     * @param rawSymbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "se"}, {@code "*"}
-     * @return {@code "*"} unchanged, or {@code rawSymbol} with its first letter upper-cased and any remaining letters lower-cased
-     */
-    private String canonicalElement(String rawSymbol)
-    {
-        if (rawSymbol.equals("*"))
-        {
-            return rawSymbol;
-        }
-        return Character.toUpperCase(rawSymbol.charAt(0)) + rawSymbol.substring(1).toLowerCase();
     }
 }
