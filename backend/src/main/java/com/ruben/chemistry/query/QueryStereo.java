@@ -12,20 +12,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The stereochemistry requirements a {@link Query} declares, each paired with the atom positions
- * its verdict reads - the positions whose mapping decides whether it holds.
- * <p>
- * A requirement is therefore checkable as soon as those positions are all mapped, instead of only
- * once the whole query is: it reads nothing else, and an assignment only ever grows, so no later
- * placement can change a verdict already reachable. Checking one early rejects the whole subtree
- * below the placement that settled it rather than each leaf underneath separately.
+ * The stereochemistry requirements a {@link Query} declares.
  * <p>
  * A declared chirality reads its stereocentre and every neighbour position, since the real
  * chirality is reprojected onto the order those neighbours were mapped in. A declared double bond
  * stereo reads both endpoints and each endpoint's reference substituent, the substituents the
  * configuration is measured against.
- * <p>
- * This depends on the query alone, so {@link Query#stereo()} computes it once and caches it.
  */
 final class QueryStereo
 {
