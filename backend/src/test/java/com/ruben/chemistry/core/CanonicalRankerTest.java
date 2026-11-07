@@ -153,6 +153,43 @@ class CanonicalRankerTest
         assertThat(elementsByAscendingRank(forwardMolecule)).isEqualTo(elementsByAscendingRank(backwardMolecule));
     }
 
+    @Test
+    void ranks_are_independent_of_build_order_when_ties_must_be_broken()
+    {
+        // Cl-C-C-C-C-Cl: symmetric, so we have three ties
+        Atom cl1 = Atom.organic("Cl");
+        Atom c1a = Atom.organic("C");
+        Atom c2a = Atom.organic("C");
+        Atom c3a = Atom.organic("C");
+        Atom c4a = Atom.organic("C");
+        Atom cl2 = Atom.organic("Cl");
+        Molecule forwardMolecule = new Molecule.Builder()
+            .addAtoms(cl1, c1a, c2a, c3a, c4a, cl2)
+            .addBond(cl1, c1a, BondOrder.SINGLE)
+            .addBond(c1a, c2a, BondOrder.SINGLE)
+            .addBond(c2a, c3a, BondOrder.SINGLE)
+            .addBond(c3a, c4a, BondOrder.SINGLE)
+            .addBond(c4a, cl2, BondOrder.SINGLE)
+            .build();
+
+        Atom cl2b = Atom.organic("Cl");
+        Atom c4b = Atom.organic("C");
+        Atom c3b = Atom.organic("C");
+        Atom c2b = Atom.organic("C");
+        Atom c1b = Atom.organic("C");
+        Atom cl1b = Atom.organic("Cl");
+        Molecule backwardMolecule = new Molecule.Builder()
+            .addAtoms(cl2b, c4b, c3b, c2b, c1b, cl1b)
+            .addBond(c4b, cl2b, BondOrder.SINGLE)
+            .addBond(c3b, c4b, BondOrder.SINGLE)
+            .addBond(c2b, c3b, BondOrder.SINGLE)
+            .addBond(c1b, c2b, BondOrder.SINGLE)
+            .addBond(cl1b, c1b, BondOrder.SINGLE)
+            .build();
+
+        assertThat(elementsByAscendingRank(forwardMolecule)).isEqualTo(elementsByAscendingRank(backwardMolecule));
+    }
+
     private static Ranking rank(Molecule molecule)
     {
         return new CanonicalRanker().rank(molecule);

@@ -1,6 +1,8 @@
 package com.ruben.chemistry.core;
 
-import java.util.Collections;
+import com.ruben.chemistry.util.CachedValue;
+
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -8,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * A {@link Ranker} that ranks each atom by its structural role within the molecule, so that
@@ -33,6 +36,19 @@ public final class CanonicalRanker implements Ranker
         .comparingInt(NeighbourKey::bondOrder)
         .thenComparingInt(NeighbourKey::neighbourClass);
 
+    /** Total ordering for a neighbour invariant: lexicographic over {@link #NEIGHBOUR_KEY_ORDER}. */
+    private static final Comparator<List<NeighbourKey>> NEIGHBOUR_LIST_ORDER =
+        (a, b) -> compareLexicographically(a, b, NEIGHBOUR_KEY_ORDER);
+
+    /** Total ordering for {@link AtomSignature}. */
+    private static final Comparator<AtomSignature> ATOM_SIGNATURE_ORDER = Comparator
+        .comparing(AtomSignature::atomKey, ATOM_KEY_ORDER)
+        .thenComparing(AtomSignature::neighbours, NEIGHBOUR_LIST_ORDER);
+
+    /** Total ordering for a canonical representation: lexicographic over {@link #ATOM_SIGNATURE_ORDER}. */
+    private static final Comparator<List<AtomSignature>> REPRESENTATION_ORDER =
+        (a, b) -> compareLexicographically(a, b, ATOM_SIGNATURE_ORDER);
+
     @Override
     public Ranking rank(Molecule molecule)
     {
@@ -48,7 +64,7 @@ public final class CanonicalRanker implements Ranker
         }
         Refinement initial = reclassify(atoms, classOf, atom -> initialInvariant(molecule, ringBonds, atom), ATOM_KEY_ORDER);
         Refinement refined = refineToStability(molecule, atoms, initial);
-        return new Ranking(breakTies(molecule, atoms, refined));
+        return new Ranking(breakTies(molecule, ringBonds, atoms, refined).classOf());
     }
 
     /**
@@ -65,7 +81,7 @@ public final class CanonicalRanker implements Ranker
         {
             // re-split by neighbour classes
             Map<Atom, Integer> current = classification.classOf();
-            Refinement refined = reclassify(atoms, current, atom -> neighbourInvariant(molecule, atom, current), CanonicalRanker::compareNeighbourLists);
+            Refinement refined = reclassify(atoms, current, atom -> neighbourInvariant(molecule, atom, current), NEIGHBOUR_LIST_ORDER);
             // a pass that splits nothing means there is nothing left to split
             if (refined.distinctClasses() == classification.distinctClasses())
             {
@@ -77,34 +93,50 @@ public final class CanonicalRanker implements Ranker
 
     /**
      * @param molecule the molecule being ranked
+     * @param ringBonds the molecule's ring bonds
      * @param atoms the molecule's atoms
      * @param classification each atom's current class, as settled by {@link #refineToStability}, and how many classes are in use
-     * @return a classification in which every atom has a class of its own.
-     *     Two atoms that {@code classification} holds apart are never put back together, though every class number is handed out afresh.
+     * @return the discrete classification, with every atom in a class of its own
      */
-    private Map<Atom, Integer> breakTies(Molecule molecule, List<Atom> atoms, Refinement classification)
+    private Candidate breakTies(Molecule molecule, Set<Bond> ringBonds, List<Atom> atoms, Refinement classification)
     {
-        while (classification.distinctClasses() < atoms.size())
+        Map<Atom, Integer> classOf = classification.classOf();
+        if (classification.distinctClasses() == atoms.size())
         {
-            // arbitrary but deterministic: the first still-tied atom in insertion order
-            Map<Atom, Integer> classOf = classification.classOf();
-            Atom toSplit = firstTiedAtom(atoms, classOf);
-            int freshClass = Collections.max(classOf.values()) + 1;
-            Map<Atom, Integer> split = new IdentityHashMap<>(classOf);
-            split.put(toSplit, freshClass);
-            // grant toSplit a new class and refine further; do this exhaustively until each atom has its own class
-            classification = refineToStability(molecule, atoms, new Refinement(split, classification.distinctClasses() + 1));
+            return new Candidate(classOf, new CachedValue<>(() -> representationOf(molecule, ringBonds, atoms, classOf)));
         }
-        return classification.classOf();
+
+        int classToSplit = firstTiedClass(atoms, classOf);
+
+        // try every atom still tied in that class so the choice can't depend on atom insertion order
+        Candidate best = null;
+        for (Atom candidate : atoms)
+        {
+            if (classOf.get(candidate) != classToSplit)
+            {
+                continue;
+            }
+
+            Map<Atom, Integer> split = new IdentityHashMap<>(classOf);
+            split.put(candidate, classification.distinctClasses());
+            Refinement refined = refineToStability(molecule, atoms, new Refinement(split, classification.distinctClasses() + 1));
+            Candidate result = breakTies(molecule, ringBonds, atoms, refined);
+
+            if (best == null || REPRESENTATION_ORDER.compare(result.representation().get(), best.representation().get()) < 0)
+            {
+                best = result;
+            }
+        }
+        return best;
     }
 
     /**
      * @param atoms the molecule's atoms
      * @param classOf each atom's current class
-     * @return the first atom, in {@code atoms} order, that still shares its class with another atom
+     * @return the lowest class number shared by more than one atom
      * @throws IllegalStateException if every atom already has a class of its own
      */
-    private Atom firstTiedAtom(List<Atom> atoms, Map<Atom, Integer> classOf)
+    private int firstTiedClass(List<Atom> atoms, Map<Atom, Integer> classOf)
     {
         // a class holding more than one atom is a tie, so count the members of each
         Map<Integer, Integer> countByClass = new HashMap<>();
@@ -113,15 +145,11 @@ public final class CanonicalRanker implements Ranker
             countByClass.merge(classOf.get(atom), 1, Integer::sum);
         }
 
-        for (Atom atom : atoms)
-        {
-            if (countByClass.get(classOf.get(atom)) > 1)
-            {
-                return atom;
-            }
-        }
-
-        throw new IllegalStateException("No tied class remains to split");
+        return countByClass.entrySet().stream()
+            .filter(entry -> entry.getValue() > 1)
+            .map(Map.Entry::getKey)
+            .min(Integer::compareTo)
+            .orElseThrow(() -> new IllegalStateException("No tied class remains to split"));
     }
 
     /**
@@ -191,16 +219,40 @@ public final class CanonicalRanker implements Ranker
     }
 
     /**
-     * @param a a neighbour invariant, already sorted by {@link #NEIGHBOUR_KEY_ORDER}
-     * @param b a neighbour invariant, already sorted by {@link #NEIGHBOUR_KEY_ORDER}
-     * @return their lexicographic comparison under {@link #NEIGHBOUR_KEY_ORDER}
+     * @param molecule the molecule being ranked
+     * @param ringBonds the molecule's ring bonds
+     * @param atoms the molecule's atoms
+     * @param classOf each atom's class, with every atom in a class of its own
+     * @return the molecule described atom-by-atom in class order
      */
-    private static int compareNeighbourLists(List<NeighbourKey> a, List<NeighbourKey> b)
+    private List<AtomSignature> representationOf(Molecule molecule, Set<Bond> ringBonds, List<Atom> atoms, Map<Atom, Integer> classOf)
+    {
+        Atom[] atomByClass = new Atom[atoms.size()];
+        for (Atom atom : atoms)
+        {
+            atomByClass[classOf.get(atom)] = atom;
+        }
+
+        List<AtomSignature> representation = new ArrayList<>(atomByClass.length);
+        for (Atom atom : atomByClass)
+        {
+            representation.add(new AtomSignature(initialInvariant(molecule, ringBonds, atom), neighbourInvariant(molecule, atom, classOf)));
+        }
+        return representation;
+    }
+
+    /**
+     * @param a a list
+     * @param b another list of the same element type
+     * @param order a total order over their elements
+     * @return their lexicographic comparison under {@code order}; if one is a prefix of the other, the shorter sorts first
+     */
+    private static <T> int compareLexicographically(List<T> a, List<T> b, Comparator<T> order)
     {
         int limit = Math.min(a.size(), b.size());
         for (int i = 0; i < limit; i++)
         {
-            int comparison = NEIGHBOUR_KEY_ORDER.compare(a.get(i), b.get(i));
+            int comparison = order.compare(a.get(i), b.get(i));
             if (comparison != 0)
             {
                 return comparison;
@@ -234,6 +286,20 @@ public final class CanonicalRanker implements Ranker
      * A classification together with the number of distinct classes it uses.
      */
     private record Refinement(Map<Atom, Integer> classOf, int distinctClasses)
+    {
+    }
+
+    /**
+     * One atom's structural signature in a fully resolved classification.
+     */
+    private record AtomSignature(AtomKey atomKey, List<NeighbourKey> neighbours)
+    {
+    }
+
+    /**
+     * A fully resolved classification together with the canonical representation it produces.
+     */
+    private record Candidate(Map<Atom, Integer> classOf, Supplier<List<AtomSignature>> representation)
     {
     }
 }
