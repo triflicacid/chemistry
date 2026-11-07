@@ -27,8 +27,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.order(BondOrder.SINGLE))
             .build();
 
@@ -69,8 +68,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("O"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("O"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.any())
             .build();
 
@@ -99,16 +97,14 @@ class SubstructureMatcherTest
         QueryAtom a = new QueryAtom(AtomPredicates.any());
         QueryAtom b = new QueryAtom(AtomPredicates.any());
         Query ringBond = new Query.Builder()
-            .addAtom(a)
-            .addAtom(b)
+            .addAtoms(a, b)
             .addBond(a, b, BondPredicates.ringBond())
             .build();
 
         QueryAtom c = new QueryAtom(AtomPredicates.any());
         QueryAtom d = new QueryAtom(AtomPredicates.any());
         Query chainBond = new Query.Builder()
-            .addAtom(c)
-            .addAtom(d)
+            .addAtoms(c, d)
             .addBond(c, d, BondPredicates.chainBond())
             .build();
 
@@ -132,7 +128,7 @@ class SubstructureMatcherTest
         // Br and N swapped relative to the real [N, Br, Cl, F] order - a single
         // transposition, so the query must declare the flip of the real value to match
         Query matching = new Query.Builder()
-            .addAtom(qBr).addAtom(qC).addAtom(qN).addAtom(qCl).addAtom(qF)
+            .addAtoms(qBr, qC, qN, qCl, qF)
             .addBond(qC, qBr, BondPredicates.any())
             .addBond(qC, qN, BondPredicates.any())
             .addBond(qC, qCl, BondPredicates.any())
@@ -142,7 +138,7 @@ class SubstructureMatcherTest
         assertThat(new SubstructureMatcher(molecule).findMatches(matching)).hasSize(1);
 
         Query nonMatching = new Query.Builder()
-            .addAtom(qBr).addAtom(qC).addAtom(qN).addAtom(qCl).addAtom(qF)
+            .addAtoms(qBr, qC, qN, qCl, qF)
             .addBond(qC, qBr, BondPredicates.any())
             .addBond(qC, qN, BondPredicates.any())
             .addBond(qC, qCl, BondPredicates.any())
@@ -168,7 +164,7 @@ class SubstructureMatcherTest
         // qBr added as Ca's reference bond before qCl, the opposite of the real molecule's
         // default (Cl), so the query must declare the flip of the real value to match
         Query matching = new Query.Builder()
-            .addAtom(qCa).addAtom(qBr).addAtom(qCl).addAtom(qCb).addAtom(qF)
+            .addAtoms(qCa, qBr, qCl, qCb, qF)
             .addBond(qCa, qBr, BondPredicates.any())
             .addBond(qCa, qCl, BondPredicates.any())
             .addBond(qCa, qCb, BondPredicates.order(BondOrder.DOUBLE))
@@ -178,7 +174,7 @@ class SubstructureMatcherTest
         assertThat(new SubstructureMatcher(molecule).findMatches(matching)).hasSize(1);
 
         Query nonMatching = new Query.Builder()
-            .addAtom(qCa).addAtom(qBr).addAtom(qCl).addAtom(qCb).addAtom(qF)
+            .addAtoms(qCa, qBr, qCl, qCb, qF)
             .addBond(qCa, qBr, BondPredicates.any())
             .addBond(qCa, qCl, BondPredicates.any())
             .addBond(qCa, qCb, BondPredicates.order(BondOrder.DOUBLE))
@@ -226,8 +222,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.order(BondOrder.SINGLE))
             .build();
 
@@ -248,8 +243,7 @@ class SubstructureMatcherTest
         QueryAtom qc = new QueryAtom(AtomPredicates.any());
         QueryAtom qo = new QueryAtom(AtomPredicates.element("O"));
         Query query = new Query.Builder()
-            .addAtom(qc)
-            .addAtom(qo)
+            .addAtoms(qc, qo)
             .addBond(qc, qo, BondPredicates.order(BondOrder.DOUBLE))
             .build();
 
@@ -268,8 +262,7 @@ class SubstructureMatcherTest
         QueryAtom qo = new QueryAtom(AtomPredicates.element("O"));
         QueryAtom qAny = new QueryAtom(AtomPredicates.any());
         Query query = new Query.Builder()
-            .addAtom(qo)
-            .addAtom(qAny)
+            .addAtoms(qo, qAny)
             .addBond(qo, qAny, BondPredicates.any())
             .build();
 
@@ -298,8 +291,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.any())
             .build();
 
@@ -321,9 +313,7 @@ class SubstructureMatcherTest
         QueryAtom second = new QueryAtom(AtomPredicates.any());
         QueryAtom third = new QueryAtom(AtomPredicates.any());
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
-            .addAtom(third)
+            .addAtoms(first, second, third)
             .addBond(first, second, BondPredicates.any())
             .addBond(second, third, BondPredicates.any())
             .build();
@@ -353,8 +343,7 @@ class SubstructureMatcherTest
 
         // bonds added in each centre's real order, so no reprojection needed
         Query.Builder skeleton = new Query.Builder()
-            .addAtom(qN).addAtom(qCa).addAtom(qBr).addAtom(qCl)
-            .addAtom(qCb).addAtom(qF).addAtom(qI).addAtom(qO)
+            .addAtoms(qN, qCa, qBr, qCl, qCb, qF, qI, qO)
             .addBond(qCa, qN, BondPredicates.any())
             .addBond(qCa, qBr, BondPredicates.any())
             .addBond(qCa, qCl, BondPredicates.any())
@@ -390,7 +379,7 @@ class SubstructureMatcherTest
         QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom qCb = new QueryAtom(AtomPredicates.element("C"));
         Query.Builder skeleton = new Query.Builder()
-            .addAtom(qC).addAtom(qCa).addAtom(qCb)
+            .addAtoms(qC, qCa, qCb)
             .addBond(qC, qCa, BondPredicates.any())
             .addBond(qCa, qCb, BondPredicates.order(BondOrder.DOUBLE));
 

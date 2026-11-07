@@ -243,6 +243,19 @@ public final class Query
         }
 
         /**
+         * @param atoms the atom positions to add
+         * @return this builder, for chaining
+         */
+        public Builder addAtoms(QueryAtom... atoms)
+        {
+            for (QueryAtom atom : atoms)
+            {
+                addAtom(atom);
+            }
+            return this;
+        }
+
+        /**
          * @param first one endpoint, previously added
          * @param second the other endpoint, previously added
          * @param predicate the condition a real bond must satisfy to match this position

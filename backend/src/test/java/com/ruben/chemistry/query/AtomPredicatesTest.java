@@ -456,8 +456,7 @@ class AtomPredicatesTest
             QueryAtom subCarbon = new QueryAtom(AtomPredicates.element("C"));
             QueryAtom subOxygen = new QueryAtom(AtomPredicates.element("O"));
             Query subPattern = new Query.Builder()
-                .addAtom(subCarbon)
-                .addAtom(subOxygen)
+                .addAtoms(subCarbon, subOxygen)
                 .addBond(subCarbon, subOxygen, BondPredicates.order(BondOrder.DOUBLE))
                 .build();
 
