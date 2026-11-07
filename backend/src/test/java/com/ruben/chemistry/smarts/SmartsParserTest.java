@@ -324,5 +324,14 @@ class SmartsParserTest
                 .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("immediately follows another bond expression");
         }
+
+        @Test
+        void throws_when_parseQuery_is_called_a_second_time()
+        {
+            SmartsParser parser = new SmartsParser("CCO");
+            parser.parseQuery();
+
+            assertThatThrownBy(parser::parseQuery).isInstanceOf(IllegalStateException.class);
+        }
     }
 }

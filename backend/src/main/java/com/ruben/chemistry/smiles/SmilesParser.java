@@ -8,6 +8,7 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.notation.NotationSymbols;
 import com.ruben.chemistry.notation.StereoTracker;
+import com.ruben.chemistry.util.CallGuard;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -25,6 +26,9 @@ public final class SmilesParser
     private final String source;
     private final Lexer lexer;
     private final Molecule.Builder builder = new Molecule.Builder();
+
+    /** Guards {@link #parse()} against being called more than once. */
+    private final CallGuard parseGuard = new CallGuard();
 
     /** The atoms branches were opened from, innermost last, to return to as each one closes. */
     private final Deque<Atom> branchStack = new ArrayDeque<>();
@@ -58,9 +62,12 @@ public final class SmilesParser
      *
      * @return the parsed molecule
      * @throws InvalidNotationException if the source is not valid SMILES
+     * @throws IllegalStateException if called more than once
      */
     public Molecule parse()
     {
+        parseGuard.call();
+
         if (lexer.isAtEnd())
         {
             throw new InvalidNotationException("SMILES string must not be empty", source, 0);

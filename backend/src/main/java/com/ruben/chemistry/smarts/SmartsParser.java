@@ -12,6 +12,7 @@ import com.ruben.chemistry.query.BondPredicate;
 import com.ruben.chemistry.query.BondPredicates;
 import com.ruben.chemistry.query.Query;
 import com.ruben.chemistry.query.QueryAtom;
+import com.ruben.chemistry.util.CallGuard;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -34,6 +35,9 @@ public final class SmartsParser
     private final String source;
     private final TokenCursor cursor;
     private final Query.Builder builder = new Query.Builder();
+
+    /** Guards {@link #parseQuery()} against being called more than once. */
+    private final CallGuard parseGuard = new CallGuard();
 
     /** The atoms branches were opened from, innermost last, to return to as each one closes. */
     private final Deque<QueryAtom> branchStack = new ArrayDeque<>();
@@ -81,9 +85,11 @@ public final class SmartsParser
      *
      * @return the parsed query
      * @throws InvalidNotationException if the tokens do not form a valid SMARTS pattern
+     * @throws IllegalStateException if called more than once
      */
     public Query parseQuery()
     {
+        parseGuard.call();
         return parseUntil(TokenType.EOF);
     }
 

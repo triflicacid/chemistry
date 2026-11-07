@@ -803,6 +803,15 @@ class SmilesParserTest
                 .hasMessageContaining("immediately follows another bond symbol");
         }
 
+        @Test
+        void throws_when_parse_is_called_a_second_time()
+        {
+            SmilesParser parser = new SmilesParser("CCO");
+            parser.parse();
+
+            assertThatThrownBy(parser::parse).isInstanceOf(IllegalStateException.class);
+        }
+
         private Throwable catchParseException(String smiles)
         {
             try
