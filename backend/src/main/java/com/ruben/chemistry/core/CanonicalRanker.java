@@ -169,7 +169,7 @@ public final class CanonicalRanker implements Ranker
         Comparator<Classification<K>> order = Comparator.<Classification<K>>comparingInt(Classification::previousClass)
             .thenComparing(Classification::invariant, invariantOrder);
 
-        // sorted, so the class numbers handed out depend on the signatures and not on atom order
+        // sorted, so the class numbers handed out depend on the signatures
         List<Classification<K>> classifications = atoms.stream()
             .map(atom -> new Classification<>(atom, previous.get(atom), invariantOf.apply(atom)))
             .sorted(order)
@@ -187,7 +187,7 @@ public final class CanonicalRanker implements Ranker
             result.put(classification.atom(), currentClass);
             last = classification;
         }
-        // classes are handed out as 0, 1, 2, ... in sorted order, so the highest one handed out is the count
+        // classes are dense and monotonically increasing
         return new Refinement(result, currentClass + 1);
     }
 
@@ -208,7 +208,7 @@ public final class CanonicalRanker implements Ranker
      * @param molecule the molecule being ranked
      * @param atom the atom to describe
      * @param classOf each atom's current class
-     * @return how {@code atom} is bonded to each of its neighbours' classes, in an order independent of how its bonds were added
+     * @return how {@code atom} is bonded to each of its neighbours' classes
      */
     private List<NeighbourKey> neighbourInvariant(Molecule molecule, Atom atom, Map<Atom, Integer> classOf)
     {
@@ -245,7 +245,7 @@ public final class CanonicalRanker implements Ranker
      * @param a a list
      * @param b another list of the same element type
      * @param order a total order over their elements
-     * @return their lexicographic comparison under {@code order}; if one is a prefix of the other, the shorter sorts first
+     * @return their lexicographic comparison under {@code order}
      */
     private static <T> int compareLexicographically(List<T> a, List<T> b, Comparator<T> order)
     {
