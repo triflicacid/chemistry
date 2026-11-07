@@ -1,6 +1,7 @@
 package com.ruben.chemistry.core;
 
 import com.ruben.chemistry.util.CachedFunction;
+import com.ruben.chemistry.util.Comparators;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,6 +26,28 @@ import java.util.function.Function;
  */
 public final class MoleculeComparator implements Comparator<Molecule>
 {
+    /** Total ordering for {@link AtomSignature}. */
+    private static final Comparator<AtomSignature> ATOM_SIGNATURE_ORDER = Comparator
+        .comparing(AtomSignature::element)
+        .thenComparing(AtomSignature::aromatic)
+        .thenComparingInt(AtomSignature::charge)
+        .thenComparingInt(AtomSignature::isotope)
+        .thenComparingInt(AtomSignature::hydrogenCount)
+        .thenComparing(AtomSignature::chirality, Comparator.nullsFirst(Comparator.naturalOrder()));
+
+    /** Total ordering for {@link BondSignature}. */
+    private static final Comparator<BondSignature> BOND_SIGNATURE_ORDER = Comparator
+        .comparingInt(BondSignature::lowerRank)
+        .thenComparingInt(BondSignature::higherRank)
+        .thenComparing(BondSignature::order)
+        .thenComparing(BondSignature::doubleBondStereo, Comparator.nullsFirst(Comparator.naturalOrder()));
+
+    /** Total ordering for a molecule's atoms: lexicographic over {@link #ATOM_SIGNATURE_ORDER}. */
+    private static final Comparator<List<AtomSignature>> ATOM_SIGNATURES_ORDER = Comparators.lexicographically(ATOM_SIGNATURE_ORDER);
+
+    /** Total ordering for a molecule's bonds: lexicographic over {@link #BOND_SIGNATURE_ORDER}. */
+    private static final Comparator<List<BondSignature>> BOND_SIGNATURES_ORDER = Comparators.lexicographically(BOND_SIGNATURE_ORDER);
+
     private final Ranker ranker;
 
     /**
@@ -65,12 +88,12 @@ public final class MoleculeComparator implements Comparator<Molecule>
         Function<Atom, List<NeighbourReference>> firstOrder = CachedFunction.byIdentity(atom -> rankedNeighbourOrder(first, firstRanking, atom));
         Function<Atom, List<NeighbourReference>> secondOrder = CachedFunction.byIdentity(atom -> rankedNeighbourOrder(second, secondRanking, atom));
 
-        int atomsDiff = compareLists(atomSignatures(first, firstRanking, firstOrder), atomSignatures(second, secondRanking, secondOrder));
+        int atomsDiff = ATOM_SIGNATURES_ORDER.compare(atomSignatures(first, firstRanking, firstOrder), atomSignatures(second, secondRanking, secondOrder));
         if (atomsDiff != 0)
         {
             return atomsDiff;
         }
-        return compareLists(bondSignatures(first, firstRanking, firstOrder), bondSignatures(second, secondRanking, secondOrder));
+        return BOND_SIGNATURES_ORDER.compare(bondSignatures(first, firstRanking, firstOrder), bondSignatures(second, secondRanking, secondOrder));
     }
 
     /**
@@ -176,84 +199,21 @@ public final class MoleculeComparator implements Comparator<Molecule>
                 int rankB = ranking.rankOf(bond.second());
                 return new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order(), doubleBondStereoOf(molecule, bond, neighbourOrder));
             })
-            .sorted()
+            .sorted(BOND_SIGNATURE_ORDER)
             .toList();
-    }
-
-    private static <T extends Comparable<T>> int compareLists(List<T> first, List<T> second)
-    {
-        for (int i = 0; i < first.size(); i++)
-        {
-            int diff = first.get(i).compareTo(second.get(i));
-            if (diff != 0)
-            {
-                return diff;
-            }
-        }
-        return 0;
     }
 
     /**
      * One atom's own comparable properties.
      */
-    private record AtomSignature(String element, boolean aromatic, int charge, int isotope, int hydrogenCount, Chirality chirality) implements Comparable<AtomSignature>
+    private record AtomSignature(String element, boolean aromatic, int charge, int isotope, int hydrogenCount, Chirality chirality)
     {
-        @Override
-        public int compareTo(AtomSignature other)
-        {
-            int diff = element.compareTo(other.element);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            diff = Boolean.compare(aromatic, other.aromatic);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            diff = Integer.compare(charge, other.charge);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            diff = Integer.compare(isotope, other.isotope);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            diff = Integer.compare(hydrogenCount, other.hydrogenCount);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            return Comparator.nullsFirst(Comparator.<Chirality>naturalOrder()).compare(chirality, other.chirality);
-        }
     }
 
     /**
      * A bond, described by its endpoints' ranks rather than by the atoms themselves, so that bonds of different molecules can be compared.
      */
-    private record BondSignature(int lowerRank, int higherRank, BondOrder order, DoubleBondStereo doubleBondStereo) implements Comparable<BondSignature>
+    private record BondSignature(int lowerRank, int higherRank, BondOrder order, DoubleBondStereo doubleBondStereo)
     {
-        @Override
-        public int compareTo(BondSignature other)
-        {
-            int diff = Integer.compare(lowerRank, other.lowerRank);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            diff = Integer.compare(higherRank, other.higherRank);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            diff = order.compareTo(other.order);
-            if (diff != 0)
-            {
-                return diff;
-            }
-            return Comparator.nullsFirst(Comparator.<DoubleBondStereo>naturalOrder()).compare(doubleBondStereo, other.doubleBondStereo);
-        }
     }
 }

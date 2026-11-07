@@ -1,6 +1,7 @@
 package com.ruben.chemistry.core;
 
 import com.ruben.chemistry.util.CachedValue;
+import com.ruben.chemistry.util.Comparators;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -37,8 +38,7 @@ public final class CanonicalRanker implements Ranker
         .thenComparingInt(NeighbourKey::neighbourClass);
 
     /** Total ordering for a neighbour invariant: lexicographic over {@link #NEIGHBOUR_KEY_ORDER}. */
-    private static final Comparator<List<NeighbourKey>> NEIGHBOUR_LIST_ORDER =
-        (a, b) -> compareLexicographically(a, b, NEIGHBOUR_KEY_ORDER);
+    private static final Comparator<List<NeighbourKey>> NEIGHBOUR_LIST_ORDER = Comparators.lexicographically(NEIGHBOUR_KEY_ORDER);
 
     /** Total ordering for {@link AtomSignature}. */
     private static final Comparator<AtomSignature> ATOM_SIGNATURE_ORDER = Comparator
@@ -46,8 +46,7 @@ public final class CanonicalRanker implements Ranker
         .thenComparing(AtomSignature::neighbours, NEIGHBOUR_LIST_ORDER);
 
     /** Total ordering for a canonical representation: lexicographic over {@link #ATOM_SIGNATURE_ORDER}. */
-    private static final Comparator<List<AtomSignature>> REPRESENTATION_ORDER =
-        (a, b) -> compareLexicographically(a, b, ATOM_SIGNATURE_ORDER);
+    private static final Comparator<List<AtomSignature>> REPRESENTATION_ORDER = Comparators.lexicographically(ATOM_SIGNATURE_ORDER);
 
     @Override
     public Ranking rank(Molecule molecule)
@@ -239,26 +238,6 @@ public final class CanonicalRanker implements Ranker
             representation.add(new AtomSignature(initialInvariant(molecule, ringBonds, atom), neighbourInvariant(molecule, atom, classOf)));
         }
         return representation;
-    }
-
-    /**
-     * @param a a list
-     * @param b another list of the same element type
-     * @param order a total order over their elements
-     * @return their lexicographic comparison under {@code order}
-     */
-    private static <T> int compareLexicographically(List<T> a, List<T> b, Comparator<T> order)
-    {
-        int limit = Math.min(a.size(), b.size());
-        for (int i = 0; i < limit; i++)
-        {
-            int comparison = order.compare(a.get(i), b.get(i));
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-        }
-        return Integer.compare(a.size(), b.size());
     }
 
     /**
