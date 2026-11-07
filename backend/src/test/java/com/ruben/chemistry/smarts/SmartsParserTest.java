@@ -248,6 +248,13 @@ class SmartsParserTest
 
             assertThat(new SubstructureMatcher(target).matches(parse("[C@H](F)(Cl)Br"))).isFalse();
         }
+        @Test
+        void throws_when_two_directions_written_at_one_atom_contradict_each_other()
+        {
+            assertThatThrownBy(() -> parse("F/C(\\Cl)=C/F"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("contradicts a direction already written at the same atom");
+        }
     }
 
     @Nested

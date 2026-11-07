@@ -457,13 +457,15 @@ public final class SmilesParser
                 + "' must be the opposite of its opening symbol '" + openingSymbol + "', not the same", source, closingToken.position());
         }
 
-        if (openingIsDirectional)
+        if (openingIsDirectional && !stereo.recordRingClosureDirection(openingAtom, closingAtom, BondDirection.fromSymbol(openingSymbol.charAt(0))))
         {
-            stereo.recordRingClosureDirection(openingAtom, closingAtom, BondDirection.fromSymbol(openingSymbol.charAt(0)));
+            throw new InvalidNotationException("Ring closure direction '" + openingSymbol
+                + "' contradicts a direction already written at the same atom", source, closingToken.position());
         }
-        if (closingIsDirectional)
+        if (closingIsDirectional && !stereo.recordRingClosureDirection(closingAtom, openingAtom, BondDirection.fromSymbol(closingSymbol.charAt(0))))
         {
-            stereo.recordRingClosureDirection(closingAtom, openingAtom, BondDirection.fromSymbol(closingSymbol.charAt(0)));
+            throw new InvalidNotationException("Ring closure direction '" + closingSymbol
+                + "' contradicts a direction already written at the same atom", source, closingToken.position());
         }
     }
 
@@ -504,7 +506,12 @@ public final class SmilesParser
             // a direction is only ever written on a single bond flanking a double bond, never on the double bond itself
             if (order != BondOrder.DOUBLE && isDirectional(pendingBondSymbol))
             {
-                stereo.recordDirection(previousAtom, atom, BondDirection.fromSymbol(pendingBondSymbol.charAt(0)));
+                BondDirection direction = BondDirection.fromSymbol(pendingBondSymbol.charAt(0));
+                if (!stereo.recordDirection(previousAtom, atom, direction))
+                {
+                    throw new InvalidNotationException("Bond direction '" + pendingBondSymbol
+                        + "' contradicts a direction already written at the same atom", source, pendingBondPosition);
+                }
             }
         }
 

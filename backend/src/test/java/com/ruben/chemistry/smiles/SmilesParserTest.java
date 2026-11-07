@@ -610,6 +610,26 @@ class SmilesParserTest
         }
 
         @Test
+        void parses_a_redundant_second_direction_that_agrees_with_the_first()
+        {
+            // the direction on Cl repeats what the one on F already said
+            Molecule molecule = parse("F/C(/Cl)=C/F");
+
+            List<Atom> atoms = atomsOf(molecule);
+            Bond doubleBond = molecule.bondBetween(atoms.get(1), atoms.get(3)).orElseThrow();
+            assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.OPPOSITE_SIDE);
+        }
+
+        @Test
+        void throws_when_two_directions_written_at_one_atom_contradict_each_other()
+        {
+            // F and Cl would both be on the same side of their carbon
+            assertThatThrownBy(() -> parse("F/C(\\Cl)=C/F"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("contradicts a direction already written at the same atom");
+        }
+
+        @Test
         void throws_when_a_ring_closure_bonds_direction_symbol_matches_its_opening_symbol()
         {
             assertThatThrownBy(() -> parse("C/1=CCC/1"))

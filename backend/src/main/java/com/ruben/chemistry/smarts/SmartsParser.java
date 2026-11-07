@@ -395,8 +395,16 @@ public final class SmartsParser
                 "Ring closure direction must be the opposite of its opening direction, not the same", source, closingToken.position());
         }
 
-        openingDirection.ifPresent(direction -> stereo.recordRingClosureDirection(openingAtom, closingAtom, direction));
-        closingDirection.ifPresent(direction -> stereo.recordRingClosureDirection(closingAtom, openingAtom, direction));
+        if (openingDirection.isPresent() && !stereo.recordRingClosureDirection(openingAtom, closingAtom, openingDirection.get()))
+        {
+            throw new InvalidNotationException("Ring closure direction '" + openingDirection.get().symbol()
+                + "' contradicts a direction already written at the same atom", source, closingToken.position());
+        }
+        if (closingDirection.isPresent() && !stereo.recordRingClosureDirection(closingAtom, openingAtom, closingDirection.get()))
+        {
+            throw new InvalidNotationException("Ring closure direction '" + closingDirection.get().symbol()
+                + "' contradicts a direction already written at the same atom", source, closingToken.position());
+        }
     }
 
     /**
@@ -435,7 +443,12 @@ public final class SmartsParser
             // a direction is only written on a single bond flanking a double bond, never on the double bond itself
             if (!pendingIsDoubleBond && pendingBondResult != null && pendingBondResult.direction().isPresent())
             {
-                stereo.recordDirection(previousAtom, atom, pendingBondResult.direction().get());
+                BondDirection direction = pendingBondResult.direction().get();
+                if (!stereo.recordDirection(previousAtom, atom, direction))
+                {
+                    throw new InvalidNotationException("Bond direction '" + direction.symbol()
+                        + "' contradicts a direction already written at the same atom", source, pendingBondPosition);
+                }
             }
         }
 

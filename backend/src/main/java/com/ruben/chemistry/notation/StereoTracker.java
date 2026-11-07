@@ -77,14 +77,23 @@ public final class StereoTracker<A>
      * @param writtenFirst the earlier-written of the bond's two atoms
      * @param writtenSecond the later-written of the bond's two atoms
      * @param direction the direction as written
+     * @return {@code false} if this contradicts a direction already recorded at either atom, in which case nothing is recorded
      */
-    public void recordDirection(A writtenFirst, A writtenSecond, BondDirection direction)
+    public boolean recordDirection(A writtenFirst, A writtenSecond, BondDirection direction)
     {
-        directionalEdgeOf.put(writtenFirst, new DirectionalEdge<>(writtenSecond, direction, true));
-        directionalEdgeOf.put(writtenSecond, new DirectionalEdge<>(writtenFirst, direction, false));
+        DirectionalEdge<A> firstEdge = new DirectionalEdge<>(writtenSecond, direction, true);
+        DirectionalEdge<A> secondEdge = new DirectionalEdge<>(writtenFirst, direction, false);
+        if (!agreesWithRecorded(writtenFirst, firstEdge) || !agreesWithRecorded(writtenSecond, secondEdge))
+        {
+            return false;
+        }
+
+        directionalEdgeOf.put(writtenFirst, firstEdge);
+        directionalEdgeOf.put(writtenSecond, secondEdge);
 
         reconcileIfDoubleBondAtom(writtenFirst);
         reconcileIfDoubleBondAtom(writtenSecond);
+        return true;
     }
 
     /**
@@ -94,14 +103,51 @@ public final class StereoTracker<A>
      * @param atom the atom whose occurrence carried the direction
      * @param other the atom at the other end of the ring-closure bond
      * @param direction the direction as written
+     * @return {@code false} if this contradicts a direction already recorded at {@code atom}, in which case nothing is recorded
      */
-    public void recordRingClosureDirection(A atom, A other, BondDirection direction)
+    public boolean recordRingClosureDirection(A atom, A other, BondDirection direction)
     {
         // a ring closure's symbol sits beside its own atom's occurrence, so from that atom's point of view it is the one written first
-        directionalEdgeOf.put(atom, new DirectionalEdge<>(other, direction, true));
+        DirectionalEdge<A> edge = new DirectionalEdge<>(other, direction, true);
+        if (!agreesWithRecorded(atom, edge))
+        {
+            return false;
+        }
+
+        directionalEdgeOf.put(atom, edge);
 
         reconcileIfDoubleBondAtom(atom);
         reconcileIfDoubleBondAtom(other);
+        return true;
+    }
+
+    /**
+     * Checks a direction about to be recorded for an atom against the one already recorded there.
+     * Two of an atom's substituents lie on opposite sides of its double bond, so their directions
+     * must differ, while a direction repeated for the same substituent must agree.
+     *
+     * @param atom the atom the direction is recorded for
+     * @param edge the direction about to be recorded
+     * @return {@code true} if {@code edge} can stand alongside whatever is recorded already
+     */
+    private boolean agreesWithRecorded(A atom, DirectionalEdge<A> edge)
+    {
+        DirectionalEdge<A> recorded = directionalEdgeOf.get(atom);
+        if (recorded == null)
+        {
+            return true;
+        }
+        boolean sameSubstituent = recorded.other() == edge.other();
+        return sameSubstituent == (outwardDirection(recorded) == outwardDirection(edge));
+    }
+
+    /**
+     * @param edge one atom's end of a directional bond
+     * @return {@code edge}'s direction as if written from that atom outwards
+     */
+    private BondDirection outwardDirection(DirectionalEdge<A> edge)
+    {
+        return edge.thisAtomWrittenFirst() ? edge.direction() : edge.direction().flip();
     }
 
     /**
@@ -149,8 +195,8 @@ public final class StereoTracker<A>
         }
 
         // turn both into directions pointing away from the double bond before comparing them, after which agreeing directions mean the same side
-        BondDirection firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.direction() : firstEdge.direction().flip();
-        BondDirection secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.direction() : secondEdge.direction().flip();
+        BondDirection firstOutward = outwardDirection(firstEdge);
+        BondDirection secondOutward = outwardDirection(secondEdge);
         DoubleBondStereo relativeToEdges = firstOutward == secondOutward ? DoubleBondStereo.SAME_SIDE : DoubleBondStereo.OPPOSITE_SIDE;
 
         // the value above is relative to the two directional bonds, but it is stored relative
