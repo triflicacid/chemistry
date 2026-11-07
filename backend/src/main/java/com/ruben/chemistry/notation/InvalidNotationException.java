@@ -20,6 +20,13 @@ import java.util.List;
  */
 public class InvalidNotationException extends RuntimeException
 {
+    /**
+     * One enclosing context the parser was inside when it failed.
+     *
+     * @param description a human-readable description of the context, e.g. "inside branch opened at ..."
+     * @param position 0-based offset into the exception's {@link #source()} where the context began
+     * @param endPosition 0-based offset just past the last character the context spans
+     */
     public record ContextFrame(String description, int position, int endPosition)
     {
         /**
@@ -252,6 +259,8 @@ public class InvalidNotationException extends RuntimeException
      */
     private static int lineStart(String source, int position)
     {
+        // search from the character before position, so a position sitting on a newline
+        // still belongs to the line it terminates rather than to the next one
         int searchFrom = Math.max(0, Math.min(position, source.length()) - 1);
         int newline = source.lastIndexOf('\n', searchFrom);
         return newline + 1;

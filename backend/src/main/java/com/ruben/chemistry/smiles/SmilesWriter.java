@@ -33,39 +33,71 @@ import java.util.Set;
 public final class SmilesWriter
 {
     private final Molecule molecule;
+
+    /** The atoms reached so far by the traversal in progress; cleared between the two passes. */
     private final Set<Atom> visited = IdentitySet.of();
+
+    /** The ring-closure number given to each bond written as a pair of digits rather than traversed. */
     private final Map<Bond, Integer> ringNumberOfBond = new IdentityHashMap<>();
+
+    /** The ring-closure bonds to write digits for at each atom, in the order they were found. */
     private final Map<Atom, List<Bond>> ringBondsOfAtom = new IdentityHashMap<>();
+
+    /** The bond each atom was first reached by, which is the bond written before it. */
     private final Map<Atom, Bond> arrivingBondOf = new IdentityHashMap<>();
+
+    /** Which endpoint of each ring-closure bond is written first, i.e. opens the ring. */
     private final Map<Bond, Atom> openingAtomOfRingBond = new IdentityHashMap<>();
+
+    /** The direction character chosen for each bond acting as a double bond's reference. */
     private final Map<Bond, BondDirection> directionOf = new IdentityHashMap<>();
+
     private int nextRingNumber = 1;
     private boolean renderChirality = true;
     private boolean renderDoubleBondStereo = true;
     private Ranker ranker;
+
+    /** The ranking for this write, or {@code null} when writing in insertion order. */
     private Ranking ranking;
 
+    /**
+     * @param molecule the molecule to write
+     */
     public SmilesWriter(Molecule molecule)
     {
         this.molecule = molecule;
     }
 
+    /**
+     * @return {@code true} if chirality markers are written for stereocentres
+     */
     public boolean isRenderChirality()
     {
         return renderChirality;
     }
 
+    /**
+     * @param renderChirality whether to write chirality markers for stereocentres
+     * @return this writer, for chaining
+     */
     public SmilesWriter setRenderChirality(boolean renderChirality)
     {
         this.renderChirality = renderChirality;
         return this;
     }
 
+    /**
+     * @return {@code true} if direction symbols are written for stereo double bonds
+     */
     public boolean isRenderDoubleBondStereo()
     {
         return renderDoubleBondStereo;
     }
 
+    /**
+     * @param renderDoubleBondStereo whether to write direction symbols for stereo double bonds
+     * @return this writer, for chaining
+     */
     public SmilesWriter setRenderDoubleBondStereo(boolean renderDoubleBondStereo)
     {
         this.renderDoubleBondStereo = renderDoubleBondStereo;
@@ -147,6 +179,7 @@ public final class SmilesWriter
         StringBuilder text = new StringBuilder();
         for (Atom atom : rootAtoms())
         {
+            // an unvisited atom here belongs to a fragment nothing written so far reaches
             if (!visited.contains(atom))
             {
                 if (!text.isEmpty())
@@ -297,6 +330,8 @@ public final class SmilesWriter
      */
     private void reconcile(Atom firstAtom, Bond firstReference, Atom secondAtom, Bond secondReference, boolean sameSide)
     {
+        // conjugated double bonds share reference bonds, so one bond's character may already be
+        // fixed by a neighbouring double bond and has to be worked with rather than overwritten
         // neither reference has been assigned by an earlier double bond, so start the chain off arbitrarily
         if (!directionOf.containsKey(firstReference) && !directionOf.containsKey(secondReference))
         {

@@ -17,7 +17,7 @@ public final class AtomPredicates
     }
 
     /**
-     * @return a predicate matching any atom at all (the SMARTS {@code *} wildcard)
+     * @return a predicate matching any atom at all
      */
     public static AtomPredicate any()
     {
@@ -35,7 +35,7 @@ public final class AtomPredicates
 
     /**
      * @param atomicNumber the atomic number to match, e.g. {@code 6} for carbon
-     * @return a predicate matching atoms of exactly that element (the SMARTS {@code #<n>} primitive)
+     * @return a predicate matching atoms of exactly that element
      * @throws IllegalArgumentException if {@code atomicNumber} has no known element
      */
     public static AtomPredicate atomicNumber(int atomicNumber)
@@ -45,7 +45,7 @@ public final class AtomPredicates
 
     /**
      * @param element the element symbol to match, e.g. {@code "C"}
-     * @return a predicate matching aromatic atoms of exactly that element (the SMARTS lowercase primitives, e.g. {@code c})
+     * @return a predicate matching aromatic atoms of exactly that element
      */
     public static AtomPredicate aromatic(String element)
     {
@@ -54,7 +54,7 @@ public final class AtomPredicates
 
     /**
      * @param charge the required formal charge
-     * @return a predicate matching an atom with exactly that formal charge (the SMARTS {@code +}/{@code -} primitives)
+     * @return a predicate matching an atom with exactly that formal charge
      */
     public static AtomPredicate charge(int charge)
     {
@@ -63,7 +63,7 @@ public final class AtomPredicates
 
     /**
      * @param isotope the required isotope mass number
-     * @return a predicate matching an atom with exactly that isotope mass number (the SMARTS leading mass-number primitive, e.g. {@code [13C]})
+     * @return a predicate matching an atom with exactly that isotope mass number
      */
     public static AtomPredicate isotope(int isotope)
     {
@@ -72,7 +72,7 @@ public final class AtomPredicates
 
     /**
      * @param atomClass the required atom class number
-     * @return a predicate matching an atom with exactly that atom class number (the SMARTS {@code :n} primitive)
+     * @return a predicate matching an atom with exactly that atom class number
      */
     public static AtomPredicate atomClass(int atomClass)
     {
@@ -80,7 +80,7 @@ public final class AtomPredicates
     }
 
     /**
-     * @return a predicate matching an atom with at least one ring bond (the SMARTS {@code R} primitive)
+     * @return a predicate matching an atom with at least one ring bond
      */
     public static AtomPredicate inRing()
     {
@@ -88,13 +88,18 @@ public final class AtomPredicates
     }
 
     /**
-     * @return a predicate matching an atom with no ring bond (the SMARTS {@code !R} primitive)
+     * @return a predicate matching an atom with no ring bond
      */
     public static AtomPredicate notInRing()
     {
         return (molecule, atom) -> !isInRing(molecule, atom);
     }
 
+    /**
+     * @param molecule the molecule being matched against
+     * @param atom the atom to test
+     * @return {@code true} if any of {@code atom}'s bonds lies on a ring
+     */
     private static boolean isInRing(Molecule molecule, Atom atom)
     {
         Set<Bond> ringBonds = molecule.ringBonds();
@@ -148,7 +153,7 @@ public final class AtomPredicates
 
     /**
      * @param count the required total valence
-     * @return a predicate matching an atom with exactly that total valence (the SMARTS {@code v} primitive)
+     * @return a predicate matching an atom with exactly that total valence
      */
     public static AtomPredicate valence(int count)
     {
@@ -157,7 +162,7 @@ public final class AtomPredicates
 
     /**
      * @param count the required total connection count
-     * @return a predicate matching an atom with exactly that many connections - its bonds plus its hydrogens
+     * @return a predicate matching an atom with exactly that many connections (bonds plus hydrogens)
      */
     public static AtomPredicate connectivity(int count)
     {
@@ -178,8 +183,10 @@ public final class AtomPredicates
     }
 
     /**
-     * @param template the atom to match exactly
-     * @return a predicate matching an atom with the same element, aromaticity, charge, isotope, hydrogens etc.
+     * @param template the atom to match against
+     * @return a predicate matching an atom with the same element, aromaticity and charge as
+     *     {@code template}, and the same isotope and hydrogen count as any {@code template}
+     *     specifies
      */
     public static AtomPredicate exactly(Atom template)
     {

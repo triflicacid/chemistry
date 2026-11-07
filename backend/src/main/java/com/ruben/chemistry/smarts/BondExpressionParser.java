@@ -67,6 +67,8 @@ final class BondExpressionParser
     /**
      * Lowest precedence: {@code ;} is logical AND.
      * E.g. {@code -,=;@} is "(single or double) and a ring bond".
+     *
+     * @return the predicate the expression denotes
      */
     private BondPredicate parseSemiExpression()
     {
@@ -80,8 +82,10 @@ final class BondExpressionParser
     }
 
     /**
-     * {@code ,} is logical OR.
+     * {@code ,} is logical OR, binding tighter than {@code ;} but looser than {@code &}.
      * E.g. {@code -,=} is "single or double".
+     *
+     * @return the predicate the expression denotes
      */
     private BondPredicate parseOrExpression()
     {
@@ -97,12 +101,15 @@ final class BondExpressionParser
     /**
      * {@code &} is logical AND, same as two primitives written with no operator between them.
      * E.g. {@code -&@} and {@code -@} both mean "single and a ring bond".
+     *
+     * @return the predicate the expression denotes
      */
     private BondPredicate parseAndExpression()
     {
         BondPredicate result = parseUnary();
         while (hasMore() && CONTINUES_AND_CHAIN.contains(peek().type()))
         {
+            // the operator is optional: anything that could start a primitive continues the chain
             if (peek().type() == TokenType.AND)
             {
                 consume();
@@ -116,6 +123,7 @@ final class BondExpressionParser
      * Highest precedence: {@code !} is logical NOT, negating a single primitive.
      * E.g. {@code !@} is "not a ring bond" (a chain bond).
      *
+     * @return the predicate the primitive denotes, negated once per {@code !}
      * @throws InvalidNotationException if a primitive was expected but the tokens ran out
      */
     private BondPredicate parseUnary()
@@ -133,6 +141,7 @@ final class BondExpressionParser
     }
 
     /**
+     * @return the predicate denoted by the single primitive at the current position
      * @throws InvalidNotationException if the current token isn't a recognised primitive
      */
     private BondPredicate parsePrimitive()
@@ -160,16 +169,25 @@ final class BondExpressionParser
         return BondPredicates.order(BondOrder.fromSymbol(symbol));
     }
 
+    /**
+     * @return {@code true} if this bond expression has any token left
+     */
     private boolean hasMore()
     {
         return !cursor.isAtEnd();
     }
 
+    /**
+     * @return the next token, without consuming it
+     */
     private Token peek()
     {
         return cursor.peek();
     }
 
+    /**
+     * @return the next token, consuming it
+     */
     private Token consume()
     {
         return cursor.next();

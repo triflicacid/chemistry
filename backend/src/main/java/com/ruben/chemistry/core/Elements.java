@@ -3,8 +3,14 @@ package com.ruben.chemistry.core;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * The periodic table, as a lookup between element symbol and atomic number.
+ */
 public final class Elements
 {
+    /**
+     * Every element symbol, in atomic number order.
+     */
     private static final String[] ELEMENTS = {
         "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
         "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca",
@@ -64,6 +70,9 @@ public final class Elements
         return ATOMIC_NUMBER_BY_SYMBOL.containsKey(symbol);
     }
 
+    /**
+     * @return each symbol mapped to its atomic number
+     */
     private static Map<String, Integer> buildAtomicNumberLookup()
     {
         Map<String, Integer> lookup = new HashMap<>();

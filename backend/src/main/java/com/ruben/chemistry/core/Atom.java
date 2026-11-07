@@ -65,9 +65,11 @@ public record Atom(
      *
      * @param ringClosureTokens the pre-formatted ring-closure tokens to append, e.g. {@code "1"} or {@code "%12"}
      * @param chirality the chirality to render as a marker, or {@code null} if not a stereocentre
+     * @return this atom's SMILES representation
      */
     public String toString(List<String> ringClosureTokens, Chirality chirality)
     {
+        // aromaticity is written by lower-casing the symbol, but the wildcard has no case to change
         String symbol = element.equals("*") ? element : aromatic ? element.toLowerCase() : element;
 
         StringBuilder text = new StringBuilder();
@@ -77,6 +79,7 @@ public record Atom(
         }
         else
         {
+            // bracket form: order matters, as per SMILES spec
             text.append('[');
             isotope.ifPresent(text::append);
             text.append(symbol);
@@ -125,54 +128,89 @@ public record Atom(
             this.element = element;
         }
 
+        /**
+         * @param aromatic whether the atom is aromatic
+         * @return this builder, for chaining
+         */
         public Builder aromatic(boolean aromatic)
         {
             this.aromatic = aromatic;
             return this;
         }
 
+        /**
+         * @param charge the net formal charge
+         * @return this builder, for chaining
+         */
         public Builder charge(int charge)
         {
             this.charge = charge;
             return this;
         }
 
+        /**
+         * @param isotope the isotope mass number
+         * @return this builder, for chaining
+         */
         public Builder isotope(int isotope)
         {
             this.isotope = OptionalInt.of(isotope);
             return this;
         }
 
+        /**
+         * @param isotope the isotope mass number, or empty to leave it unspecified
+         * @return this builder, for chaining
+         */
         public Builder isotope(OptionalInt isotope)
         {
             this.isotope = isotope;
             return this;
         }
 
+        /**
+         * @param hydrogenCount the number of attached hydrogens
+         * @return this builder, for chaining
+         */
         public Builder hydrogenCount(int hydrogenCount)
         {
             this.hydrogenCount = OptionalInt.of(hydrogenCount);
             return this;
         }
 
+        /**
+         * @param hydrogenCount the number of attached hydrogens, or empty to leave them implicit
+         * @return this builder, for chaining
+         */
         public Builder hydrogenCount(OptionalInt hydrogenCount)
         {
             this.hydrogenCount = hydrogenCount;
             return this;
         }
 
+        /**
+         * @param atomClass the atom class number
+         * @return this builder, for chaining
+         */
         public Builder atomClass(int atomClass)
         {
             this.atomClass = OptionalInt.of(atomClass);
             return this;
         }
 
+        /**
+         * @param atomClass the atom class number, or empty to leave it unspecified
+         * @return this builder, for chaining
+         */
         public Builder atomClass(OptionalInt atomClass)
         {
             this.atomClass = atomClass;
             return this;
         }
 
+        /**
+         * @return an atom with the element and properties set so far
+         */
         public Atom build()
         {
             return new Atom(element, aromatic, charge, isotope, hydrogenCount, atomClass);

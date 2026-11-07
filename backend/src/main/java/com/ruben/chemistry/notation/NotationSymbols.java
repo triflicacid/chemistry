@@ -6,10 +6,18 @@ import com.ruben.chemistry.core.Elements;
 
 import java.util.Set;
 
+/**
+ * Utilities for atom and bond symbols.
+ */
 public final class NotationSymbols
 {
+    /** Organic-subset element symbols written as two characters. */
     private static final Set<String> TWO_CHAR_ORGANIC_ATOMS = Set.of("Cl", "Br");
+
+    /** Organic-subset element symbols written as a single character. */
     private static final String SINGLE_CHAR_ORGANIC_ATOMS = "BCNOPSFI";
+
+    /** The same elements written lower-case, denoting an aromatic atom. */
     private static final String AROMATIC_ORGANIC_ATOMS = "bcnops";
 
     /** Aromatic element symbols beyond the organic subset, recognised only inside brackets. */
@@ -52,6 +60,7 @@ public final class NotationSymbols
      */
     public static int elementSymbolLengthAt(String source, int position)
     {
+        // two characters first, so Cl is never read as C followed by a stray l
         if (position + 2 <= source.length())
         {
             String twoChars = source.substring(position, position + 2);

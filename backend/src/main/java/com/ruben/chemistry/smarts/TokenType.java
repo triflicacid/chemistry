@@ -1,5 +1,8 @@
 package com.ruben.chemistry.smarts;
 
+/**
+ * The lexical categories of a SMARTS {@link Token}.
+ */
 public enum TokenType
 {
     /** An organic-subset atom symbol written outside brackets, e.g. {@code C}, {@code Cl}, {@code c}, {@code *}. */
@@ -17,6 +20,7 @@ public enum TokenType
     /** The atomic-number marker {@code #} inside a bracket atom, as in {@code #6}; always followed by a {@link #NUMBER}. */
     HASH,
 
+    /** A run of digits inside a bracket atom, e.g. an isotope, hydrogen count or atom class. */
     NUMBER,
 
     /** A chirality specifier inside a bracket atom: {@code @} or {@code @@}. */
@@ -64,5 +68,6 @@ public enum TokenType
     /** The disconnected-structure separator {@code .}. */
     DOT,
 
+    /** The end-of-source marker, produced once the source is exhausted. */
     EOF
 }

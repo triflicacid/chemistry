@@ -1,5 +1,7 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.util.IdentityMap;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
@@ -13,9 +15,12 @@ public final class Ranking
 {
     private final Map<Atom, Integer> rankByAtom;
 
+    /**
+     * @param rankByAtom each ranked atom's rank, copied in by reference identity
+     */
     Ranking(Map<Atom, Integer> rankByAtom)
     {
-        this.rankByAtom = new IdentityHashMap<>(rankByAtom);
+        this.rankByAtom = IdentityMap.copyOf(rankByAtom);
     }
 
     /**

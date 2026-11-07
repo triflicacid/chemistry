@@ -14,6 +14,9 @@ public final class CachedValue<T> implements Supplier<T>
     private T value;
     private boolean computed;
 
+    /**
+     * @param producer computes the value, called at most once
+     */
     public CachedValue(Supplier<T> producer)
     {
         this.producer = producer;

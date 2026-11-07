@@ -23,6 +23,8 @@ import java.util.Set;
 
 /**
  * Parses a SMARTS string into a {@link Query}.
+ * <p>
+ * A parser consumes its source as it goes, so it cannot be reused: {@link #parseQuery()} throws if called a second time.
  */
 public final class SmartsParser
 {
@@ -33,14 +35,29 @@ public final class SmartsParser
     private final String source;
     private final TokenCursor cursor;
     private final Query.Builder builder = new Query.Builder();
+
+    /** The atoms branches were opened from, innermost last, to return to as each one closes. */
     private final Deque<QueryAtom> branchStack = new ArrayDeque<>();
+
+    /** Each atom's neighbours in the order they were written, which is what stereo is declared against. */
     private final Map<QueryAtom, List<QueryAtom>> substituentOrderOf = new IdentityHashMap<>();
+
+    /** The other endpoint of each double bond, by either of its atoms. */
     private final Map<QueryAtom, QueryAtom> doubleBondPartnerOf = new IdentityHashMap<>();
+
+    /** The directional bond recorded against each atom, as one half of a double bond's stereo. */
     private final Map<QueryAtom, DirectionalEdge> directionalEdgeOf = new IdentityHashMap<>();
+
+    /** Ring-closure digits still waiting for their second occurrence, in the order they were opened. */
     private final Map<String, PendingRingClosure> openRingBonds = new LinkedHashMap<>();
 
+    /** The atom the next one bonds to, or {@code null} at the start of a disconnected fragment. */
     private QueryAtom previousAtom;
+
+    /** A bond expression read but not yet applied, since the atom it bonds to comes after it. */
     private BondExpressionParser.Result pendingBondResult;
+
+    /** Whether {@link #pendingBondResult} is a plain {@code =}, which is the only form stereo can be declared for. */
     private boolean pendingIsDoubleBond;
     private int pendingBondPosition;
 
@@ -96,6 +113,7 @@ public final class SmartsParser
         {
             parseNext();
         }
+        // do not consume EOF
         if (terminator != TokenType.EOF)
         {
             next();
@@ -212,6 +230,8 @@ public final class SmartsParser
             throw new InvalidNotationException("Bond expression immediately follows another bond expression", source, peek().position());
         }
 
+        // double bond stereo is only meaningful for a bond that must be a double bond, so a bare
+        // '=' qualifies, while an expression such as '=,#' or '=&@' does not
         Token first = peek();
         boolean isDoubleCandidate = first.type() == TokenType.BOND
                 && first.text().equals("=")
@@ -287,11 +307,13 @@ public final class SmartsParser
             throw new InvalidNotationException("Ring closure not preceded by an atom", source, token.position());
         }
 
+        // the pending expression belongs to this closure, not to whatever atom comes next
         BondExpressionParser.Result bondResultHere = pendingBondResult;
         boolean isDoubleHere = pendingIsDoubleBond;
         pendingBondResult = null;
         pendingIsDoubleBond = false;
 
+        // a digit's first occurrence opens a ring, its second closes the one it opened
         PendingRingClosure opened = openRingBonds.remove(token.text());
         if (opened == null)
         {
@@ -367,12 +389,14 @@ public final class SmartsParser
         {
             return;
         }
+        // the two occurrences describe one bond from opposite ends, so declaring the same direction at both is a contradiction
         if (openingDirection.isPresent() && closingDirection.isPresent() && openingDirection.get() == closingDirection.get())
         {
             throw new InvalidNotationException(
                 "Ring closure direction must be the opposite of its opening direction, not the same", source, closingToken.position());
         }
 
+        // each occurrence's expression sits beside its own atom, so from either atom's point of view that atom is the one written first
         openingDirection.ifPresent(direction -> directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, direction, true)));
         closingDirection.ifPresent(direction -> directionalEdgeOf.put(closingAtom, new DirectionalEdge(openingAtom, direction, true)));
 
@@ -396,6 +420,7 @@ public final class SmartsParser
      * Bonds the given atom to the preceding atom, if any, consuming any pending bond expression.
      *
      * @param atom the atom position just parsed
+     * @throws InvalidNotationException if a bond expression is pending but there is no preceding atom to bond it to
      */
     private void attachAtom(QueryAtom atom)
     {
@@ -418,6 +443,7 @@ public final class SmartsParser
                 doubleBondPartnerOf.put(previousAtom, atom);
                 doubleBondPartnerOf.put(atom, previousAtom);
             }
+            // a direction is only written on a single bond flanking a double bond, never on the double bond itself
             else if (pendingBondResult != null && pendingBondResult.direction().isPresent())
             {
                 recordDirectionalEdge(previousAtom, atom, pendingBondResult.direction().get());
@@ -439,6 +465,9 @@ public final class SmartsParser
 
     /**
      * Records {@code other} as one of {@code atom}'s substituents, in the order its bonds are parsed.
+     *
+     * @param atom the atom to record a substituent for
+     * @param other the atom just bonded to it
      */
     private void recordSubstituent(QueryAtom atom, QueryAtom other)
     {
@@ -479,7 +508,8 @@ public final class SmartsParser
 
     /**
      * Reconciles the two directional edges flanking the double bond between {@code first}
-     * and {@code second} into its declared stereo configuration.
+     * and {@code second} into its declared stereo configuration, if both of its endpoints now
+     * have one recorded; does nothing otherwise.
      * The declared value is reprojected onto the default reference substituents.
      *
      * @param first one endpoint of the double bond
@@ -489,15 +519,21 @@ public final class SmartsParser
     {
         DirectionalEdge firstEdge = directionalEdgeOf.get(first);
         DirectionalEdge secondEdge = directionalEdgeOf.get(second);
+        // one side alone says nothing; the other may still be written further along the pattern
         if (firstEdge == null || secondEdge == null)
         {
             return;
         }
 
+        // a direction is written left to right, so reading an edge from its other end reverses
+        // its sense: turn both into directions pointing away from the double bond before
+        // comparing them, after which agreeing directions mean the same side
         BondDirection firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.direction() : firstEdge.direction().flip();
         BondDirection secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.direction() : secondEdge.direction().flip();
         DoubleBondStereo relativeToEdges = firstOutward == secondOutward ? DoubleBondStereo.SAME_SIDE : DoubleBondStereo.OPPOSITE_SIDE;
 
+        // the value above is relative to the two directional bonds, but it is stored relative
+        // to each endpoint's default reference, so swapping one reference (and not both) flips it
         QueryAtom firstDefault = defaultSubstituentOf(first, second);
         QueryAtom secondDefault = defaultSubstituentOf(second, first);
         boolean flipped = (firstEdge.other() != firstDefault) ^ (secondEdge.other() != secondDefault);
@@ -555,16 +591,26 @@ public final class SmartsParser
         return Character.toUpperCase(rawSymbol.charAt(0)) + rawSymbol.substring(1).toLowerCase();
     }
 
+    /**
+     * @return the next token, without consuming it
+     */
     private Token peek()
     {
         return cursor.peek();
     }
 
+    /**
+     * @param distance 0 for the next token, 1 for the one after it, and so on
+     * @return the token {@code distance} positions ahead, without consuming anything
+     */
     private Token peek(int distance)
     {
         return cursor.peek(distance);
     }
 
+    /**
+     * @return the next token, consuming it
+     */
     private Token next()
     {
         return cursor.next();

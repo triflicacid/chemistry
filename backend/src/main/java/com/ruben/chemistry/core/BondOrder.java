@@ -5,10 +5,19 @@ package com.ruben.chemistry.core;
  */
 public enum BondOrder
 {
+    /** {@code -} */
     SINGLE('-'),
+
+    /** {@code =} */
     DOUBLE('='),
+
+    /** {@code #} */
     TRIPLE('#'),
+
+    /** {@code $} */
     QUADRUPLE('$'),
+
+    /** {@code :} a bond within an aromatic ring, with no one order of its own */
     AROMATIC(':');
 
     private final char symbol;

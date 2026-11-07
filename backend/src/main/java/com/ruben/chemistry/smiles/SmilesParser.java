@@ -19,19 +19,34 @@ import java.util.OptionalInt;
 
 /**
  * Parses a SMILES string into a {@link Molecule}.
+ * <p>
+ * A parser consumes its source as it goes, so it cannot be reused: {@link #parse()} throws if called a second time.
  */
 public final class SmilesParser
 {
     private final String source;
     private final Lexer lexer;
     private final Molecule.Builder builder = new Molecule.Builder();
+
+    /** The atoms branches were opened from, innermost last, to return to as each one closes. */
     private final Deque<Atom> branchStack = new ArrayDeque<>();
+
+    /** Each atom's neighbours in the order they were written, which is what stereo is declared against. */
     private final Map<Atom, List<Atom>> substituentOrderOf = new IdentityHashMap<>();
+
+    /** The other endpoint of each double bond, by either of its atoms. */
     private final Map<Atom, Atom> doubleBondPartnerOf = new IdentityHashMap<>();
+
+    /** The directional bond recorded against each atom, as one half of a double bond's stereo. */
     private final Map<Atom, DirectionalEdge> directionalEdgeOf = new IdentityHashMap<>();
+
+    /** Ring-closure digits still waiting for their second occurrence, in the order they were opened. */
     private final Map<String, PendingRingClosure> openRingBonds = new LinkedHashMap<>();
 
+    /** The atom the next one bonds to, or {@code null} at the start of a disconnected fragment. */
     private Atom previousAtom;
+
+    /** A bond symbol read but not yet applied, since the atom it bonds to comes after it. */
     private String pendingBondSymbol;
     private int pendingBondPosition;
 
@@ -129,6 +144,8 @@ public final class SmilesParser
     {
         lexer.next();
 
+        // every component is optional but their order is fixed, so each parse step either
+        // consumes its component or leaves the position untouched for the next one
         OptionalInt isotope = parseOptionalIsotope();
         Token symbol = parseElementSymbol();
 
@@ -179,6 +196,9 @@ public final class SmilesParser
     {
         boolean hasPrecedingAtom = previousAtom != null;
         boolean hasImplicitHydrogen = hydrogenCount.orElse(0) > 0;
+        // a bracket atom's hydrogen counts from where it is written, which is after the atom
+        // this one came from, whereas storage always puts it first: one swap, so one flip.
+        // With no preceding atom the hydrogen is already first in both orders.
         return hasPrecedingAtom && hasImplicitHydrogen ? asWritten.flip() : asWritten;
     }
 
@@ -254,6 +274,7 @@ public final class SmilesParser
             return sign * Integer.parseInt(lexer.next().text());
         }
 
+        // no number, so this is the repeated-sign notation: [Ca++] means the same as [Ca+2]
         int magnitude = 1;
         while (lexer.peek().type() == TokenType.SIGN && lexer.peek().text().equals(firstSign.text()))
         {
@@ -370,9 +391,11 @@ public final class SmilesParser
             throw new InvalidNotationException("Ring closure not preceded by an atom", source, token.position());
         }
 
+        // the pending symbol belongs to this closure, not to whatever atom comes next
         String symbolHere = pendingBondSymbol;
         pendingBondSymbol = null;
 
+        // a digit's first occurrence opens a ring, its second closes the one it opened
         PendingRingClosure opened = openRingBonds.remove(token.text());
         if (opened == null)
         {
@@ -448,12 +471,16 @@ public final class SmilesParser
         {
             return;
         }
+        // the two occurrences describe one bond from opposite ends, so writing the same
+        // character at both is a contradiction rather than agreement
         if (openingIsDirectional && closingIsDirectional && openingSymbol.charAt(0) == closingSymbol.charAt(0))
         {
             throw new InvalidNotationException("Ring closure direction symbol '" + closingSymbol
                 + "' must be the opposite of its opening symbol '" + openingSymbol + "', not the same", source, closingToken.position());
         }
 
+        // unlike an ordinary bond, each occurrence's symbol sits beside its own atom, so from
+        // either atom's point of view that atom is the one written first
         if (openingIsDirectional)
         {
             directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, BondDirection.fromSymbol(openingSymbol.charAt(0)), true));
@@ -507,6 +534,8 @@ public final class SmilesParser
                 doubleBondPartnerOf.put(previousAtom, atom);
                 doubleBondPartnerOf.put(atom, previousAtom);
             }
+            // a direction is only ever written on a single bond flanking a double bond, never
+            // on the double bond itself
             else if (isDirectional(pendingBondSymbol))
             {
                 recordDirectionalEdge(previousAtom, atom, BondDirection.fromSymbol(pendingBondSymbol.charAt(0)));
@@ -518,7 +547,10 @@ public final class SmilesParser
     }
 
     /**
-     * Records {@code other} as one of {@code atom}'s substituents, in the order its bonds are parse
+     * Records {@code other} as one of {@code atom}'s substituents, in the order its bonds are parsed.
+     *
+     * @param atom the atom to record a substituent for
+     * @param other the atom just bonded to it
      */
     private void recordSubstituent(Atom atom, Atom other)
     {
@@ -571,15 +603,21 @@ public final class SmilesParser
     {
         DirectionalEdge firstEdge = directionalEdgeOf.get(first);
         DirectionalEdge secondEdge = directionalEdgeOf.get(second);
+        // one side alone says nothing; the other may still be written further along the string
         if (firstEdge == null || secondEdge == null)
         {
             return;
         }
 
+        // a direction is written left to right, so reading an edge from its other end reverses
+        // its sense: turn both into directions pointing away from the double bond before
+        // comparing them, after which agreeing directions mean the same side
         BondDirection firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.direction() : firstEdge.direction().flip();
         BondDirection secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.direction() : secondEdge.direction().flip();
         DoubleBondStereo relativeToEdges = firstOutward == secondOutward ? DoubleBondStereo.SAME_SIDE : DoubleBondStereo.OPPOSITE_SIDE;
 
+        // the value above is relative to the two directional bonds, but it is stored relative
+        // to each endpoint's default reference, so swapping one reference (and not both) flips it
         Atom firstDefault = defaultSubstituentOf(first, second);
         Atom secondDefault = defaultSubstituentOf(second, first);
         boolean flipped = (firstEdge.other() != firstDefault) ^ (secondEdge.other() != secondDefault);
