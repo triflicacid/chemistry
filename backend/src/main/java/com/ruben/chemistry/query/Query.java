@@ -2,6 +2,8 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.util.CachedFunction;
+import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentityMap;
 import com.ruben.chemistry.util.IdentitySet;
 
@@ -12,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * A SMARTS substructure pattern: a graph of {@link QueryAtom} positions connected by
@@ -22,7 +26,8 @@ public final class Query
 {
     private final List<QueryAtom> atoms;
     private final List<QueryBond> bonds;
-    private final Map<QueryAtom, List<QueryBond>> incidentBonds;
+    private final Supplier<Map<QueryAtom, List<QueryBond>>> incidentBonds;
+    private final Function<QueryAtom, Map<QueryAtom, QueryBond>> bondsByNeighbour = CachedFunction.byIdentity(this::buildBondsByNeighbour);
     private final Map<QueryAtom, DeclaredChirality> chiralityByAtom;
     private final Map<QueryBond, DoubleBondStereo> doubleBondStereoByBond;
 
@@ -38,7 +43,7 @@ public final class Query
     {
         this.atoms = List.copyOf(atoms);
         this.bonds = List.copyOf(bonds);
-        this.incidentBonds = buildIncidentBonds(this.atoms, this.bonds);
+        this.incidentBonds = new CachedValue<>(() -> buildIncidentBonds(this.atoms, this.bonds));
         this.chiralityByAtom = IdentityMap.copyOf(chirality);
         this.doubleBondStereoByBond = IdentityMap.copyOf(doubleBondStereo);
     }
@@ -85,7 +90,7 @@ public final class Query
      */
     public List<QueryBond> bondsOf(QueryAtom atom)
     {
-        List<QueryBond> result = incidentBonds.get(atom);
+        List<QueryBond> result = incidentBonds.get().get(atom);
         if (result == null)
         {
             throw new IllegalArgumentException("Query atom is not part of this query: " + atom);
@@ -101,7 +106,23 @@ public final class Query
      */
     public Optional<QueryBond> bondBetween(QueryAtom first, QueryAtom second)
     {
-        return bondsOf(first).stream().filter(bond -> bond.getOther(first) == second).findFirst();
+        return Optional.ofNullable(bondsByNeighbour.apply(first).get(second));
+    }
+
+    /**
+     * @param atom an atom position of this query, by reference identity
+     * @return every bonded neighbour position, mapped against the bond position between them
+     * @throws IllegalArgumentException if {@code atom} is not part of this query
+     */
+    private Map<QueryAtom, QueryBond> buildBondsByNeighbour(QueryAtom atom)
+    {
+        Map<QueryAtom, QueryBond> byNeighbour = new IdentityHashMap<>();
+        for (QueryBond bond : bondsOf(atom))
+        {
+            // putIfAbsent so a repeated pair resolves to the same bond a scan of bondsOf would find
+            byNeighbour.putIfAbsent(bond.getOther(atom), bond);
+        }
+        return byNeighbour;
     }
 
     /**
@@ -136,7 +157,7 @@ public final class Query
      */
     private void requireAtom(QueryAtom atom)
     {
-        if (!incidentBonds.containsKey(atom))
+        if (!incidentBonds.get().containsKey(atom))
         {
             throw new IllegalArgumentException("Query atom is not part of this query: " + atom);
         }
@@ -175,8 +196,7 @@ public final class Query
      *
      * @param bond a bond position of this query, by reference identity
      * @return the declared configuration, relative to each endpoint's default reference
-     *     substituent (the first other bond in {@link #bondsOf} insertion order), or empty
-     *     if none was declared
+     *     substituent (the first other bond in {@link #bondsOf} insertion order), or empty if none
      * @throws IllegalArgumentException if {@code bond} is not part of this query
      */
     public Optional<DoubleBondStereo> doubleBondStereoOf(QueryBond bond)
