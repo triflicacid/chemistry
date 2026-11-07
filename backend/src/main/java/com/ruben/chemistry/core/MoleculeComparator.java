@@ -1,8 +1,11 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.util.CachedFunction;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * Compares molecules by structure: two molecules compare equal exactly when they are
@@ -59,23 +62,27 @@ public final class MoleculeComparator implements Comparator<Molecule>
         Ranking firstRanking = ranker.rank(first);
         Ranking secondRanking = ranker.rank(second);
 
-        int atomsDiff = compareLists(atomSignatures(first, firstRanking), atomSignatures(second, secondRanking));
+        Function<Atom, List<NeighbourReference>> firstOrder = CachedFunction.byIdentity(atom -> rankedNeighbourOrder(first, firstRanking, atom));
+        Function<Atom, List<NeighbourReference>> secondOrder = CachedFunction.byIdentity(atom -> rankedNeighbourOrder(second, secondRanking, atom));
+
+        int atomsDiff = compareLists(atomSignatures(first, firstRanking, firstOrder), atomSignatures(second, secondRanking, secondOrder));
         if (atomsDiff != 0)
         {
             return atomsDiff;
         }
-        return compareLists(bondSignatures(first, firstRanking), bondSignatures(second, secondRanking));
+        return compareLists(bondSignatures(first, firstRanking, firstOrder), bondSignatures(second, secondRanking, secondOrder));
     }
 
     /**
      * @param molecule the molecule to describe
      * @param ranking {@code molecule}'s atom ranking
+     * @param neighbourOrder each atom's rank-sorted neighbour order
      * @return every atom's own properties, in ascending-rank order, independent of atom identity or insertion order
      */
-    private List<AtomSignature> atomSignatures(Molecule molecule, Ranking ranking)
+    private List<AtomSignature> atomSignatures(Molecule molecule, Ranking ranking, Function<Atom, List<NeighbourReference>> neighbourOrder)
     {
         return ranking.atomsByAscendingRank().stream()
-            .map(atom -> new AtomSignature(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), atom.hydrogenCount().orElse(-1), chiralityOf(molecule, ranking, atom)))
+            .map(atom -> new AtomSignature(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), atom.hydrogenCount().orElse(-1), chiralityOf(molecule, atom, neighbourOrder)))
             .toList();
     }
 
@@ -103,29 +110,39 @@ public final class MoleculeComparator implements Comparator<Molecule>
 
     /**
      * @param molecule the molecule {@code atom} belongs to
-     * @param ranking {@code molecule}'s atom ranking
      * @param atom the atom to read chirality from
+     * @param neighbourOrder {@code atom}'s rank-sorted neighbour order
      * @return {@code atom}'s declared chirality, if any, reprojected onto its rank-ordered neighbours;
      *     {@code null} if {@code atom} is not a stereocentre
      */
-    private Chirality chiralityOf(Molecule molecule, Ranking ranking, Atom atom)
+    private Chirality chiralityOf(Molecule molecule, Atom atom, Function<Atom, List<NeighbourReference>> neighbourOrder)
     {
-        return molecule.chiralityOf(atom, rankedNeighbourOrder(molecule, ranking, atom)).orElse(null);
+        // if empty now, will also be empty after laborious neighbour sorting, so this is an optimisation
+        if (molecule.chiralityOf(atom).isEmpty())
+        {
+            return null;
+        }
+        return molecule.chiralityOf(atom, neighbourOrder.apply(atom)).orElse(null);
     }
 
     /**
      * @param molecule the molecule {@code bond} belongs to
-     * @param ranking {@code molecule}'s atom ranking
      * @param bond the bond to read stereo from
+     * @param neighbourOrder each endpoint's rank-sorted neighbour order, computed at most once per atom
      * @return {@code bond}'s declared stereo configuration, if any, reprojected onto its
      *     endpoints' rank-ordered reference substituents (the first ranked neighbour, other
      *     than the bond itself, on each side); {@code null} if either endpoint has no other
      *     substituent to use as one
      */
-    private DoubleBondStereo doubleBondStereoOf(Molecule molecule, Ranking ranking, Bond bond)
+    private DoubleBondStereo doubleBondStereoOf(Molecule molecule, Bond bond, Function<Atom, List<NeighbourReference>> neighbourOrder)
     {
-        NeighbourReference firstReference = firstOtherThan(rankedNeighbourOrder(molecule, ranking, bond.first()), bond);
-        NeighbourReference secondReference = firstOtherThan(rankedNeighbourOrder(molecule, ranking, bond.second()), bond);
+        // if empty now, will also be empty after applying computed references, so this is an optimisation
+        if (molecule.doubleBondStereoOf(bond).isEmpty())
+        {
+            return null;
+        }
+        NeighbourReference firstReference = firstOtherThan(neighbourOrder.apply(bond.first()), bond);
+        NeighbourReference secondReference = firstOtherThan(neighbourOrder.apply(bond.second()), bond);
         if (firstReference == null || secondReference == null)
         {
             return null;
@@ -146,9 +163,10 @@ public final class MoleculeComparator implements Comparator<Molecule>
     /**
      * @param molecule the molecule to describe
      * @param ranking {@code molecule}'s atom ranking
+     * @param neighbourOrder each atom's rank-sorted neighbour order
      * @return every bond, described by its endpoints' ranks rather than atom identity, sorted deterministically
      */
-    private List<BondSignature> bondSignatures(Molecule molecule, Ranking ranking)
+    private List<BondSignature> bondSignatures(Molecule molecule, Ranking ranking, Function<Atom, List<NeighbourReference>> neighbourOrder)
     {
         return molecule.bonds().stream()
             .map(bond ->
@@ -156,7 +174,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
                 // lower rank first, so a bond reads the same whichever endpoint it was stored from
                 int rankA = ranking.rankOf(bond.first());
                 int rankB = ranking.rankOf(bond.second());
-                return new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order(), doubleBondStereoOf(molecule, ranking, bond));
+                return new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order(), doubleBondStereoOf(molecule, bond, neighbourOrder));
             })
             .sorted()
             .toList();
