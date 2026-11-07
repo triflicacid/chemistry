@@ -119,7 +119,9 @@ public final class SmilesParser
     private Atom parseOrganicAtom()
     {
         Token token = lexer.next();
-        Atom atom = Atom.organic(NotationSymbols.canonicalElement(token.text()), NotationSymbols.isAromaticSymbol(token.text()));
+        Atom atom = Atom.builder(NotationSymbols.canonicalElement(token.text()))
+                .aromatic(NotationSymbols.isAromaticSymbol(token.text()))
+                .build();
         builder.addAtom(atom);
         return atom;
     }

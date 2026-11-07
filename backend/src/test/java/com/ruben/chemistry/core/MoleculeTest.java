@@ -727,7 +727,7 @@ class MoleculeTest
             Atom[] ring = new Atom[6];
             for (int i = 0; i < ring.length; i++)
             {
-                ring[i] = Atom.organic("C", true);
+                ring[i] = Atom.aromatic("C");
             }
             Molecule.Builder builder = new Molecule.Builder().addAtoms(ring);
             for (int i = 0; i < ring.length; i++)
@@ -745,9 +745,9 @@ class MoleculeTest
             // cnc fragment, i.e. the ring nitrogen's local bonding in pyridine (c1ccncc1) -
             // the same local bonding as pyrrole's N-H, which is why real SMILES spells that
             // one out as [nH] rather than leaving it to be inferred
-            Atom nitrogen = Atom.organic("N", true);
-            Atom left = Atom.organic("C", true);
-            Atom right = Atom.organic("C", true);
+            Atom nitrogen = Atom.aromatic("N");
+            Atom left = Atom.aromatic("C");
+            Atom right = Atom.aromatic("C");
             Molecule molecule = new Molecule.Builder()
                 .addAtoms(nitrogen, left, right)
                 .addBond(nitrogen, left, BondOrder.AROMATIC)
@@ -766,9 +766,9 @@ class MoleculeTest
             // suggesting more bonding than either element's lowest valence allows
             for (String element : List.of("O", "S"))
             {
-                Atom heteroatom = Atom.organic(element, true);
-                Atom left = Atom.organic("C", true);
-                Atom right = Atom.organic("C", true);
+                Atom heteroatom = Atom.aromatic(element);
+                Atom left = Atom.aromatic("C");
+                Atom right = Atom.aromatic("C");
                 Molecule molecule = new Molecule.Builder()
                     .addAtoms(heteroatom, left, right)
                     .addBond(heteroatom, left, BondOrder.AROMATIC)
@@ -829,7 +829,7 @@ class MoleculeTest
             Atom[] ring = new Atom[6];
             for (int i = 0; i < ring.length; i++)
             {
-                ring[i] = Atom.organic("C", true);
+                ring[i] = Atom.aromatic("C");
             }
             Molecule.Builder builder = new Molecule.Builder().addAtoms(ring);
             for (int i = 0; i < ring.length; i++)
@@ -846,9 +846,9 @@ class MoleculeTest
         void exceeds_the_chosen_default_valence_for_a_two_connected_aromatic_sulfur()
         {
             // coc / csc fragment of c1ccsc1: two aromatic bonds = 3, so no implicit hydrogen counted
-            Atom sulfur = Atom.organic("S", true);
-            Atom left = Atom.organic("C", true);
-            Atom right = Atom.organic("C", true);
+            Atom sulfur = Atom.aromatic("S");
+            Atom left = Atom.aromatic("C");
+            Atom right = Atom.aromatic("C");
             Molecule molecule = new Molecule.Builder()
                 .addAtoms(sulfur, left, right)
                 .addBond(sulfur, left, BondOrder.AROMATIC)

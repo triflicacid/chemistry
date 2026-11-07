@@ -509,7 +509,7 @@ class AtomPredicatesTest
         void does_not_match_a_different_aromaticity()
         {
             Atom template = Atom.organic("C");
-            Atom aromaticCarbon = Atom.organic("C", true);
+            Atom aromaticCarbon = Atom.aromatic("C");
             Molecule molecule = new Molecule.Builder().addAtom(aromaticCarbon).build();
 
             assertThat(AtomPredicates.exactly(template).matches(molecule, aromaticCarbon)).isFalse();

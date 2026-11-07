@@ -19,7 +19,7 @@ class AtomTest
     @Test
     void aromatic_atom_renders_in_lower_case()
     {
-        Atom atom = Atom.organic("C", true);
+        Atom atom = Atom.aromatic("C");
 
         assertThat(atom.toString()).isEqualTo("c");
     }
