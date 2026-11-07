@@ -91,8 +91,8 @@ public final class NotationSymbols
     /**
      * Determines whether an atom symbol as written denotes an aromatic atom.
      *
-     * @param symbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
-     * @return {@code true} if {@code symbol} is lower case
+     * @param symbol the atom symbol exactly as lexed
+     * @return {@code true} if {@code symbol} is in an aromatic ring
      */
     public static boolean isAromaticSymbol(String symbol)
     {
@@ -102,7 +102,7 @@ public final class NotationSymbols
     /**
      * Canonicalises an atom symbol as written into its standard-case element symbol.
      *
-     * @param symbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "se"}, {@code "*"}
+     * @param symbol the atom symbol exactly as lexed
      * @return the canonicalised symbol
      */
     public static String canonicalElement(String symbol)
