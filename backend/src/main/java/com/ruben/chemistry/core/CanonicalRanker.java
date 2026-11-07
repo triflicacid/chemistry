@@ -18,7 +18,7 @@ import java.util.function.Function;
  */
 public final class CanonicalRanker implements Ranker
 {
-    /** Total order over initial invariants, so classes are numbered by signature rather than atom order. */
+    /** Total ordering for {@link AtomKey}. */
     private static final Comparator<AtomKey> ATOM_KEY_ORDER = Comparator
         .comparing(AtomKey::element)
         .thenComparing(AtomKey::aromatic)
@@ -28,13 +28,10 @@ public final class CanonicalRanker implements Ranker
         .thenComparingInt(AtomKey::degree)
         .thenComparing(AtomKey::inRing);
 
-    /** Total order over one neighbour signature: by bond order, then by the neighbour's class. */
+    /** Total ordering for {@link NeighbourKey}. */
     private static final Comparator<NeighbourKey> NEIGHBOUR_KEY_ORDER = Comparator
         .comparingInt(NeighbourKey::bondOrder)
         .thenComparingInt(NeighbourKey::neighbourClass);
-
-    /** Total order over a whole neighbour invariant, comparing the (already sorted) neighbour lists lexicographically. */
-    private static final Comparator<List<NeighbourKey>> NEIGHBOUR_LIST_ORDER = CanonicalRanker::compareNeighbourLists;
 
     @Override
     public Ranking rank(Molecule molecule)
@@ -68,7 +65,7 @@ public final class CanonicalRanker implements Ranker
         {
             // re-split by neighbour classes
             Map<Atom, Integer> current = classification.classOf();
-            Refinement refined = reclassify(atoms, current, atom -> neighbourInvariant(molecule, atom, current), NEIGHBOUR_LIST_ORDER);
+            Refinement refined = reclassify(atoms, current, atom -> neighbourInvariant(molecule, atom, current), CanonicalRanker::compareNeighbourLists);
             // a pass that splits nothing means there is nothing left to split
             if (refined.distinctClasses() == classification.distinctClasses())
             {
