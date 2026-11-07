@@ -8,7 +8,9 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -398,6 +400,45 @@ class SubstructureMatcherTest
         assertThat(matcher.findMatches(skeleton
             .setDoubleBondStereo(qCa, qCb, DoubleBondStereo.OPPOSITE_SIDE) // missing second substituent, so no reference
             .build())).isEmpty();
+    }
+
+    @Test
+    void matches_stops_at_the_first_match_while_findMatches_enumerates_them_all()
+    {
+        // benzene: symmetric, so finds 12 matches
+        Molecule benzene = new SmilesParser("c1ccccc1").parse();
+
+        AtomicInteger predicateCalls = new AtomicInteger();
+        AtomPredicate countedAromaticCarbon = (molecule, atom) ->
+        {
+            predicateCalls.incrementAndGet();
+            return AtomPredicates.aromatic("C").matches(molecule, atom);
+        };
+
+        List<QueryAtom> ring = new ArrayList<>();
+        Query.Builder builder = new Query.Builder();
+        for (int i = 0; i < 6; i++)
+        {
+            QueryAtom atom = new QueryAtom(countedAromaticCarbon);
+            ring.add(atom);
+            builder.addAtom(atom);
+        }
+        for (int i = 0; i < 6; i++)
+        {
+            builder.addBond(ring.get(i), ring.get((i + 1) % 6), BondPredicates.any());
+        }
+        Query query = builder.build();
+        SubstructureMatcher matcher = new SubstructureMatcher(benzene);
+
+        predicateCalls.set(0);
+        assertThat(matcher.findMatches(query)).hasSize(12);
+        int whenEnumerating = predicateCalls.get();
+
+        predicateCalls.set(0);
+        assertThat(matcher.matches(query)).isTrue();
+        int whenStoppingEarly = predicateCalls.get();
+
+        assertThat(whenStoppingEarly).isLessThan(whenEnumerating);
     }
 
     private static Atom nthAtom(Molecule molecule, int index)
