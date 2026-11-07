@@ -2,8 +2,9 @@ package com.ruben.chemistry.smarts;
 
 import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
-import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.notation.InvalidNotationException;
+import com.ruben.chemistry.notation.NotationSymbols;
+import com.ruben.chemistry.notation.StereoTracker;
 import com.ruben.chemistry.query.AtomPredicate;
 import com.ruben.chemistry.query.AtomPredicates;
 import com.ruben.chemistry.query.BondPredicate;
@@ -12,11 +13,8 @@ import com.ruben.chemistry.query.Query;
 import com.ruben.chemistry.query.QueryAtom;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -39,14 +37,8 @@ public final class SmartsParser
     /** The atoms branches were opened from, innermost last, to return to as each one closes. */
     private final Deque<QueryAtom> branchStack = new ArrayDeque<>();
 
-    /** Each atom's neighbours in the order they were written, which is what stereo is declared against. */
-    private final Map<QueryAtom, List<QueryAtom>> substituentOrderOf = new IdentityHashMap<>();
-
-    /** The other endpoint of each double bond, by either of its atoms. */
-    private final Map<QueryAtom, QueryAtom> doubleBondPartnerOf = new IdentityHashMap<>();
-
-    /** The directional bond recorded against each atom, as one half of a double bond's stereo. */
-    private final Map<QueryAtom, DirectionalEdge> directionalEdgeOf = new IdentityHashMap<>();
+    /** Collects the double bonds and directional bonds parsed so far, and declares their stereo. */
+    private final StereoTracker<QueryAtom> stereo = new StereoTracker<>(builder::setDoubleBondStereo);
 
     /** Ring-closure digits still waiting for their second occurrence, in the order they were opened. */
     private final Map<String, PendingRingClosure> openRingBonds = new LinkedHashMap<>();
@@ -181,7 +173,8 @@ public final class SmartsParser
         {
             return AtomPredicates.any();
         }
-        return isAromatic(rawSymbol) ? AtomPredicates.aromatic(canonicalElement(rawSymbol)) : AtomPredicates.element(canonicalElement(rawSymbol));
+        String element = NotationSymbols.canonicalElement(rawSymbol);
+        return NotationSymbols.isAromaticSymbol(rawSymbol) ? AtomPredicates.aromatic(element) : AtomPredicates.element(element);
     }
 
     /**
@@ -328,14 +321,7 @@ public final class SmartsParser
 
         BondPredicate predicate = resolveRingBondPredicate(opened.bondResult(), bondResultHere);
         builder.addBond(opened.atom(), previousAtom, predicate);
-        recordSubstituent(opened.atom(), previousAtom);
-        recordSubstituent(previousAtom, opened.atom());
-
-        if (opened.isDoubleBond() || isDoubleHere)
-        {
-            doubleBondPartnerOf.put(opened.atom(), previousAtom);
-            doubleBondPartnerOf.put(previousAtom, opened.atom());
-        }
+        stereo.recordBond(opened.atom(), previousAtom, opened.isDoubleBond() || isDoubleHere);
 
         registerRingClosureDirectionalEdges(opened.atom(), previousAtom, opened.bondResult(), bondResultHere, token);
     }
@@ -365,9 +351,7 @@ public final class SmartsParser
     }
 
     /**
-     * Registers directional edges for a just-closed ring-closure bond, if either of its two
-     * occurrences declared a direction, then attempts to reconcile any double bond either
-     * atom belongs to.
+     * Hands any direction declared at either occurrence of a just-closed ring-closure bond to {@link #stereo}.
      *
      * @param openingAtom the atom the ring closure was opened on
      * @param closingAtom the atom the ring closure was closed on
@@ -396,12 +380,8 @@ public final class SmartsParser
                 "Ring closure direction must be the opposite of its opening direction, not the same", source, closingToken.position());
         }
 
-        // each occurrence's expression sits beside its own atom, so from either atom's point of view that atom is the one written first
-        openingDirection.ifPresent(direction -> directionalEdgeOf.put(openingAtom, new DirectionalEdge(closingAtom, direction, true)));
-        closingDirection.ifPresent(direction -> directionalEdgeOf.put(closingAtom, new DirectionalEdge(openingAtom, direction, true)));
-
-        reconcileIfDoubleBondAtom(openingAtom);
-        reconcileIfDoubleBondAtom(closingAtom);
+        openingDirection.ifPresent(direction -> stereo.recordRingClosureDirection(openingAtom, closingAtom, direction));
+        closingDirection.ifPresent(direction -> stereo.recordRingClosureDirection(closingAtom, openingAtom, direction));
     }
 
     /**
@@ -435,18 +415,12 @@ public final class SmartsParser
         {
             BondPredicate predicate = pendingBondResult != null ? pendingBondResult.predicate() : defaultBondPredicate();
             builder.addBond(previousAtom, atom, predicate);
-            recordSubstituent(previousAtom, atom);
-            recordSubstituent(atom, previousAtom);
+            stereo.recordBond(previousAtom, atom, pendingIsDoubleBond);
 
-            if (pendingIsDoubleBond)
-            {
-                doubleBondPartnerOf.put(previousAtom, atom);
-                doubleBondPartnerOf.put(atom, previousAtom);
-            }
             // a direction is only written on a single bond flanking a double bond, never on the double bond itself
-            else if (pendingBondResult != null && pendingBondResult.direction().isPresent())
+            if (!pendingIsDoubleBond && pendingBondResult != null && pendingBondResult.direction().isPresent())
             {
-                recordDirectionalEdge(previousAtom, atom, pendingBondResult.direction().get());
+                stereo.recordDirection(previousAtom, atom, pendingBondResult.direction().get());
             }
         }
 
@@ -461,134 +435,6 @@ public final class SmartsParser
     private static BondPredicate defaultBondPredicate()
     {
         return BondPredicates.order(BondOrder.SINGLE).or(BondPredicates.order(BondOrder.AROMATIC));
-    }
-
-    /**
-     * Records {@code other} as one of {@code atom}'s substituents, in the order its bonds are parsed.
-     *
-     * @param atom the atom to record a substituent for
-     * @param other the atom just bonded to it
-     */
-    private void recordSubstituent(QueryAtom atom, QueryAtom other)
-    {
-        substituentOrderOf.computeIfAbsent(atom, ignored -> new ArrayList<>()).add(other);
-    }
-
-    /**
-     * Records one directional single bond between two just-bonded atoms, then attempts to complete
-     * the stereo declaration of either atom's double bond, if it has one and its other reference is already known too.
-     *
-     * @param writtenFirst the earlier-written of the bond's two atoms
-     * @param writtenSecond the later-written of the bond's two atoms
-     * @param direction the direction as written
-     */
-    private void recordDirectionalEdge(QueryAtom writtenFirst, QueryAtom writtenSecond, BondDirection direction)
-    {
-        directionalEdgeOf.put(writtenFirst, new DirectionalEdge(writtenSecond, direction, true));
-        directionalEdgeOf.put(writtenSecond, new DirectionalEdge(writtenFirst, direction, false));
-
-        reconcileIfDoubleBondAtom(writtenFirst);
-        reconcileIfDoubleBondAtom(writtenSecond);
-    }
-
-    /**
-     * If {@code atom} is one endpoint of a double bond, attempts to complete that double
-     * bond's stereo declaration now that one more of its two reference substituents is known.
-     *
-     * @param atom the atom to check
-     */
-    private void reconcileIfDoubleBondAtom(QueryAtom atom)
-    {
-        QueryAtom partner = doubleBondPartnerOf.get(atom);
-        if (partner != null)
-        {
-            tryReconcileDoubleBondStereo(atom, partner);
-        }
-    }
-
-    /**
-     * Reconciles the two directional edges flanking the double bond between {@code first}
-     * and {@code second} into its declared stereo configuration, if both of its endpoints now
-     * have one recorded; does nothing otherwise.
-     * The declared value is reprojected onto the default reference substituents.
-     *
-     * @param first one endpoint of the double bond
-     * @param second the other endpoint
-     */
-    private void tryReconcileDoubleBondStereo(QueryAtom first, QueryAtom second)
-    {
-        DirectionalEdge firstEdge = directionalEdgeOf.get(first);
-        DirectionalEdge secondEdge = directionalEdgeOf.get(second);
-        // one side alone says nothing; the other may still be written further along the pattern
-        if (firstEdge == null || secondEdge == null)
-        {
-            return;
-        }
-
-        // a direction is written left to right, so reading an edge from its other end reverses
-        // its sense: turn both into directions pointing away from the double bond before
-        // comparing them, after which agreeing directions mean the same side
-        BondDirection firstOutward = firstEdge.thisAtomWrittenFirst() ? firstEdge.direction() : firstEdge.direction().flip();
-        BondDirection secondOutward = secondEdge.thisAtomWrittenFirst() ? secondEdge.direction() : secondEdge.direction().flip();
-        DoubleBondStereo relativeToEdges = firstOutward == secondOutward ? DoubleBondStereo.SAME_SIDE : DoubleBondStereo.OPPOSITE_SIDE;
-
-        // the value above is relative to the two directional bonds, but it is stored relative
-        // to each endpoint's default reference, so swapping one reference (and not both) flips it
-        QueryAtom firstDefault = defaultSubstituentOf(first, second);
-        QueryAtom secondDefault = defaultSubstituentOf(second, first);
-        boolean flipped = (firstEdge.other() != firstDefault) ^ (secondEdge.other() != secondDefault);
-
-        builder.setDoubleBondStereo(first, second, flipped ? relativeToEdges.flip() : relativeToEdges);
-    }
-
-    /**
-     * @param atom an atom of a double bond
-     * @param excluding the double bond's other atom, excluded as a candidate
-     * @return the first of {@code atom}'s substituents, other than {@code excluding}, in parsed order, or {@code null} if it has none
-     */
-    private QueryAtom defaultSubstituentOf(QueryAtom atom, QueryAtom excluding)
-    {
-        return substituentOrderOf.getOrDefault(atom, List.of()).stream()
-            .filter(candidate -> candidate != excluding)
-            .findFirst()
-            .orElse(null);
-    }
-
-    /**
-     * One atom's end of a directional single bond.
-     *
-     * @param other the atom at the other end of this directional bond
-     * @param direction the direction as written
-     * @param thisAtomWrittenFirst whether the atom this edge is recorded for was written before {@code other}
-     */
-    private record DirectionalEdge(QueryAtom other, BondDirection direction, boolean thisAtomWrittenFirst)
-    {
-    }
-
-    /**
-     * Determines whether an atom symbol as written denotes an aromatic atom.
-     *
-     * @param rawSymbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
-     * @return {@code true} if {@code rawSymbol} is lower case
-     */
-    private boolean isAromatic(String rawSymbol)
-    {
-        return !rawSymbol.equals("*") && Character.isLowerCase(rawSymbol.charAt(0));
-    }
-
-    /**
-     * Canonicalises an atom symbol as written into its standard-case element symbol.
-     *
-     * @param rawSymbol the atom symbol exactly as lexed, e.g. {@code "c"}, {@code "Cl"}, {@code "*"}
-     * @return {@code "*"} unchanged, or {@code rawSymbol} with its first letter upper-cased and any remaining letters lower-cased
-     */
-    private String canonicalElement(String rawSymbol)
-    {
-        if (rawSymbol.equals("*"))
-        {
-            return rawSymbol;
-        }
-        return Character.toUpperCase(rawSymbol.charAt(0)) + rawSymbol.substring(1).toLowerCase();
     }
 
     /**

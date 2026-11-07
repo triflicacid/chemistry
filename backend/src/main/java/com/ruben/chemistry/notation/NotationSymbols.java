@@ -87,4 +87,30 @@ public final class NotationSymbols
     {
         return BondOrder.isSymbol(ch) || BondDirection.isSymbol(ch);
     }
+
+    /**
+     * Determines whether an atom symbol as written denotes an aromatic atom.
+     *
+     * @param symbol the atom symbol exactly as lexed
+     * @return {@code true} if {@code symbol} is in an aromatic ring
+     */
+    public static boolean isAromaticSymbol(String symbol)
+    {
+        return !symbol.equals("*") && Character.isLowerCase(symbol.charAt(0));
+    }
+
+    /**
+     * Canonicalises an atom symbol as written into its standard-case element symbol.
+     *
+     * @param symbol the atom symbol exactly as lexed
+     * @return the canonicalised symbol
+     */
+    public static String canonicalElement(String symbol)
+    {
+        if (symbol.equals("*"))
+        {
+            return symbol;
+        }
+        return Character.toUpperCase(symbol.charAt(0)) + symbol.substring(1).toLowerCase();
+    }
 }
