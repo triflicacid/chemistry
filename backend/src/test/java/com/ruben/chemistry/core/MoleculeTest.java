@@ -244,6 +244,19 @@ class MoleculeTest
         }
 
         @Test
+        void rejects_an_atom_of_another_molecule()
+        {
+            Atom c = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(c).build();
+            Atom unrelated = Atom.organic("C");
+
+            assertThatThrownBy(() -> molecule.ringCount(unrelated))
+                .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> molecule.ringSizes(unrelated))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
         void finds_a_simple_rings_size_and_membership()
         {
             // cyclopropane: C1CC1

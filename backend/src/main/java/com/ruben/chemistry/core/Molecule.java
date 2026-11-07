@@ -49,6 +49,10 @@ public final class Molecule
     private final List<Bond> bonds;
     private final CachedValue<Map<Atom, List<Bond>>> incidentBonds;
     private final Function<Atom, Map<Atom, Bond>> bondsByNeighbour = CachedFunction.byIdentity(this::buildBondsByNeighbour);
+    private final Function<Atom, Integer> implicitHydrogenCounts = CachedFunction.byIdentity(this::computeImplicitHydrogenCount);
+    private final Function<Atom, Integer> valences = CachedFunction.byIdentity(this::computeValence);
+    private final Function<Atom, Integer> ringCounts = CachedFunction.byIdentity(this::computeRingCount);
+    private final Function<Atom, Set<Integer>> ringSizes = CachedFunction.byIdentity(this::computeRingSizes);
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
     private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
@@ -184,6 +188,16 @@ public final class Molecule
      */
     public int implicitHydrogenCount(Atom atom)
     {
+        return implicitHydrogenCounts.apply(atom);
+    }
+
+    /**
+     * @param atom an atom of this molecule, by reference identity
+     * @return {@code atom}'s inferred hydrogen count
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    private int computeImplicitHydrogenCount(Atom atom)
+    {
         requireAtom(atom);
         if (atom.hydrogenCount().isPresent())
         {
@@ -222,6 +236,16 @@ public final class Molecule
      */
     public int valence(Atom atom)
     {
+        return valences.apply(atom);
+    }
+
+    /**
+     * @param atom an atom of this molecule, by reference identity
+     * @return {@code atom}'s total valence
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    private int computeValence(Atom atom)
+    {
         requireAtom(atom);
         BondContribution bonding = bondContributionOf(atom);
         return bonding.explicitSum() + bonding.aromaticContribution() + totalHydrogenCount(atom);
@@ -239,8 +263,7 @@ public final class Molecule
     }
 
     /**
-     * @return {@code atom}'s real bonding, split into its non-aromatic bond order sum and its
-     *     aromatic bond count
+     * @return {@code atom}'s real bonding, split into its non-aromatic bond order sum and its aromatic bond count
      */
     private BondContribution bondContributionOf(Atom atom)
     {
@@ -267,8 +290,7 @@ public final class Molecule
     private record BondContribution(int explicitSum, int aromaticCount)
     {
         /**
-         * @return the aromatic bonds' combined contribution, each weighted 1.5 as an
-         *     approximation of their real Kekule structure (see {@link #totalHydrogenCount})
+         * @return the aromatic bonds' combined contribution
          */
         int aromaticContribution()
         {
@@ -372,22 +394,42 @@ public final class Molecule
      */
     public int ringCount(Atom atom)
     {
+        return ringCounts.apply(atom);
+    }
+
+    /**
+     * @param atom an atom of this molecule, by reference identity
+     * @return the number of {@link #rings()} that {@code atom} belongs to
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    private int computeRingCount(Atom atom)
+    {
         requireAtom(atom);
         return (int) rings().stream().filter(ring -> ring.containsAtom(atom)).count();
     }
 
     /**
      * @param atom an atom of this molecule
-     * @return the sizes of the {@link #rings()} that {@code atom} belongs to
+     * @return the sizes of the {@link #rings()} that {@code atom} belongs to, unmodifiable
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
     public Set<Integer> ringSizes(Atom atom)
+    {
+        return ringSizes.apply(atom);
+    }
+
+    /**
+     * @param atom an atom of this molecule, by reference identity
+     * @return the sizes of the {@link #rings()} that {@code atom} belongs to
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    private Set<Integer> computeRingSizes(Atom atom)
     {
         requireAtom(atom);
         return rings().stream()
             .filter(ring -> ring.containsAtom(atom))
             .map(Molecule::atomCount)
-            .collect(Collectors.toSet());
+            .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
