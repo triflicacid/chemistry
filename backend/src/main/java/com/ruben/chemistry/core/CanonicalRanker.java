@@ -49,58 +49,56 @@ public final class CanonicalRanker implements Ranker
         {
             classOf.put(atom, 0);
         }
-        classOf = reclassify(atoms, classOf, atom -> initialInvariant(molecule, ringBonds, atom), ATOM_KEY_ORDER);
-        classOf = refineToStability(molecule, atoms, classOf);
-        return new Ranking(breakTies(molecule, atoms, classOf));
+        Refinement initial = reclassify(atoms, classOf, atom -> initialInvariant(molecule, ringBonds, atom), ATOM_KEY_ORDER);
+        Refinement refined = refineToStability(molecule, atoms, initial);
+        return new Ranking(breakTies(molecule, atoms, refined));
     }
 
     /**
      * @param molecule the molecule being ranked
      * @param atoms the molecule's atoms
-     * @param classOf each atom's current class
-     * @return a classification that keeps every distinction {@code classOf} already makes, and
+     * @param classification each atom's current class, and how many classes are in use
+     * @return a classification that keeps every distinction {@code classification} already makes, and
      *     in which two atoms share a class iff they are bonded to the same classes in the same way.
      *     (May still contain ties.)
      */
-    private Map<Atom, Integer> refineToStability(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> classOf)
+    private Refinement refineToStability(Molecule molecule, List<Atom> atoms, Refinement classification)
     {
-        int distinctClasses = countDistinct(classOf);
         while (true)
         {
             // re-split by neighbour classes
-            Map<Atom, Integer> current = classOf;
-            Map<Atom, Integer> refined = reclassify(atoms, current, atom -> neighbourInvariant(molecule, atom, current), NEIGHBOUR_LIST_ORDER);
-            int refinedCount = countDistinct(refined);
-            classOf = refined;
+            Map<Atom, Integer> current = classification.classOf();
+            Refinement refined = reclassify(atoms, current, atom -> neighbourInvariant(molecule, atom, current), NEIGHBOUR_LIST_ORDER);
             // a pass that splits nothing means there is nothing left to split
-            if (refinedCount == distinctClasses)
+            if (refined.distinctClasses() == classification.distinctClasses())
             {
-                return classOf;
+                return refined;
             }
-            distinctClasses = refinedCount;
+            classification = refined;
         }
     }
 
     /**
      * @param molecule the molecule being ranked
      * @param atoms the molecule's atoms
-     * @param classOf each atom's current class, as settled by {@link #refineToStability}
+     * @param classification each atom's current class, as settled by {@link #refineToStability}, and how many classes are in use
      * @return a classification in which every atom has a class of its own.
-     *     Two atoms that {@code classOf} holds apart are never put back together, though every class number is handed out afresh.
+     *     Two atoms that {@code classification} holds apart are never put back together, though every class number is handed out afresh.
      */
-    private Map<Atom, Integer> breakTies(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> classOf)
+    private Map<Atom, Integer> breakTies(Molecule molecule, List<Atom> atoms, Refinement classification)
     {
-        while (countDistinct(classOf) < atoms.size())
+        while (classification.distinctClasses() < atoms.size())
         {
             // arbitrary but deterministic: the first still-tied atom in insertion order
+            Map<Atom, Integer> classOf = classification.classOf();
             Atom toSplit = firstTiedAtom(atoms, classOf);
             int freshClass = Collections.max(classOf.values()) + 1;
             Map<Atom, Integer> split = new IdentityHashMap<>(classOf);
             split.put(toSplit, freshClass);
-            // refine again, so pulling that one atom out also separates its now-distinguishable neighbours
-            classOf = refineToStability(molecule, atoms, split);
+            // grant toSplit a new class and refine further; do this exhaustively until each atom has its own class
+            classification = refineToStability(molecule, atoms, new Refinement(split, classification.distinctClasses() + 1));
         }
-        return classOf;
+        return classification.classOf();
     }
 
     /**
@@ -130,7 +128,7 @@ public final class CanonicalRanker implements Ranker
      * @param invariantOrder a total order over that property, used to number the resulting classes deterministically
      * @return a classification in which two atoms share a class only if they shared one in {@code previous} and agree on {@code invariantOf}
      */
-    private <K> Map<Atom, Integer> reclassify(
+    private <K> Refinement reclassify(
         List<Atom> atoms,
         Map<Atom, Integer> previous,
         Function<Atom, K> invariantOf,
@@ -158,16 +156,8 @@ public final class CanonicalRanker implements Ranker
             result.put(classification.atom(), currentClass);
             last = classification;
         }
-        return result;
-    }
-
-    /**
-     * @param classOf each atom's class
-     * @return the number of distinct classes in use
-     */
-    private int countDistinct(Map<Atom, Integer> classOf)
-    {
-        return Set.copyOf(classOf.values()).size();
+        // classes are handed out as 0, 1, 2, ... in sorted order, so the highest one handed out is the count
+        return new Refinement(result, currentClass + 1);
     }
 
     /**
@@ -234,6 +224,13 @@ public final class CanonicalRanker implements Ranker
      * An atom paired with the class it previously held and the invariant used to split it further.
      */
     private record Classification<K>(Atom atom, int previousClass, K invariant)
+    {
+    }
+
+    /**
+     * A classification together with the number of distinct classes it uses.
+     */
+    private record Refinement(Map<Atom, Integer> classOf, int distinctClasses)
     {
     }
 }
