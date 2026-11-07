@@ -236,10 +236,14 @@ public final class SubstructureMatcher
         // matched neighbours ended up as, same as Molecule#chiralityOf does for any other order
         boolean chiralityOk = query.atoms().stream()
             .allMatch(atom -> query.chiralityOf(atom).map(required -> chiralityMatches(query, atom, assignment, required)).orElse(true));
+        if (!chiralityOk)
+        {
+            return false;
+        }
+
         // same reprojection, but for declared double bond stereo requirements
-        boolean doubleBondStereoOk = query.bonds().stream()
+        return query.bonds().stream()
             .allMatch(bond -> query.doubleBondStereoOf(bond).map(required -> doubleBondStereoMatches(query, bond, assignment, required)).orElse(true));
-        return chiralityOk && doubleBondStereoOk;
     }
 
     /**
