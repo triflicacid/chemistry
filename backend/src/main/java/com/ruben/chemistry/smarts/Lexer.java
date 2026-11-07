@@ -17,11 +17,17 @@ public final class Lexer extends AbstractLexer<Token>
     private static final String STRUCTURAL_LETTERS = "RrDvXh";
 
     private final String source;
+
+    /** Tokens already lexed from a recursive primitive, handed out before scanning continues. */
     private final Deque<Token> pending = new ArrayDeque<>();
 
     private int position;
+    /** Which of the two token sets to lex against; toggled by the brackets themselves. */
     private boolean inBracket;
 
+    /**
+     * @param source the SMARTS string to lex
+     */
     public Lexer(String source)
     {
         this.source = source;
@@ -42,6 +48,7 @@ public final class Lexer extends AbstractLexer<Token>
     @Override
     protected Token lexNext()
     {
+        // drain any previously-parsed tokens first
         if (!pending.isEmpty())
         {
             return pending.poll();
@@ -61,6 +68,7 @@ public final class Lexer extends AbstractLexer<Token>
             return token;
         }
 
+        // the logical operators mean the same thing in both modes, so this now
         Token logical = lexLogicalOperator(ch);
         if (logical != null)
         {
@@ -138,6 +146,7 @@ public final class Lexer extends AbstractLexer<Token>
         {
             return emit(TokenType.ATOM, "*");
         }
+        // two-character symbols first, so Cl lexes as one atom rather than C followed by a stray l
         if (NotationSymbols.startsWithTwoCharOrganicAtom(source, position))
         {
             return emit(TokenType.ATOM, source.substring(position, position + 2));
@@ -218,7 +227,7 @@ public final class Lexer extends AbstractLexer<Token>
             throw new InvalidNotationException("Expected '(' after '$' in recursive SMARTS primitive", source, position + 1);
         }
 
-        // finding the position of the matching closing bracket
+        // scan for the matching ')', counting nested brackets
         int start = position + 2;
         int depth = 1;
         int end = start;

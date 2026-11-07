@@ -25,6 +25,14 @@ public final class Query
     private final Map<QueryAtom, Chirality> chiralityByAtom;
     private final Map<QueryBond, DoubleBondStereo> doubleBondStereoByBond;
 
+    /**
+     * Creates a query from already-built atom and bond lists.
+     *
+     * @param atoms the atom positions of the query, in the order they were added
+     * @param bonds the bond positions of the query
+     * @param chirality each stereocentre's declared chirality, keyed by atom identity
+     * @param doubleBondStereo each bond's declared stereo configuration, keyed by bond identity
+     */
     Query(List<QueryAtom> atoms, List<QueryBond> bonds, Map<QueryAtom, Chirality> chirality, Map<QueryBond, DoubleBondStereo> doubleBondStereo)
     {
         this.atoms = List.copyOf(atoms);
@@ -127,6 +135,9 @@ public final class Query
         return Optional.ofNullable(doubleBondStereoByBond.get(bond));
     }
 
+    /**
+     * @throws IllegalArgumentException if {@code bond} is not one of this query's bonds
+     */
     private void requireBond(QueryBond bond)
     {
         if (bonds.stream().noneMatch(candidate -> candidate == bond))
@@ -135,6 +146,11 @@ public final class Query
         }
     }
 
+    /**
+     * @param atoms the atom positions of the query
+     * @param bonds the bond positions of the query
+     * @return a map from each atom position to its incident-bond list
+     */
     private static Map<QueryAtom, List<QueryBond>> buildIncidentBonds(List<QueryAtom> atoms, List<QueryBond> bonds)
     {
         Map<QueryAtom, List<QueryBond>> adjacency = new IdentityHashMap<>();
@@ -157,9 +173,6 @@ public final class Query
         return Collections.unmodifiableMap(immutable);
     }
 
-    /**
-     * Incrementally builds a {@link Query} by adding atom positions and bonding them together.
-     */
     public static final class Builder
     {
         private final List<QueryAtom> atoms = new ArrayList<>();
@@ -254,11 +267,20 @@ public final class Query
             return new Query(atoms, bonds, chirality, doubleBondStereo);
         }
 
+        /**
+         * @param first one endpoint
+         * @param second the other endpoint
+         * @return the bond between the two positions, in either direction, or {@code null} if they are not bonded
+         */
         private QueryBond findBond(QueryAtom first, QueryAtom second)
         {
             return bonds.stream().filter(bond -> bond.matches(first, second)).findFirst().orElse(null);
         }
 
+        /**
+         * @param atom the atom position to check, by reference identity
+         * @throws IllegalArgumentException if {@code atom} was not added via {@link #addAtom}
+         */
         private void requireAdded(QueryAtom atom)
         {
             if (!added.contains(atom))

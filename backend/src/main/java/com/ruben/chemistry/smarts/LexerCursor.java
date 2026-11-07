@@ -7,6 +7,9 @@ final class LexerCursor implements TokenCursor
 {
     private final Lexer lexer;
 
+    /**
+     * @param lexer the lexer to take tokens from
+     */
     LexerCursor(Lexer lexer)
     {
         this.lexer = lexer;

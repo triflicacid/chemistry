@@ -12,8 +12,12 @@ public final class Lexer extends AbstractLexer<Token>
     private final String source;
 
     private int position;
+    /** Which of the two token sets to lex against; toggled by the brackets themselves. */
     private boolean inBracket;
 
+    /**
+     * @param source the SMILES string to lex
+     */
     public Lexer(String source)
     {
         this.source = source;
@@ -41,6 +45,7 @@ public final class Lexer extends AbstractLexer<Token>
 
         if (inBracket)
         {
+            // the brackets are the only tokens recognised in both modes, as they switch between them
             if (source.charAt(position) == ']')
             {
                 Token token = emit(TokenType.BRACKET_CLOSE, "]");
@@ -98,6 +103,7 @@ public final class Lexer extends AbstractLexer<Token>
         {
             return emit(TokenType.ATOM, "*");
         }
+        // two-character symbols first, so Cl lexes as one atom rather than C followed by a stray l
         if (NotationSymbols.startsWithTwoCharOrganicAtom(source, position))
         {
             return emit(TokenType.ATOM, source.substring(position, position + 2));

@@ -16,8 +16,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+/**
+ * An immutable set of {@link Atom}s joined by {@link Bond}s, with any declared stereochemistry, built through {@link Builder}.
+ * <p>
+ * Atoms and bonds are identified by reference identity, not by {@link Atom#equals}.
+ */
 public final class Molecule
 {
+    /**
+     * Stands in for an atom's implicit hydrogen where a {@link NeighbourReference} is expected.
+     */
     public static final NeighbourReference IMPLICIT_HYDROGEN = ImplicitHydrogen.INSTANCE;
 
     /**
@@ -37,7 +45,6 @@ public final class Molecule
 
     private final List<Atom> atoms;
     private final List<Bond> bonds;
-    // lazy: a Molecule built just to sit in another Molecule's rings() may never need this
     private final CachedValue<Map<Atom, List<Bond>>> incidentBonds;
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
@@ -174,6 +181,7 @@ public final class Molecule
         BondContribution bonding = bondContributionOf(atom);
 
         // escalate to a higher default valence only when required
+        // e.g., nitrogen is trivalent until its bonds demand more than that, and only then pentavalent
         int requiredValence = bonding.explicitSum();
         int chosenValence = IntStream.of(valences)
             .filter(valence -> valence >= requiredValence)
@@ -250,9 +258,7 @@ public final class Molecule
     }
 
     /**
-     * Finds every bond that lies on some cycle: a bond is a bridge, and so excluded here,
-     * if its child subtree has no back-edge reaching back to or above the bond's other
-     * endpoint. Computed once and cached, since this molecule's structure never changes.
+     * Finds every bond that lies on some cycle, i.e. every bond that is not a bridge.
      *
      * @return this molecule's ring bonds, by reference identity
      */
@@ -261,14 +267,19 @@ public final class Molecule
         return ringBonds.get();
     }
 
+    /**
+     * @return every bond lying on a cycle, found by depth-first search
+     */
     private Set<Bond> computeRingBonds()
     {
         Set<Bond> result = IdentitySet.of();
         Set<Atom> visited = IdentitySet.of();
         Map<Atom, Integer> discoveryTime = new IdentityHashMap<>();
         Map<Atom, Integer> low = new IdentityHashMap<>();
-        AtomicInteger clock = new AtomicInteger(); // single shared counter, incremented as the DFS below visits each atom
+        // numbers atoms in the order they are reached, so a bond leading back to an earlier one can be spotted as closing a cycle
+        AtomicInteger clock = new AtomicInteger();
 
+        // a molecule may be several disconnected fragments, so every atom needs its own search
         for (Atom atom : atoms)
         {
             if (!visited.contains(atom))
@@ -279,6 +290,17 @@ public final class Molecule
         return result;
     }
 
+    /**
+     * Searches outwards from an atom, collecting the ring bonds found below it.
+     *
+     * @param atom the atom to search from
+     * @param arrivingBond the bond this search arrived by, or {@code null} at the root
+     * @param ringBonds collects the ring bonds found
+     * @param visited the atoms already reached by this or an earlier search
+     * @param discoveryTime when each atom was first reached
+     * @param low the earliest discovery time reachable from each atom's subtree
+     * @param clock the shared visit counter
+     */
     private void computeRingBonds(Atom atom, Bond arrivingBond, Set<Bond> ringBonds, Set<Atom> visited, Map<Atom, Integer> discoveryTime, Map<Atom, Integer> low, AtomicInteger clock)
     {
         visited.add(atom);
@@ -297,7 +319,9 @@ public final class Molecule
             if (!visited.contains(neighbour))
             {
                 computeRingBonds(neighbour, bond, ringBonds, visited, discoveryTime, low, clock);
+                // whatever the subtree below neighbour can reach, this atom can reach through it
                 low.put(atom, Math.min(low.get(atom), low.get(neighbour)));
+                // if that subtree reaches back to this atom or above it, some cycle runs through this bond
                 if (low.get(neighbour) <= discoveryTime.get(atom))
                 {
                     ringBonds.add(bond);
@@ -347,6 +371,9 @@ public final class Molecule
             .collect(Collectors.toSet());
     }
 
+    /**
+     * @return one sub-molecule per distinct smallest ring, covering every {@link #ringBonds()}
+     */
     private List<Molecule> computeRings()
     {
         List<Set<Bond>> ringBondSets = new ArrayList<>();
@@ -504,8 +531,7 @@ public final class Molecule
     }
 
     /**
-     * Determines whether rearranging {@code from} into the order of {@code to} is an odd
-     * permutation (an odd number of pairwise swaps), by counting inversions.
+     * Determines whether rearranging {@code from} into the order of {@code to} is an odd permutation by counting inversions.
      *
      * @param from a list of neighbour-slot identities
      * @param to the same identities, in a possibly different order
@@ -519,6 +545,8 @@ public final class Molecule
             throw new IllegalStateException("Stereocentre's declared neighbour count (" + from.size() + ") does not match its given neighbour count (" + to.size() + ")");
         }
 
+        // express the reordering as numbers:
+        // each entry of `from` becomes the index where that same entry sits in `to`
         Map<NeighbourReference, Integer> positionInTo = new IdentityHashMap<>();
         for (int i = 0; i < to.size(); i++)
         {
@@ -531,6 +559,7 @@ public final class Molecule
             permutation[i] = positionInTo.get(from.get(i));
         }
 
+        // a permutation's parity is the parity of its inversion count
         int inversions = 0;
         for (int i = 0; i < permutation.length; i++)
         {
@@ -584,6 +613,8 @@ public final class Molecule
         requireReference(bond, bond.first(), firstReference);
         requireReference(bond, bond.second(), secondReference);
 
+        // swapping the reference substituent at one end swaps cis and trans; doing it at both
+        // ends swaps it back, so only an odd number of swaps actually flips the configuration
         boolean flipped = (firstReference != defaultReference(bond, bond.first())) ^ (secondReference != defaultReference(bond, bond.second()));
         return Optional.of(flipped ? declared.flip() : declared);
     }
@@ -604,6 +635,7 @@ public final class Molecule
                 return candidate;
             }
         }
+        // no other bond, so the only substituent left to measure against is the hydrogen
         return IMPLICIT_HYDROGEN;
     }
 
@@ -615,6 +647,7 @@ public final class Molecule
      */
     private void requireReference(Bond doubleBond, Atom atom, NeighbourReference reference)
     {
+        // the implicit hydrogen is not a bond, so there is nothing to look up: any atom may have one
         if (reference instanceof ImplicitHydrogen)
         {
             return;

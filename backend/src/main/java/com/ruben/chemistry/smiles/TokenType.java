@@ -1,5 +1,8 @@
 package com.ruben.chemistry.smiles;
 
+/**
+ * The lexical categories of a SMILES {@link Token}.
+ */
 public enum TokenType
 {
     /** An organic-subset atom symbol written outside brackets, e.g. {@code C}, {@code Cl}, {@code c}, {@code *}. */
@@ -14,6 +17,7 @@ public enum TokenType
     /** An element symbol inside a bracket atom, e.g. {@code C}, {@code Fe}, {@code se}, {@code *}. Not restricted to the organic subset. */
     ELEMENT,
 
+    /** A run of digits inside a bracket atom, e.g. an isotope, hydrogen count or atom class. */
     NUMBER,
 
     /** A chirality specifier inside a bracket atom: {@code @} or {@code @@}. */
@@ -40,5 +44,6 @@ public enum TokenType
     /** The disconnected-structure separator {@code .}. */
     DOT,
 
+    /** The end-of-source marker, produced once the source is exhausted. */
     EOF
 }

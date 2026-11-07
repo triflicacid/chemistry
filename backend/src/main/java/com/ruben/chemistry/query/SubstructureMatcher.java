@@ -120,7 +120,6 @@ public final class SubstructureMatcher
             // every query atom is mapped: a full candidate assignment, so now all that's left is stereochemistry
             if (satisfiesStereoConstraints(query, assignment))
             {
-                // not Map.copyOf
                 matches.add(new Match(IdentityMap.copyOf(assignment), molecule));
             }
             return;

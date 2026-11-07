@@ -75,6 +75,8 @@ final class AtomExpressionParser
     /**
      * Lowest precedence: {@code ;} is logical AND.
      * E.g. {@code [C,N;R]} is "(carbon or nitrogen) and in a ring".
+     *
+     * @return the predicate the expression denotes
      */
     private AtomPredicate parseSemiExpression()
     {
@@ -88,8 +90,10 @@ final class AtomExpressionParser
     }
 
     /**
-     * {@code ,} is logical OR.
+     * {@code ,} is logical OR, binding tighter than {@code ;} but looser than {@code &}.
      * E.g. {@code [C,N]} is "carbon or nitrogen".
+     *
+     * @return the predicate the expression denotes
      */
     private AtomPredicate parseOrExpression()
     {
@@ -105,15 +109,19 @@ final class AtomExpressionParser
     /**
      * {@code &} is logical AND, same as two primitives written with no operator between them.
      * E.g. {@code [C&R]} and {@code [CR]} both mean "carbon and in a ring".
+     *
+     * @return the predicate the expression denotes
      */
     private AtomPredicate parseAndExpression()
     {
+        // a chirality marker is not a predicate, so remove it
         absorbChiralityIfPresent();
         AtomPredicate result = parseUnary();
         while (hasMore() && CONTINUES_AND_CHAIN.contains(peek().type()))
         {
             if (!absorbChiralityIfPresent())
             {
+                // the operator is optional; anything that could start a primitive continues the chain
                 if (peek().type() == TokenType.AND)
                 {
                     consume();
@@ -149,6 +157,7 @@ final class AtomExpressionParser
      * Highest precedence: {@code !} is logical NOT, negating a single primitive.
      * E.g. {@code [!C]} is "not carbon".
      *
+     * @return the predicate the primitive denotes, negated once per {@code !}
      * @throws InvalidNotationException if a primitive was expected but the tokens ran out
      */
     private AtomPredicate parseUnary()
@@ -166,6 +175,7 @@ final class AtomExpressionParser
     }
 
     /**
+     * @return the predicate denoted by the single primitive at the current position
      * @throws InvalidNotationException if the current token isn't a recognised primitive
      */
     private AtomPredicate parsePrimitive()
@@ -187,6 +197,7 @@ final class AtomExpressionParser
 
     /**
      * @param text a just-consumed {@link TokenType#ELEMENT} token's text: {@code *}, an element symbol, or {@code H}
+     * @return the predicate that element primitive denotes
      */
     private AtomPredicate elementPrimitive(String text)
     {
@@ -194,6 +205,8 @@ final class AtomExpressionParser
         {
             return AtomPredicates.any();
         }
+        // H inside brackets is the hydrogen count, not the element (even just [H])
+        // TODO this is what Daylight does, but feels off
         if (text.equals("H"))
         {
             return countedPrimitive(AtomPredicates::hydrogenCount, 1);
@@ -207,9 +220,11 @@ final class AtomExpressionParser
 
     /**
      * @param letter a just-consumed {@link TokenType#STRUCTURAL} token's text: one of {@code R r D v X h}
+     * @return the predicate that structural primitive denotes
      */
     private AtomPredicate structuralPrimitive(String letter)
     {
+        // R and h stand alone as well as taking a count, the others require a count
         return switch (letter)
         {
             case "R" -> hasNumberNext() ? AtomPredicates.ringCount(consumeNumber()) : AtomPredicates.inRing();
@@ -224,6 +239,7 @@ final class AtomExpressionParser
 
     /**
      * @param firstSign a just-consumed {@link TokenType#SIGN} token
+     * @return the predicate matching the charge the sign (and anything after it) denotes
      */
     private AtomPredicate chargePrimitive(Token firstSign)
     {
@@ -234,6 +250,7 @@ final class AtomExpressionParser
             return AtomPredicates.charge(sign * consumeNumber());
         }
 
+        // no number, so this is the repeated-sign notation: [Ca++] means the same as [Ca+2]
         int magnitude = 1;
         while (hasMore() && peek().type() == TokenType.SIGN && peek().text().equals(firstSign.text()))
         {
@@ -246,6 +263,7 @@ final class AtomExpressionParser
     /**
      * @param factory builds the predicate from an explicit count
      * @param defaultCount the count to use when no {@link TokenType#NUMBER} follows
+     * @return the predicate for the count written, or for {@code defaultCount} if none was
      */
     private AtomPredicate countedPrimitive(IntFunction<AtomPredicate> factory, int defaultCount)
     {
@@ -267,11 +285,17 @@ final class AtomExpressionParser
         return consumeNumber();
     }
 
+    /**
+     * @return {@code true} if a {@link TokenType#NUMBER} is next
+     */
     private boolean hasNumberNext()
     {
         return hasMore() && peek().type() == TokenType.NUMBER;
     }
 
+    /**
+     * @return the value of the next token, which must be a {@link TokenType#NUMBER}
+     */
     private int consumeNumber()
     {
         return Integer.parseInt(consume().text());
@@ -286,16 +310,25 @@ final class AtomExpressionParser
         return Character.toUpperCase(text.charAt(0)) + text.substring(1).toLowerCase();
     }
 
+    /**
+     * @return {@code true} if this atom expression has any token left
+     */
     private boolean hasMore()
     {
         return !cursor.isAtEnd();
     }
 
+    /**
+     * @return the next token, without consuming it
+     */
     private Token peek()
     {
         return cursor.peek();
     }
 
+    /**
+     * @return the next token, consuming it
+     */
     private Token consume()
     {
         return cursor.next();

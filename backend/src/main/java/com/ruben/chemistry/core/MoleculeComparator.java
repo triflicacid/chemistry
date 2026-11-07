@@ -19,18 +19,22 @@ import java.util.List;
  *     <li>each bond, as its endpoints' canonical ranks, its order, and its declared double
  *     bond stereo configuration, sorted and compared entry-by-entry</li>
  * </ol>
- *  This ordering has no chemical meaning: "ranks higher" just means "differs first, at
- *  an earlier tier or earlier rank, with a larger value there".
  */
 public final class MoleculeComparator implements Comparator<Molecule>
 {
     private final Ranker ranker;
 
+    /**
+     * Creates a comparator using the default {@link CanonicalRanker}.
+     */
     public MoleculeComparator()
     {
         this(new CanonicalRanker());
     }
 
+    /**
+     * @param ranker the ranker used to put each molecule's atoms into a comparable order
+     */
     public MoleculeComparator(Ranker ranker)
     {
         this.ranker = ranker;
@@ -39,6 +43,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
     @Override
     public int compare(Molecule first, Molecule second)
     {
+        // atom and bond counts are cheap, so do them first
         int atomCountDiff = Integer.compare(first.atomCount(), second.atomCount());
         if (atomCountDiff != 0)
         {
@@ -50,6 +55,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
             return bondCountDiff;
         }
 
+        // same size, so the atoms have to be lined up by structural role before comparing them
         Ranking firstRanking = ranker.rank(first);
         Ranking secondRanking = ranker.rank(second);
 
@@ -62,8 +68,9 @@ public final class MoleculeComparator implements Comparator<Molecule>
     }
 
     /**
-     * @return every atom's own properties, in ascending-rank order; independent of atom
-     *     identity or insertion order
+     * @param molecule the molecule to describe
+     * @param ranking {@code molecule}'s atom ranking
+     * @return every atom's own properties, in ascending-rank order, independent of atom identity or insertion order
      */
     private List<AtomSignature> atomSignatures(Molecule molecule, Ranking ranking)
     {
@@ -73,12 +80,17 @@ public final class MoleculeComparator implements Comparator<Molecule>
     }
 
     /**
-     * @return {@code atom}'s implicit hydrogen (if any) followed by its bonds, sorted by the
-     *     rank of the neighbour at the other end (ties broken by bond order).
+     * Puts an atom's neighbours into an order derived from the ranking alone.
+     *
+     * @param molecule the molecule {@code atom} belongs to
+     * @param ranking {@code molecule}'s atom ranking
+     * @param atom the atom whose neighbours to order
+     * @return {@code atom}'s implicit hydrogen, followed by its bonds, in an order that depends only on {@code ranking}
      */
     private List<NeighbourReference> rankedNeighbourOrder(Molecule molecule, Ranking ranking, Atom atom)
     {
         List<NeighbourReference> order = new ArrayList<>();
+        // the implicit hydrogen has no rank to sort by, so it takes the first slot
         if (atom.hydrogenCount().orElse(0) > 0)
         {
             order.add(Molecule.IMPLICIT_HYDROGEN);
@@ -90,7 +102,11 @@ public final class MoleculeComparator implements Comparator<Molecule>
     }
 
     /**
-     * @return {@code atom}'s declared chirality, if any, reprojected onto its rank-ordered neighbours
+     * @param molecule the molecule {@code atom} belongs to
+     * @param ranking {@code molecule}'s atom ranking
+     * @param atom the atom to read chirality from
+     * @return {@code atom}'s declared chirality, if any, reprojected onto its rank-ordered neighbours;
+     *     {@code null} if {@code atom} is not a stereocentre
      */
     private Chirality chiralityOf(Molecule molecule, Ranking ranking, Atom atom)
     {
@@ -98,6 +114,9 @@ public final class MoleculeComparator implements Comparator<Molecule>
     }
 
     /**
+     * @param molecule the molecule {@code bond} belongs to
+     * @param ranking {@code molecule}'s atom ranking
+     * @param bond the bond to read stereo from
      * @return {@code bond}'s declared stereo configuration, if any, reprojected onto its
      *     endpoints' rank-ordered reference substituents (the first ranked neighbour, other
      *     than the bond itself, on each side); {@code null} if either endpoint has no other
@@ -115,6 +134,8 @@ public final class MoleculeComparator implements Comparator<Molecule>
     }
 
     /**
+     * @param order an atom's ordered neighbours
+     * @param excluded the bond to skip over
      * @return the first entry in {@code order} that isn't {@code excluded}, or {@code null} if there is none
      */
     private static NeighbourReference firstOtherThan(List<NeighbourReference> order, Bond excluded)
@@ -123,6 +144,8 @@ public final class MoleculeComparator implements Comparator<Molecule>
     }
 
     /**
+     * @param molecule the molecule to describe
+     * @param ranking {@code molecule}'s atom ranking
      * @return every bond, described by its endpoints' ranks rather than atom identity, sorted deterministically
      */
     private List<BondSignature> bondSignatures(Molecule molecule, Ranking ranking)
@@ -130,6 +153,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
         return molecule.bonds().stream()
             .map(bond ->
             {
+                // lower rank first, so a bond reads the same whichever endpoint it was stored from
                 int rankA = ranking.rankOf(bond.first());
                 int rankB = ranking.rankOf(bond.second());
                 return new BondSignature(Math.min(rankA, rankB), Math.max(rankA, rankB), bond.order(), doubleBondStereoOf(molecule, ranking, bond));
@@ -151,6 +175,9 @@ public final class MoleculeComparator implements Comparator<Molecule>
         return 0;
     }
 
+    /**
+     * One atom's own comparable properties.
+     */
     private record AtomSignature(String element, boolean aromatic, int charge, int isotope, int hydrogenCount, Chirality chirality) implements Comparable<AtomSignature>
     {
         @Override
@@ -185,6 +212,9 @@ public final class MoleculeComparator implements Comparator<Molecule>
         }
     }
 
+    /**
+     * A bond, described by its endpoints' ranks rather than by the atoms themselves, so that bonds of different molecules can be compared.
+     */
     private record BondSignature(int lowerRank, int higherRank, BondOrder order, DoubleBondStereo doubleBondStereo) implements Comparable<BondSignature>
     {
         @Override
