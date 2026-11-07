@@ -1,5 +1,6 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentitySet;
 
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -46,6 +48,7 @@ public final class Molecule
     private final List<Atom> atoms;
     private final List<Bond> bonds;
     private final CachedValue<Map<Atom, List<Bond>>> incidentBonds;
+    private final Function<Atom, Map<Atom, Bond>> bondsByNeighbour = CachedFunction.byIdentity(this::buildBondsByNeighbour);
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
     private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
@@ -140,7 +143,23 @@ public final class Molecule
      */
     public Optional<Bond> bondBetween(Atom first, Atom second)
     {
-        return bondsOf(first).stream().filter(bond -> bond.getOther(first) == second).findFirst();
+        return Optional.ofNullable(bondsByNeighbour.apply(first).get(second));
+    }
+
+    /**
+     * @param atom an atom of this molecule, by reference identity
+     * @return the every bonded neighbour, mapped against the bond between them
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    private Map<Atom, Bond> buildBondsByNeighbour(Atom atom)
+    {
+        Map<Atom, Bond> byNeighbour = new IdentityHashMap<>();
+        for (Bond bond : bondsOf(atom))
+        {
+            // putIfAbsent so a repeated pair resolves to the same bond a scan of bondsOf would find
+            byNeighbour.putIfAbsent(bond.getOther(atom), bond);
+        }
+        return byNeighbour;
     }
 
     /**

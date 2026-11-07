@@ -2,6 +2,7 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.util.IdentityMap;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
@@ -38,8 +39,8 @@ public final class Query
         this.atoms = List.copyOf(atoms);
         this.bonds = List.copyOf(bonds);
         this.incidentBonds = buildIncidentBonds(this.atoms, this.bonds);
-        this.chiralityByAtom = new IdentityHashMap<>(chirality);
-        this.doubleBondStereoByBond = new IdentityHashMap<>(doubleBondStereo);
+        this.chiralityByAtom = IdentityMap.copyOf(chirality);
+        this.doubleBondStereoByBond = IdentityMap.copyOf(doubleBondStereo);
     }
 
     /**
@@ -139,6 +140,26 @@ public final class Query
         {
             throw new IllegalArgumentException("Query atom is not part of this query: " + atom);
         }
+    }
+
+    /**
+     * Returns only the atom positions that declare a chirality requirement.
+     *
+     * @return each stereocentre's declared chirality, keyed by atom reference identity
+     */
+    Map<QueryAtom, DeclaredChirality> declaredChirality()
+    {
+        return chiralityByAtom;
+    }
+
+    /**
+     * Returns only the bond positions that declare a stereo configuration requirement.
+     *
+     * @return each stereo bond's declared configuration, relative to the references described by {@link #doubleBondStereoOf}
+     */
+    Map<QueryBond, DoubleBondStereo> declaredDoubleBondStereo()
+    {
+        return doubleBondStereoByBond;
     }
 
     /**

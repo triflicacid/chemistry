@@ -333,6 +333,73 @@ class SubstructureMatcherTest
         assertThat(substructure.bondCount()).isEqualTo(3); // the ring-closing bond is included too
     }
 
+    @Test
+    void every_declared_stereocentre_must_be_satisfied__not_just_one_of_them()
+    {
+        // two adjacent fully substituted stereocentres, each stored ANTICLOCKWISE relative to
+        // its own real bond order: [N, Br, Cl, Cb] for Ca and [Ca, F, I, O] for Cb
+        Molecule molecule = new SmilesParser("N[C@](Br)(Cl)[C@](F)(I)O").parse();
+
+        QueryAtom qN = new QueryAtom(AtomPredicates.element("N"));
+        QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qBr = new QueryAtom(AtomPredicates.element("Br"));
+        QueryAtom qCl = new QueryAtom(AtomPredicates.element("Cl"));
+        QueryAtom qCb = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qF = new QueryAtom(AtomPredicates.element("F"));
+        QueryAtom qI = new QueryAtom(AtomPredicates.element("I"));
+        QueryAtom qO = new QueryAtom(AtomPredicates.element("O"));
+
+        // bonds added in each centre's real order, so no reprojection needed
+        Query.Builder skeleton = new Query.Builder()
+            .addAtom(qN).addAtom(qCa).addAtom(qBr).addAtom(qCl)
+            .addAtom(qCb).addAtom(qF).addAtom(qI).addAtom(qO)
+            .addBond(qCa, qN, BondPredicates.any())
+            .addBond(qCa, qBr, BondPredicates.any())
+            .addBond(qCa, qCl, BondPredicates.any())
+            .addBond(qCa, qCb, BondPredicates.any())
+            .addBond(qCb, qF, BondPredicates.any())
+            .addBond(qCb, qI, BondPredicates.any())
+            .addBond(qCb, qO, BondPredicates.any());
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.findMatches(skeleton
+            .setChirality(qCa, Chirality.ANTICLOCKWISE)
+            .setChirality(qCb, Chirality.ANTICLOCKWISE)
+            .build())).hasSize(1);
+
+        assertThat(matcher.findMatches(skeleton
+            .setChirality(qCa, Chirality.CLOCKWISE)
+            .setChirality(qCb, Chirality.ANTICLOCKWISE)
+            .build())).isEmpty();
+
+        assertThat(matcher.findMatches(skeleton
+            .setChirality(qCa, Chirality.ANTICLOCKWISE)
+            .setChirality(qCb, Chirality.CLOCKWISE)
+            .build())).isEmpty();
+    }
+
+    @Test
+    void a_double_bond_stereo_requirement_is_unsatisfied_when_an_endpoint_has_no_reference_substituent()
+    {
+        Molecule molecule = new SmilesParser("C/C=C/C").parse();
+
+        QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qCb = new QueryAtom(AtomPredicates.element("C"));
+        Query.Builder skeleton = new Query.Builder()
+            .addAtom(qC).addAtom(qCa).addAtom(qCb)
+            .addBond(qC, qCa, BondPredicates.any())
+            .addBond(qCa, qCb, BondPredicates.order(BondOrder.DOUBLE));
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.findMatches(skeleton.build())).isNotEmpty();
+        assertThat(matcher.findMatches(skeleton
+            .setDoubleBondStereo(qCa, qCb, DoubleBondStereo.OPPOSITE_SIDE) // missing second substituent, so no reference
+            .build())).isEmpty();
+    }
+
     private static Atom nthAtom(Molecule molecule, int index)
     {
         int i = 0;

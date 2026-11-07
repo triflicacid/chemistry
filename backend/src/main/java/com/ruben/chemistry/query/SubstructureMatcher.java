@@ -2,7 +2,6 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
-import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
@@ -234,27 +233,34 @@ public final class SubstructureMatcher
     {
         // check each declared stereocentre by reprojecting it onto the real atoms the
         // matched neighbours ended up as, same as Molecule#chiralityOf does for any other order
-        boolean chiralityOk = query.atoms().stream()
-            .allMatch(atom -> query.chiralityOf(atom).map(required -> chiralityMatches(query, atom, assignment, required)).orElse(true));
-        if (!chiralityOk)
+        for (Map.Entry<QueryAtom, Query.DeclaredChirality> declared : query.declaredChirality().entrySet())
         {
-            return false;
+            if (!chiralityMatches(query, declared.getKey(), assignment, declared.getValue()))
+            {
+                return false;
+            }
         }
 
         // same reprojection, but for declared double bond stereo requirements
-        return query.bonds().stream()
-            .allMatch(bond -> query.doubleBondStereoOf(bond).map(required -> doubleBondStereoMatches(query, bond, assignment, required)).orElse(true));
+        for (Map.Entry<QueryBond, DoubleBondStereo> declared : query.declaredDoubleBondStereo().entrySet())
+        {
+            if (!doubleBondStereoMatches(query, declared.getKey(), assignment, declared.getValue()))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
-     * @return {@code true} if the real atom {@code queryAtom} was mapped to has chirality {@code required}
+     * @return {@code true} if the real atom {@code queryAtom} was mapped to has the chirality {@code declared} requires
      */
-    private boolean chiralityMatches(Query query, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment, Chirality required)
+    private boolean chiralityMatches(Query query, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment, Query.DeclaredChirality declared)
     {
         Atom realAtom = assignment.get(queryAtom);
 
         // a pattern counting an implicit hydrogen only fits an atom that has one, and vice versa
-        boolean includesImplicitHydrogen = query.chiralityIncludesImplicitHydrogen(queryAtom);
+        boolean includesImplicitHydrogen = declared.includesImplicitHydrogen();
         if (includesImplicitHydrogen != (realAtom.hydrogenCount().orElse(0) > 0))
         {
             return false;
@@ -275,7 +281,7 @@ public final class SubstructureMatcher
         {
             return false;
         }
-        return molecule.chiralityOf(realAtom, realOrder).filter(actual -> actual == required).isPresent();
+        return molecule.chiralityOf(realAtom, realOrder).filter(actual -> actual == declared.chirality()).isPresent();
     }
 
     /**
@@ -322,11 +328,15 @@ public final class SubstructureMatcher
      */
     private Bond defaultReferenceBond(Query query, QueryBond queryBond, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment)
     {
-        Atom realAtom = assignment.get(queryAtom);
-        return query.bondsOf(queryAtom).stream()
-            .filter(candidate -> candidate != queryBond)
-            .findFirst()
-            .map(candidate -> molecule.bondBetween(realAtom, assignment.get(candidate.getOther(queryAtom))).orElseThrow())
-            .orElse(null);
+        for (QueryBond candidate : query.bondsOf(queryAtom))
+        {
+            if (candidate != queryBond)
+            {
+                Atom realAtom = assignment.get(queryAtom);
+                Atom realNeighbour = assignment.get(candidate.getOther(queryAtom));
+                return molecule.bondBetween(realAtom, realNeighbour).orElseThrow();
+            }
+        }
+        return null;
     }
 }
