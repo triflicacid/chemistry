@@ -496,6 +496,48 @@ class SubstructureMatcherTest
         assertThat(matcher.findDistinctMatches(query)).hasSize(1);
     }
 
+    @Test
+    void an_unsatisfiable_chirality_is_rejected_before_the_positions_it_does_not_read_are_tried()
+    {
+        // CN[C@](Br)(Cl)F: stored ANTICLOCKWISE relative to the real bond order [N, Br, Cl, F]
+        Molecule molecule = new SmilesParser("CN[C@](Br)(Cl)F").parse();
+
+        AtomicInteger trailingCalls = new AtomicInteger();
+        AtomPredicate countedCarbon = (counted, atom) ->
+        {
+            trailingCalls.incrementAndGet();
+            return AtomPredicates.element("C").matches(counted, atom);
+        };
+
+        QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qN = new QueryAtom(AtomPredicates.element("N"));
+        QueryAtom qBr = new QueryAtom(AtomPredicates.element("Br"));
+        QueryAtom qCl = new QueryAtom(AtomPredicates.element("Cl"));
+        QueryAtom qF = new QueryAtom(AtomPredicates.element("F"));
+        QueryAtom qTrailing = new QueryAtom(countedCarbon);
+
+        // bonds added in the centre's real order, so no reprojection
+        Query.Builder skeleton = new Query.Builder()
+            .addAtoms(qC, qN, qBr, qCl, qF, qTrailing)
+            .addBond(qC, qN, BondPredicates.any())
+            .addBond(qC, qBr, BondPredicates.any())
+            .addBond(qC, qCl, BondPredicates.any())
+            .addBond(qC, qF, BondPredicates.any())
+            .addBond(qN, qTrailing, BondPredicates.any());
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.matches(skeleton.setChirality(qC, Chirality.ANTICLOCKWISE).build())).isTrue();
+        assertThat(trailingCalls.get()).isPositive();
+
+        trailingCalls.set(0);
+        assertThat(matcher.matches(skeleton.setChirality(qC, Chirality.CLOCKWISE).build())).isFalse();
+
+        // the declared chirality is settled once the centre and its four substituents are placed,
+        // so the branch dies without the trailing position ever being tried
+        assertThat(trailingCalls.get()).isZero();
+    }
+
     private static Set<Set<Atom>> atomSets(List<Match> matches)
     {
         Set<Set<Atom>> sets = new HashSet<>();
