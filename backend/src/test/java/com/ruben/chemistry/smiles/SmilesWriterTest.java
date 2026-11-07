@@ -76,8 +76,8 @@ class SmilesWriterTest
     @Test
     void omits_the_aromatic_bond_symbol_between_two_aromatic_atoms()
     {
-        Atom c1 = Atom.organic("c", true);
-        Atom c2 = Atom.organic("c", true);
+        Atom c1 = Atom.aromatic("c");
+        Atom c2 = Atom.aromatic("c");
         Molecule molecule = new Molecule.Builder()
             .addAtom(c1)
             .addAtom(c2)

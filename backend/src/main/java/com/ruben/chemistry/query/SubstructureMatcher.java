@@ -2,7 +2,6 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
-import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
@@ -37,7 +36,7 @@ public final class SubstructureMatcher
         List<Match> matches = new ArrayList<>();
         if (query.atomCount() > 0)
         {
-            search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), matches);
+            search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), matches, false, QuerySymmetry.NONE);
         }
         return matches;
     }
@@ -53,21 +52,44 @@ public final class SubstructureMatcher
      */
     public List<Match> findMatches(Query query, QueryAtom queryAtom, Atom anchor)
     {
+        List<Match> matches = new ArrayList<>();
+        searchFrom(query, queryAtom, anchor, matches, false);
+        return matches;
+    }
+
+    /**
+     * Runs an anchored search.
+     *
+     * @param query the pattern to search for
+     * @param queryAtom a position in {@code query}, by reference identity
+     * @param anchor the real atom {@code queryAtom} must bind to
+     * @param matches collects the matches found
+     * @param firstOnly whether to stop as soon as one match is found
+     * @return {@code true} if a match was found
+     * @throws IllegalArgumentException if {@code queryAtom} is not part of {@code query}
+     */
+    private boolean searchFrom(Query query, QueryAtom queryAtom, Atom anchor, List<Match> matches, boolean firstOnly)
+    {
         // bondsOf validates queryAtom is actually part of query, even one with no bonds at all
         query.bondsOf(queryAtom);
 
-        List<Match> matches = new ArrayList<>();
         // check the anchor is valid
-        if (queryAtom.predicate().matches(molecule, anchor))
+        if (!queryAtom.predicate().matches(molecule, anchor))
         {
-            // insert into maps, so we explore from this atom rather than a random one
-            Map<QueryAtom, Atom> assignment = new IdentityHashMap<>();
-            Map<Atom, QueryAtom> reverse = new IdentityHashMap<>();
-            assignment.put(queryAtom, anchor);
-            reverse.put(anchor, queryAtom);
-            search(query, assignment, reverse, matches);
+            return false;
         }
-        return matches;
+
+        // insert into maps, so we explore from this atom rather than a random one
+        Map<QueryAtom, Atom> assignment = new IdentityHashMap<>();
+        Map<Atom, QueryAtom> reverse = new IdentityHashMap<>();
+        assignment.put(queryAtom, anchor);
+        reverse.put(anchor, queryAtom);
+
+        if (!satisfiesStereoConstraints(query, queryAtom, assignment))
+        {
+            return false;
+        }
+        return search(query, assignment, reverse, matches, firstOnly, QuerySymmetry.NONE);
     }
 
     /**
@@ -79,7 +101,8 @@ public final class SubstructureMatcher
      */
     public boolean matches(Query query, QueryAtom queryAtom, Atom anchor)
     {
-        return !findMatches(query, queryAtom, anchor).isEmpty();
+        // only need one match
+        return searchFrom(query, queryAtom, anchor, new ArrayList<>(1), true);
     }
 
     /**
@@ -91,10 +114,15 @@ public final class SubstructureMatcher
      */
     public List<Match> findDistinctMatches(Query query)
     {
-        // TODO better to avoid duplicates in the search itself?
+        List<Match> matches = new ArrayList<>();
+        if (query.atomCount() > 0)
+        {
+            search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), matches, false, QuerySymmetry.of(query, molecule));
+        }
+
         List<Match> distinct = new ArrayList<>();
         Set<Set<Atom>> seenAtomSets = new HashSet<>();
-        for (Match match : findMatches(query))
+        for (Match match : matches)
         {
             if (seenAtomSets.add(match.atoms()))
             {
@@ -110,19 +138,38 @@ public final class SubstructureMatcher
      */
     public boolean matches(Query query)
     {
-        return !findMatches(query).isEmpty();
+        if (query.atomCount() == 0)
+        {
+            return false;
+        }
+        return search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), new ArrayList<>(1), true, QuerySymmetry.NONE);
     }
 
-    private void search(Query query, Map<QueryAtom, Atom> assignment, Map<Atom, QueryAtom> reverse, List<Match> matches)
+    /**
+     * Extends {@code assignment} by one query atom in every way the molecule allows.
+     * This recurses and collects every complete assignment that also satisfies the query's  stereochemistry.
+     *
+     * @param query the pattern to search for
+     * @param assignment the real atom each placed query atom is currently bound to
+     * @param reverse {@code assignment} inverted, so a candidate already in use is cheap to spot
+     * @param matches collects the matches found
+     * @param firstOnly whether to unwind as soon as one match is found
+     * @return {@code true} if the search should stop
+     */
+    private boolean search(
+            Query query,
+            Map<QueryAtom, Atom> assignment,
+            Map<Atom, QueryAtom> reverse,
+            List<Match> matches,
+            boolean firstOnly,
+            QuerySymmetry symmetry)
     {
         if (assignment.size() == query.atomCount())
         {
-            // every query atom is mapped: a full candidate assignment, so now all that's left is stereochemistry
-            if (satisfiesStereoConstraints(query, assignment))
-            {
-                matches.add(new Match(IdentityMap.copyOf(assignment), molecule));
-            }
-            return;
+            // every query atom is mapped, and each stereochemistry requirement was checked as the
+            // placement deciding it was made, so nothing is left to reject this assignment
+            matches.add(new Match(IdentityMap.copyOf(assignment), molecule));
+            return firstOnly;
         }
 
         // pick the next query atom to place, and only try real atoms that could plausibly match it
@@ -141,13 +188,24 @@ public final class SubstructureMatcher
             // tentatively extend the assignment with this candidate and recurse
             assignment.put(next, candidate);
             reverse.put(candidate, next);
+            symmetry.bind(next, candidate);
 
-            search(query, assignment, reverse, matches);
+            // only care about the first match if we found a valid structure if we don't want all matches
+            boolean stop = satisfiesStereoConstraints(query, next, assignment)
+                && symmetry.comesFirst()
+                && search(query, assignment, reverse, matches, firstOnly, symmetry);
 
             // backtrack: undo the assignment so the next candidate starts clean
             assignment.remove(next);
             reverse.remove(candidate);
+            symmetry.unbind(next);
+
+            if (stop)
+            {
+                return true;
+            }
         }
+        return false;
     }
 
     /**
@@ -228,29 +286,50 @@ public final class SubstructureMatcher
     }
 
     /**
-     * @return {@code true} if every chirality and double bond stereo requirement {@code query} declares is satisfied
+     * Checks the stereochemistry requirements that binding one position has decided. Each is
+     * checked once per search path, as the last position it reads is placed, which is equivalent
+     * to checking it on every complete assignment below - see {@link QueryStereo}.
+     *
+     * @param query the pattern being searched for
+     * @param placed the position just bound in {@code assignment}
+     * @param assignment the real atom each placed query atom is currently bound to
+     * @return {@code true} if every requirement {@code placed} has decided is satisfied
      */
-    private boolean satisfiesStereoConstraints(Query query, Map<QueryAtom, Atom> assignment)
+    private boolean satisfiesStereoConstraints(Query query, QueryAtom placed, Map<QueryAtom, Atom> assignment)
     {
-        // check each declared stereocentre by reprojecting it onto the real atoms the
-        // matched neighbours ended up as, same as Molecule#chiralityOf does for any other order
-        boolean chiralityOk = query.atoms().stream()
-            .allMatch(atom -> query.chiralityOf(atom).map(required -> chiralityMatches(query, atom, assignment, required)).orElse(true));
-        // same reprojection, but for declared double bond stereo requirements
-        boolean doubleBondStereoOk = query.bonds().stream()
-            .allMatch(bond -> query.doubleBondStereoOf(bond).map(required -> doubleBondStereoMatches(query, bond, assignment, required)).orElse(true));
-        return chiralityOk && doubleBondStereoOk;
+        for (QueryStereo.Constraint constraint : query.stereo().reading(placed))
+        {
+            if (!constraint.isDecidable(assignment))
+            {
+                continue;
+            }
+
+            // reproject the real stereochemistry onto the real atoms the matched positions ended up
+            // as, the same way Molecule#chiralityOf does for any other neighbour order
+            boolean satisfied = switch (constraint)
+            {
+                case QueryStereo.ChiralityConstraint chirality ->
+                    chiralityMatches(query, chirality.stereocentre(), assignment, chirality.declared());
+                case QueryStereo.DoubleBondConstraint doubleBond ->
+                    doubleBondStereoMatches(query, doubleBond.stereoBond(), assignment, doubleBond.declared());
+            };
+            if (!satisfied)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
-     * @return {@code true} if the real atom {@code queryAtom} was mapped to has chirality {@code required}
+     * @return {@code true} if the real atom {@code queryAtom} was mapped to has the chirality {@code declared} requires
      */
-    private boolean chiralityMatches(Query query, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment, Chirality required)
+    private boolean chiralityMatches(Query query, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment, Query.DeclaredChirality declared)
     {
         Atom realAtom = assignment.get(queryAtom);
 
         // a pattern counting an implicit hydrogen only fits an atom that has one, and vice versa
-        boolean includesImplicitHydrogen = query.chiralityIncludesImplicitHydrogen(queryAtom);
+        boolean includesImplicitHydrogen = declared.includesImplicitHydrogen();
         if (includesImplicitHydrogen != (realAtom.hydrogenCount().orElse(0) > 0))
         {
             return false;
@@ -271,7 +350,7 @@ public final class SubstructureMatcher
         {
             return false;
         }
-        return molecule.chiralityOf(realAtom, realOrder).filter(actual -> actual == required).isPresent();
+        return molecule.chiralityOf(realAtom, realOrder).filter(actual -> actual == declared.chirality()).isPresent();
     }
 
     /**
@@ -312,17 +391,19 @@ public final class SubstructureMatcher
     }
 
     /**
-     * @return the real bond corresponding to {@code queryAtom}'s default reference
-     *     substituent (its first other query bond, excluding {@code queryBond} itself), or
-     *     {@code null} if it has none
+     * @return the real bond corresponding to {@code queryAtom}'s default reference substituent, as
+     *     {@link Query#referenceBondOf} names it, or {@code null} if it has none
      */
     private Bond defaultReferenceBond(Query query, QueryBond queryBond, QueryAtom queryAtom, Map<QueryAtom, Atom> assignment)
     {
+        QueryBond reference = query.referenceBondOf(queryBond, queryAtom).orElse(null);
+        if (reference == null)
+        {
+            return null;
+        }
+
         Atom realAtom = assignment.get(queryAtom);
-        return query.bondsOf(queryAtom).stream()
-            .filter(candidate -> candidate != queryBond)
-            .findFirst()
-            .map(candidate -> molecule.bondBetween(realAtom, assignment.get(candidate.getOther(queryAtom))).orElseThrow())
-            .orElse(null);
+        Atom realNeighbour = assignment.get(reference.getOther(queryAtom));
+        return molecule.bondBetween(realAtom, realNeighbour).orElseThrow();
     }
 }

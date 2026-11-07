@@ -29,19 +29,18 @@ public record Atom(
      */
     public static Atom organic(String element)
     {
-        return organic(element, false);
+        return new Builder(element).build();
     }
 
     /**
-     * Creates an atom with no charge, isotope, or atom class, and an implicit hydrogen count.
+     * Creates an aromatic atom with no charge, isotope, or atom class, and an implicit hydrogen count.
      *
      * @param element the canonical element symbol
-     * @param aromatic whether this atom is aromatic
      * @return the built atom
      */
-    public static Atom organic(String element, boolean aromatic)
+    public static Atom aromatic(String element)
     {
-        return new Atom(element, aromatic, 0, OptionalInt.empty(), OptionalInt.empty(), OptionalInt.empty());
+        return new Builder(element).aromatic(true).build();
     }
 
     /**

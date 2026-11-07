@@ -2,6 +2,9 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.util.CachedFunction;
+import com.ruben.chemistry.util.CachedValue;
+import com.ruben.chemistry.util.IdentityMap;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
@@ -11,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * A SMARTS substructure pattern: a graph of {@link QueryAtom} positions connected by
@@ -21,9 +26,11 @@ public final class Query
 {
     private final List<QueryAtom> atoms;
     private final List<QueryBond> bonds;
-    private final Map<QueryAtom, List<QueryBond>> incidentBonds;
+    private final Supplier<Map<QueryAtom, List<QueryBond>>> incidentBonds;
+    private final Function<QueryAtom, Map<QueryAtom, QueryBond>> bondsByNeighbour = CachedFunction.byIdentity(this::buildBondsByNeighbour);
     private final Map<QueryAtom, DeclaredChirality> chiralityByAtom;
     private final Map<QueryBond, DoubleBondStereo> doubleBondStereoByBond;
+    private final Supplier<QueryStereo> stereo = new CachedValue<>(() -> QueryStereo.of(this));
 
     /**
      * Creates a query from already-built atom and bond lists.
@@ -37,9 +44,9 @@ public final class Query
     {
         this.atoms = List.copyOf(atoms);
         this.bonds = List.copyOf(bonds);
-        this.incidentBonds = buildIncidentBonds(this.atoms, this.bonds);
-        this.chiralityByAtom = new IdentityHashMap<>(chirality);
-        this.doubleBondStereoByBond = new IdentityHashMap<>(doubleBondStereo);
+        this.incidentBonds = new CachedValue<>(() -> buildIncidentBonds(this.atoms, this.bonds));
+        this.chiralityByAtom = IdentityMap.copyOf(chirality);
+        this.doubleBondStereoByBond = IdentityMap.copyOf(doubleBondStereo);
     }
 
     /**
@@ -84,7 +91,7 @@ public final class Query
      */
     public List<QueryBond> bondsOf(QueryAtom atom)
     {
-        List<QueryBond> result = incidentBonds.get(atom);
+        List<QueryBond> result = incidentBonds.get().get(atom);
         if (result == null)
         {
             throw new IllegalArgumentException("Query atom is not part of this query: " + atom);
@@ -100,7 +107,23 @@ public final class Query
      */
     public Optional<QueryBond> bondBetween(QueryAtom first, QueryAtom second)
     {
-        return bondsOf(first).stream().filter(bond -> bond.getOther(first) == second).findFirst();
+        return Optional.ofNullable(bondsByNeighbour.apply(first).get(second));
+    }
+
+    /**
+     * @param atom an atom position of this query, by reference identity
+     * @return every bonded neighbour position, mapped against the bond position between them
+     * @throws IllegalArgumentException if {@code atom} is not part of this query
+     */
+    private Map<QueryAtom, QueryBond> buildBondsByNeighbour(QueryAtom atom)
+    {
+        Map<QueryAtom, QueryBond> byNeighbour = new IdentityHashMap<>();
+        for (QueryBond bond : bondsOf(atom))
+        {
+            // putIfAbsent so a repeated pair resolves to the same bond a scan of bondsOf would find
+            byNeighbour.putIfAbsent(bond.getOther(atom), bond);
+        }
+        return byNeighbour;
     }
 
     /**
@@ -135,10 +158,38 @@ public final class Query
      */
     private void requireAtom(QueryAtom atom)
     {
-        if (!incidentBonds.containsKey(atom))
+        if (!incidentBonds.get().containsKey(atom))
         {
             throw new IllegalArgumentException("Query atom is not part of this query: " + atom);
         }
+    }
+
+    /**
+     * Returns only the atom positions that declare a chirality requirement.
+     *
+     * @return each stereocentre's declared chirality, keyed by atom reference identity
+     */
+    Map<QueryAtom, DeclaredChirality> declaredChirality()
+    {
+        return chiralityByAtom;
+    }
+
+    /**
+     * Returns only the bond positions that declare a stereo configuration requirement.
+     *
+     * @return each stereo bond's declared configuration, relative to the references described by {@link #doubleBondStereoOf}
+     */
+    Map<QueryBond, DoubleBondStereo> declaredDoubleBondStereo()
+    {
+        return doubleBondStereoByBond;
+    }
+
+    /**
+     * @return query's declared stereochemistry requirements.
+     */
+    QueryStereo stereo()
+    {
+        return stereo.get();
     }
 
     /**
@@ -154,14 +205,35 @@ public final class Query
      *
      * @param bond a bond position of this query, by reference identity
      * @return the declared configuration, relative to each endpoint's default reference
-     *     substituent (the first other bond in {@link #bondsOf} insertion order), or empty
-     *     if none was declared
+     *     substituent (the first other bond in {@link #bondsOf} insertion order), or empty if none
      * @throws IllegalArgumentException if {@code bond} is not part of this query
      */
     public Optional<DoubleBondStereo> doubleBondStereoOf(QueryBond bond)
     {
         requireBond(bond);
         return Optional.ofNullable(doubleBondStereoByBond.get(bond));
+    }
+
+    /**
+     * Returns the bond position to an endpoint's default reference substituent, the one a
+     * configuration declared on {@code bond} is measured against at that end.
+     *
+     * @param bond a bond position of this query, by reference identity
+     * @param endpoint one of {@code bond}'s endpoints, by reference identity
+     * @return the first of {@code endpoint}'s bonds in {@link #bondsOf} order other than
+     *     {@code bond} itself, or empty if it has none
+     * @throws IllegalArgumentException if {@code endpoint} is not part of this query
+     */
+    Optional<QueryBond> referenceBondOf(QueryBond bond, QueryAtom endpoint)
+    {
+        for (QueryBond candidate : bondsOf(endpoint))
+        {
+            if (candidate != bond)
+            {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -218,6 +290,19 @@ public final class Query
         {
             added.add(atom);
             atoms.add(atom);
+            return this;
+        }
+
+        /**
+         * @param atoms the atom positions to add
+         * @return this builder, for chaining
+         */
+        public Builder addAtoms(QueryAtom... atoms)
+        {
+            for (QueryAtom atom : atoms)
+            {
+                addAtom(atom);
+            }
             return this;
         }
 

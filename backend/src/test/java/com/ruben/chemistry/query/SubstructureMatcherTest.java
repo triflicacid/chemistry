@@ -5,10 +5,15 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.smarts.SmartsParser;
 import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,8 +30,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.order(BondOrder.SINGLE))
             .build();
 
@@ -67,8 +71,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("O"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("O"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.any())
             .build();
 
@@ -97,16 +100,14 @@ class SubstructureMatcherTest
         QueryAtom a = new QueryAtom(AtomPredicates.any());
         QueryAtom b = new QueryAtom(AtomPredicates.any());
         Query ringBond = new Query.Builder()
-            .addAtom(a)
-            .addAtom(b)
+            .addAtoms(a, b)
             .addBond(a, b, BondPredicates.ringBond())
             .build();
 
         QueryAtom c = new QueryAtom(AtomPredicates.any());
         QueryAtom d = new QueryAtom(AtomPredicates.any());
         Query chainBond = new Query.Builder()
-            .addAtom(c)
-            .addAtom(d)
+            .addAtoms(c, d)
             .addBond(c, d, BondPredicates.chainBond())
             .build();
 
@@ -130,7 +131,7 @@ class SubstructureMatcherTest
         // Br and N swapped relative to the real [N, Br, Cl, F] order - a single
         // transposition, so the query must declare the flip of the real value to match
         Query matching = new Query.Builder()
-            .addAtom(qBr).addAtom(qC).addAtom(qN).addAtom(qCl).addAtom(qF)
+            .addAtoms(qBr, qC, qN, qCl, qF)
             .addBond(qC, qBr, BondPredicates.any())
             .addBond(qC, qN, BondPredicates.any())
             .addBond(qC, qCl, BondPredicates.any())
@@ -140,7 +141,7 @@ class SubstructureMatcherTest
         assertThat(new SubstructureMatcher(molecule).findMatches(matching)).hasSize(1);
 
         Query nonMatching = new Query.Builder()
-            .addAtom(qBr).addAtom(qC).addAtom(qN).addAtom(qCl).addAtom(qF)
+            .addAtoms(qBr, qC, qN, qCl, qF)
             .addBond(qC, qBr, BondPredicates.any())
             .addBond(qC, qN, BondPredicates.any())
             .addBond(qC, qCl, BondPredicates.any())
@@ -166,7 +167,7 @@ class SubstructureMatcherTest
         // qBr added as Ca's reference bond before qCl, the opposite of the real molecule's
         // default (Cl), so the query must declare the flip of the real value to match
         Query matching = new Query.Builder()
-            .addAtom(qCa).addAtom(qBr).addAtom(qCl).addAtom(qCb).addAtom(qF)
+            .addAtoms(qCa, qBr, qCl, qCb, qF)
             .addBond(qCa, qBr, BondPredicates.any())
             .addBond(qCa, qCl, BondPredicates.any())
             .addBond(qCa, qCb, BondPredicates.order(BondOrder.DOUBLE))
@@ -176,7 +177,7 @@ class SubstructureMatcherTest
         assertThat(new SubstructureMatcher(molecule).findMatches(matching)).hasSize(1);
 
         Query nonMatching = new Query.Builder()
-            .addAtom(qCa).addAtom(qBr).addAtom(qCl).addAtom(qCb).addAtom(qF)
+            .addAtoms(qCa, qBr, qCl, qCb, qF)
             .addBond(qCa, qBr, BondPredicates.any())
             .addBond(qCa, qCl, BondPredicates.any())
             .addBond(qCa, qCb, BondPredicates.order(BondOrder.DOUBLE))
@@ -224,8 +225,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.order(BondOrder.SINGLE))
             .build();
 
@@ -246,8 +246,7 @@ class SubstructureMatcherTest
         QueryAtom qc = new QueryAtom(AtomPredicates.any());
         QueryAtom qo = new QueryAtom(AtomPredicates.element("O"));
         Query query = new Query.Builder()
-            .addAtom(qc)
-            .addAtom(qo)
+            .addAtoms(qc, qo)
             .addBond(qc, qo, BondPredicates.order(BondOrder.DOUBLE))
             .build();
 
@@ -266,8 +265,7 @@ class SubstructureMatcherTest
         QueryAtom qo = new QueryAtom(AtomPredicates.element("O"));
         QueryAtom qAny = new QueryAtom(AtomPredicates.any());
         Query query = new Query.Builder()
-            .addAtom(qo)
-            .addAtom(qAny)
+            .addAtoms(qo, qAny)
             .addBond(qo, qAny, BondPredicates.any())
             .build();
 
@@ -296,8 +294,7 @@ class SubstructureMatcherTest
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
+            .addAtoms(first, second)
             .addBond(first, second, BondPredicates.any())
             .build();
 
@@ -319,9 +316,7 @@ class SubstructureMatcherTest
         QueryAtom second = new QueryAtom(AtomPredicates.any());
         QueryAtom third = new QueryAtom(AtomPredicates.any());
         Query query = new Query.Builder()
-            .addAtom(first)
-            .addAtom(second)
-            .addAtom(third)
+            .addAtoms(first, second, third)
             .addBond(first, second, BondPredicates.any())
             .addBond(second, third, BondPredicates.any())
             .build();
@@ -331,6 +326,223 @@ class SubstructureMatcherTest
 
         assertThat(substructure.atomCount()).isEqualTo(3);
         assertThat(substructure.bondCount()).isEqualTo(3); // the ring-closing bond is included too
+    }
+
+    @Test
+    void every_declared_stereocentre_must_be_satisfied__not_just_one_of_them()
+    {
+        // two adjacent fully substituted stereocentres, each stored ANTICLOCKWISE relative to
+        // its own real bond order: [N, Br, Cl, Cb] for Ca and [Ca, F, I, O] for Cb
+        Molecule molecule = new SmilesParser("N[C@](Br)(Cl)[C@](F)(I)O").parse();
+
+        QueryAtom qN = new QueryAtom(AtomPredicates.element("N"));
+        QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qBr = new QueryAtom(AtomPredicates.element("Br"));
+        QueryAtom qCl = new QueryAtom(AtomPredicates.element("Cl"));
+        QueryAtom qCb = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qF = new QueryAtom(AtomPredicates.element("F"));
+        QueryAtom qI = new QueryAtom(AtomPredicates.element("I"));
+        QueryAtom qO = new QueryAtom(AtomPredicates.element("O"));
+
+        // bonds added in each centre's real order, so no reprojection needed
+        Query.Builder skeleton = new Query.Builder()
+            .addAtoms(qN, qCa, qBr, qCl, qCb, qF, qI, qO)
+            .addBond(qCa, qN, BondPredicates.any())
+            .addBond(qCa, qBr, BondPredicates.any())
+            .addBond(qCa, qCl, BondPredicates.any())
+            .addBond(qCa, qCb, BondPredicates.any())
+            .addBond(qCb, qF, BondPredicates.any())
+            .addBond(qCb, qI, BondPredicates.any())
+            .addBond(qCb, qO, BondPredicates.any());
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.findMatches(skeleton
+            .setChirality(qCa, Chirality.ANTICLOCKWISE)
+            .setChirality(qCb, Chirality.ANTICLOCKWISE)
+            .build())).hasSize(1);
+
+        assertThat(matcher.findMatches(skeleton
+            .setChirality(qCa, Chirality.CLOCKWISE)
+            .setChirality(qCb, Chirality.ANTICLOCKWISE)
+            .build())).isEmpty();
+
+        assertThat(matcher.findMatches(skeleton
+            .setChirality(qCa, Chirality.ANTICLOCKWISE)
+            .setChirality(qCb, Chirality.CLOCKWISE)
+            .build())).isEmpty();
+    }
+
+    @Test
+    void a_double_bond_stereo_requirement_is_unsatisfied_when_an_endpoint_has_no_reference_substituent()
+    {
+        Molecule molecule = new SmilesParser("C/C=C/C").parse();
+
+        QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qCb = new QueryAtom(AtomPredicates.element("C"));
+        Query.Builder skeleton = new Query.Builder()
+            .addAtoms(qC, qCa, qCb)
+            .addBond(qC, qCa, BondPredicates.any())
+            .addBond(qCa, qCb, BondPredicates.order(BondOrder.DOUBLE));
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.findMatches(skeleton.build())).isNotEmpty();
+        assertThat(matcher.findMatches(skeleton
+            .setDoubleBondStereo(qCa, qCb, DoubleBondStereo.OPPOSITE_SIDE) // missing second substituent, so no reference
+            .build())).isEmpty();
+    }
+
+    @Test
+    void matches_stops_at_the_first_match_while_findMatches_enumerates_them_all()
+    {
+        // benzene: symmetric, so finds 12 matches
+        Molecule benzene = new SmilesParser("c1ccccc1").parse();
+
+        AtomicInteger predicateCalls = new AtomicInteger();
+        AtomPredicate countedAromaticCarbon = (molecule, atom) ->
+        {
+            predicateCalls.incrementAndGet();
+            return AtomPredicates.aromatic("C").matches(molecule, atom);
+        };
+
+        List<QueryAtom> ring = new ArrayList<>();
+        Query.Builder builder = new Query.Builder();
+        for (int i = 0; i < 6; i++)
+        {
+            QueryAtom atom = new QueryAtom(countedAromaticCarbon);
+            ring.add(atom);
+            builder.addAtom(atom);
+        }
+        for (int i = 0; i < 6; i++)
+        {
+            builder.addBond(ring.get(i), ring.get((i + 1) % 6), BondPredicates.any());
+        }
+        Query query = builder.build();
+        SubstructureMatcher matcher = new SubstructureMatcher(benzene);
+
+        predicateCalls.set(0);
+        assertThat(matcher.findMatches(query)).hasSize(12);
+        int whenEnumerating = predicateCalls.get();
+
+        predicateCalls.set(0);
+        assertThat(matcher.matches(query)).isTrue();
+        int whenStoppingEarly = predicateCalls.get();
+
+        assertThat(whenStoppingEarly).isLessThan(whenEnumerating);
+    }
+
+    @Test
+    void findDistinctMatches_agrees_with_enumerating_every_match_and_collapsing_afterwards()
+    {
+        // findDistinctMatches prunes symmetric mappings mid-search, as an optimisation over
+        // enumerating every match and collapsing them by matched atom set afterwards.
+        // This test demonstrated the two agreeing, and therefore that the optimisation is correct.
+        String[] molecules =
+        {
+            "c1ccccc1", "c1ccc2ccccc2c1", "c1ccc2c(c1)ccc1c2cccc1", "Cc1ccc(C)cc1",
+            "C1CCCCC1C1CCCCC1", "CC(C)(C)C", "CC(C)CC(C)C", "ClC(Cl)(Cl)Cl",
+            "CC(=O)Nc1ccc(O)cc1", "CCCCCCCC", "OC(=O)c1ccccc1C(=O)O", "C1CC2CCC1CC2",
+            "N[C@](Br)(Cl)F", "C/C=C/C", "C[C@H](N)C(=O)O", "OCCO",
+        };
+        String[] patterns =
+        {
+            "C", "*", "CC", "C~C", "CCC", "ccc", "c1ccccc1", "C1CCCCC1", "CC(C)C",
+            "CC(C)(C)C", "[R]", "[R][R][R]", "[#6][#6][#6]", "C(=O)O", "*(*)(*)*",
+            "C=C", "[D3]", "c1ccc2ccccc2c1", "OCC",
+        };
+
+        for (String smiles : molecules)
+        {
+            Molecule molecule = new SmilesParser(smiles).parse();
+            for (String smarts : patterns)
+            {
+                Query query = new SmartsParser(smarts).parseQuery();
+                SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+                List<Match> distinct = matcher.findDistinctMatches(query);
+                Set<Set<Atom>> pruned = atomSets(distinct);
+
+                assertThat(pruned).as(smiles + " / " + smarts).isEqualTo(atomSets(matcher.findMatches(query)));
+                // one match per atom set, not merely the right number of them
+                assertThat(distinct).as(smiles + " / " + smarts).hasSameSizeAs(pruned);
+            }
+        }
+    }
+
+    @Test
+    void findDistinctMatches_does_not_prune_a_match_only_a_permuted_mapping_satisfies()
+    {
+        // does not prune stereochemistry
+        Molecule molecule = new SmilesParser("N[C@](Br)(Cl)F").parse();
+
+        QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qAny1 = new QueryAtom(AtomPredicates.any());
+        QueryAtom qAny2 = new QueryAtom(AtomPredicates.any());
+        QueryAtom qAny3 = new QueryAtom(AtomPredicates.any());
+        QueryAtom qAny4 = new QueryAtom(AtomPredicates.any());
+        Query query = new Query.Builder()
+            .addAtoms(qC, qAny1, qAny2, qAny3, qAny4)
+            .addBond(qC, qAny1, BondPredicates.any())
+            .addBond(qC, qAny2, BondPredicates.any())
+            .addBond(qC, qAny3, BondPredicates.any())
+            .addBond(qC, qAny4, BondPredicates.any())
+            .setChirality(qC, Chirality.CLOCKWISE)
+            .build();
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(atomSets(matcher.findMatches(query))).hasSize(1);
+        assertThat(matcher.findDistinctMatches(query)).hasSize(1);
+    }
+
+    @Test
+    void an_unsatisfiable_chirality_is_rejected_before_the_positions_it_does_not_read_are_tried()
+    {
+        // CN[C@](Br)(Cl)F: stored ANTICLOCKWISE relative to the real bond order [N, Br, Cl, F]
+        Molecule molecule = new SmilesParser("CN[C@](Br)(Cl)F").parse();
+
+        AtomicInteger trailingCalls = new AtomicInteger();
+        AtomPredicate countedCarbon = (counted, atom) ->
+        {
+            trailingCalls.incrementAndGet();
+            return AtomPredicates.element("C").matches(counted, atom);
+        };
+
+        QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qN = new QueryAtom(AtomPredicates.element("N"));
+        QueryAtom qBr = new QueryAtom(AtomPredicates.element("Br"));
+        QueryAtom qCl = new QueryAtom(AtomPredicates.element("Cl"));
+        QueryAtom qF = new QueryAtom(AtomPredicates.element("F"));
+        QueryAtom qTrailing = new QueryAtom(countedCarbon);
+
+        // bonds added in the centre's real order, so no reprojection
+        Query.Builder skeleton = new Query.Builder()
+            .addAtoms(qC, qN, qBr, qCl, qF, qTrailing)
+            .addBond(qC, qN, BondPredicates.any())
+            .addBond(qC, qBr, BondPredicates.any())
+            .addBond(qC, qCl, BondPredicates.any())
+            .addBond(qC, qF, BondPredicates.any())
+            .addBond(qN, qTrailing, BondPredicates.any());
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(matcher.matches(skeleton.setChirality(qC, Chirality.ANTICLOCKWISE).build())).isTrue();
+        assertThat(trailingCalls.get()).isPositive();
+
+        trailingCalls.set(0);
+        assertThat(matcher.matches(skeleton.setChirality(qC, Chirality.CLOCKWISE).build())).isFalse();
+
+        // the declared chirality is settled once the centre and its four substituents are placed,
+        // so the branch dies without the trailing position ever being tried
+        assertThat(trailingCalls.get()).isZero();
+    }
+
+    private static Set<Set<Atom>> atomSets(List<Match> matches)
+    {
+        Set<Set<Atom>> sets = new HashSet<>();
+        matches.forEach(match -> sets.add(match.atoms()));
+        return sets;
     }
 
     private static Atom nthAtom(Molecule molecule, int index)

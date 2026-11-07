@@ -421,7 +421,7 @@ class AtomExpressionParserTest
         {
             QueryAtom anchor = new QueryAtom(AtomPredicates.element("C"));
             QueryAtom neighbour = new QueryAtom(AtomPredicates.element("C"));
-            return new Query.Builder().addAtom(anchor).addAtom(neighbour).addBond(anchor, neighbour, BondPredicates.any()).build();
+            return new Query.Builder().addAtoms(anchor, neighbour).addBond(anchor, neighbour, BondPredicates.any()).build();
         }
 
         @Test

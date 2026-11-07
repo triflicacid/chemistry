@@ -456,8 +456,7 @@ class AtomPredicatesTest
             QueryAtom subCarbon = new QueryAtom(AtomPredicates.element("C"));
             QueryAtom subOxygen = new QueryAtom(AtomPredicates.element("O"));
             Query subPattern = new Query.Builder()
-                .addAtom(subCarbon)
-                .addAtom(subOxygen)
+                .addAtoms(subCarbon, subOxygen)
                 .addBond(subCarbon, subOxygen, BondPredicates.order(BondOrder.DOUBLE))
                 .build();
 
@@ -510,7 +509,7 @@ class AtomPredicatesTest
         void does_not_match_a_different_aromaticity()
         {
             Atom template = Atom.organic("C");
-            Atom aromaticCarbon = Atom.organic("C", true);
+            Atom aromaticCarbon = Atom.aromatic("C");
             Molecule molecule = new Molecule.Builder().addAtom(aromaticCarbon).build();
 
             assertThat(AtomPredicates.exactly(template).matches(molecule, aromaticCarbon)).isFalse();
