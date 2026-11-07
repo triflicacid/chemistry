@@ -5,11 +5,14 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.smarts.SmartsParser;
 import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -428,6 +431,76 @@ class SubstructureMatcherTest
         int whenStoppingEarly = predicateCalls.get();
 
         assertThat(whenStoppingEarly).isLessThan(whenEnumerating);
+    }
+
+    @Test
+    void findDistinctMatches_agrees_with_enumerating_every_match_and_collapsing_afterwards()
+    {
+        // findDistinctMatches prunes symmetric mappings mid-search, as an optimisation over
+        // enumerating every match and collapsing them by matched atom set afterwards.
+        // This test demonstrated the two agreeing, and therefore that the optimisation is correct.
+        String[] molecules =
+        {
+            "c1ccccc1", "c1ccc2ccccc2c1", "c1ccc2c(c1)ccc1c2cccc1", "Cc1ccc(C)cc1",
+            "C1CCCCC1C1CCCCC1", "CC(C)(C)C", "CC(C)CC(C)C", "ClC(Cl)(Cl)Cl",
+            "CC(=O)Nc1ccc(O)cc1", "CCCCCCCC", "OC(=O)c1ccccc1C(=O)O", "C1CC2CCC1CC2",
+            "N[C@](Br)(Cl)F", "C/C=C/C", "C[C@H](N)C(=O)O", "OCCO",
+        };
+        String[] patterns =
+        {
+            "C", "*", "CC", "C~C", "CCC", "ccc", "c1ccccc1", "C1CCCCC1", "CC(C)C",
+            "CC(C)(C)C", "[R]", "[R][R][R]", "[#6][#6][#6]", "C(=O)O", "*(*)(*)*",
+            "C=C", "[D3]", "c1ccc2ccccc2c1", "OCC",
+        };
+
+        for (String smiles : molecules)
+        {
+            Molecule molecule = new SmilesParser(smiles).parse();
+            for (String smarts : patterns)
+            {
+                Query query = new SmartsParser(smarts).parseQuery();
+                SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+                List<Match> distinct = matcher.findDistinctMatches(query);
+                Set<Set<Atom>> pruned = atomSets(distinct);
+
+                assertThat(pruned).as(smiles + " / " + smarts).isEqualTo(atomSets(matcher.findMatches(query)));
+                // one match per atom set, not merely the right number of them
+                assertThat(distinct).as(smiles + " / " + smarts).hasSameSizeAs(pruned);
+            }
+        }
+    }
+
+    @Test
+    void findDistinctMatches_does_not_prune_a_match_only_a_permuted_mapping_satisfies()
+    {
+        // does not prune stereochemistry
+        Molecule molecule = new SmilesParser("N[C@](Br)(Cl)F").parse();
+
+        QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
+        QueryAtom qAny1 = new QueryAtom(AtomPredicates.any());
+        QueryAtom qAny2 = new QueryAtom(AtomPredicates.any());
+        QueryAtom qAny3 = new QueryAtom(AtomPredicates.any());
+        QueryAtom qAny4 = new QueryAtom(AtomPredicates.any());
+        Query query = new Query.Builder()
+            .addAtoms(qC, qAny1, qAny2, qAny3, qAny4)
+            .addBond(qC, qAny1, BondPredicates.any())
+            .addBond(qC, qAny2, BondPredicates.any())
+            .addBond(qC, qAny3, BondPredicates.any())
+            .addBond(qC, qAny4, BondPredicates.any())
+            .setChirality(qC, Chirality.CLOCKWISE)
+            .build();
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+
+        assertThat(atomSets(matcher.findMatches(query))).hasSize(1);
+        assertThat(matcher.findDistinctMatches(query)).hasSize(1);
+    }
+
+    private static Set<Set<Atom>> atomSets(List<Match> matches)
+    {
+        Set<Set<Atom>> sets = new HashSet<>();
+        matches.forEach(match -> sets.add(match.atoms()));
+        return sets;
     }
 
     private static Atom nthAtom(Molecule molecule, int index)

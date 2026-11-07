@@ -36,7 +36,7 @@ public final class SubstructureMatcher
         List<Match> matches = new ArrayList<>();
         if (query.atomCount() > 0)
         {
-            search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), matches, false);
+            search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), matches, false, QuerySymmetry.NONE);
         }
         return matches;
     }
@@ -84,7 +84,7 @@ public final class SubstructureMatcher
         Map<Atom, QueryAtom> reverse = new IdentityHashMap<>();
         assignment.put(queryAtom, anchor);
         reverse.put(anchor, queryAtom);
-        return search(query, assignment, reverse, matches, firstOnly);
+        return search(query, assignment, reverse, matches, firstOnly, QuerySymmetry.NONE);
     }
 
     /**
@@ -109,10 +109,15 @@ public final class SubstructureMatcher
      */
     public List<Match> findDistinctMatches(Query query)
     {
-        // TODO better to avoid duplicates in the search itself?
+        List<Match> matches = new ArrayList<>();
+        if (query.atomCount() > 0)
+        {
+            search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), matches, false, QuerySymmetry.of(query, molecule));
+        }
+
         List<Match> distinct = new ArrayList<>();
         Set<Set<Atom>> seenAtomSets = new HashSet<>();
-        for (Match match : findMatches(query))
+        for (Match match : matches)
         {
             if (seenAtomSets.add(match.atoms()))
             {
@@ -132,7 +137,7 @@ public final class SubstructureMatcher
         {
             return false;
         }
-        return search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), new ArrayList<>(1), true);
+        return search(query, new IdentityHashMap<>(), new IdentityHashMap<>(), new ArrayList<>(1), true, QuerySymmetry.NONE);
     }
 
     /**
@@ -146,7 +151,13 @@ public final class SubstructureMatcher
      * @param firstOnly whether to unwind as soon as one match is found
      * @return {@code true} if the search should stop
      */
-    private boolean search(Query query, Map<QueryAtom, Atom> assignment, Map<Atom, QueryAtom> reverse, List<Match> matches, boolean firstOnly)
+    private boolean search(
+            Query query,
+            Map<QueryAtom, Atom> assignment,
+            Map<Atom, QueryAtom> reverse,
+            List<Match> matches,
+            boolean firstOnly,
+            QuerySymmetry symmetry)
     {
         if (assignment.size() == query.atomCount())
         {
@@ -175,12 +186,15 @@ public final class SubstructureMatcher
             // tentatively extend the assignment with this candidate and recurse
             assignment.put(next, candidate);
             reverse.put(candidate, next);
+            symmetry.bind(next, candidate);
 
-            boolean stop = search(query, assignment, reverse, matches, firstOnly);
+            // a symmetric query maps onto one substructure several ways, only care about the first
+            boolean stop = symmetry.comesFirst() && search(query, assignment, reverse, matches, firstOnly, symmetry);
 
             // backtrack: undo the assignment so the next candidate starts clean
             assignment.remove(next);
             reverse.remove(candidate);
+            symmetry.unbind(next);
 
             if (stop)
             {
