@@ -2,11 +2,11 @@ package com.ruben.chemistry.core;
 
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.Function;
 
 /**
@@ -110,15 +110,21 @@ public final class CanonicalRanker implements Ranker
     private Atom firstTiedAtom(List<Atom> atoms, Map<Atom, Integer> classOf)
     {
         // a class holding more than one atom is a tie, so count the members of each
-        Map<Integer, Integer> countByClass = new TreeMap<>();
+        Map<Integer, Integer> countByClass = new HashMap<>();
         for (Atom atom : atoms)
         {
             countByClass.merge(classOf.get(atom), 1, Integer::sum);
         }
-        return atoms.stream()
-            .filter(atom -> countByClass.get(classOf.get(atom)) > 1)
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException("No tied class remains to split"));
+
+        for (Atom atom : atoms)
+        {
+            if (countByClass.get(classOf.get(atom)) > 1)
+            {
+                return atom;
+            }
+        }
+
+        throw new IllegalStateException("No tied class remains to split");
     }
 
     /**
