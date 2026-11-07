@@ -176,8 +176,7 @@ public final class SmilesParser
 
     /**
      * Converts a chirality marker, interpreted relative to the order this atom's
-     * neighbours are written in, into the fixed order {@link Molecule} stores chirality
-     * relative to (any implicit hydrogen first, then the atom's bonds in {@link Molecule#bondsOf} order).
+     * neighbours are written in, into the fixed order {@link Molecule} stores chirality relative to.
      *
      * @param asWritten the chirality as denoted by the {@code @}/{@code @@} marker
      * @param hydrogenCount this atom's parsed hydrogen count
@@ -187,9 +186,6 @@ public final class SmilesParser
     {
         boolean hasPrecedingAtom = previousAtom != null;
         boolean hasImplicitHydrogen = hydrogenCount.orElse(0) > 0;
-        // a bracket atom's hydrogen counts from where it is written, which is after the atom
-        // this one came from, whereas storage always puts it first: one swap, so one flip.
-        // With no preceding atom the hydrogen is already first in both orders.
         return hasPrecedingAtom && hasImplicitHydrogen ? asWritten.flip() : asWritten;
     }
 

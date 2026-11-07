@@ -39,7 +39,8 @@ public final class Queries
         molecule.bonds().forEach(bond -> builder.addBond(queryAtomOf.get(bond.first()), queryAtomOf.get(bond.second()), BondPredicates.exactly(bond)));
 
         // same chiralities
-        molecule.atoms().forEach(atom -> molecule.chiralityOf(atom).ifPresent(chirality -> builder.setChirality(queryAtomOf.get(atom), chirality)));
+        molecule.atoms().forEach(atom -> molecule.chiralityOf(atom).ifPresent(chirality ->
+            builder.setChirality(queryAtomOf.get(atom), chirality, atom.hydrogenCount().orElse(0) > 0)));
 
         // same stereochemistry
         molecule.bonds().forEach(bond -> molecule.doubleBondStereoOf(bond)

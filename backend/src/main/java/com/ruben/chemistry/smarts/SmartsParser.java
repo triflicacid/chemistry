@@ -2,6 +2,7 @@ package com.ruben.chemistry.smarts;
 
 import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.notation.NotationSymbols;
 import com.ruben.chemistry.notation.StereoTracker;
@@ -196,8 +197,22 @@ public final class SmartsParser
 
         QueryAtom atom = new QueryAtom(result.predicate());
         builder.addAtom(atom);
-        result.chirality().ifPresent(chirality -> builder.setChirality(atom, chirality));
+        result.chirality().ifPresent(chirality -> builder.setChirality(
+            atom, normaliseForStorage(chirality, result.hasImplicitHydrogen()), result.hasImplicitHydrogen()));
         return atom;
+    }
+
+    /**
+     * Converts a chirality marker, interpreted relative to the order this atom's neighbours are
+     * written in, into the fixed order {@link Query} stores chirality relative to.
+     *
+     * @param asWritten the chirality as denoted by the {@code @}/{@code @@} marker
+     * @param hasImplicitHydrogen whether this atom's expression counts an implicit hydrogen
+     * @return the chirality to store on this atom position
+     */
+    private Chirality normaliseForStorage(Chirality asWritten, boolean hasImplicitHydrogen)
+    {
+        return previousAtom != null && hasImplicitHydrogen ? asWritten.flip() : asWritten;
     }
 
     /**

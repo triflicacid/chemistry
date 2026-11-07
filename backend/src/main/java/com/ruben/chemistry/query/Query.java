@@ -22,7 +22,7 @@ public final class Query
     private final List<QueryAtom> atoms;
     private final List<QueryBond> bonds;
     private final Map<QueryAtom, List<QueryBond>> incidentBonds;
-    private final Map<QueryAtom, Chirality> chiralityByAtom;
+    private final Map<QueryAtom, DeclaredChirality> chiralityByAtom;
     private final Map<QueryBond, DoubleBondStereo> doubleBondStereoByBond;
 
     /**
@@ -30,10 +30,10 @@ public final class Query
      *
      * @param atoms the atom positions of the query, in the order they were added
      * @param bonds the bond positions of the query
-     * @param chirality each stereocentre's declared chirality, keyed by atom identity
+     * @param chirality each stereocentre's declared chirality and hydrogen slot, keyed by atom identity
      * @param doubleBondStereo each bond's declared stereo configuration, keyed by bond identity
      */
-    Query(List<QueryAtom> atoms, List<QueryBond> bonds, Map<QueryAtom, Chirality> chirality, Map<QueryBond, DoubleBondStereo> doubleBondStereo)
+    Query(List<QueryAtom> atoms, List<QueryBond> bonds, Map<QueryAtom, DeclaredChirality> chirality, Map<QueryBond, DoubleBondStereo> doubleBondStereo)
     {
         this.atoms = List.copyOf(atoms);
         this.bonds = List.copyOf(bonds);
@@ -107,17 +107,46 @@ public final class Query
      * Returns the declared chirality requirement for a query atom, if any.
      *
      * @param atom an atom position of this query, by reference identity
-     * @return the declared chirality, relative to {@code atom}'s bonds in {@link #bondsOf}
-     *     insertion order, or empty if none was declared
+     * @return the declared chirality
      * @throws IllegalArgumentException if {@code atom} is not part of this query
      */
     public Optional<Chirality> chiralityOf(QueryAtom atom)
+    {
+        requireAtom(atom);
+        return Optional.ofNullable(chiralityByAtom.get(atom)).map(DeclaredChirality::chirality);
+    }
+
+    /**
+     * Returns whether a stereocentre's declared chirality counts an implicit hydrogen among its neighbours,
+     *
+     * @param atom an atom position of this query, by reference identity
+     * @return {@code true} if {@code atom}'s declared chirality counts an implicit hydrogen
+     * @throws IllegalArgumentException if {@code atom} is not part of this query
+     */
+    public boolean chiralityIncludesImplicitHydrogen(QueryAtom atom)
+    {
+        requireAtom(atom);
+        DeclaredChirality declared = chiralityByAtom.get(atom);
+        return declared != null && declared.includesImplicitHydrogen();
+    }
+
+    /**
+     * @throws IllegalArgumentException if {@code atom} is not one of this query's atom positions
+     */
+    private void requireAtom(QueryAtom atom)
     {
         if (!incidentBonds.containsKey(atom))
         {
             throw new IllegalArgumentException("Query atom is not part of this query: " + atom);
         }
-        return Optional.ofNullable(chiralityByAtom.get(atom));
+    }
+
+    /**
+     * @param chirality the declared chirality
+     * @param includesImplicitHydrogen whether an implicit hydrogen is the first of the neighbours
+     */
+    record DeclaredChirality(Chirality chirality, boolean includesImplicitHydrogen)
+    {
     }
 
     /**
@@ -178,7 +207,7 @@ public final class Query
         private final List<QueryAtom> atoms = new ArrayList<>();
         private final List<QueryBond> bonds = new ArrayList<>();
         private final Set<QueryAtom> added = IdentitySet.of();
-        private final Map<QueryAtom, Chirality> chirality = new IdentityHashMap<>();
+        private final Map<QueryAtom, DeclaredChirality> chirality = new IdentityHashMap<>();
         private final Map<QueryBond, DoubleBondStereo> doubleBondStereo = new IdentityHashMap<>();
 
         /**
@@ -218,6 +247,22 @@ public final class Query
          */
         public Builder setChirality(QueryAtom atom, Chirality chirality)
         {
+            return setChirality(atom, chirality, false);
+        }
+
+        /**
+         * Declares a previously added atom position as a stereocentre whose neighbours include an
+         * implicit hydrogen, as {@code [C@H]} writes, held first in the order the chirality is
+         * relative to.
+         *
+         * @param atom a previously added atom position, by reference identity
+         * @param chirality the declared chirality, or {@code null} to remove any previously declared chirality
+         * @param includesImplicitHydrogen whether an implicit hydrogen is the first of {@code atom}'s neighbours
+         * @return this builder, for chaining
+         * @throws IllegalArgumentException if {@code atom} was not added via {@link #addAtom}
+         */
+        public Builder setChirality(QueryAtom atom, Chirality chirality, boolean includesImplicitHydrogen)
+        {
             requireAdded(atom);
             if (chirality == null)
             {
@@ -225,7 +270,7 @@ public final class Query
             }
             else
             {
-                this.chirality.put(atom, chirality);
+                this.chirality.put(atom, new DeclaredChirality(chirality, includesImplicitHydrogen));
             }
             return this;
         }

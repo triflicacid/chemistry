@@ -249,10 +249,22 @@ public final class SubstructureMatcher
     {
         Atom realAtom = assignment.get(queryAtom);
 
-        // build the real bond order corresponding to queryAtom's bonds in query order
-        List<NeighbourReference> realOrder = query.bondsOf(queryAtom).stream()
+        // a pattern counting an implicit hydrogen only fits an atom that has one, and vice versa
+        boolean includesImplicitHydrogen = query.chiralityIncludesImplicitHydrogen(queryAtom);
+        if (includesImplicitHydrogen != (realAtom.hydrogenCount().orElse(0) > 0))
+        {
+            return false;
+        }
+
+        // build the real neighbour order corresponding to the query's own, starting with implicit hydrogen
+        List<NeighbourReference> realOrder = new ArrayList<>();
+        if (includesImplicitHydrogen)
+        {
+            realOrder.add(Molecule.IMPLICIT_HYDROGEN);
+        }
+        query.bondsOf(queryAtom).stream()
             .<NeighbourReference>map(queryBond -> molecule.bondBetween(realAtom, assignment.get(queryBond.getOther(queryAtom))).orElseThrow())
-            .toList();
+            .forEach(realOrder::add);
 
         // the query must specify exactly as many neighbours as the real atom actually has
         if (realOrder.size() != realNeighbourCount(realAtom))

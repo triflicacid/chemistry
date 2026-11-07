@@ -28,8 +28,9 @@ final class AtomExpressionParser
      *
      * @param predicate the predicate its primitives denote
      * @param chirality its declared chirality, if any
+     * @param hasImplicitHydrogen whether it wrote a hydrogen count of at least one
      */
-    public record Result(AtomPredicate predicate, Optional<Chirality> chirality)
+    public record Result(AtomPredicate predicate, Optional<Chirality> chirality, boolean hasImplicitHydrogen)
     {
     }
 
@@ -45,6 +46,7 @@ final class AtomExpressionParser
     private final String source;
     private final SubPatternResolver subPatternResolver;
     private Chirality chirality;
+    private boolean hasImplicitHydrogen;
 
     /**
      * @param cursor a cursor positioned at this bracket atom's first inner token
@@ -70,7 +72,7 @@ final class AtomExpressionParser
         }
 
         AtomPredicate predicate = parseSemiExpression();
-        return new Result(predicate, Optional.ofNullable(chirality));
+        return new Result(predicate, Optional.ofNullable(chirality), hasImplicitHydrogen);
     }
 
     /**
@@ -210,7 +212,10 @@ final class AtomExpressionParser
         // TODO this is what Daylight does, but feels off
         if (text.equals("H"))
         {
-            return countedPrimitive(AtomPredicates::hydrogenCount, 1);
+            int count = hasNumberNext() ? consumeNumber() : 1;
+            // a hydrogen is one of the atom's neighbours (for chirality)
+            hasImplicitHydrogen = count > 0;
+            return AtomPredicates.hydrogenCount(count);
         }
         if (NotationSymbols.isAromaticSymbol(text))
         {

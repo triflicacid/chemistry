@@ -59,4 +59,17 @@ class QueriesTest
         // but an explicitly labelled one requires that exact isotope
         assertThat(new SubstructureMatcher(plain).findMatches(labelledQuery)).isEmpty();
     }
+
+    @Test
+    void a_molecule_converted_to_a_query_matches_a_stereocentre_bearing_an_implicit_hydrogen()
+    {
+        // same constitution, opposite configuration, with the hydrogen as a fourth neighbour
+        Molecule anticlockwise = new SmilesParser("N[C@H](F)Cl").parse();
+        Molecule clockwise = new SmilesParser("N[C@@H](F)Cl").parse();
+
+        Query anticlockwiseQuery = Queries.fromMolecule(anticlockwise);
+
+        assertThat(new SubstructureMatcher(anticlockwise).findMatches(anticlockwiseQuery)).isNotEmpty();
+        assertThat(new SubstructureMatcher(clockwise).findMatches(anticlockwiseQuery)).isEmpty();
+    }
 }

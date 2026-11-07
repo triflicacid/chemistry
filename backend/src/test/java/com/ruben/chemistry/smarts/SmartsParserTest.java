@@ -199,6 +199,55 @@ class SmartsParserTest
 
             assertThat(query.chiralityOf(query.atoms().getFirst())).contains(Chirality.CLOCKWISE);
         }
+
+        @Test
+        void matches_a_stereocentre_whose_every_neighbour_is_bonded()
+        {
+            Molecule target = molecule("[C@](F)(Cl)(Br)I");
+
+            assertThat(new SubstructureMatcher(target).matches(parse("[C@](F)(Cl)(Br)I"))).isTrue();
+            assertThat(new SubstructureMatcher(target).matches(parse("[C@@](F)(Cl)(Br)I"))).isFalse();
+        }
+
+        @Test
+        void matches_a_stereocentre_bearing_an_implicit_hydrogen()
+        {
+            // the hydrogen is one of the four neighbours the parity is measured against
+            Molecule target = molecule("[C@H](F)(Cl)Br");
+
+            assertThat(new SubstructureMatcher(target).matches(parse("[C@H](F)(Cl)Br"))).isTrue();
+            assertThat(new SubstructureMatcher(target).matches(parse("[C@@H](F)(Cl)Br"))).isFalse();
+        }
+
+        @Test
+        void matches_a_hydrogen_bearing_stereocentre_written_after_another_atom()
+        {
+            // the hydrogen is written after the atom the stereocentre came from, so the parity
+            // as written is one swap away from the order it is stored in
+            Molecule target = molecule("CCN[C@H](F)Cl");
+
+            assertThat(new SubstructureMatcher(target).matches(parse("N[C@H](F)Cl"))).isTrue();
+            assertThat(new SubstructureMatcher(target).matches(parse("N[C@@H](F)Cl"))).isFalse();
+        }
+
+        @Test
+        void does_not_match_a_hydrogen_bearing_stereocentre_when_the_pattern_counts_no_hydrogen()
+        {
+            // a parity is an order of four neighbours, and [C@] names only three: it never says
+            // where the hydrogen sits in that order, which is what would decide the parity
+            Molecule target = molecule("[C@H](F)(Cl)Br");
+
+            assertThat(new SubstructureMatcher(target).matches(parse("[C@](F)(Cl)Br"))).isFalse();
+            assertThat(new SubstructureMatcher(target).matches(parse("[C@@](F)(Cl)Br"))).isFalse();
+        }
+
+        @Test
+        void does_not_match_a_stereocentre_without_a_hydrogen_when_the_pattern_counts_one()
+        {
+            Molecule target = molecule("[C@](F)(Cl)(Br)I");
+
+            assertThat(new SubstructureMatcher(target).matches(parse("[C@H](F)(Cl)Br"))).isFalse();
+        }
     }
 
     @Nested
