@@ -30,6 +30,7 @@ public final class Query
     private final Function<QueryAtom, Map<QueryAtom, QueryBond>> bondsByNeighbour = CachedFunction.byIdentity(this::buildBondsByNeighbour);
     private final Map<QueryAtom, DeclaredChirality> chiralityByAtom;
     private final Map<QueryBond, DoubleBondStereo> doubleBondStereoByBond;
+    private final Supplier<QueryStereo> stereo = new CachedValue<>(() -> QueryStereo.of(this));
 
     /**
      * Creates a query from already-built atom and bond lists.
@@ -184,6 +185,14 @@ public final class Query
     }
 
     /**
+     * @return query's declared stereochemistry requirements.
+     */
+    QueryStereo stereo()
+    {
+        return stereo.get();
+    }
+
+    /**
      * @param chirality the declared chirality
      * @param includesImplicitHydrogen whether an implicit hydrogen is the first of the neighbours
      */
@@ -203,6 +212,28 @@ public final class Query
     {
         requireBond(bond);
         return Optional.ofNullable(doubleBondStereoByBond.get(bond));
+    }
+
+    /**
+     * Returns the bond position to an endpoint's default reference substituent, the one a
+     * configuration declared on {@code bond} is measured against at that end.
+     *
+     * @param bond a bond position of this query, by reference identity
+     * @param endpoint one of {@code bond}'s endpoints, by reference identity
+     * @return the first of {@code endpoint}'s bonds in {@link #bondsOf} order other than
+     *     {@code bond} itself, or empty if it has none
+     * @throws IllegalArgumentException if {@code endpoint} is not part of this query
+     */
+    Optional<QueryBond> referenceBondOf(QueryBond bond, QueryAtom endpoint)
+    {
+        for (QueryBond candidate : bondsOf(endpoint))
+        {
+            if (candidate != bond)
+            {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
