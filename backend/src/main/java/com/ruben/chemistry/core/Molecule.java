@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -313,67 +312,133 @@ public final class Molecule
      */
     private Set<Bond> computeRingBonds()
     {
-        Set<Bond> result = IdentitySet.of();
+        Set<Bond> ringBonds = IdentitySet.of();
         Set<Atom> visited = IdentitySet.of();
         Map<Atom, Integer> discoveryTime = new IdentityHashMap<>();
         Map<Atom, Integer> low = new IdentityHashMap<>();
         // numbers atoms in the order they are reached, so a bond leading back to an earlier one can be spotted as closing a cycle
-        AtomicInteger clock = new AtomicInteger();
+        int clock = 0;
 
         // a molecule may be several disconnected fragments, so every atom needs its own search
         for (Atom atom : atoms)
         {
             if (!visited.contains(atom))
             {
-                computeRingBonds(atom, null, result, visited, discoveryTime, low, clock);
+                clock = collectRingBonds(atom, ringBonds, visited, discoveryTime, low, clock);
             }
         }
-        return result;
+        return ringBonds;
     }
 
     /**
      * Searches outwards from an atom, collecting the ring bonds found below it.
      *
-     * @param atom the atom to search from
-     * @param arrivingBond the bond this search arrived by, or {@code null} at the root
+     * @param root the atom to search from
      * @param ringBonds collects the ring bonds found
-     * @param visited the atoms already reached by this or an earlier search
-     * @param discoveryTime when each atom was first reached
-     * @param low the earliest discovery time reachable from each atom's subtree
-     * @param clock the shared visit counter
+     * @param visited the atoms already reached by this or an earlier search, added to in place
+     * @param discoveryTime when each atom was first reached, added to in place
+     * @param low the earliest discovery time reachable from each atom's subtree, added to in place
+     * @param clock the number of atoms reached by earlier searches
+     * @return the number of atoms reached once this search is done
      */
-    private void computeRingBonds(Atom atom, Bond arrivingBond, Set<Bond> ringBonds, Set<Atom> visited, Map<Atom, Integer> discoveryTime, Map<Atom, Integer> low, AtomicInteger clock)
+    private int collectRingBonds(Atom root, Set<Bond> ringBonds, Set<Atom> visited, Map<Atom, Integer> discoveryTime, Map<Atom, Integer> low, int clock)
     {
-        visited.add(atom);
-        discoveryTime.put(atom, clock.get());
-        low.put(atom, clock.get());
-        clock.incrementAndGet();
+        Deque<SearchFrame> stack = new ArrayDeque<>();
+        visited.add(root);
+        discoveryTime.put(root, clock);
+        low.put(root, clock);
+        stack.push(new SearchFrame(root, null, bondsOf(root))); // don't rely on recursion
+        int reached = clock + 1;
 
-        for (Bond bond : bondsOf(atom))
+        while (!stack.isEmpty())
         {
-            if (bond == arrivingBond)
+            SearchFrame frame = stack.peek();
+            Bond bond = frame.nextBond();
+            if (bond == null)
+            {
+                stack.pop();
+                SearchFrame parent = stack.peek();
+                if (parent != null)
+                {
+                    // whatever the subtree below this atom can reach, its parent can reach through it
+                    low.put(parent.atom(), Math.min(low.get(parent.atom()), low.get(frame.atom())));
+                    // if that subtree reaches back to the parent or above it, some cycle runs through the bond between them
+                    if (low.get(frame.atom()) <= discoveryTime.get(parent.atom()))
+                    {
+                        ringBonds.add(frame.arrivingBond());
+                    }
+                }
+                continue;
+            }
+
+            if (bond == frame.arrivingBond())
             {
                 continue;
             }
 
-            Atom neighbour = bond.getOther(atom);
-            if (!visited.contains(neighbour))
+            Atom neighbour = bond.getOther(frame.atom());
+            if (visited.contains(neighbour))
             {
-                computeRingBonds(neighbour, bond, ringBonds, visited, discoveryTime, low, clock);
-                // whatever the subtree below neighbour can reach, this atom can reach through it
-                low.put(atom, Math.min(low.get(atom), low.get(neighbour)));
-                // if that subtree reaches back to this atom or above it, some cycle runs through this bond
-                if (low.get(neighbour) <= discoveryTime.get(atom))
-                {
-                    ringBonds.add(bond);
-                }
+                // back edge: neighbour was reached earlier, so this bond closes a cycle
+                low.put(frame.atom(), Math.min(low.get(frame.atom()), discoveryTime.get(neighbour)));
+                ringBonds.add(bond);
             }
             else
             {
-                // back edge: neighbour is an ancestor, so this bond closes a cycle
-                low.put(atom, Math.min(low.get(atom), discoveryTime.get(neighbour)));
-                ringBonds.add(bond);
+                visited.add(neighbour);
+                discoveryTime.put(neighbour, reached);
+                low.put(neighbour, reached);
+                reached++;
+                stack.push(new SearchFrame(neighbour, bond, bondsOf(neighbour)));
             }
+        }
+        return reached;
+    }
+
+    /**
+     * One atom of a depth-first search, holding the bonds left to follow from it.
+     */
+    private static final class SearchFrame
+    {
+        private final Atom atom;
+        private final Bond arrivingBond;
+        private final List<Bond> bonds;
+        private int next;
+
+        /**
+         * @param atom the atom being searched from
+         * @param arrivingBond the bond the search arrived by, or {@code null} at the root
+         * @param bonds {@code atom}'s incident bonds
+         */
+        private SearchFrame(Atom atom, Bond arrivingBond, List<Bond> bonds)
+        {
+            this.atom = atom;
+            this.arrivingBond = arrivingBond;
+            this.bonds = bonds;
+        }
+
+        /**
+         * @return the atom being searched from
+         */
+        private Atom atom()
+        {
+            return atom;
+        }
+
+        /**
+         * @return the bond the search arrived by, or {@code null} at the root
+         */
+        private Bond arrivingBond()
+        {
+            return arrivingBond;
+        }
+
+        /**
+         * @return the next bond to follow from this atom, or {@code null} once they are all followed
+         */
+        private Bond nextBond()
+        {
+            return next < bonds.size() ? bonds.get(next++) : null;
         }
     }
 
