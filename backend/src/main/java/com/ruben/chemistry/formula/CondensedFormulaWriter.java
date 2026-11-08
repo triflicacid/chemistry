@@ -4,6 +4,7 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.CanonicalRanker;
+import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.Ranker;
 import com.ruben.chemistry.core.Ranking;
@@ -28,6 +29,8 @@ import java.util.Set;
  */
 public final class CondensedFormulaWriter
 {
+    private static final String WILDCARD = "*";
+
     private final Molecule molecule;
 
     /** The atoms reached so far by the traversal in progress; cleared between the two passes. */
@@ -41,6 +44,7 @@ public final class CondensedFormulaWriter
 
     private int nextRingNumber = 1;
     private boolean renderBondSymbols = true;
+    private MolecularFormula.ElementOrder elementOrder = MolecularFormula.ElementOrder.CONVENTIONAL;
     private Ranker ranker;
     private Ranking ranking;
 
@@ -69,6 +73,26 @@ public final class CondensedFormulaWriter
     public CondensedFormulaWriter setRenderBondSymbols(boolean renderBondSymbols)
     {
         this.renderBondSymbols = renderBondSymbols;
+        return this;
+    }
+
+    /**
+     * @return the order deciding whether a leading group's hydrogens come before its symbol
+     */
+    public MolecularFormula.ElementOrder getElementOrder()
+    {
+        return elementOrder;
+    }
+
+    /**
+     * Chooses the element order a group with nothing before it in its fragment is written in.
+     *
+     * @param elementOrder the order to write a leading group in
+     * @return this writer, for chaining
+     */
+    public CondensedFormulaWriter setElementOrder(MolecularFormula.ElementOrder elementOrder)
+    {
+        this.elementOrder = elementOrder;
         return this;
     }
 
@@ -245,7 +269,7 @@ public final class CondensedFormulaWriter
             }
         }
 
-        text.append(groupOf(atom));
+        text.append(groupOf(atom, arrivingBond == null));
         for (Bond ringBond : ringBondsOfAtom.get(atom))
         {
             text.append(bondSymbol(ringBond)).append('%').append(ringNumberOfBond.get(ringBond));
@@ -275,20 +299,24 @@ public final class CondensedFormulaWriter
      * Writes a single atom as a group: its element symbol, its hydrogen count, and its charge.
      *
      * @param atom the atom to write
-     * @return {@code atom}'s group, e.g. {@code CH3} or {@code NH4+}
+     * @param leading whether nothing is written before {@code atom} within its fragment, which lets
+     *     its hydrogens come first
+     * @return {@code atom}'s group, e.g. {@code CH3}, {@code NH4+}, or a leading {@code H2O}
      */
-    private String groupOf(Atom atom)
+    private String groupOf(Atom atom, boolean leading)
     {
-        StringBuilder group = new StringBuilder(atom.element());
-
+        StringBuilder group = new StringBuilder();
         int hydrogens = molecule.totalHydrogenCount(atom);
-        if (hydrogens > 0)
+
+        if (leading && hydrogensComeFirst(atom.element()))
         {
-            group.append('H');
-            if (hydrogens > 1)
-            {
-                group.append(hydrogens);
-            }
+            appendHydrogens(group, hydrogens);
+            group.append(atom.element());
+        }
+        else
+        {
+            group.append(atom.element());
+            appendHydrogens(group, hydrogens);
         }
 
         int charge = atom.charge();
@@ -302,6 +330,43 @@ public final class CondensedFormulaWriter
             group.append(charge > 0 ? '+' : '-');
         }
         return group.toString();
+    }
+
+    /**
+     * @param element the group's element symbol
+     * @return {@code true} if hydrogen is written first
+     */
+    private boolean hydrogensComeFirst(String element)
+    {
+        // a wildcard stands for no element, so there is no ordering to appeal to
+        if (element.equals(WILDCARD))
+        {
+            return false;
+        }
+        if (elementOrder == MolecularFormula.ElementOrder.HILL)
+        {
+            // Hill promotes carbon above hydrogen and leaves every other element to the alphabet
+            return !element.equals("C") && "H".compareTo(element) < 0;
+        }
+        return Elements.iupacOrderOf("H") < Elements.iupacOrderOf(element);
+    }
+
+    /**
+     * Appends a group's hydrogen count, if it has any, as {@code H} and a number above one.
+     *
+     * @param group the group being built, appended to in place
+     * @param hydrogens the number of hydrogens attached
+     */
+    private static void appendHydrogens(StringBuilder group, int hydrogens)
+    {
+        if (hydrogens > 0)
+        {
+            group.append('H');
+            if (hydrogens > 1)
+            {
+                group.append(hydrogens);
+            }
+        }
     }
 
     /**

@@ -123,7 +123,7 @@ class CondensedFormulaWriterTest
             .addAtoms(Atom.organic("C"), Atom.organic("O"))
             .build();
 
-        assertThat(write(molecule)).isEqualTo("CH4.OH2");
+        assertThat(write(molecule)).isEqualTo("CH4.H2O");
     }
 
     @Test
@@ -144,6 +144,82 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("O2-");
+    }
+
+    @Nested
+    class LeadingGroups
+    {
+        @Test
+        void writes_a_leading_groups_hydrogens_before_its_symbol()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.organic("O"))
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("H2O");
+        }
+
+        @Test
+        void keeps_an_element_that_outranks_hydrogen_first()
+        {
+            Molecule nitrogen = new Molecule.Builder()
+                .addAtom(Atom.organic("N"))
+                .build();
+            Molecule carbon = new Molecule.Builder()
+                .addAtom(Atom.organic("C"))
+                .build();
+
+            assertThat(write(nitrogen)).isEqualTo("NH3");
+            assertThat(write(carbon)).isEqualTo("CH4");
+        }
+
+        @Test
+        void leads_with_a_hydroxyl_rooted_at_its_oxygen()
+        {
+            // OCC
+            Atom o = Atom.organic("O");
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(o, c1, c2)
+                .addBond(o, c1, BondOrder.SINGLE)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("HOCH2CH3");
+        }
+
+        @Test
+        void keeps_a_group_reached_through_a_bond_symbol_first()
+        {
+            // CCO
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Atom o = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2, o)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .addBond(c2, o, BondOrder.SINGLE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("CH3CH2OH");
+        }
+
+        @Test
+        void follows_strict_hill_when_asked_for_it()
+        {
+            Molecule hydrogenChloride = new Molecule.Builder()
+                .addAtom(Atom.organic("Cl"))
+                .build();
+            Molecule ammonia = new Molecule.Builder()
+                .addAtom(Atom.organic("N"))
+                .build();
+
+            assertThat(new CondensedFormulaWriter(hydrogenChloride)
+                .setElementOrder(MolecularFormula.ElementOrder.HILL).write()).isEqualTo("ClH");
+            assertThat(new CondensedFormulaWriter(ammonia)
+                .setElementOrder(MolecularFormula.ElementOrder.HILL).write()).isEqualTo("H3N");
+        }
     }
 
     @Nested
