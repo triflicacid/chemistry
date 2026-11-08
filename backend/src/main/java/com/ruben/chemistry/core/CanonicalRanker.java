@@ -2,6 +2,7 @@ package com.ruben.chemistry.core;
 
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.Comparators;
+import com.ruben.chemistry.util.DisjointSet;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -9,6 +10,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -19,6 +21,12 @@ import java.util.function.Supplier;
  * <p>
  * Ranks are derived by Morgan-style iterative refinement, with deterministic tie-breaking for
  * atoms that refinement cannot tell apart (such as the two ends of a symmetric molecule).
+ * <p>
+ * Where a molecule has a non-trivial symmetry its interchangeable atoms cannot be told apart by any
+ * ranking, so ranks are canonical only up to that symmetry: which of two interchangeable atoms ends
+ * up with the lower rank is arbitrary, but the molecule's overall representation is not.
+ * <p>
+ * TODO: nothing here looks at stereochemistry.
  */
 public final class CanonicalRanker implements Ranker
 {
@@ -63,7 +71,7 @@ public final class CanonicalRanker implements Ranker
         }
         Refinement initial = reclassify(atoms, classOf, atom -> initialInvariant(molecule, ringBonds, atom), ATOM_KEY_ORDER);
         Refinement refined = refineToStability(molecule, atoms, initial);
-        return new Ranking(breakTies(molecule, ringBonds, atoms, refined).classOf());
+        return new Ranking(breakTies(molecule, ringBonds, atoms, new AtomGraph(molecule, atoms), refined).classOf());
     }
 
     /**
@@ -94,10 +102,11 @@ public final class CanonicalRanker implements Ranker
      * @param molecule the molecule being ranked
      * @param ringBonds the molecule's ring bonds
      * @param atoms the molecule's atoms
+     * @param graph the molecule as a graph of atom indices
      * @param classification each atom's current class, as settled by {@link #refineToStability}, and how many classes are in use
      * @return the discrete classification, with every atom in a class of its own
      */
-    private Candidate breakTies(Molecule molecule, Set<Bond> ringBonds, List<Atom> atoms, Refinement classification)
+    private Candidate breakTies(Molecule molecule, Set<Bond> ringBonds, List<Atom> atoms, AtomGraph graph, Refinement classification)
     {
         Map<Atom, Integer> classOf = classification.classOf();
         if (classification.distinctClasses() == atoms.size())
@@ -105,9 +114,14 @@ public final class CanonicalRanker implements Ranker
             return new Candidate(classOf, new CachedValue<>(() -> representationOf(molecule, ringBonds, atoms, classOf)));
         }
 
-        int classToSplit = firstTiedClass(atoms, classOf);
+        int classToSplit = smallestTiedClass(atoms, classOf);
+
+        // every symmetry found below preserves these classes, so all of them hold for this step alone
+        GraphAutomorphismDetector.AtomEquivalence equivalence = graph.equivalence(classOf);
+        DisjointSet orbits = new DisjointSet(atoms.size());
 
         // try every atom still tied in that class so the choice can't depend on atom insertion order
+        List<Atom> tried = new ArrayList<>();
         Candidate best = null;
         for (Atom candidate : atoms)
         {
@@ -116,10 +130,17 @@ public final class CanonicalRanker implements Ranker
                 continue;
             }
 
+            // an atom a symmetry maps onto one already tried can only repeat that atom's whole subtree
+            if (isInterchangeableWithAny(graph, equivalence, orbits, tried, candidate))
+            {
+                continue;
+            }
+            tried.add(candidate);
+
             Map<Atom, Integer> split = new IdentityHashMap<>(classOf);
             split.put(candidate, classification.distinctClasses());
             Refinement refined = refineToStability(molecule, atoms, new Refinement(split, classification.distinctClasses() + 1));
-            Candidate result = breakTies(molecule, ringBonds, atoms, refined);
+            Candidate result = breakTies(molecule, ringBonds, atoms, graph, refined);
 
             if (best == null || REPRESENTATION_ORDER.compare(result.representation().get(), best.representation().get()) < 0)
             {
@@ -130,12 +151,63 @@ public final class CanonicalRanker implements Ranker
     }
 
     /**
+     * Decides whether an atom is interchangeable with one already split on.
+     *
+     * @param graph the molecule as a graph of atom indices
+     * @param equivalence the symmetry search for the classes in force at this tie-breaking step
+     * @param orbits the atoms a symmetry found at this step has already shown to be interchangeable
+     * @param tried the atoms already split on at this tie-breaking step
+     * @param candidate the atom about to be split on
+     * @return {@code true} if a class-preserving symmetry maps one of {@code tried} onto {@code candidate}
+     */
+    private boolean isInterchangeableWithAny(
+        AtomGraph graph,
+        GraphAutomorphismDetector.AtomEquivalence equivalence,
+        DisjointSet orbits,
+        List<Atom> tried,
+        Atom candidate)
+    {
+        int candidateAtom = graph.indexOf(candidate);
+        for (Atom atom : tried)
+        {
+            int triedAtom = graph.indexOf(atom);
+
+            // a symmetry found earlier may already join the two, which settles it without searching
+            if (orbits.areJoined(triedAtom, candidateAtom))
+            {
+                return true;
+            }
+
+            Optional<int[]> symmetry = equivalence.findAutomorphism(triedAtom, candidateAtom);
+            if (symmetry.isPresent())
+            {
+                // the symmetry swaps far more atoms than this pair, and every such pair is interchangeable
+                record(orbits, symmetry.get());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param orbits the atoms shown to be interchangeable so far, extended in place
+     * @param symmetry an atom permutation preserving everything this ranking distinguishes
+     */
+    private void record(DisjointSet orbits, int[] symmetry)
+    {
+        for (int atom = 0; atom < symmetry.length; atom++)
+        {
+            orbits.union(atom, symmetry[atom]);
+        }
+    }
+
+    /**
      * @param atoms the molecule's atoms
      * @param classOf each atom's current class
-     * @return the lowest class number shared by more than one atom
+     * @return the smallest class shared by more than one atom, the lowest such class number winning a tie
      * @throws IllegalStateException if every atom already has a class of its own
      */
-    private int firstTiedClass(List<Atom> atoms, Map<Atom, Integer> classOf)
+    private int smallestTiedClass(List<Atom> atoms, Map<Atom, Integer> classOf)
     {
         // a class holding more than one atom is a tie, so count the members of each
         Map<Integer, Integer> countByClass = new HashMap<>();
@@ -144,10 +216,11 @@ public final class CanonicalRanker implements Ranker
             countByClass.merge(classOf.get(atom), 1, Integer::sum);
         }
 
+        // splitting the smallest tie branches the fewest ways; the class number only settles a draw
         return countByClass.entrySet().stream()
             .filter(entry -> entry.getValue() > 1)
+            .min(Map.Entry.<Integer, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey()))
             .map(Map.Entry::getKey)
-            .min(Integer::compareTo)
             .orElseThrow(() -> new IllegalStateException("No tied class remains to split"));
     }
 
@@ -238,6 +311,80 @@ public final class CanonicalRanker implements Ranker
             representation.add(new AtomSignature(initialInvariant(molecule, ringBonds, atom), neighbourInvariant(molecule, atom, classOf)));
         }
         return representation;
+    }
+
+    /**
+     * Adapts a molecule to the graph abstraction automorphism detection works in.
+     */
+    private static final class AtomGraph implements GraphAutomorphismDetector.Graph
+    {
+        private final List<Atom> atoms;
+        private final Map<Atom, Integer> indexOf;
+        private final int[][] bondClasses;
+
+        /**
+         * @param molecule the molecule being ranked
+         * @param atoms the molecule's atoms, in the order giving each its index
+         */
+        AtomGraph(Molecule molecule, List<Atom> atoms)
+        {
+            this.atoms = atoms;
+            this.indexOf = new IdentityHashMap<>();
+            for (int index = 0; index < atoms.size(); index++)
+            {
+                indexOf.put(atoms.get(index), index);
+            }
+
+            this.bondClasses = new int[atoms.size()][atoms.size()];
+            for (Bond bond : molecule.bonds())
+            {
+                // an absent bond is class zero, so a real one has to be shifted clear of it
+                int bondClass = bond.order().ordinal() + 1;
+                int first = indexOf.get(bond.first());
+                int second = indexOf.get(bond.second());
+
+                bondClasses[first][second] = bondClass;
+                bondClasses[second][first] = bondClass;
+            }
+        }
+
+        @Override
+        public int atomCount()
+        {
+            return atoms.size();
+        }
+
+        @Override
+        public int bondClass(int firstAtom, int secondAtom)
+        {
+            return bondClasses[firstAtom][secondAtom];
+        }
+
+        /**
+         * @param atom an atom of the molecule, by reference identity
+         * @return the index this graph addresses {@code atom} by
+         */
+        int indexOf(Atom atom)
+        {
+            return indexOf.get(atom);
+        }
+
+        /**
+         * Prepares a symmetry search against one set of atom classes.
+         *
+         * @param classOf each atom's current class, by atom reference
+         * @return a symmetry search holding everything those classes imply
+         */
+        GraphAutomorphismDetector.AtomEquivalence equivalence(Map<Atom, Integer> classOf)
+        {
+            int[] atomClasses = new int[atoms.size()];
+            for (int index = 0; index < atoms.size(); index++)
+            {
+                atomClasses[index] = classOf.get(atoms.get(index));
+            }
+            return GraphAutomorphismDetector.prepare(this, atomClasses);
+        }
+
     }
 
     /**

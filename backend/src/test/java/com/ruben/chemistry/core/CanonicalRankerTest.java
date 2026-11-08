@@ -1,9 +1,12 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
+import java.util.Random;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -188,6 +191,72 @@ class CanonicalRankerTest
             .build();
 
         assertThat(elementsByAscendingRank(forwardMolecule)).isEqualTo(elementsByAscendingRank(backwardMolecule));
+    }
+
+    @Test
+    void ranks_symmetric_cages_independently_of_build_order()
+    {
+        // cages are the hard case: refinement cannot separate their atoms at all, so the ranking
+        // rests entirely on tie-breaking, and any atom property that varies with build order shows up
+        for (String smiles : List.of(
+            "C12C3C4C1C5C4C3C25",       // cubane
+            "C1CC2CCC1CC2",             // bicyclo[2.2.2]octane
+            "C1C2CC3CC1CC(C2)C3",       // adamantane
+            "c1ccc2ccccc2c1",           // naphthalene
+            "C1CC2(CC1)CCCC2",          // spiro[4.4]nonane
+            "c1ccc2c(c1)ccc1ccccc12"))  // phenanthrene
+        {
+            Molecule molecule = new SmilesParser(smiles).parse();
+            String expected = rankFingerprint(molecule);
+
+            Random random = new Random(smiles.hashCode());
+            for (int rebuild = 0; rebuild < 12; rebuild++)
+            {
+                assertThat(rankFingerprint(rebuiltInRandomOrder(molecule, random)))
+                    .describedAs("ranking of %s after rebuild %d", smiles, rebuild)
+                    .isEqualTo(expected);
+            }
+        }
+    }
+
+    /**
+     * @param molecule the molecule to describe
+     * @return the molecule described only by rank, so two rankings of the same molecule agree
+     *     exactly when they are the same ranking
+     */
+    private static String rankFingerprint(Molecule molecule)
+    {
+        Ranking ranking = new CanonicalRanker().rank(molecule);
+
+        StringBuilder description = new StringBuilder();
+        for (Atom atom : ranking.atomsByAscendingRank())
+        {
+            description.append(atom.element()).append(ranking.rankOf(atom)).append(':');
+            molecule.bondsOf(atom).stream()
+                .map(bond -> bond.order().ordinal() + "/" + ranking.rankOf(bond.getOther(atom)))
+                .sorted()
+                .forEach(neighbour -> description.append(neighbour).append(','));
+            description.append(';');
+        }
+        return description.toString();
+    }
+
+    /**
+     * @param molecule the molecule to rebuild
+     * @param random the source of the new ordering
+     * @return the same atoms and bonds, added to a fresh molecule in a shuffled order
+     */
+    private static Molecule rebuiltInRandomOrder(Molecule molecule, Random random)
+    {
+        List<Atom> atoms = new ArrayList<>(molecule.atoms());
+        List<Bond> bonds = new ArrayList<>(molecule.bonds());
+        Collections.shuffle(atoms, random);
+        Collections.shuffle(bonds, random);
+
+        Molecule.Builder builder = new Molecule.Builder();
+        atoms.forEach(builder::addAtom);
+        bonds.forEach(bond -> builder.addBond(bond.first(), bond.second(), bond.order()));
+        return builder.build();
     }
 
     private static Ranking rank(Molecule molecule)
