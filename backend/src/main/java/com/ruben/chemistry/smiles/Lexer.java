@@ -29,12 +29,6 @@ public final class Lexer extends AbstractLexer<Token>
         return token.type() == TokenType.EOF;
     }
 
-    /**
-     * Lexes the single next token from the current scan position, advancing it.
-     *
-     * @return the lexed token, or a {@link TokenType#EOF} token if the source is exhausted
-     * @throws InvalidNotationException if the upcoming text is not a valid token
-     */
     @Override
     protected Token lexNext()
     {
