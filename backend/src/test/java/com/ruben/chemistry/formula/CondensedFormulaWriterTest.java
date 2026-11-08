@@ -12,6 +12,7 @@ import java.util.List;
 
 import static com.ruben.chemistry.formula.CondensedFormulaWriter.write;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -74,8 +75,8 @@ class CondensedFormulaWriterTest
             .addBond(c, cl4, BondOrder.SINGLE)
             .build();
 
-        assertThat(write(molecule)).isEqualTo("C(Cl)(Cl)(Cl)Cl");
-        assertThat(unicode(molecule)).isEqualTo("C(Cl)(Cl)(Cl)Cl");
+        assertThat(write(molecule)).isEqualTo("CCl4");
+        assertThat(unicode(molecule)).isEqualTo("CCl₄");
     }
 
     @Test
@@ -125,8 +126,8 @@ class CondensedFormulaWriterTest
             .addBond(central, methyl3, BondOrder.SINGLE)
             .build();
 
-        assertThat(write(molecule)).isEqualTo("CH3CH(CH3)CH3");
-        assertThat(unicode(molecule)).isEqualTo("CH₃CH(CH₃)CH₃");
+        assertThat(write(molecule)).isEqualTo("CH3CH(CH3)2");
+        assertThat(unicode(molecule)).isEqualTo("CH₃CH(CH₃)₂");
     }
 
     @Test
@@ -381,6 +382,287 @@ class CondensedFormulaWriterTest
 
             assertThat(write(molecule)).isEqualTo("CH%1CHCHCHCHCH%1");
             assertThat(unicode(molecule)).isEqualTo("CH%1CHCHCHCHCH%1");
+        }
+    }
+
+    @Nested
+    class RepeatGroups
+    {
+        private static Molecule alkaneChain(int carbons)
+        {
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] atoms = new Atom[carbons];
+            for (int i = 0; i < carbons; i++)
+            {
+                atoms[i] = Atom.organic("C");
+                builder.addAtom(atoms[i]);
+            }
+            for (int i = 1; i < carbons; i++)
+            {
+                builder.addBond(atoms[i - 1], atoms[i], BondOrder.SINGLE);
+            }
+            return builder.build();
+        }
+
+        @Test
+        void collapses_a_run_of_identical_groups()
+        {
+            Molecule hexane = alkaneChain(6);
+
+            assertThat(write(hexane)).isEqualTo("CH3(CH2)4CH3");
+            assertThat(unicode(hexane)).isEqualTo("CH₃(CH₂)₄CH₃");
+        }
+
+        @Test
+        void writes_out_a_run_that_saves_no_characters()
+        {
+            // (CH2)2 is no shorter than CH2CH2, so the brackets buy nothing
+            Molecule butane = alkaneChain(4);
+
+            assertThat(write(butane)).isEqualTo("CH3CH2CH2CH3");
+            assertThat(unicode(butane)).isEqualTo("CH₃CH₂CH₂CH₃");
+        }
+
+        @Test
+        void writes_out_a_run_shorter_than_a_raised_minimum()
+        {
+            Molecule hexane = alkaneChain(6);
+
+            assertThat(new CondensedFormulaWriter(hexane).setMinimumRepeat(5).write())
+                .isEqualTo("CH3CH2CH2CH2CH2CH3");
+        }
+
+        @Test
+        void writes_out_every_group_when_collapsing_is_disabled()
+        {
+            Molecule decane = alkaneChain(10);
+
+            assertThat(new CondensedFormulaWriter(decane).setCollapseRepeats(false).write())
+                .isEqualTo("CH3CH2CH2CH2CH2CH2CH2CH2CH2CH3");
+        }
+
+        @Test
+        void rejects_a_minimum_below_two()
+        {
+            CondensedFormulaWriter writer = new CondensedFormulaWriter(alkaneChain(6));
+
+            assertThatThrownBy(() -> writer.setMinimumRepeat(1))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void collapses_the_groups_between_a_rings_two_markers()
+        {
+            // C1CCCCC1
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] carbons = new Atom[6];
+            for (int i = 0; i < carbons.length; i++)
+            {
+                carbons[i] = Atom.organic("C");
+                builder.addAtom(carbons[i]);
+            }
+            for (int i = 0; i < carbons.length; i++)
+            {
+                builder.addBond(carbons[i], carbons[(i + 1) % carbons.length], BondOrder.SINGLE);
+            }
+
+            Molecule cyclohexane = builder.build();
+
+            assertThat(write(cyclohexane)).isEqualTo("CH2%1(CH2)4CH2%1");
+            assertThat(unicode(cyclohexane)).isEqualTo("CH₂%1(CH₂)₄CH₂%1");
+        }
+
+        @Test
+        void leaves_an_aromatic_ring_written_out_in_full()
+        {
+            // c1ccccc1
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] carbons = new Atom[6];
+            for (int i = 0; i < carbons.length; i++)
+            {
+                carbons[i] = Atom.aromatic("C");
+                builder.addAtom(carbons[i]);
+            }
+            for (int i = 0; i < carbons.length; i++)
+            {
+                builder.addBond(carbons[i], carbons[(i + 1) % carbons.length], BondOrder.AROMATIC);
+            }
+
+            Molecule benzene = builder.build();
+
+            assertThat(write(benzene)).isEqualTo("CH%1CHCHCHCHCH%1");
+        }
+
+        @Test
+        void breaks_a_run_where_the_bond_symbols_differ()
+        {
+            // C=CC=CC=C
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] carbons = new Atom[6];
+            for (int i = 0; i < carbons.length; i++)
+            {
+                carbons[i] = Atom.organic("C");
+                builder.addAtom(carbons[i]);
+            }
+            for (int i = 1; i < carbons.length; i++)
+            {
+                builder.addBond(carbons[i - 1], carbons[i], i % 2 == 1 ? BondOrder.DOUBLE : BondOrder.SINGLE);
+            }
+
+            Molecule hexatriene = builder.build();
+
+            assertThat(write(hexatriene)).isEqualTo("CH2=CHCH=CHCH=CH2");
+        }
+
+        @Test
+        void collapses_a_run_of_groups_carrying_the_same_branch()
+        {
+            // CC(C)C(C)C(C)C
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom start = Atom.organic("C");
+            Atom end = Atom.organic("C");
+            Atom[] backbone = new Atom[3];
+            Atom[] methyls = new Atom[3];
+            builder.addAtom(start);
+            for (int i = 0; i < backbone.length; i++)
+            {
+                backbone[i] = Atom.organic("C");
+                methyls[i] = Atom.organic("C");
+                builder.addAtoms(backbone[i], methyls[i]);
+                builder.addBond(i == 0 ? start : backbone[i - 1], backbone[i], BondOrder.SINGLE);
+                builder.addBond(backbone[i], methyls[i], BondOrder.SINGLE);
+            }
+            builder.addAtom(end);
+            builder.addBond(backbone[backbone.length - 1], end, BondOrder.SINGLE);
+
+            Molecule trimethylpentane = builder.build();
+
+            assertThat(write(trimethylpentane)).isEqualTo("CH3(CH(CH3))2CH(CH3)2");
+        }
+
+        @Test
+        void collapses_a_repeating_motif_of_more_than_one_group()
+        {
+            // CC=CC=CC
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] carbons = new Atom[6];
+            for (int i = 0; i < carbons.length; i++)
+            {
+                carbons[i] = Atom.organic("C");
+                builder.addAtom(carbons[i]);
+            }
+            for (int i = 1; i < carbons.length; i++)
+            {
+                builder.addBond(carbons[i - 1], carbons[i], i % 2 == 0 ? BondOrder.DOUBLE : BondOrder.SINGLE);
+            }
+
+            Molecule hexadiene = builder.build();
+
+            assertThat(write(hexadiene)).isEqualTo("CH3(CH=CH)2CH3");
+            assertThat(unicode(hexadiene)).isEqualTo("CH₃(CH=CH)₂CH₃");
+        }
+
+        @Test
+        void refuses_a_motif_that_would_open_with_a_bond_symbol()
+        {
+            // C=CC=CC=C, where the repeating motif can only start after a double bond
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] carbons = new Atom[6];
+            for (int i = 0; i < carbons.length; i++)
+            {
+                carbons[i] = Atom.organic("C");
+                builder.addAtom(carbons[i]);
+            }
+            for (int i = 1; i < carbons.length; i++)
+            {
+                builder.addBond(carbons[i - 1], carbons[i], i % 2 == 1 ? BondOrder.DOUBLE : BondOrder.SINGLE);
+            }
+
+            Molecule hexatriene = builder.build();
+
+            assertThat(write(hexatriene)).isEqualTo("CH2=CHCH=CHCH=CH2");
+        }
+
+        @Nested
+        class Branches
+        {
+            private static Molecule centredOn(String element, int branches, String branchElement)
+            {
+                Molecule.Builder builder = new Molecule.Builder();
+                Atom centre = Atom.organic(element);
+                builder.addAtom(centre);
+                for (int i = 0; i < branches; i++)
+                {
+                    Atom branch = Atom.organic(branchElement);
+                    builder.addAtom(branch);
+                    builder.addBond(centre, branch, BondOrder.SINGLE);
+                }
+                return builder.build();
+            }
+
+            @Test
+            void drops_the_brackets_round_a_single_atom_branch()
+            {
+                assertThat(write(centredOn("C", 2, "Cl"))).isEqualTo("CH2Cl2");
+                assertThat(write(centredOn("C", 3, "Cl"))).isEqualTo("CHCl3");
+                assertThat(write(centredOn("C", 4, "Cl"))).isEqualTo("CCl4");
+                assertThat(unicode(centredOn("C", 2, "Cl"))).isEqualTo("CH₂Cl₂");
+            }
+
+            @Test
+            void keeps_the_brackets_round_a_branch_of_more_than_one_atom()
+            {
+                // a count straight after CH3 would read as its hydrogens
+                assertThat(write(centredOn("C", 4, "C"))).isEqualTo("C(CH3)4");
+                assertThat(write(centredOn("N", 3, "C"))).isEqualTo("N(CH3)3");
+                assertThat(write(centredOn("C", 3, "C"))).isEqualTo("CH(CH3)3");
+            }
+
+            @Test
+            void writes_a_collapsed_group_ahead_of_its_atom_when_the_chain_carries_on()
+            {
+                // CC(C)O
+                Atom centre = Atom.organic("C");
+                Atom methyl1 = Atom.organic("C");
+                Atom methyl2 = Atom.organic("C");
+                Atom oxygen = Atom.organic("O");
+                Molecule propanol = new Molecule.Builder()
+                    .addAtoms(centre, methyl1, methyl2, oxygen)
+                    .addBond(centre, methyl1, BondOrder.SINGLE)
+                    .addBond(centre, methyl2, BondOrder.SINGLE)
+                    .addBond(centre, oxygen, BondOrder.SINGLE)
+                    .build();
+
+                assertThat(write(propanol)).isEqualTo("(CH3)2CHOH");
+                assertThat(unicode(propanol)).isEqualTo("(CH₃)₂CHOH");
+            }
+
+            @Test
+            void gathers_interchangeable_branches_that_are_not_next_to_each_other()
+            {
+                // CC(Cl)C, the chlorine traced between the two methyls
+                Atom centre = Atom.organic("C");
+                Atom methyl1 = Atom.organic("C");
+                Atom chlorine = Atom.organic("Cl");
+                Atom methyl2 = Atom.organic("C");
+                Molecule chloropropane = new Molecule.Builder()
+                    .addAtoms(centre, methyl1, chlorine, methyl2)
+                    .addBond(centre, methyl1, BondOrder.SINGLE)
+                    .addBond(centre, chlorine, BondOrder.SINGLE)
+                    .addBond(centre, methyl2, BondOrder.SINGLE)
+                    .build();
+
+                assertThat(write(chloropropane)).isEqualTo("(CH3)2CHCl");
+            }
+
+            @Test
+            void writes_out_every_branch_when_collapsing_is_disabled()
+            {
+                Molecule tetrachloromethane = centredOn("C", 4, "Cl");
+
+                assertThat(new CondensedFormulaWriter(tetrachloromethane).setCollapseRepeats(false).write())
+                    .isEqualTo("C(Cl)(Cl)(Cl)Cl");
+            }
         }
     }
 

@@ -15,11 +15,14 @@ import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * Serialises a {@link Molecule} to a condensed structural formula, e.g., {@code CH3CH2OH} for ethanol,
  * {@code CH2%1CH2CH2%1} for cyclopropane.
+ * If enabled ({@link #setCollapseRepeats}), collapse repeats down: a run along a chain, e.g., hexane is
+ * {@code CH3(CH2)4CH3}, and interchangeable branches at one atom, e.g., tetrachloromethane is {@code CCl4}.
  * <p>
  * By default, the output is not canonical: it depends on the order atoms and bonds were added to the
  * molecule, so the same molecule built differently can produce a different (but equally valid)
@@ -30,6 +33,9 @@ import java.util.Set;
 public final class CondensedFormulaWriter
 {
     private static final String WILDCARD = "*";
+
+    /** The shortest run of interchangeable groups collapsed into a repeat group unless told otherwise. */
+    private static final int DEFAULT_MINIMUM_REPEAT = 2;
 
     private final Molecule molecule;
 
@@ -45,6 +51,8 @@ public final class CondensedFormulaWriter
     private int nextRingNumber = 1;
     private boolean renderBondSymbols = true;
     private boolean unicode;
+    private boolean collapseRepeats = true;
+    private int minimumRepeat = DEFAULT_MINIMUM_REPEAT;
     private MolecularFormula.ElementOrder elementOrder = MolecularFormula.ElementOrder.CONVENTIONAL;
     private Ranker ranker;
     private Ranking ranking;
@@ -112,6 +120,55 @@ public final class CondensedFormulaWriter
     public CondensedFormulaWriter setElementOrder(MolecularFormula.ElementOrder elementOrder)
     {
         this.elementOrder = elementOrder;
+        return this;
+    }
+
+    /**
+     * @return {@code true} if a run of interchangeable groups is written as a repeat group
+     */
+    public boolean isCollapseRepeats()
+    {
+        return collapseRepeats;
+    }
+
+    /**
+     * Chooses whether runs of interchangeable groups are collapsed: hexane as {@code CH3(CH2)4CH3} or as
+     * {@code CH3CH2CH2CH2CH2CH3}, dichloromethane as {@code CH2Cl2} or as {@code CH2(Cl)Cl}.
+     *
+     * @param collapseRepeats whether to collapse runs of interchangeable groups
+     * @return this writer, for chaining
+     */
+    public CondensedFormulaWriter setCollapseRepeats(boolean collapseRepeats)
+    {
+        this.collapseRepeats = collapseRepeats;
+        return this;
+    }
+
+    /**
+     * @return the shortest run of interchangeable groups written as a repeat group
+     */
+    public int getMinimumRepeat()
+    {
+        return minimumRepeat;
+    }
+
+    /**
+     * Sets how long a run of interchangeable groups must be to be collapsed.
+     * <p>
+     * A run must also save characters to be worth collapsing, so at the default of two butane stays {@code CH3CH2CH2CH3}
+     * as {@code CH3(CH2)2CH3} is no shorter, while hexane becomes {@code CH3(CH2)4CH3}.
+     *
+     * @param minimumRepeat the shortest run to collapse, at least two
+     * @return this writer, for chaining
+     * @throws IllegalArgumentException if {@code minimumRepeat} is below two
+     */
+    public CondensedFormulaWriter setMinimumRepeat(int minimumRepeat)
+    {
+        if (minimumRepeat < 2)
+        {
+            throw new IllegalArgumentException("a repeat group stands for at least two groups: " + minimumRepeat);
+        }
+        this.minimumRepeat = minimumRepeat;
         return this;
     }
 
@@ -194,7 +251,7 @@ public final class CondensedFormulaWriter
                 {
                     text.append('.');
                 }
-                writeAtom(atom, null, text);
+                text.append(renderChain(trace(atom, null), true));
             }
         }
         return text.toString();
@@ -263,55 +320,402 @@ public final class CondensedFormulaWriter
     }
 
     /**
-     * Depth-first traversal that emits the formula.
+     * Depth-first traversal that records the structure reached from an atom, without writing anything.
      *
-     * @param atom the atom currently being visited
+     * @param atom the atom at the root of the subtree
      * @param arrivingBond the bond traversed to reach {@code atom}, or {@code null} for a root atom
-     * @param text the text produced so far, appended to in place
+     * @return {@code atom} and everything reached through it
      */
-    private void writeAtom(Atom atom, Bond arrivingBond, StringBuilder text)
+    private Node trace(Atom atom, Bond arrivingBond)
     {
         visited.add(atom);
 
-        if (arrivingBond != null)
-        {
-            text.append(bondSymbol(arrivingBond));
-        }
-
-        // ring bonds are already represented by their markers, so don't consider them as branches
-        List<Bond> branches = new ArrayList<>();
+        List<Node> children = new ArrayList<>();
         for (Bond bond : orderedBondsOf(atom))
         {
+            // ring bonds are already represented by their markers, so they lead nowhere new
             if (bond != arrivingBond && !ringNumberOfBond.containsKey(bond))
             {
-                branches.add(bond);
+                children.add(trace(bond.getOther(atom), bond));
             }
         }
+        return new Node(atom, arrivingBond, ringBondsOfAtom.get(atom), children);
+    }
 
-        text.append(groupOf(atom, arrivingBond == null));
-        for (Bond ringBond : ringBondsOfAtom.get(atom))
+    /**
+     * Writes a chain, taking one branch of each atom as the chain's continuation and hanging the rest
+     * off it, then collapsing the runs of interchangeable segments that result.
+     *
+     * @param start the atom the chain starts at
+     * @param leadsFragment whether nothing is written before {@code start} within its fragment
+     * @return the text of the chain and everything hanging off it
+     */
+    private String renderChain(Node start, boolean leadsFragment)
+    {
+        List<Segment> segments = new ArrayList<>();
+        Node node = start;
+
+        while (node != null)
+        {
+            List<BranchRun> branches = groupBranches(node.children());
+
+            // a branch standing on its own can carry the chain onwards; one in a run stays with its group
+            int continuation = -1;
+            for (int i = 0; i < branches.size(); i++)
+            {
+                if (branches.get(i).count() == 1)
+                {
+                    continuation = i;
+                }
+            }
+            Node next = continuation < 0 ? null : branches.remove(continuation).branch();
+
+            boolean leading = leadsFragment && segments.isEmpty();
+            boolean branchesFirst = leading && next != null;
+            segments.add(new Segment(node, branches, leading,
+                renderSegment(node, branches, leading, branchesFirst)));
+            node = next;
+        }
+        return joinSegments(segments);
+    }
+
+    /**
+     * Gathers an atom's branches into runs of interchangeable ones, keeping them in the order they
+     * were traced.
+     *
+     * @param children the branches hanging off one atom
+     * @return the runs, each holding one branch and how many of it there are
+     */
+    private List<BranchRun> groupBranches(List<Node> children)
+    {
+        List<BranchRun> runs = new ArrayList<>();
+        if (!collapseRepeats)
+        {
+            children.forEach(child -> runs.add(new BranchRun(child, 1)));
+            return runs;
+        }
+
+        boolean[] grouped = new boolean[children.size()];
+        for (int i = 0; i < children.size(); i++)
+        {
+            if (grouped[i])
+            {
+                continue;
+            }
+
+            int count = 1;
+            // a match further along still joins this run, so interchangeable branches need not be adjacent
+            for (int j = i + 1; j < children.size(); j++)
+            {
+                if (!grouped[j] && interchangeable(children.get(i), children.get(j)))
+                {
+                    grouped[j] = true;
+                    count++;
+                }
+            }
+            runs.add(new BranchRun(children.get(i), count));
+        }
+        return runs;
+    }
+
+    /**
+     * Writes one position along a chain: the atom there, its ring markers, and its branches.
+     *
+     * @param node the atom at this position
+     * @param branches the branches hanging off it, the chain's continuation already removed
+     * @param leading whether nothing is written before {@code node} within its fragment
+     * @param branchesFirst whether a collapsed branch group is written ahead of the atom
+     * @return the position's text
+     */
+    private String renderSegment(Node node, List<BranchRun> branches, boolean leading, boolean branchesFirst)
+    {
+        StringBuilder text = new StringBuilder();
+        text.append(arrivingSymbol(node));
+
+        // a collapsed group reads better ahead of its atom when the chain carries on past it, as in (CH3)2CHOH
+        if (branchesFirst)
+        {
+            branches.stream().filter(this::isCollapsed).forEach(run -> text.append(renderBranch(run)));
+        }
+
+        text.append(groupOf(node.atom(), leading));
+        for (Bond ringBond : node.ringBonds())
         {
             text.append(bondSymbol(ringBond)).append('%').append(ringNumberOfBond.get(ringBond));
         }
 
-        // all but the last branch are wrapped in brackets so the chain can resume from this atom afterwards
-        for (int i = 0; i < branches.size(); i++)
+        for (BranchRun run : branches)
         {
-            Bond bond = branches.get(i);
-            Atom neighbour = bond.getOther(atom);
-            boolean isLastBranch = i == branches.size() - 1;
-
-            if (isLastBranch)
+            if (!branchesFirst || !isCollapsed(run))
             {
-                writeAtom(neighbour, bond, text);
-            }
-            else
-            {
-                text.append('(');
-                writeAtom(neighbour, bond, text);
-                text.append(')');
+                text.append(renderBranch(run));
             }
         }
+        return text.toString();
+    }
+
+    /**
+     * @param run the run to test
+     * @return {@code true} if {@code run} is written once with a count rather than branch by branch
+     */
+    private boolean isCollapsed(BranchRun run)
+    {
+        return collapseRepeats && run.count() >= minimumRepeat;
+    }
+
+    /**
+     * Writes a run of interchangeable branches.
+     *
+     * @param run the run to write
+     * @return the run's text, e.g. {@code (CH3)2}, {@code Cl4}, or a lone {@code (OH)}
+     */
+    private String renderBranch(BranchRun run)
+    {
+        String branch = renderChain(run.branch(), false);
+        if (!isCollapsed(run))
+        {
+            // nothing resumes through a branch, so each one is bracketed in turn
+            return ("(" + branch + ")").repeat(run.count());
+        }
+        if (takesCountDirectly(run.branch()))
+        {
+            return branch + countText(run.count());
+        }
+        return "(" + branch + ")" + countText(run.count());
+    }
+
+    /**
+     * @param branch the branch to test
+     * @return {@code true} if a count can follow {@code branch} with no brackets to separate them
+     */
+    private boolean takesCountDirectly(Node branch)
+    {
+        // only a bare element symbol leaves the count unambiguous: CCl4, but (CH3)4 and (CH)4 both need brackets
+        return branch.children().isEmpty()
+            && branch.ringBonds().isEmpty()
+            && branch.atom().charge() == 0
+            && molecule.totalHydrogenCount(branch.atom()) == 0
+            && arrivingSymbol(branch).isEmpty();
+    }
+
+    /**
+     * Joins a chain's segments, writing each run of interchangeable ones as a repeat group.
+     *
+     * @param segments the chain's segments, in the order they were walked
+     * @return the chain's text
+     */
+    private String joinSegments(List<Segment> segments)
+    {
+        StringBuilder text = new StringBuilder();
+
+        int index = 0;
+        while (index < segments.size())
+        {
+            int period = collapseRepeats ? repeatPeriod(segments, index) : 0;
+            if (period == 0)
+            {
+                text.append(segments.get(index).text());
+                index++;
+                continue;
+            }
+
+            int count = repeatCount(segments, index, period);
+            text.append('(');
+            for (int i = 0; i < period; i++)
+            {
+                text.append(segments.get(index + i).text());
+            }
+            text.append(')').append(countText(count));
+            index += period * count;
+        }
+        return text.toString();
+    }
+
+    /**
+     * Looks for a repeating motif starting at one segment, preferring the shortest motif that pays
+     * for the brackets it costs.
+     *
+     * @param segments the chain's segments
+     * @param from the segment the motif would start at
+     * @return the motif's length in segments, or zero if nothing worth collapsing starts here
+     */
+    private int repeatPeriod(List<Segment> segments, int from)
+    {
+        // a repeat group opening with a bond symbol would read as a branch off the group before it
+        if (!arrivingSymbol(segments.get(from).node()).isEmpty())
+        {
+            return 0;
+        }
+
+        for (int period = 1; from + 2 * period <= segments.size(); period++)
+        {
+            int count = repeatCount(segments, from, period);
+            if (count < minimumRepeat)
+            {
+                continue;
+            }
+
+            int motif = 0;
+            for (int i = 0; i < period; i++)
+            {
+                motif += segments.get(from + i).text().length();
+            }
+
+            // collapsing has to earn its brackets, which is why CH2CH2 is left alone
+            if (motif + 2 + String.valueOf(count).length() < motif * count)
+            {
+                return period;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * @param segments the chain's segments
+     * @param from the segment the motif starts at
+     * @param period the motif's length in segments
+     * @return how many times the motif repeats from {@code from}, at least one
+     */
+    private int repeatCount(List<Segment> segments, int from, int period)
+    {
+        int count = 1;
+        while (from + (count + 1) * period <= segments.size())
+        {
+            int next = from + count * period;
+            boolean matches = true;
+            for (int i = 0; i < period && matches; i++)
+            {
+                matches = sameSegment(segments.get(from + i), segments.get(next + i));
+            }
+
+            if (!matches)
+            {
+                break;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    /**
+     * @param first the first segment
+     * @param second the second segment
+     * @return {@code true} if both segments write the same text, their continuations aside
+     */
+    private boolean sameSegment(Segment first, Segment second)
+    {
+        if (first.leading() != second.leading()
+            || !rendersAlike(first.node(), second.node())
+            || first.branches().size() != second.branches().size())
+        {
+            return false;
+        }
+
+        for (int i = 0; i < first.branches().size(); i++)
+        {
+            BranchRun ours = first.branches().get(i);
+            BranchRun theirs = second.branches().get(i);
+            if (ours.count() != theirs.count() || !interchangeable(ours.branch(), theirs.branch()))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @param first the first atom's node
+     * @param second the second atom's node
+     * @return {@code true} if both atoms write the same group, whatever hangs off them
+     */
+    private boolean rendersAlike(Node first, Node second)
+    {
+        // ring markers are numbered one at a time, and an aromatic ring is delocalised rather than repeating
+        if (!first.ringBonds().isEmpty() || !second.ringBonds().isEmpty()
+            || first.atom().aromatic() || second.atom().aromatic())
+        {
+            return false;
+        }
+
+        // comparing symbols rather than orders lets two bonds match when neither of them is written
+        return first.atom().element().equals(second.atom().element())
+            && first.atom().charge() == second.atom().charge()
+            && molecule.totalHydrogenCount(first.atom()) == molecule.totalHydrogenCount(second.atom())
+            && arrivingSymbol(first).equals(arrivingSymbol(second));
+    }
+
+    /**
+     * @param first the first subtree's root
+     * @param second the second subtree's root
+     * @return {@code true} if both subtrees write the same text, so one can stand for the other
+     */
+    private boolean interchangeable(Node first, Node second)
+    {
+        if (!rendersAlike(first, second) || first.children().size() != second.children().size())
+        {
+            return false;
+        }
+
+        for (int i = 0; i < first.children().size(); i++)
+        {
+            if (!interchangeable(first.children().get(i), second.children().get(i)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @param node the atom whose arriving bond is required
+     * @return the symbol of the bond reached {@code node} by, or an empty string for a root atom
+     */
+    private String arrivingSymbol(Node node)
+    {
+        return node.arrivingBond() == null ? "" : bondSymbol(node.arrivingBond());
+    }
+
+    /**
+     * @param count how many times a group repeats
+     * @return {@code count} as it follows a repeat group
+     */
+    private String countText(int count)
+    {
+        return unicode ? Unicode.subscript(count) : String.valueOf(count);
+    }
+
+    /**
+     * One atom and everything reached through it, as the traversal found it.
+     *
+     * @param atom the atom at this node
+     * @param arrivingBond the bond traversed to reach it, or {@code null} for a root atom
+     * @param ringBonds the ring-closure bonds to write markers for at this atom
+     * @param children the subtrees hanging off it, in the order they were traced
+     */
+    private record Node(Atom atom, Bond arrivingBond, List<Bond> ringBonds, List<Node> children)
+    {
+    }
+
+    /**
+     * A run of interchangeable branches at one atom, written once with a count.
+     *
+     * @param branch the branch standing for the whole run
+     * @param count how many of it there are, at least one
+     */
+    private record BranchRun(Node branch, int count)
+    {
+    }
+
+    /**
+     * One position along a chain.
+     *
+     * @param node the atom at this position
+     * @param branches the branches hanging off it, the chain's continuation removed
+     * @param leading whether nothing is written before it within its fragment
+     * @param text the position's text
+     */
+    private record Segment(Node node, List<BranchRun> branches, boolean leading, String text)
+    {
     }
 
     /**
