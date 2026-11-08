@@ -5,16 +5,16 @@ import com.ruben.chemistry.util.Comparators;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 /**
  * Compares molecules by structure: two molecules compare equal exactly when they are
- * isomorphic, including matching stereochemistry, regardless of the order their atoms
- * and bonds were added.
+ * isomorphic, including matching stereochemistry;
  * <p>
- * This comparator defines a total ordering, compared in tiers, each only consulted
- * if every earlier tier was equal:
+ * This comparator defines a total ordering, compared in tiers:
  * <ol>
  *     <li>atom count</li>
  *     <li>bond count</li>
@@ -47,6 +47,14 @@ public final class MoleculeComparator implements Comparator<Molecule>
 
     /** Total ordering for a molecule's bonds: lexicographic over {@link #BOND_SIGNATURE_ORDER}. */
     private static final Comparator<List<BondSignature>> BOND_SIGNATURES_ORDER = Comparators.lexicographically(BOND_SIGNATURE_ORDER);
+
+    /** Total ordering for {@link ElementCount}. */
+    private static final Comparator<ElementCount> ELEMENT_COUNT_ORDER = Comparator
+        .comparing(ElementCount::element)
+        .thenComparingInt(ElementCount::count);
+
+    /** Total ordering for a molecule's element counts: lexicographic over {@link #ELEMENT_COUNT_ORDER}. */
+    private static final Comparator<List<ElementCount>> ELEMENT_COUNTS_ORDER = Comparators.lexicographically(ELEMENT_COUNT_ORDER);
 
     /** Avoid re-computing a molecule's ranking, as it will never change (immutable.) */
     private final Function<Molecule, Ranking> rankings;
@@ -82,7 +90,14 @@ public final class MoleculeComparator implements Comparator<Molecule>
             return bondCountDiff;
         }
 
-        // same size, so the atoms have to be lined up by structural role before comparing them
+        // rule out trivial difference of different elements
+        int elementsDiff = ELEMENT_COUNTS_ORDER.compare(elementCounts(first), elementCounts(second));
+        if (elementsDiff != 0)
+        {
+            return elementsDiff;
+        }
+
+        // same size and composition, so the atoms have to be lined up by structural role before comparing them
         Ranking firstRanking = rankings.apply(first);
         Ranking secondRanking = rankings.apply(second);
 
@@ -95,6 +110,24 @@ public final class MoleculeComparator implements Comparator<Molecule>
             return atomsDiff;
         }
         return BOND_SIGNATURES_ORDER.compare(bondSignatures(first, firstRanking, firstOrder), bondSignatures(second, secondRanking, secondOrder));
+    }
+
+    /**
+     * @param molecule the molecule to describe
+     * @return how many atoms of each element {@code molecule} has, sorted by element
+     */
+    private static List<ElementCount> elementCounts(Molecule molecule)
+    {
+        Map<String, Integer> countByElement = new HashMap<>();
+        for (Atom atom : molecule.atoms())
+        {
+            countByElement.merge(atom.element(), 1, Integer::sum);
+        }
+
+        return countByElement.entrySet().stream()
+            .map(entry -> new ElementCount(entry.getKey(), entry.getValue()))
+            .sorted(ELEMENT_COUNT_ORDER)
+            .toList();
     }
 
     /**
@@ -215,6 +248,13 @@ public final class MoleculeComparator implements Comparator<Molecule>
      * A bond, described by its endpoints' ranks rather than by the atoms themselves, so that bonds of different molecules can be compared.
      */
     private record BondSignature(int lowerRank, int higherRank, BondOrder order, DoubleBondStereo doubleBondStereo)
+    {
+    }
+
+    /**
+     * How many atoms of one element a molecule has.
+     */
+    private record ElementCount(String element, int count)
     {
     }
 }
