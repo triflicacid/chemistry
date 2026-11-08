@@ -99,6 +99,42 @@ public final class MolecularFormula
     }
 
     /**
+     * Reduces this formula to the simplest whole-number ratio of its elements, e.g., {@code CH2O}
+     * from {@code C6H12O6}, or {@code CH} from benzene's {@code C6H6}.
+     *
+     * @return the reduced formula, or this formula if it is charged, empty, or already reduced
+     */
+    public MolecularFormula empirical()
+    {
+        int divisor = counts.values().stream().mapToInt(Integer::intValue).reduce(0, MolecularFormula::greatestCommonDivisor);
+        if (charge != 0 || divisor <= 1)
+        {
+            return this;
+        }
+
+        // dividing every count leaves the elements in the order they already sort in
+        Map<String, Integer> reduced = new LinkedHashMap<>();
+        counts.forEach((element, count) -> reduced.put(element, count / divisor));
+        return new MolecularFormula(Collections.unmodifiableMap(reduced), charge);
+    }
+
+    /**
+     * @param first one count
+     * @param second the other count
+     * @return the largest number dividing both {@code first} and {@code second}
+     */
+    private static int greatestCommonDivisor(int first, int second)
+    {
+        while (second != 0)
+        {
+            int remainder = first % second;
+            first = second;
+            second = remainder;
+        }
+        return first;
+    }
+
+    /**
      * Sorts element counts into the order they are written in.
      *
      * @param counts each element's count

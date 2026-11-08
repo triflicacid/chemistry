@@ -246,4 +246,67 @@ class MolecularFormulaTest
             assertThat(MolecularFormula.of(molecule)).hasToString("NH4Cl");
         }
     }
+
+    @Nested
+    class Empirical
+    {
+        @Test
+        void reduces_a_formula_to_its_simplest_ratio()
+        {
+            // CC
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .build();
+
+            assertThat(MolecularFormula.of(molecule).empirical()).hasToString("CH3");
+        }
+
+        @Test
+        void reduces_a_ratio_down_to_one_atom_of_each_element()
+        {
+            // c1ccccc1
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] carbons = new Atom[6];
+            for (int i = 0; i < carbons.length; i++)
+            {
+                carbons[i] = Atom.aromatic("C");
+                builder.addAtom(carbons[i]);
+            }
+            for (int i = 0; i < carbons.length; i++)
+            {
+                builder.addBond(carbons[i], carbons[(i + 1) % carbons.length], BondOrder.AROMATIC);
+            }
+
+            assertThat(MolecularFormula.of(builder.build()).empirical()).hasToString("CH");
+        }
+
+        @Test
+        void keeps_a_formula_whose_counts_share_no_divisor()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.organic("O"))
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula.empirical()).isSameAs(formula);
+            assertThat(formula.empirical()).hasToString("H2O");
+        }
+
+        @Test
+        void keeps_a_charged_formula_whole()
+        {
+            // [O-].[O-]
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(
+                    Atom.builder("O").charge(-1).hydrogenCount(0).build(),
+                    Atom.builder("O").charge(-1).hydrogenCount(0).build())
+                .build();
+
+            assertThat(MolecularFormula.of(molecule).empirical()).hasToString("O22-");
+        }
+    }
 }
