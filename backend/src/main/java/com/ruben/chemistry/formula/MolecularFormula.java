@@ -58,15 +58,6 @@ public final class MolecularFormula
     }
 
     /**
-     * @param molecule the molecule to write
-     * @return the molecule's formula
-     */
-    public static String write(Molecule molecule)
-    {
-        return of(molecule).toString();
-    }
-
-    /**
      * @return each element's count, iterating in the order they are written, unmodifiable
      */
     public Map<String, Integer> counts()
