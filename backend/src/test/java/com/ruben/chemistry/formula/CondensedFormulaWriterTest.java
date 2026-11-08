@@ -17,10 +17,18 @@ import static org.mockito.Mockito.when;
 
 class CondensedFormulaWriterTest
 {
+    private static String unicode(Molecule molecule)
+    {
+        return new CondensedFormulaWriter(molecule).setUnicode(true).write();
+    }
+
     @Test
     void writes_nothing_for_an_empty_molecule()
     {
-        assertThat(write(new Molecule.Builder().build())).isEmpty();
+        Molecule molecule = new Molecule.Builder().build();
+
+        assertThat(write(molecule)).isEmpty();
+        assertThat(unicode(molecule)).isEmpty();
     }
 
     @Test
@@ -31,6 +39,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("CH4");
+        assertThat(unicode(molecule)).isEqualTo("CH₄");
     }
 
     @Test
@@ -45,6 +54,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("CH#CH");
+        assertThat(unicode(molecule)).isEqualTo("CH#CH");
     }
 
     @Test
@@ -65,6 +75,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("C(Cl)(Cl)(Cl)Cl");
+        assertThat(unicode(molecule)).isEqualTo("C(Cl)(Cl)(Cl)Cl");
     }
 
     @Test
@@ -79,6 +90,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("CH3CH3");
+        assertThat(unicode(molecule)).isEqualTo("CH₃CH₃");
     }
 
     @Test
@@ -95,6 +107,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("CH3CH2OH");
+        assertThat(unicode(molecule)).isEqualTo("CH₃CH₂OH");
     }
 
     @Test
@@ -113,6 +126,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("CH3CH(CH3)CH3");
+        assertThat(unicode(molecule)).isEqualTo("CH₃CH(CH₃)CH₃");
     }
 
     @Test
@@ -124,6 +138,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("CH4.H2O");
+        assertThat(unicode(molecule)).isEqualTo("CH₄.H₂O");
     }
 
     @Test
@@ -134,6 +149,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("NH4+");
+        assertThat(unicode(molecule)).isEqualTo("NH₄⁺");
     }
 
     @Test
@@ -144,6 +160,7 @@ class CondensedFormulaWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("O2-");
+        assertThat(unicode(molecule)).isEqualTo("O²⁻");
     }
 
     @Nested
@@ -157,6 +174,7 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("H2O");
+            assertThat(unicode(molecule)).isEqualTo("H₂O");
         }
 
         @Test
@@ -170,7 +188,9 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(nitrogen)).isEqualTo("NH3");
+            assertThat(unicode(nitrogen)).isEqualTo("NH₃");
             assertThat(write(carbon)).isEqualTo("CH4");
+            assertThat(unicode(carbon)).isEqualTo("CH₄");
         }
 
         @Test
@@ -187,6 +207,7 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("HOCH2CH3");
+            assertThat(unicode(molecule)).isEqualTo("HOCH₂CH₃");
         }
 
         @Test
@@ -203,6 +224,7 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("CH3CH2OH");
+            assertThat(unicode(molecule)).isEqualTo("CH₃CH₂OH");
         }
 
         @Test
@@ -219,6 +241,8 @@ class CondensedFormulaWriterTest
                 .setElementOrder(MolecularFormula.ElementOrder.HILL).write()).isEqualTo("ClH");
             assertThat(new CondensedFormulaWriter(ammonia)
                 .setElementOrder(MolecularFormula.ElementOrder.HILL).write()).isEqualTo("H3N");
+            assertThat(new CondensedFormulaWriter(ammonia)
+                .setElementOrder(MolecularFormula.ElementOrder.HILL).setUnicode(true).write()).isEqualTo("H₃N");
         }
     }
 
@@ -237,6 +261,7 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("CH2=CH2");
+            assertThat(unicode(molecule)).isEqualTo("CH₂=CH₂");
         }
 
         @Test
@@ -251,8 +276,10 @@ class CondensedFormulaWriterTest
                 .build();
 
             String formula = new CondensedFormulaWriter(molecule).setRenderBondSymbols(false).write();
+            String displayed = new CondensedFormulaWriter(molecule).setRenderBondSymbols(false).setUnicode(true).write();
 
             assertThat(formula).isEqualTo("CH2CH2");
+            assertThat(displayed).isEqualTo("CH₂CH₂");
         }
 
         @Test
@@ -267,6 +294,7 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("CH2CH2");
+            assertThat(unicode(molecule)).isEqualTo("CH₂CH₂");
         }
     }
 
@@ -288,6 +316,8 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("CH2%1CH2CH2%1");
+            // the ring number is a label, so it keeps plain digits while the hydrogens do not
+            assertThat(unicode(molecule)).isEqualTo("CH₂%1CH₂CH₂%1");
         }
 
         @Test
@@ -305,6 +335,7 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("CH=%1CH2CH=%1");
+            assertThat(unicode(molecule)).isEqualTo("CH=%1CH₂CH=%1");
         }
 
         @Test
@@ -327,6 +358,7 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(write(molecule)).isEqualTo("C%1%2(CH2CH2%1)CH2CH2%2");
+            assertThat(unicode(molecule)).isEqualTo("C%1%2(CH₂CH₂%1)CH₂CH₂%2");
         }
 
         @Test
@@ -345,7 +377,10 @@ class CondensedFormulaWriterTest
                 builder.addBond(carbons[i], carbons[(i + 1) % carbons.length], BondOrder.AROMATIC);
             }
 
-            assertThat(write(builder.build())).isEqualTo("CH%1CHCHCHCHCH%1");
+            Molecule molecule = builder.build();
+
+            assertThat(write(molecule)).isEqualTo("CH%1CHCHCHCHCH%1");
+            assertThat(unicode(molecule)).isEqualTo("CH%1CHCHCHCHCH%1");
         }
     }
 
@@ -375,8 +410,10 @@ class CondensedFormulaWriterTest
             when(ranker.rank(molecule)).thenReturn(ranking);
 
             String formula = new CondensedFormulaWriter(molecule).setRanker(ranker).write();
+            String displayed = new CondensedFormulaWriter(molecule).setRanker(ranker).setUnicode(true).write();
 
             assertThat(formula).isEqualTo("CH2(NH2)OH");
+            assertThat(displayed).isEqualTo("CH₂(NH₂)OH");
         }
 
         @Test

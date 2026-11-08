@@ -44,6 +44,7 @@ public final class CondensedFormulaWriter
 
     private int nextRingNumber = 1;
     private boolean renderBondSymbols = true;
+    private boolean unicode;
     private MolecularFormula.ElementOrder elementOrder = MolecularFormula.ElementOrder.CONVENTIONAL;
     private Ranker ranker;
     private Ranking ranking;
@@ -73,6 +74,24 @@ public final class CondensedFormulaWriter
     public CondensedFormulaWriter setRenderBondSymbols(boolean renderBondSymbols)
     {
         this.renderBondSymbols = renderBondSymbols;
+        return this;
+    }
+
+    /**
+     * @return {@code true} if hydrogen counts and charges are written as subscripts and superscripts
+     */
+    public boolean isUnicode()
+    {
+        return unicode;
+    }
+
+    /**
+     * @param unicode whether to atom counts and charges in sub/superscript.
+     * @return this writer, for chaining
+     */
+    public CondensedFormulaWriter setUnicode(boolean unicode)
+    {
+        this.unicode = unicode;
         return this;
     }
 
@@ -323,11 +342,19 @@ public final class CondensedFormulaWriter
         if (charge != 0)
         {
             // conventionally 2- rather than -2
-            if (Math.abs(charge) > 1)
+            int magnitude = Math.abs(charge);
+            if (magnitude > 1)
             {
-                group.append(Math.abs(charge));
+                group.append(unicode ? Unicode.superscript(magnitude) : String.valueOf(magnitude));
             }
-            group.append(charge > 0 ? '+' : '-');
+            if (unicode)
+            {
+                group.append(charge > 0 ? Unicode.PLUS : Unicode.MINUS);
+            }
+            else
+            {
+                group.append(charge > 0 ? '+' : '-');
+            }
         }
         return group.toString();
     }
@@ -357,14 +384,14 @@ public final class CondensedFormulaWriter
      * @param group the group being built, appended to in place
      * @param hydrogens the number of hydrogens attached
      */
-    private static void appendHydrogens(StringBuilder group, int hydrogens)
+    private void appendHydrogens(StringBuilder group, int hydrogens)
     {
         if (hydrogens > 0)
         {
             group.append('H');
             if (hydrogens > 1)
             {
-                group.append(hydrogens);
+                group.append(unicode ? Unicode.subscript(hydrogens) : String.valueOf(hydrogens));
             }
         }
     }

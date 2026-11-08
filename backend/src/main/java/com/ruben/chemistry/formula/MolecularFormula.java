@@ -224,23 +224,50 @@ public final class MolecularFormula
     @Override
     public String toString()
     {
+        return render(false);
+    }
+
+    /**
+     * @return the formula in Unicode, with any net charge appended, e.g., {@code C₂H₆} or {@code NH₄⁺}
+     */
+    public String toUnicode()
+    {
+        return render(true);
+    }
+
+    /**
+     * @param unicode whether to render the numbers as subscripts and superscripts rather than as plain digits
+     * @return the formula, with any net charge appended
+     */
+    private String render(boolean unicode)
+    {
         StringBuilder text = new StringBuilder();
         counts.forEach((element, count) ->
         {
             text.append(element);
             if (count > 1)
             {
-                text.append(count);
+                text.append(unicode ? Unicode.subscript(count) : String.valueOf(count));
             }
         });
 
-        if (charge != 0)
+        if (charge == 0)
         {
-            // written magnitude-first, i.e., 2- rather than -2
-            if (Math.abs(charge) > 1)
-            {
-                text.append(Math.abs(charge));
-            }
+            return text.toString();
+        }
+
+        // written magnitude-first, i.e., 2- rather than -2
+        int magnitude = Math.abs(charge);
+        if (magnitude > 1)
+        {
+            text.append(unicode ? Unicode.superscript(magnitude) : String.valueOf(magnitude));
+        }
+        if (unicode)
+        {
+            text.append(charge > 0 ? Unicode.PLUS : Unicode.MINUS);
+        }
+        else
+        {
             text.append(charge > 0 ? '+' : '-');
         }
         return text.toString();

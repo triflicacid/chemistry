@@ -1,23 +1,23 @@
 package com.ruben.chemistry.formula;
 
 /**
- * Renders a number as Unicode subscript or superscript digits.
+ * Unicode utilities - plus, minus, and superscript/subscript numbers.
  */
-final class UnicodeDigits
+final class Unicode
 {
-    /** Subscript digits 0 to 9, U+2080 to U+2089. */
+    /** Subscript digits 0 to 9. */
     private static final String SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
 
-    /** Superscript digits 0 to 9, which are not one contiguous run: 1, 2 and 3 sit in Latin-1. */
+    /** Superscript digits 0 to 9. */
     private static final String SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 
-    /** Superscript plus, U+207A. */
+    /** Superscript plus. */
     static final char PLUS = '⁺';
 
-    /** Superscript minus, U+207B. */
+    /** Superscript minus. */
     static final char MINUS = '⁻';
 
-    private UnicodeDigits()
+    private Unicode()
     {
     }
 
