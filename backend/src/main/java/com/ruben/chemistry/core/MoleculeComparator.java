@@ -48,7 +48,8 @@ public final class MoleculeComparator implements Comparator<Molecule>
     /** Total ordering for a molecule's bonds: lexicographic over {@link #BOND_SIGNATURE_ORDER}. */
     private static final Comparator<List<BondSignature>> BOND_SIGNATURES_ORDER = Comparators.lexicographically(BOND_SIGNATURE_ORDER);
 
-    private final Ranker ranker;
+    /** Avoid re-computing a molecule's ranking, as it will never change (immutable.) */
+    private final Function<Molecule, Ranking> rankings;
 
     /**
      * Creates a comparator using the default {@link CanonicalRanker}.
@@ -63,7 +64,7 @@ public final class MoleculeComparator implements Comparator<Molecule>
      */
     public MoleculeComparator(Ranker ranker)
     {
-        this.ranker = ranker;
+        this.rankings = CachedFunction.byIdentity(ranker::rank);
     }
 
     @Override
@@ -82,8 +83,8 @@ public final class MoleculeComparator implements Comparator<Molecule>
         }
 
         // same size, so the atoms have to be lined up by structural role before comparing them
-        Ranking firstRanking = ranker.rank(first);
-        Ranking secondRanking = ranker.rank(second);
+        Ranking firstRanking = rankings.apply(first);
+        Ranking secondRanking = rankings.apply(second);
 
         Function<Atom, List<NeighbourReference>> firstOrder = CachedFunction.byIdentity(atom -> rankedNeighbourOrder(first, firstRanking, atom));
         Function<Atom, List<NeighbourReference>> secondOrder = CachedFunction.byIdentity(atom -> rankedNeighbourOrder(second, secondRanking, atom));
