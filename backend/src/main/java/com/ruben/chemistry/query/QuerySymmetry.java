@@ -3,6 +3,7 @@ package com.ruben.chemistry.query;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.util.PermutationSearch;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,25 +13,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The symmetries of a {@link Query} with respect to one {@link Molecule}: the ways the query's
- * atom positions can be permuted among themselves without changing which substructures it matches.
+ * Finds symmetries of a query relative to a particular target molecule.
  * <p>
- * A symmetry permutes positions only onto positions accepting the very same real atoms, joined by
- * bonds accepting the very same real bonds. Therefore, each tells how often one substructure is matched
- * over again under a different labelling of the pattern.
+ * Two query positions are considered interchangeable when swapping them
+ * preserves their degrees, accepted target atoms, and accepted target bonds.
+ * The resulting permutations therefore describe equivalent query
+ * assignments for the supplied molecule, rather than intrinsic symmetries
+ * of the query or automorphisms of the molecule itself.
  * <p>
- * With {@code CC} against ethane, the two positions accept the same two carbons, so the one
- * symmetry swapping them says the pattern's two matches cover the same bond twice. Taking
- * {@code c1ccccc1} against benzene, the eleven symmetries of the ring account for all twelve
- * matches, leaving one substructure. {@code CCC} against cyclohexane has only the symmetry
- * reversing the chain, so its twelve matches are two apiece over the six places the chain sits.
+ * This target-relative symmetry information can be used to avoid
+ * returning multiple matches that differ only by an interchangeable
+ * assignment of query positions.
  * <p>
- * Being relative to the molecule, the same query can be symmetric against one and not another:
- * {@code Cc} is symmetric against benzene, every carbon of which is aromatic and so accepted by
- * both positions, but not against toluene, whose aliphatic methyl only the first position accepts.
- * <p>
- * <strong>This does not preserve stereochemistry!</strong>
- * To be safe, {@link #of} returns {@link #NONE} for any query declaring chirality or double bond stereo.
+ * Queries containing atom chirality or double-bond stereochemistry are
+ * not currently supported.
  */
 final class QuerySymmetry
 {
@@ -64,11 +60,11 @@ final class QuerySymmetry
     }
 
     /**
-     * Note that the result tracks the bindings of one search, so a fresh instance is needed per search.
+     * Creates the query symmetries that are valid for the supplied target molecule.
      *
-     * @param query the pattern whose symmetries to find
-     * @param molecule the molecule the query will be matched against
-     * @return the symmetries of {@code query} with respect to {@code molecule}, or {@link #NONE}
+     * @param query the query whose positions are compared
+     * @param molecule the target molecule against which symmetry is evaluated
+     * @return the target-relative query symmetries, or {@link #NONE} when symmetry analysis is not supported for the query
      */
     static QuerySymmetry of(Query query, Molecule molecule)
     {
@@ -102,15 +98,36 @@ final class QuerySymmetry
     private static List<int[]> permutationsOf(Query query, Molecule molecule, List<QueryAtom> positions)
     {
         int size = positions.size();
-        // the invariants a symmetry has to preserve, gathered up front rather than recomputed per candidate
+
         int[] degrees = degreesOf(query, positions);
         List<BitSet> acceptedAtoms = acceptedAtomsOf(molecule, positions);
         QueryBond[][] joining = joiningBonds(query, positions);
         Map<QueryBond, BitSet> acceptedBonds = acceptedBondsOf(molecule, query);
 
-        List<int[]> permutations = new ArrayList<>();
-        extend(new int[size], new boolean[size], 0, degrees, acceptedAtoms, joining, acceptedBonds, permutations);
-        return permutations;
+        List<int[]> candidates = PermutationSearch.find(
+                size,
+                MAX_PERMUTATIONS + 1,
+                (permutation, position, target) ->
+                        degrees[position] == degrees[target]
+                                && acceptedAtoms.get(position).equals(acceptedAtoms.get(target))
+                                && bondsAgree(permutation, position, target, joining, acceptedBonds));
+
+        return candidates.stream()
+                .filter(permutation -> !isIdentity(permutation))
+                .limit(MAX_PERMUTATIONS)
+                .toList();
+    }
+
+    private static boolean isIdentity(int[] permutation)
+    {
+        for (int i = 0; i < permutation.length; i++)
+        {
+            if (permutation[i] != i)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -232,78 +249,6 @@ final class QuerySymmetry
             }
         }
         return set;
-    }
-
-    /**
-     * Builds every permutation of the positions that preserves which real atoms each position
-     * accepts and which positions are bonded by what, collecting them into {@code into}.
-     * Excludes the identity permutation.
-     *
-     * @param permutation the permutation being built, filled up to {@code position}
-     * @param used which targets the permutation has already taken
-     * @param position the position to choose a target for
-     * @param degrees the number of bonds each position has
-     * @param acceptedAtoms the real atoms each position accepts
-     * @param joining the query bond between each pair of positions, or {@code null}
-     * @param acceptedBonds the real bonds each query bond accepts
-     * @param into collects the permutations found
-     */
-    private static void extend(
-            int[] permutation,
-            boolean[] used,
-            int position,
-            int[] degrees,
-            List<BitSet> acceptedAtoms,
-            QueryBond[][] joining,
-            Map<QueryBond, BitSet> acceptedBonds,
-            List<int[]> into)
-    {
-        if (into.size() >= MAX_PERMUTATIONS)
-        {
-            return;
-        }
-
-        int size = permutation.length;
-        // a target has been chosen for every position, so the permutation is complete and ready to record
-        if (position == size)
-        {
-            // the identity prunes nothing, so keep only a permutation that moves some position
-            for (int i = 0; i < size; i++)
-            {
-                if (permutation[i] != i)
-                {
-                    into.add(permutation.clone());
-                    return;
-                }
-            }
-            return;
-        }
-
-        for (int target = 0; target < size; target++)
-        {
-            // a symmetry preserves bond count, so a target with a different one cannot work
-            if (used[target] || degrees[position] != degrees[target])
-            {
-                continue;
-            }
-            // the two positions have to be interchangeable in every match
-            if (!acceptedAtoms.get(position).equals(acceptedAtoms.get(target)))
-            {
-                continue;
-            }
-            if (!bondsAgree(permutation, position, target, joining, acceptedBonds))
-            {
-                continue;
-            }
-
-            // target survived every check, so take it and fill the positions after it, then give it back
-            // up so the next iteration can try this same position against another target
-            permutation[position] = target;
-            used[target] = true;
-            extend(permutation, used, position + 1, degrees, acceptedAtoms, joining, acceptedBonds, into);
-            // only used is restored as permutation[position] is overwritten before anything reads it again
-            used[target] = false;
-        }
     }
 
     /**
