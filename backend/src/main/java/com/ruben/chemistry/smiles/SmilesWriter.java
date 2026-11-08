@@ -14,7 +14,6 @@ import com.ruben.chemistry.core.Ranking;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -210,13 +209,8 @@ public final class SmilesWriter
      */
     private List<Bond> orderedBondsOf(Atom atom)
     {
-        List<Bond> bonds = new ArrayList<>(molecule.bondsOf(atom));
-        if (ranking != null)
-        {
-            // stable sort: ties fall back to the original bondsOf order
-            bonds.sort(Comparator.comparingInt(bond -> ranking.rankOf(bond.getOther(atom))));
-        }
-        return bonds;
+        List<Bond> bonds = molecule.bondsOf(atom);
+        return ranking == null ? bonds : Ranking.bondsByAscendingRank(ranking, atom, bonds);
     }
 
     /**

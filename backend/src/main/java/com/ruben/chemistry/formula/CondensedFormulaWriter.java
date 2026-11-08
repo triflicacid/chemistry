@@ -10,12 +10,14 @@ import com.ruben.chemistry.core.Ranker;
 import com.ruben.chemistry.core.Ranking;
 import com.ruben.chemistry.util.IdentitySet;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -33,6 +35,9 @@ import java.util.Set;
 public final class CondensedFormulaWriter
 {
     private static final String WILDCARD = "*";
+
+    /** Stands for a bond with no symbol to write, and for a root atom's absent arriving bond. */
+    private static final char NO_SYMBOL = '\0';
 
     /** The shortest run of interchangeable groups collapsed into a repeat group unless told otherwise. */
     private static final int DEFAULT_MINIMUM_REPEAT = 2;
@@ -229,12 +234,14 @@ public final class CondensedFormulaWriter
         nextRingNumber = 1;
         molecule.atoms().forEach(atom -> ringBondsOfAtom.put(atom, new ArrayList<>()));
 
+        List<Atom> roots = rootAtoms();
+
         // First pass: walk the graph purely to assign ring numbers
-        for (Atom atom : rootAtoms())
+        for (Atom atom : roots)
         {
             if (!visited.contains(atom))
             {
-                discoverRingClosures(atom, null);
+                discoverRingClosures(atom);
             }
         }
 
@@ -242,7 +249,7 @@ public final class CondensedFormulaWriter
         visited.clear();
 
         StringBuilder text = new StringBuilder();
-        for (Atom atom : rootAtoms())
+        for (Atom atom : roots)
         {
             // an unvisited atom here belongs to a fragment nothing written so far reaches
             if (!visited.contains(atom))
@@ -251,7 +258,7 @@ public final class CondensedFormulaWriter
                 {
                     text.append('.');
                 }
-                text.append(renderChain(trace(atom, null), true));
+                text.append(renderChain(trace(atom), true));
             }
         }
         return text.toString();
@@ -271,50 +278,53 @@ public final class CondensedFormulaWriter
 
     /**
      * @param atom the atom whose incident bonds are required
-     * @return {@code atom}'s incident bonds
+     * @return {@code atom}'s incident bonds, in rank order if this writer has a ranking
      */
     private List<Bond> orderedBondsOf(Atom atom)
     {
-        List<Bond> bonds = new ArrayList<>(molecule.bondsOf(atom));
-        if (ranking != null)
-        {
-            // stable sort: ties fall back to the original bondsOf order
-            bonds.sort(Comparator.comparingInt(bond -> ranking.rankOf(bond.getOther(atom))));
-        }
-        return bonds;
+        List<Bond> bonds = molecule.bondsOf(atom);
+        return ranking == null ? bonds : Ranking.bondsByAscendingRank(ranking, atom, bonds);
     }
 
     /**
      * Depth-first traversal that assigns ring numbers to back-edge bonds (bonds that reach an already-visited atom.)
      *
-     * @param atom the atom currently being visited
-     * @param arrivingBond the bond traversed to reach {@code atom}, or {@code null} for a root atom
+     * @param root the atom to traverse from
      */
-    private void discoverRingClosures(Atom atom, Bond arrivingBond)
+    private void discoverRingClosures(Atom root)
     {
-        visited.add(atom);
+        Deque<Visit> stack = new ArrayDeque<>();
+        visited.add(root);
+        stack.push(new Visit(root, null, orderedBondsOf(root)));
 
-        for (Bond bond : orderedBondsOf(atom))
+        while (!stack.isEmpty())
         {
-            if (bond == arrivingBond)
+            Visit visit = stack.peek();
+            Bond bond = visit.nextBond();
+            if (bond == null)
+            {
+                stack.pop();
+                continue;
+            }
+            if (bond == visit.arrivingBond())
             {
                 continue;
             }
 
-            Atom neighbour = bond.getOther(atom);
-            if (visited.contains(neighbour))
+            Atom neighbour = bond.getOther(visit.atom());
+            if (!visited.contains(neighbour))
             {
-                // neighbour was reached earlier by a different path, so this bond closes a ring
-                if (!ringNumberOfBond.containsKey(bond))
-                {
-                    ringNumberOfBond.put(bond, nextRingNumber++);
-                    ringBondsOfAtom.get(atom).add(bond);
-                    ringBondsOfAtom.get(neighbour).add(bond);
-                }
+                visited.add(neighbour);
+                stack.push(new Visit(neighbour, bond, orderedBondsOf(neighbour)));
+                continue;
             }
-            else
+
+            // neighbour was reached earlier by a different path, so this bond closes a ring
+            if (!ringNumberOfBond.containsKey(bond))
             {
-                discoverRingClosures(neighbour, bond);
+                ringNumberOfBond.put(bond, nextRingNumber++);
+                ringBondsOfAtom.get(visit.atom()).add(bond);
+                ringBondsOfAtom.get(neighbour).add(bond);
             }
         }
     }
@@ -322,24 +332,57 @@ public final class CondensedFormulaWriter
     /**
      * Depth-first traversal that records the structure reached from an atom, without writing anything.
      *
-     * @param atom the atom at the root of the subtree
-     * @param arrivingBond the bond traversed to reach {@code atom}, or {@code null} for a root atom
-     * @return {@code atom} and everything reached through it
+     * @param root the atom at the root of the subtree
+     * @return {@code root} and everything reached through it
      */
-    private Node trace(Atom atom, Bond arrivingBond)
+    private Node trace(Atom root)
     {
-        visited.add(atom);
+        Deque<Visit> stack = new ArrayDeque<>();
+        visited.add(root);
+        stack.push(new Visit(root, null, orderedBondsOf(root)));
+        Node traced = null;
 
-        List<Node> children = new ArrayList<>();
-        for (Bond bond : orderedBondsOf(atom))
+        while (!stack.isEmpty())
         {
-            // ring bonds are already represented by their markers, so they lead nowhere new
-            if (bond != arrivingBond && !ringNumberOfBond.containsKey(bond))
+            Visit visit = stack.peek();
+            Bond bond = visit.nextBond();
+            if (bond == null)
             {
-                children.add(trace(bond.getOther(atom), bond));
+                traced = nodeOf(visit);
+                stack.pop();
+                if (!stack.isEmpty())
+                {
+                    stack.peek().addChild(traced);
+                }
+                continue;
             }
+
+            // ring bonds are already represented by their markers, so they lead nowhere new
+            if (bond == visit.arrivingBond() || ringNumberOfBond.containsKey(bond))
+            {
+                continue;
+            }
+
+            Atom neighbour = bond.getOther(visit.atom());
+            visited.add(neighbour);
+            stack.push(new Visit(neighbour, bond, orderedBondsOf(neighbour)));
         }
-        return new Node(atom, arrivingBond, ringBondsOfAtom.get(atom), children);
+        return traced;
+    }
+
+    /**
+     * @param visit a fully traversed atom
+     * @return {@code visit}'s atom and everything traced below it
+     */
+    private Node nodeOf(Visit visit)
+    {
+        List<Bond> ringBonds = ringBondsOfAtom.get(visit.atom());
+        boolean matchable = !visit.atom().aromatic() && ringBonds.isEmpty();
+        for (Node child : visit.children())
+        {
+            matchable &= child.matchable();
+        }
+        return new Node(visit.atom(), visit.arrivingBond(), ringBonds, visit.children(), matchable);
     }
 
     /**
@@ -372,7 +415,7 @@ public final class CondensedFormulaWriter
 
             boolean leading = leadsFragment && segments.isEmpty();
             boolean branchesFirst = leading && next != null;
-            segments.add(new Segment(node, branches, leading,
+            segments.add(new Segment(node, branches, leading, matchable(node, branches),
                 renderSegment(node, branches, leading, branchesFirst)));
             node = next;
         }
@@ -430,7 +473,7 @@ public final class CondensedFormulaWriter
     private String renderSegment(Node node, List<BranchRun> branches, boolean leading, boolean branchesFirst)
     {
         StringBuilder text = new StringBuilder();
-        text.append(arrivingSymbol(node));
+        appendBondSymbol(text, arrivingSymbol(node));
 
         // a collapsed group reads better ahead of its atom when the chain carries on past it, as in (CH3)2CHOH
         if (branchesFirst)
@@ -441,7 +484,8 @@ public final class CondensedFormulaWriter
         text.append(groupOf(node.atom(), leading));
         for (Bond ringBond : node.ringBonds())
         {
-            text.append(bondSymbol(ringBond)).append('%').append(ringNumberOfBond.get(ringBond));
+            appendBondSymbol(text, bondSymbol(ringBond));
+            text.append('%').append(ringNumberOfBond.get(ringBond));
         }
 
         for (BranchRun run : branches)
@@ -452,6 +496,28 @@ public final class CondensedFormulaWriter
             }
         }
         return text.toString();
+    }
+
+    /**
+     * @param node the atom at one position along a chain
+     * @param branches the branches hanging off it, the chain's continuation already removed
+     * @return {@code true} if the position can stand for an interchangeable one
+     */
+    private boolean matchable(Node node, List<BranchRun> branches)
+    {
+        if (node.atom().aromatic() || !node.ringBonds().isEmpty())
+        {
+            return false;
+        }
+
+        for (BranchRun run : branches)
+        {
+            if (!run.branch().matchable())
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -492,10 +558,10 @@ public final class CondensedFormulaWriter
     {
         // only a bare element symbol leaves the count unambiguous: CCl4, but (CH3)4 and (CH)4 both need brackets
         return branch.children().isEmpty()
-            && branch.ringBonds().isEmpty()
-            && branch.atom().charge() == 0
-            && molecule.totalHydrogenCount(branch.atom()) == 0
-            && arrivingSymbol(branch).isEmpty();
+                && branch.ringBonds().isEmpty()
+                && branch.atom().charge() == 0
+                && molecule.totalHydrogenCount(branch.atom()) == 0
+                && arrivingSymbol(branch) == NO_SYMBOL;
     }
 
     /**
@@ -506,12 +572,16 @@ public final class CondensedFormulaWriter
      */
     private String joinSegments(List<Segment> segments)
     {
-        StringBuilder text = new StringBuilder();
+        // a chain too short to hold one repeat group has nothing to find, so indexing it would not pay
+        RepeatIndex repeats = collapseRepeats && segments.size() >= 2 * minimumRepeat
+            ? indexRepeats(segments)
+            : null;
 
+        StringBuilder text = new StringBuilder();
         int index = 0;
         while (index < segments.size())
         {
-            int period = collapseRepeats ? repeatPeriod(segments, index) : 0;
+            int period = repeats == null ? 0 : repeatPeriod(repeats, index);
             if (period == 0)
             {
                 text.append(segments.get(index).text());
@@ -519,7 +589,7 @@ public final class CondensedFormulaWriter
                 continue;
             }
 
-            int count = repeatCount(segments, index, period);
+            int count = repeats.repeatCount(index, period);
             text.append('(');
             for (int i = 0; i < period; i++)
             {
@@ -532,35 +602,113 @@ public final class CondensedFormulaWriter
     }
 
     /**
+     * Sorts a chain's segments into classes of interchangeable ones.
+     *
+     * @param segments the chain's segments, in the order they were walked
+     * @return the chain indexed for repeat detection
+     */
+    private RepeatIndex indexRepeats(List<Segment> segments)
+    {
+        int size = segments.size();
+        int[] classOf = new int[size];
+        int[] representativeOf = new int[size];
+        int[] nextClassOfSameText = new int[size];
+        int[] textEnd = new int[size + 1];
+        boolean[] canStartGroup = new boolean[size];
+        Map<String, Integer> classByText = new HashMap<>();
+        int classes = 0;
+
+        for (int index = 0; index < size; index++)
+        {
+            Segment segment = segments.get(index);
+            textEnd[index + 1] = textEnd[index] + segment.text().length();
+            // a repeat group opening with a bond symbol would read as a branch off the group before it
+            canStartGroup[index] = arrivingSymbol(segment.node()) == NO_SYMBOL;
+
+            if (!segment.matchable())
+            {
+                representativeOf[classes] = index;
+                classOf[index] = classes++;
+                continue;
+            }
+
+            // interchangeable segments write the same text, so only the classes writing this text are worth comparing
+            Integer written = classByText.get(segment.text());
+            int first = written == null ? -1 : written;
+
+            int match = -1;
+            for (int candidate = first; candidate >= 0; candidate = nextClassOfSameText[candidate])
+            {
+                if (sameSegment(segments.get(representativeOf[candidate]), segment))
+                {
+                    match = candidate;
+                    break;
+                }
+            }
+
+            if (match < 0)
+            {
+                match = classes++;
+                representativeOf[match] = index;
+                nextClassOfSameText[match] = first;
+                classByText.put(segment.text(), match);
+            }
+            classOf[index] = match;
+        }
+        return new RepeatIndex(classOf, nextOfEachClass(classOf, classes), textEnd, canStartGroup);
+    }
+
+    /**
+     * @param classOf each segment's class
+     * @param classes how many classes are in use
+     * @return the next segment of the same class as each segment, or {@code -1} where there is none
+     */
+    private static int[] nextOfEachClass(int[] classOf, int classes)
+    {
+        int[] next = new int[classOf.length];
+        int[] lastSeen = new int[classes];
+        Arrays.fill(lastSeen, -1);
+
+        for (int index = classOf.length - 1; index >= 0; index--)
+        {
+            next[index] = lastSeen[classOf[index]];
+            lastSeen[classOf[index]] = index;
+        }
+        return next;
+    }
+
+    /**
      * Looks for a repeating motif starting at one segment, preferring the shortest motif that pays
      * for the brackets it costs.
      *
-     * @param segments the chain's segments
+     * @param repeats the chain indexed for repeat detection
      * @param from the segment the motif would start at
      * @return the motif's length in segments, or zero if nothing worth collapsing starts here
      */
-    private int repeatPeriod(List<Segment> segments, int from)
+    private int repeatPeriod(RepeatIndex repeats, int from)
     {
-        // a repeat group opening with a bond symbol would read as a branch off the group before it
-        if (!arrivingSymbol(segments.get(from).node()).isEmpty())
+        if (!repeats.canStartGroup(from))
         {
             return 0;
         }
 
-        for (int period = 1; from + 2 * period <= segments.size(); period++)
+        // the motif's second turn opens with a segment interchangeable with this one, so no other period can repeat
+        for (int next = repeats.nextOfSameClass(from); next >= 0; next = repeats.nextOfSameClass(next))
         {
-            int count = repeatCount(segments, from, period);
+            int period = next - from;
+            // periods only grow from here, so once the chain is too short for two turns nothing later fits either
+            if (from + 2 * period > repeats.size())
+            {
+                return 0;
+            }
+
+            int count = repeats.repeatCount(from, period);
             if (count < minimumRepeat)
             {
                 continue;
             }
 
-            int motif = 0;
-            for (int i = 0; i < period; i++)
-            {
-                motif += segments.get(from + i).text().length();
-            }
-
+            int motif = repeats.motifLength(from, period);
             // collapsing has to earn its brackets, which is why CH2CH2 is left alone
             if (motif + 2 + String.valueOf(count).length() < motif * count)
             {
@@ -568,33 +716,6 @@ public final class CondensedFormulaWriter
             }
         }
         return 0;
-    }
-
-    /**
-     * @param segments the chain's segments
-     * @param from the segment the motif starts at
-     * @param period the motif's length in segments
-     * @return how many times the motif repeats from {@code from}, at least one
-     */
-    private int repeatCount(List<Segment> segments, int from, int period)
-    {
-        int count = 1;
-        while (from + (count + 1) * period <= segments.size())
-        {
-            int next = from + count * period;
-            boolean matches = true;
-            for (int i = 0; i < period && matches; i++)
-            {
-                matches = sameSegment(segments.get(from + i), segments.get(next + i));
-            }
-
-            if (!matches)
-            {
-                break;
-            }
-            count++;
-        }
-        return count;
     }
 
     /**
@@ -641,7 +762,7 @@ public final class CondensedFormulaWriter
         return first.atom().element().equals(second.atom().element())
             && first.atom().charge() == second.atom().charge()
             && molecule.totalHydrogenCount(first.atom()) == molecule.totalHydrogenCount(second.atom())
-            && arrivingSymbol(first).equals(arrivingSymbol(second));
+            && arrivingSymbol(first) == arrivingSymbol(second);
     }
 
     /**
@@ -651,7 +772,8 @@ public final class CondensedFormulaWriter
      */
     private boolean interchangeable(Node first, Node second)
     {
-        if (!rendersAlike(first, second) || first.children().size() != second.children().size())
+        if (!first.matchable() || !second.matchable()
+            || !rendersAlike(first, second) || first.children().size() != second.children().size())
         {
             return false;
         }
@@ -668,11 +790,25 @@ public final class CondensedFormulaWriter
 
     /**
      * @param node the atom whose arriving bond is required
-     * @return the symbol of the bond reached {@code node} by, or an empty string for a root atom
+     * @return the symbol of the bond {@code node} was reached by, or {@link #NO_SYMBOL} if there is none to write
      */
-    private String arrivingSymbol(Node node)
+    private char arrivingSymbol(Node node)
     {
-        return node.arrivingBond() == null ? "" : bondSymbol(node.arrivingBond());
+        return node.arrivingBond() == null ? NO_SYMBOL : bondSymbol(node.arrivingBond());
+    }
+
+    /**
+     * Appends a bond's symbol, if it has one to write.
+     *
+     * @param text the text being built, appended to in place
+     * @param symbol the symbol to write, or {@link #NO_SYMBOL} to write nothing
+     */
+    private static void appendBondSymbol(StringBuilder text, char symbol)
+    {
+        if (symbol != NO_SYMBOL)
+        {
+            text.append(symbol);
+        }
     }
 
     /**
@@ -691,9 +827,151 @@ public final class CondensedFormulaWriter
      * @param arrivingBond the bond traversed to reach it, or {@code null} for a root atom
      * @param ringBonds the ring-closure bonds to write markers for at this atom
      * @param children the subtrees hanging off it, in the order they were traced
+     * @param matchable whether this subtree can stand for an identical one, which a ring marker or an aromatic atom anywhere within it rules out
      */
-    private record Node(Atom atom, Bond arrivingBond, List<Bond> ringBonds, List<Node> children)
+    private record Node(Atom atom, Bond arrivingBond, List<Bond> ringBonds, List<Node> children, boolean matchable)
     {
+    }
+
+    /**
+     * A chain's segments, containing what repeat detection needs to know about each position.
+     *
+     * @param classOf each segment's class, two segments sharing a class exactly when they are interchangeable
+     * @param nextOfSameClass the next segment of the same class as each segment, or {@code -1} where there is none
+     * @param textEnd the combined length of the segments before each position, one entry longer than the chain
+     * @param canStartGroup whether a repeat group may open at each segment
+     */
+    private record RepeatIndex(int[] classOf, int[] nextOfSameClass, int[] textEnd, boolean[] canStartGroup)
+    {
+        /**
+         * @return how many segments the chain holds
+         */
+        int size()
+        {
+            return classOf.length;
+        }
+
+        /**
+         * @param segment the segment to test
+         * @return {@code true} if a repeat group may open at {@code segment}
+         */
+        boolean canStartGroup(int segment)
+        {
+            return canStartGroup[segment];
+        }
+
+        /**
+         * @param segment the segment to look up
+         * @return the next segment interchangeable with {@code segment}, or {@code -1} if there is none
+         */
+        int nextOfSameClass(int segment)
+        {
+            return nextOfSameClass[segment];
+        }
+
+        /**
+         * @param from the segment the motif starts at
+         * @param period the motif's length in segments
+         * @return the combined length of the motif's text
+         */
+        int motifLength(int from, int period)
+        {
+            return textEnd[from + period] - textEnd[from];
+        }
+
+        /**
+         * @param from the segment the motif starts at
+         * @param period the motif's length in segments
+         * @return how many times the motif repeats from {@code from}, at least one
+         */
+        int repeatCount(int from, int period)
+        {
+            int count = 1;
+            while (from + (count + 1) * period <= size())
+            {
+                int next = from + count * period;
+                boolean matches = true;
+                for (int i = 0; i < period && matches; i++)
+                {
+                    matches = classOf[from + i] == classOf[next + i];
+                }
+
+                if (!matches)
+                {
+                    break;
+                }
+                count++;
+            }
+            return count;
+        }
+    }
+
+    /**
+     * One atom of a depth-first traversal, holding the bonds left to follow from it and the subtrees traced below it so far.
+     */
+    private static final class Visit
+    {
+        private final Atom atom;
+        private final Bond arrivingBond;
+        private final List<Bond> bonds;
+        private List<Node> children;
+        private int next;
+
+        /**
+         * @param atom the atom being traversed
+         * @param arrivingBond the bond traversed to reach {@code atom}, or {@code null} for a root atom
+         * @param bonds {@code atom}'s incident bonds, in the order they are to be followed
+         */
+        private Visit(Atom atom, Bond arrivingBond, List<Bond> bonds)
+        {
+            this.atom = atom;
+            this.arrivingBond = arrivingBond;
+            this.bonds = bonds;
+        }
+
+        /**
+         * @return the atom being traversed
+         */
+        private Atom atom()
+        {
+            return atom;
+        }
+
+        /**
+         * @return the bond traversed to reach this atom, or {@code null} for a root atom
+         */
+        private Bond arrivingBond()
+        {
+            return arrivingBond;
+        }
+
+        /**
+         * @return the subtrees traced below this atom, in the order they were traced
+         */
+        private List<Node> children()
+        {
+            return children == null ? List.of() : children;
+        }
+
+        /**
+         * @param child a subtree traced below this atom
+         */
+        private void addChild(Node child)
+        {
+            if (children == null)
+            {
+                children = new ArrayList<>();
+            }
+            children.add(child);
+        }
+
+        /**
+         * @return the next bond to follow from this atom, or {@code null} once they are all followed
+         */
+        private Bond nextBond()
+        {
+            return next < bonds.size() ? bonds.get(next++) : null;
+        }
     }
 
     /**
@@ -712,9 +990,10 @@ public final class CondensedFormulaWriter
      * @param node the atom at this position
      * @param branches the branches hanging off it, the chain's continuation removed
      * @param leading whether nothing is written before it within its fragment
+     * @param matchable whether this position can stand for an interchangeable one, which a ring marker or an aromatic atom at it or in any of its branches rules out
      * @param text the position's text
      */
-    private record Segment(Node node, List<BranchRun> branches, boolean leading, String text)
+    private record Segment(Node node, List<BranchRun> branches, boolean leading, boolean matchable, String text)
     {
     }
 
@@ -722,8 +1001,7 @@ public final class CondensedFormulaWriter
      * Writes a single atom as a group: its element symbol, its hydrogen count, and its charge.
      *
      * @param atom the atom to write
-     * @param leading whether nothing is written before {@code atom} within its fragment, which lets
-     *     its hydrogens come first
+     * @param leading whether nothing is written before {@code atom} within its fragment, which lets its hydrogens come first
      * @return {@code atom}'s group, e.g. {@code CH3}, {@code NH4+}, or a leading {@code H2O}
      */
     private String groupOf(Atom atom, boolean leading)
@@ -802,15 +1080,15 @@ public final class CondensedFormulaWriter
 
     /**
      * @param bond the bond to be written
-     * @return the bond's symbol, or an empty string if we don't need to render it
+     * @return the bond's symbol, or {@link #NO_SYMBOL} if we don't need to render it
      */
-    private String bondSymbol(Bond bond)
+    private char bondSymbol(Bond bond)
     {
         // a single bond is the default between two groups, and an aromatic one has no order to mark
         if (!renderBondSymbols || bond.order() == BondOrder.SINGLE || bond.order() == BondOrder.AROMATIC)
         {
-            return "";
+            return NO_SYMBOL;
         }
-        return String.valueOf(bond.order().symbol());
+        return bond.order().symbol();
     }
 }

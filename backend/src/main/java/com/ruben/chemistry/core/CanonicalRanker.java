@@ -1,12 +1,11 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
-import com.ruben.chemistry.util.Comparators;
 import com.ruben.chemistry.util.DisjointSet;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,160 +39,234 @@ public final class CanonicalRanker implements Ranker
         .thenComparingInt(AtomKey::degree)
         .thenComparing(AtomKey::inRing);
 
-    /** Total ordering for {@link NeighbourKey}. */
-    private static final Comparator<NeighbourKey> NEIGHBOUR_KEY_ORDER = Comparator
-        .comparingInt(NeighbourKey::bondOrder)
-        .thenComparingInt(NeighbourKey::neighbourClass);
-
-    /** Total ordering for a neighbour invariant: lexicographic over {@link #NEIGHBOUR_KEY_ORDER}. */
-    private static final Comparator<List<NeighbourKey>> NEIGHBOUR_LIST_ORDER = Comparators.lexicographically(NEIGHBOUR_KEY_ORDER);
-
-    /** Total ordering for {@link AtomSignature}. */
-    private static final Comparator<AtomSignature> ATOM_SIGNATURE_ORDER = Comparator
-        .comparing(AtomSignature::atomKey, ATOM_KEY_ORDER)
-        .thenComparing(AtomSignature::neighbours, NEIGHBOUR_LIST_ORDER);
-
-    /** Total ordering for a canonical representation: lexicographic over {@link #ATOM_SIGNATURE_ORDER}. */
-    private static final Comparator<List<AtomSignature>> REPRESENTATION_ORDER = Comparators.lexicographically(ATOM_SIGNATURE_ORDER);
+    private final Function<Molecule, Ranking> rankings = CachedFunction.byIdentity(molecule -> new Canonicalisation(molecule).rank());
 
     @Override
     public Ranking rank(Molecule molecule)
     {
-        List<Atom> atoms = molecule.atoms();
-
-        Set<Bond> ringBonds = molecule.ringBonds();
-
-        // everyone starts in one class, then gets split by invariant, then refined by neighbours
-        Map<Atom, Integer> classOf = new IdentityHashMap<>();
-        for (Atom atom : atoms)
-        {
-            classOf.put(atom, 0);
-        }
-        Refinement initial = reclassify(atoms, classOf, atom -> initialInvariant(molecule, ringBonds, atom), ATOM_KEY_ORDER);
-        Refinement refined = refineToStability(molecule, atoms, initial);
-        return new Ranking(breakTies(molecule, ringBonds, atoms, new AtomGraph(molecule, atoms), refined).classOf());
+        return rankings.apply(molecule);
     }
 
     /**
-     * @param molecule the molecule being ranked
-     * @param atoms the molecule's atoms
-     * @param classification each atom's current class, and how many classes are in use
-     * @return a classification that keeps every distinction {@code classification} already makes, and
-     *     in which two atoms share a class iff they are bonded to the same classes in the same way.
-     *     (May still contain ties.)
+     * Ranks one molecule.
      */
-    private Refinement refineToStability(Molecule molecule, List<Atom> atoms, Refinement classification)
+    private static final class Canonicalisation
     {
-        while (true)
-        {
-            // re-split by neighbour classes
-            Map<Atom, Integer> current = classification.classOf();
-            Refinement refined = reclassify(atoms, current, atom -> neighbourInvariant(molecule, atom, current), NEIGHBOUR_LIST_ORDER);
-            // a pass that splits nothing means there is nothing left to split
-            if (refined.distinctClasses() == classification.distinctClasses())
-            {
-                return refined;
-            }
-            classification = refined;
-        }
-    }
+        private final List<Atom> atoms;
+        private final Neighbourhood neighbours;
 
-    /**
-     * @param molecule the molecule being ranked
-     * @param ringBonds the molecule's ring bonds
-     * @param atoms the molecule's atoms
-     * @param graph the molecule as a graph of atom indices
-     * @param classification each atom's current class, as settled by {@link #refineToStability}, and how many classes are in use
-     * @return the discrete classification, with every atom in a class of its own
-     */
-    private Candidate breakTies(Molecule molecule, Set<Bond> ringBonds, List<Atom> atoms, AtomGraph graph, Refinement classification)
-    {
-        Map<Atom, Integer> classOf = classification.classOf();
-        if (classification.distinctClasses() == atoms.size())
+        /** Each atom's class before any neighbour is looked at, which also orders the canonical representation. */
+        private final Partition initial;
+
+        /** Only tie-breaking needs the molecule as a graph, and most molecules have no tie to break, hold off for now. */
+        private final CachedValue<AtomGraph> graph;
+
+        /**
+         * @param molecule the molecule to rank
+         */
+        private Canonicalisation(Molecule molecule)
         {
-            return new Candidate(classOf, new CachedValue<>(() -> representationOf(molecule, ringBonds, atoms, classOf)));
+            this.atoms = molecule.atoms();
+
+            Map<Atom, Integer> indexOf = new IdentityHashMap<>();
+            for (int atom = 0; atom < atoms.size(); atom++)
+            {
+                indexOf.put(atoms.get(atom), atom);
+            }
+
+            this.neighbours = new Neighbourhood(molecule, atoms, indexOf);
+            this.initial = initialClasses(molecule, atoms);
+            this.graph = new CachedValue<>(() -> new AtomGraph(molecule, atoms, indexOf));
         }
 
-        int classToSplit = smallestTiedClass(atoms, classOf);
-
-        // every symmetry found below preserves these classes, so all of them hold for this step alone
-        GraphAutomorphismDetector.AtomEquivalence equivalence = graph.equivalence(classOf);
-        DisjointSet orbits = new DisjointSet(atoms.size());
-
-        // try every atom still tied in that class so the choice can't depend on atom insertion order
-        List<Atom> tried = new ArrayList<>();
-        Candidate best = null;
-        for (Atom candidate : atoms)
+        /**
+         * @return each atom's rank, every atom in a class of its own
+         */
+        private Ranking rank()
         {
-            if (classOf.get(candidate) != classToSplit)
+            Partition refined = refineToStability(initial);
+            int[] classOf = refined.classes() == refined.size()
+                ? refined.classOf()
+                : breakTies(refined).classOf();
+            return new Ranking(ranksByAtom(classOf));
+        }
+
+        /**
+         * @param classOf each atom's class, with every atom in a class of its own
+         * @return each atom's rank, keyed by atom reference
+         */
+        private Map<Atom, Integer> ranksByAtom(int[] classOf)
+        {
+            Map<Atom, Integer> rankByAtom = new IdentityHashMap<>();
+            for (int atom = 0; atom < classOf.length; atom++)
             {
-                continue;
+                rankByAtom.put(atoms.get(atom), classOf[atom]);
             }
+            return rankByAtom;
+        }
 
-            // an atom a symmetry maps onto one already tried can only repeat that atom's whole subtree
-            if (isInterchangeableWithAny(graph, equivalence, orbits, tried, candidate))
+        /**
+         * @param partition each atom's current class
+         * @return a classification that keeps every distinction {@code partition} already makes, and
+         *     in which two atoms share a class iff they are bonded to the same classes in the same way.
+         *     (May still contain ties.)
+         */
+        private Partition refineToStability(Partition partition)
+        {
+            while (true)
             {
-                continue;
-            }
-            tried.add(candidate);
-
-            Map<Atom, Integer> split = new IdentityHashMap<>(classOf);
-            split.put(candidate, classification.distinctClasses());
-            Refinement refined = refineToStability(molecule, atoms, new Refinement(split, classification.distinctClasses() + 1));
-            Candidate result = breakTies(molecule, ringBonds, atoms, graph, refined);
-
-            if (best == null || REPRESENTATION_ORDER.compare(result.representation().get(), best.representation().get()) < 0)
-            {
-                best = result;
+                // re-split by neighbour classes
+                Partition refined = refine(partition);
+                // a pass that splits nothing means there is nothing left to split
+                if (refined.classes() == partition.classes())
+                {
+                    return refined;
+                }
+                partition = refined;
             }
         }
-        return best;
-    }
 
-    /**
-     * Decides whether an atom is interchangeable with one already split on.
-     *
-     * @param graph the molecule as a graph of atom indices
-     * @param equivalence the symmetry search for the classes in force at this tie-breaking step
-     * @param orbits the atoms a symmetry found at this step has already shown to be interchangeable
-     * @param tried the atoms already split on at this tie-breaking step
-     * @param candidate the atom about to be split on
-     * @return {@code true} if a class-preserving symmetry maps one of {@code tried} onto {@code candidate}
-     */
-    private boolean isInterchangeableWithAny(
-        AtomGraph graph,
-        GraphAutomorphismDetector.AtomEquivalence equivalence,
-        DisjointSet orbits,
-        List<Atom> tried,
-        Atom candidate)
-    {
-        int candidateAtom = graph.indexOf(candidate);
-        for (Atom atom : tried)
+        /**
+         * @param partition each atom's current class
+         * @return a classification in which two atoms share a class only if they shared one in
+         *     {@code partition} and are bonded to the same classes in the same way
+         */
+        private Partition refine(Partition partition)
         {
-            int triedAtom = graph.indexOf(atom);
+            int[] classOf = partition.classOf();
+            long[] keys = neighbours.keysByAtom(classOf);
 
-            // a symmetry found earlier may already join the two, which settles it without searching
-            if (orbits.areJoined(triedAtom, candidateAtom))
+            // pairing the old class with the new keys is what keeps classes from merging back together
+            return classify(partition.size(), (first, second) ->
             {
-                return true;
-            }
-
-            Optional<int[]> symmetry = equivalence.findAutomorphism(triedAtom, candidateAtom);
-            if (symmetry.isPresent())
-            {
-                // the symmetry swaps far more atoms than this pair, and every such pair is interchangeable
-                record(orbits, symmetry.get());
-                return true;
-            }
+                int byClass = Integer.compare(classOf[first], classOf[second]);
+                return byClass != 0 ? byClass : neighbours.compareKeys(keys, first, second);
+            });
         }
-        return false;
+
+        /**
+         * @param partition each atom's current class, as settled by {@link #refineToStability}
+         * @return the discrete classification, with every atom in a class of its own
+         */
+        private Candidate breakTies(Partition partition)
+        {
+            if (partition.classes() == partition.size())
+            {
+                int[] classOf = partition.classOf();
+                return new Candidate(classOf, new CachedValue<>(() -> representationOf(classOf)));
+            }
+
+            int classToSplit = smallestTiedClass(partition);
+
+            // every symmetry found below preserves these classes, so all of them hold for this step alone
+            GraphAutomorphismDetector.AtomEquivalence equivalence = graph.get().equivalence(partition.classOf());
+            DisjointSet orbits = new DisjointSet(partition.size());
+
+            int[] tried = new int[partition.size()];
+            int triedCount = 0;
+            Candidate best = null;
+
+            // try every atom still tied in that class so the choice can't depend on atom insertion order
+            for (int candidate = 0; candidate < partition.size(); candidate++)
+            {
+                if (partition.classOf()[candidate] != classToSplit)
+                {
+                    continue;
+                }
+
+                // an atom a symmetry maps onto one already tried can only repeat that atom's whole subtree
+                if (isInterchangeableWithAny(equivalence, orbits, tried, triedCount, candidate))
+                {
+                    continue;
+                }
+                tried[triedCount++] = candidate;
+
+                int[] split = partition.classOf().clone();
+                split[candidate] = partition.classes();
+                Candidate result = breakTies(refineToStability(new Partition(split, partition.classes() + 1)));
+
+                if (best == null || result.representation().get().compareTo(best.representation().get()) < 0)
+                {
+                    best = result;
+                }
+            }
+            return best;
+        }
+
+        /**
+         * Decides whether an atom is interchangeable with one already split on.
+         *
+         * @param equivalence the symmetry search for the classes in force at this tie-breaking step
+         * @param orbits the atoms a symmetry found at this step has already shown to be interchangeable
+         * @param tried the atoms already split on at this tie-breaking step
+         * @param triedCount how many of {@code tried} hold an atom
+         * @param candidate the atom about to be split on
+         * @return {@code true} if a class-preserving symmetry maps one of {@code tried} onto {@code candidate}
+         */
+        private boolean isInterchangeableWithAny(
+            GraphAutomorphismDetector.AtomEquivalence equivalence,
+            DisjointSet orbits,
+            int[] tried,
+            int triedCount,
+            int candidate)
+        {
+            for (int index = 0; index < triedCount; index++)
+            {
+                int atom = tried[index];
+
+                // a symmetry found earlier may already join the two, which settles it without searching
+                if (orbits.areJoined(atom, candidate))
+                {
+                    return true;
+                }
+
+                Optional<int[]> symmetry = equivalence.findAutomorphism(atom, candidate);
+                if (symmetry.isPresent())
+                {
+                    // the symmetry swaps far more atoms than this pair, and every such pair is interchangeable
+                    record(orbits, symmetry.get());
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * @param classOf each atom's class, with every atom in a class of its own
+         * @return the molecule described atom-by-atom in class order
+         */
+        private Representation representationOf(int[] classOf)
+        {
+            int size = classOf.length;
+            int[] atomByClass = new int[size];
+            for (int atom = 0; atom < size; atom++)
+            {
+                atomByClass[classOf[atom]] = atom;
+            }
+
+            int[] invariantByClass = new int[size];
+            int[] keyOffset = new int[size + 1];
+            for (int position = 0; position < size; position++)
+            {
+                invariantByClass[position] = initial.classOf()[atomByClass[position]];
+                keyOffset[position + 1] = keyOffset[position] + neighbours.degree(atomByClass[position]);
+            }
+
+            long[] keys = new long[keyOffset[size]];
+            for (int position = 0; position < size; position++)
+            {
+                neighbours.writeKeys(atomByClass[position], classOf, keys, keyOffset[position]);
+                Arrays.sort(keys, keyOffset[position], keyOffset[position + 1]);
+            }
+            return new Representation(invariantByClass, keyOffset, keys);
+        }
     }
 
     /**
      * @param orbits the atoms shown to be interchangeable so far, extended in place
      * @param symmetry an atom permutation preserving everything this ranking distinguishes
      */
-    private void record(DisjointSet orbits, int[] symmetry)
+    private static void record(DisjointSet orbits, int[] symmetry)
     {
         for (int atom = 0; atom < symmetry.length; atom++)
         {
@@ -202,115 +275,213 @@ public final class CanonicalRanker implements Ranker
     }
 
     /**
-     * @param atoms the molecule's atoms
-     * @param classOf each atom's current class
+     * @param partition each atom's current class
      * @return the smallest class shared by more than one atom, the lowest such class number winning a tie
      * @throws IllegalStateException if every atom already has a class of its own
      */
-    private int smallestTiedClass(List<Atom> atoms, Map<Atom, Integer> classOf)
+    private static int smallestTiedClass(Partition partition)
     {
-        // a class holding more than one atom is a tie, so count the members of each
-        Map<Integer, Integer> countByClass = new HashMap<>();
-        for (Atom atom : atoms)
+        int[] members = new int[partition.classes()];
+        for (int atom = 0; atom < partition.size(); atom++)
         {
-            countByClass.merge(classOf.get(atom), 1, Integer::sum);
+            members[partition.classOf()[atom]]++;
         }
 
         // splitting the smallest tie branches the fewest ways; the class number only settles a draw
-        return countByClass.entrySet().stream()
-            .filter(entry -> entry.getValue() > 1)
-            .min(Map.Entry.<Integer, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey()))
-            .map(Map.Entry::getKey)
-            .orElseThrow(() -> new IllegalStateException("No tied class remains to split"));
+        int smallest = -1;
+        for (int klass = 0; klass < members.length; klass++)
+        {
+            if (members[klass] > 1 && (smallest < 0 || members[klass] < members[smallest]))
+            {
+                smallest = klass;
+            }
+        }
+
+        if (smallest < 0)
+        {
+            throw new IllegalStateException("No tied class remains to split");
+        }
+        return smallest;
     }
 
     /**
+     * @param molecule the molecule being ranked
      * @param atoms the molecule's atoms
-     * @param previous each atom's current class
-     * @param invariantOf the further property to split each class by
-     * @param invariantOrder a total order over that property, used to number the resulting classes deterministically
-     * @return a classification in which two atoms share a class only if they shared one in {@code previous} and agree on {@code invariantOf}
+     * @return each atom's class under its own structural properties, its neighbours ignored
      */
-    private <K> Refinement reclassify(
-        List<Atom> atoms,
-        Map<Atom, Integer> previous,
-        Function<Atom, K> invariantOf,
-        Comparator<K> invariantOrder)
+    private static Partition initialClasses(Molecule molecule, List<Atom> atoms)
     {
-        // pairing the old class with the new invariant is what keeps classes from merging back together
-        Comparator<Classification<K>> order = Comparator.<Classification<K>>comparingInt(Classification::previousClass)
-            .thenComparing(Classification::invariant, invariantOrder);
-
-        // sorted, so the class numbers handed out depend on the signatures
-        List<Classification<K>> classifications = atoms.stream()
-            .map(atom -> new Classification<>(atom, previous.get(atom), invariantOf.apply(atom)))
-            .sorted(order)
-            .toList();
-
-        Map<Atom, Integer> result = new IdentityHashMap<>();
-        int currentClass = -1;
-        Classification<K> last = null;
-        for (Classification<K> classification : classifications)
+        Set<Bond> ringBonds = molecule.ringBonds();
+        AtomKey[] keys = new AtomKey[atoms.size()];
+        for (int atom = 0; atom < keys.length; atom++)
         {
-            if (last == null || order.compare(classification, last) != 0)
-            {
-                currentClass++;
-            }
-            result.put(classification.atom(), currentClass);
-            last = classification;
+            keys[atom] = initialInvariant(molecule, ringBonds, atoms.get(atom));
         }
-        // classes are dense and monotonically increasing
-        return new Refinement(result, currentClass + 1);
+        return classify(keys.length, (first, second) -> ATOM_KEY_ORDER.compare(keys[first], keys[second]));
     }
 
     /**
      * @param molecule the molecule being ranked
      * @param ringBonds the molecule's ring bonds
      * @param atom the atom to describe
-     * @return {@code atom}'s own structural properties, ignoring its neighbours
+     * @return {@code atom}'s initial structural properties without considering the structural properties of neighbouring atoms
      */
-    private AtomKey initialInvariant(Molecule molecule, Set<Bond> ringBonds, Atom atom)
+    private static AtomKey initialInvariant(Molecule molecule, Set<Bond> ringBonds, Atom atom)
     {
         List<Bond> bonds = molecule.bondsOf(atom);
         boolean inRing = bonds.stream().anyMatch(ringBonds::contains);
-        return new AtomKey(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), atom.hydrogenCount().orElse(-1), bonds.size(), inRing);
+        return new AtomKey(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), molecule.totalHydrogenCount(atom), bonds.size(), inRing);
     }
 
     /**
-     * @param molecule the molecule being ranked
-     * @param atom the atom to describe
-     * @param classOf each atom's current class
-     * @return how {@code atom} is bonded to each of its neighbours' classes
+     * Numbers atoms by where they fall in a total order, with atoms the order cannot separate sharing a number.
+     *
+     * @param size how many atoms are being classified
+     * @param order a total order over the atoms, by index
+     * @return each atom's class, numbered from zero in {@code order}
      */
-    private List<NeighbourKey> neighbourInvariant(Molecule molecule, Atom atom, Map<Atom, Integer> classOf)
+    private static Partition classify(int size, Comparison order)
     {
-        return molecule.bondsOf(atom).stream()
-            .map(bond -> new NeighbourKey(bond.order().ordinal(), classOf.get(bond.getOther(atom))))
-            .sorted(NEIGHBOUR_KEY_ORDER)
-            .toList();
+        Integer[] sorted = new Integer[size];
+        for (int atom = 0; atom < size; atom++)
+        {
+            sorted[atom] = atom;
+        }
+        // sorted, so the class numbers handed out depend on the atoms' own properties and not any insdertion order
+        Arrays.sort(sorted, order::compare);
+
+        int[] classOf = new int[size];
+        int classes = 0;
+        for (int position = 0; position < size; position++)
+        {
+            if (position > 0 && order.compare(sorted[position - 1], sorted[position]) != 0)
+            {
+                classes++;
+            }
+            classOf[sorted[position]] = classes;
+        }
+        // classes are dense and monotonically increasing
+        return new Partition(classOf, size == 0 ? 0 : classes + 1);
     }
 
     /**
-     * @param molecule the molecule being ranked
-     * @param ringBonds the molecule's ring bonds
-     * @param atoms the molecule's atoms
-     * @param classOf each atom's class, with every atom in a class of its own
-     * @return the molecule described atom-by-atom in class order
+     * A total order over atoms.
      */
-    private List<AtomSignature> representationOf(Molecule molecule, Set<Bond> ringBonds, List<Atom> atoms, Map<Atom, Integer> classOf)
+    @FunctionalInterface
+    private interface Comparison
     {
-        Atom[] atomByClass = new Atom[atoms.size()];
-        for (Atom atom : atoms)
+        /**
+         * @param first one atom's index
+         * @param second the other atom's index
+         * @return how the two atoms compare
+         */
+        int compare(int first, int second);
+    }
+
+    /**
+     * Every atom's bonds, held as indices so that refinement never looks an atom up by reference.
+     */
+    private static final class Neighbourhood
+    {
+        /** Cumulative bond offsets for each atom, with one extra entry marking the end. */
+        private final int[] offset;
+
+        private final int[] neighbour;
+        private final int[] bondOrder;
+
+        /**
+         * @param molecule the molecule being ranked
+         * @param atoms the molecule's atoms, in the order giving each its index
+         * @param indexOf each atom's index, by atom reference
+         */
+        private Neighbourhood(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> indexOf)
         {
-            atomByClass[classOf.get(atom)] = atom;
+            int size = atoms.size();
+            this.offset = new int[size + 1];
+            for (int atom = 0; atom < size; atom++)
+            {
+                offset[atom + 1] = offset[atom] + molecule.bondsOf(atoms.get(atom)).size();
+            }
+
+            this.neighbour = new int[offset[size]];
+            this.bondOrder = new int[offset[size]];
+            for (int atom = 0; atom < size; atom++)
+            {
+                int at = offset[atom];
+                for (Bond bond : molecule.bondsOf(atoms.get(atom)))
+                {
+                    neighbour[at] = indexOf.get(bond.getOther(atoms.get(atom)));
+                    bondOrder[at] = bond.order().ordinal();
+                    at++;
+                }
+            }
         }
 
-        List<AtomSignature> representation = new ArrayList<>(atomByClass.length);
-        for (Atom atom : atomByClass)
+        /**
+         * @param atom the atom to measure
+         * @return how many bonds {@code atom} has
+         */
+        private int degree(int atom)
         {
-            representation.add(new AtomSignature(initialInvariant(molecule, ringBonds, atom), neighbourInvariant(molecule, atom, classOf)));
+            return offset[atom + 1] - offset[atom];
         }
-        return representation;
+
+        /**
+         * Builds a sorted description of each atom's neighbourhood.
+         * Each bond contributes a key combining its order and the current class of its neighbouring atom.
+         * Each atom's keys occupy its bond-offset range and are sorted independently.
+         *
+         * @param classOf the current class of each atom
+         * @return the sorted bond keys, grouped by atom in bond-offset order
+         */
+        private long[] keysByAtom(int[] classOf)
+        {
+            long[] keys = new long[neighbour.length];
+            for (int atom = 0; atom < classOf.length; atom++)
+            {
+                writeKeys(atom, classOf, keys, offset[atom]);
+                Arrays.sort(keys, offset[atom], offset[atom + 1]);
+            }
+            return keys;
+        }
+
+        /**
+         * Encodes each bond of an atom as a key combining the bond order and its neighbour's current class.
+         * Keys are written consecutively into the supplied array, without sorting.
+         *
+         * @param atom the atom whose bonds are being encoded
+         * @param classOf the current class of each atom
+         * @param keys the array into which the keys are written
+         * @param at the starting index at which to write the keys
+         */
+        private void writeKeys(int atom, int[] classOf, long[] keys, int at)
+        {
+            for (int bond = offset[atom]; bond < offset[atom + 1]; bond++)
+            {
+                // Bond order occupies the high half so that it takes precedence when keys are compared.
+                keys[at++] = ((long) bondOrder[bond] << Integer.SIZE) | classOf[neighbour[bond]];
+            }
+        }
+
+        /**
+         * @param keys every atom's keys, as {@link #keysByAtom} laid them out
+         * @param first one atom's index
+         * @param second the other atom's index
+         * @return how the two atoms' keys compare, lexicographically, the atom with fewer bonds first
+         */
+        private int compareKeys(long[] keys, int first, int second)
+        {
+            int limit = Math.min(degree(first), degree(second));
+            for (int index = 0; index < limit; index++)
+            {
+                int comparison = Long.compare(keys[offset[first] + index], keys[offset[second] + index]);
+                if (comparison != 0)
+                {
+                    return comparison;
+                }
+            }
+            return Integer.compare(degree(first), degree(second));
+        }
     }
 
     /**
@@ -318,23 +489,15 @@ public final class CanonicalRanker implements Ranker
      */
     private static final class AtomGraph implements GraphAutomorphismDetector.Graph
     {
-        private final List<Atom> atoms;
-        private final Map<Atom, Integer> indexOf;
         private final int[][] bondClasses;
 
         /**
          * @param molecule the molecule being ranked
          * @param atoms the molecule's atoms, in the order giving each its index
+         * @param indexOf each atom's index, by atom reference
          */
-        AtomGraph(Molecule molecule, List<Atom> atoms)
+        private AtomGraph(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> indexOf)
         {
-            this.atoms = atoms;
-            this.indexOf = new IdentityHashMap<>();
-            for (int index = 0; index < atoms.size(); index++)
-            {
-                indexOf.put(atoms.get(index), index);
-            }
-
             this.bondClasses = new int[atoms.size()][atoms.size()];
             for (Bond bond : molecule.bonds())
             {
@@ -351,7 +514,7 @@ public final class CanonicalRanker implements Ranker
         @Override
         public int atomCount()
         {
-            return atoms.size();
+            return bondClasses.length;
         }
 
         @Override
@@ -361,30 +524,15 @@ public final class CanonicalRanker implements Ranker
         }
 
         /**
-         * @param atom an atom of the molecule, by reference identity
-         * @return the index this graph addresses {@code atom} by
-         */
-        int indexOf(Atom atom)
-        {
-            return indexOf.get(atom);
-        }
-
-        /**
          * Prepares a symmetry search against one set of atom classes.
          *
-         * @param classOf each atom's current class, by atom reference
+         * @param classOf each atom's current class, by atom index
          * @return a symmetry search holding everything those classes imply
          */
-        GraphAutomorphismDetector.AtomEquivalence equivalence(Map<Atom, Integer> classOf)
+        private GraphAutomorphismDetector.AtomEquivalence equivalence(int[] classOf)
         {
-            int[] atomClasses = new int[atoms.size()];
-            for (int index = 0; index < atoms.size(); index++)
-            {
-                atomClasses[index] = classOf.get(atoms.get(index));
-            }
-            return GraphAutomorphismDetector.prepare(this, atomClasses);
+            return GraphAutomorphismDetector.prepare(this, classOf);
         }
-
     }
 
     /**
@@ -395,37 +543,74 @@ public final class CanonicalRanker implements Ranker
     }
 
     /**
-     * How an atom is bonded to one neighbour: the bond order and the neighbour's current class.
+     * A classification of a molecule's atoms.
+     *
+     * @param classOf each atom's class, by atom index
+     * @param classes the number of distinct classes it uses
      */
-    private record NeighbourKey(int bondOrder, int neighbourClass)
+    private record Partition(int[] classOf, int classes)
     {
-    }
-
-    /**
-     * An atom paired with the class it previously held and the invariant used to split it further.
-     */
-    private record Classification<K>(Atom atom, int previousClass, K invariant)
-    {
-    }
-
-    /**
-     * A classification together with the number of distinct classes it uses.
-     */
-    private record Refinement(Map<Atom, Integer> classOf, int distinctClasses)
-    {
-    }
-
-    /**
-     * One atom's structural signature in a fully resolved classification.
-     */
-    private record AtomSignature(AtomKey atomKey, List<NeighbourKey> neighbours)
-    {
+        /**
+         * @return how many atoms are classified
+         */
+        private int size()
+        {
+            return classOf.length;
+        }
     }
 
     /**
      * A fully resolved classification together with the canonical representation it produces.
+     *
+     * @param classOf each atom's class, every atom in a class of its own
+     * @param representation the representation that classification gives the molecule
      */
-    private record Candidate(Map<Atom, Integer> classOf, Supplier<List<AtomSignature>> representation)
+    private record Candidate(int[] classOf, Supplier<Representation> representation)
     {
+    }
+
+    /**
+     * A molecule described atom by atom in class order.
+     *
+     * @param invariantByClass the initial class of the atom holding each class, in class order
+     * @param keyOffset where each atom's keys begin, one entry longer than the molecule
+     * @param keys every atom's neighbour keys in class order, {@link Neighbourhood#writeKeys}
+     */
+    private record Representation(int[] invariantByClass, int[] keyOffset, long[] keys)
+    {
+        /**
+         * @param other the representation to compare with
+         * @return how the two representations compare, atom by atom in class order
+         */
+        private int compareTo(Representation other)
+        {
+            for (int position = 0; position < invariantByClass.length; position++)
+            {
+                int byInvariant = Integer.compare(invariantByClass[position], other.invariantByClass[position]);
+                if (byInvariant != 0)
+                {
+                    return byInvariant;
+                }
+
+                int ours = keyOffset[position + 1] - keyOffset[position];
+                int theirs = other.keyOffset[position + 1] - other.keyOffset[position];
+                int limit = Math.min(ours, theirs);
+                for (int index = 0; index < limit; index++)
+                {
+                    int byKey = Long.compare(keys[keyOffset[position] + index], other.keys[other.keyOffset[position] + index]);
+                    if (byKey != 0)
+                    {
+                        return byKey;
+                    }
+                }
+
+                // an atom with fewer bonds comes first, as the shorter of two otherwise equal runs
+                if (ours != theirs)
+                {
+                    return Integer.compare(ours, theirs);
+                }
+            }
+            return 0;
+        }
     }
 }
