@@ -248,6 +248,84 @@ class MolecularFormulaTest
     }
 
     @Nested
+    class StrictHillOrdering
+    {
+        @Test
+        void alphabetises_a_carbon_free_molecule_hydrogen_included()
+        {
+            // OS(=O)(=O)O
+            Atom s = Atom.organic("S");
+            Atom hydroxyl1 = Atom.organic("O");
+            Atom hydroxyl2 = Atom.organic("O");
+            Atom oxo1 = Atom.organic("O");
+            Atom oxo2 = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(s, hydroxyl1, hydroxyl2, oxo1, oxo2)
+                .addBond(s, hydroxyl1, BondOrder.SINGLE)
+                .addBond(s, hydroxyl2, BondOrder.SINGLE)
+                .addBond(s, oxo1, BondOrder.DOUBLE)
+                .addBond(s, oxo2, BondOrder.DOUBLE)
+                .build();
+
+            assertThat(MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL)).hasToString("H2O4S");
+        }
+
+        @Test
+        void writes_ammonia_with_its_hydrogens_first()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.organic("N"))
+                .build();
+
+            assertThat(MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL)).hasToString("H3N");
+        }
+
+        @Test
+        void drops_hydrogen_below_an_earlier_letter()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.organic("Cl"))
+                .build();
+
+            assertThat(MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL)).hasToString("ClH");
+            assertThat(MolecularFormula.of(molecule, MolecularFormula.ElementOrder.CONVENTIONAL)).hasToString("HCl");
+        }
+
+        @Test
+        void agrees_with_conventional_order_when_carbon_is_present()
+        {
+            // CC(=O)O
+            Atom methyl = Atom.organic("C");
+            Atom carbonyl = Atom.organic("C");
+            Atom carbonylOxygen = Atom.organic("O");
+            Atom hydroxyl = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(methyl, carbonyl, carbonylOxygen, hydroxyl)
+                .addBond(methyl, carbonyl, BondOrder.SINGLE)
+                .addBond(carbonyl, carbonylOxygen, BondOrder.DOUBLE)
+                .addBond(carbonyl, hydroxyl, BondOrder.SINGLE)
+                .build();
+
+            assertThat(MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL)).hasToString("C2H4O2");
+            assertThat(MolecularFormula.of(molecule, MolecularFormula.ElementOrder.CONVENTIONAL)).hasToString("C2H4O2");
+        }
+
+        @Test
+        void writes_wildcard_atoms_last()
+        {
+            // O*
+            Atom o = Atom.organic("O");
+            Atom wildcard = Atom.organic("*");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(o, wildcard)
+                .addBond(o, wildcard, BondOrder.SINGLE)
+                .build();
+
+            assertThat(MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL)).hasToString("HO*");
+        }
+    }
+
+    @Nested
     class Empirical
     {
         @Test

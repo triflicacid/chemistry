@@ -13,9 +13,6 @@ import java.util.Objects;
 
 /**
  * A {@link Molecule}'s molecular formula, e.g., {@code C2H6} for ethane.
- * <p>
- * A molecule containing carbon is written in Hill order: carbon first, then hydrogen, then every
- * other element alphabetically. One containing no carbon follows {@link Elements#iupacOrderOf} instead.
  */
 public final class MolecularFormula
 {
@@ -35,12 +32,25 @@ public final class MolecularFormula
     }
 
     /**
-     * Counts a molecule's elements, implicit hydrogens included.
+     * Counts a molecule's elements, implicit hydrogens included, writing them in
+     * {@link ElementOrder#CONVENTIONAL} order.
      *
      * @param molecule the molecule to count
      * @return the molecule's formula
      */
     public static MolecularFormula of(Molecule molecule)
+    {
+        return of(molecule, ElementOrder.CONVENTIONAL);
+    }
+
+    /**
+     * Counts a molecule's elements, implicit hydrogens included.
+     *
+     * @param molecule the molecule to count
+     * @param order the order to write the elements in
+     * @return the molecule's formula
+     */
+    public static MolecularFormula of(Molecule molecule, ElementOrder order)
     {
         Map<String, Integer> totals = new HashMap<>();
         int charge = 0;
@@ -54,7 +64,7 @@ public final class MolecularFormula
             }
             charge += atom.charge();
         }
-        return new MolecularFormula(inWrittenOrder(totals), charge);
+        return new MolecularFormula(inWrittenOrder(totals, order), charge);
     }
 
     /**
@@ -138,17 +148,32 @@ public final class MolecularFormula
      * Sorts element counts into the order they are written in.
      *
      * @param counts each element's count
+     * @param order the order to write the elements in
      * @return the same counts, iterating in written order
      */
-    private static Map<String, Integer> inWrittenOrder(Map<String, Integer> counts)
+    private static Map<String, Integer> inWrittenOrder(Map<String, Integer> counts, ElementOrder order)
     {
-        Comparator<String> order = counts.containsKey("C") ? hillOrder() : sequenceOrder();
+        Comparator<String> comparator = comparatorFor(counts, order);
 
         Map<String, Integer> ordered = new LinkedHashMap<>();
         counts.entrySet().stream()
-            .sorted(Map.Entry.comparingByKey(order))
+            .sorted(Map.Entry.comparingByKey(comparator))
             .forEach(entry -> ordered.put(entry.getKey(), entry.getValue()));
         return Collections.unmodifiableMap(ordered);
+    }
+
+    /**
+     * @param counts each element's count
+     * @param order the order to write the elements in
+     * @return the comparator to sort the element symbols with
+     */
+    private static Comparator<String> comparatorFor(Map<String, Integer> counts, ElementOrder order)
+    {
+        if (counts.containsKey("C"))
+        {
+            return hillOrder();
+        }
+        return order == ElementOrder.HILL ? alphabeticalOrder() : sequenceOrder();
     }
 
     /**
@@ -172,6 +197,16 @@ public final class MolecularFormula
             case WILDCARD -> 3;
             default -> 2;
         };
+    }
+
+    /**
+     * @return a comparator placing one element symbol against another alphabetically
+     */
+    private static Comparator<String> alphabeticalOrder()
+    {
+        // '*' sorts below 'A', so the wildcard needs lifting out of the alphabet to stay last
+        return Comparator.comparingInt((String element) -> element.equals(WILDCARD) ? 1 : 0)
+            .thenComparing(Comparator.naturalOrder());
     }
 
     /**
@@ -221,5 +256,29 @@ public final class MolecularFormula
     public int hashCode()
     {
         return Objects.hash(counts, charge);
+    }
+
+    /**
+     * The order a {@link MolecularFormula}'s elements are written in.
+     */
+    public enum ElementOrder
+    {
+        /**
+         * Conventional ordering
+         * <ul>
+         *     <li>Organic: carbon, then hydrogen, then every other element alphabetically</li>
+         *     <li>Inorganic: follows {@link Elements#iupacOrderOf}</li>
+         * </ul>
+         */
+        CONVENTIONAL,
+
+        /**
+         * Hill-system ordering
+         * <ul>
+         *     <li>Organic: carbon, then hydrogen, then every other element alphabetically</li>
+         *     <li>Inorganic: alphabetical throughout (including hydrogen)</li>
+         * </ul>
+         */
+        HILL
     }
 }
