@@ -378,11 +378,10 @@ public final class CanonicalRanker implements Ranker, Canonicaliser
      */
     private static Invariants initialClasses(Molecule molecule, List<Atom> atoms, Stereochemistry stereo)
     {
-        Set<Bond> ringBonds = molecule.ringBonds();
         AtomInvariant[] invariants = new AtomInvariant[atoms.size()];
         for (int atom = 0; atom < invariants.length; atom++)
         {
-            invariants[atom] = AtomInvariant.of(molecule, ringBonds, atoms.get(atom), stereo.roleOf(atom));
+            invariants[atom] = AtomInvariant.of(molecule, atoms.get(atom), stereo.roleOf(atom));
         }
 
         Partition partition = classify(invariants.length, (first, second) -> invariants[first].compareTo(invariants[second]));

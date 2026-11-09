@@ -7,7 +7,6 @@ import com.ruben.chemistry.core.Stereochemistry;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Everything about one atom that does not depend on which atoms surround it.
@@ -18,7 +17,8 @@ import java.util.Set;
  * @param isotope the atom's mass number, or {@code -1} where it declares none
  * @param hydrogenCount how many hydrogens the atom carries in total, implicit ones included
  * @param degree how many bonds the atom has
- * @param inRing whether any of those bonds is a ring bond
+ * @param ringCount how many of the molecule's relevant cycles the atom lies in, or zero if it is in none
+ * @param smallestRing the size of the smallest cycle the atom lies in, or zero if it is in none
  * @param stereoRole the parts the atom plays in its molecule's declared stereochemistry, {@link Stereochemistry#roleOf}
  */
 public record AtomInvariant(
@@ -28,7 +28,8 @@ public record AtomInvariant(
     int isotope,
     int hydrogenCount,
     int degree,
-    boolean inRing,
+    int ringCount,
+    int smallestRing,
     int stereoRole) implements Comparable<AtomInvariant>
 {
     /** The total ordering invariants, and so the atoms carrying them, are placed in. */
@@ -39,20 +40,20 @@ public record AtomInvariant(
         .thenComparingInt(AtomInvariant::isotope)
         .thenComparingInt(AtomInvariant::hydrogenCount)
         .thenComparingInt(AtomInvariant::degree)
-        .thenComparing(AtomInvariant::inRing)
+        .thenComparingInt(AtomInvariant::ringCount)
+        .thenComparingInt(AtomInvariant::smallestRing)
         .thenComparingInt(AtomInvariant::stereoRole);
 
     /**
      * @param molecule the molecule {@code atom} belongs to
-     * @param ringBonds {@code molecule}'s ring bonds, passed in so that one pass over a molecule need only find them once
      * @param atom the atom to describe
      * @param stereoRole the parts {@code atom} plays in the declared stereochemistry being honoured ({@link Stereochemistry#roleOf}), or zero if ignoring stereochemistry
      * @return {@code atom}'s own properties
      */
-    public static AtomInvariant of(Molecule molecule, Set<Bond> ringBonds, Atom atom, int stereoRole)
+    public static AtomInvariant of(Molecule molecule, Atom atom, int stereoRole)
     {
         List<Bond> bonds = molecule.bondsOf(atom);
-        boolean inRing = bonds.stream().anyMatch(ringBonds::contains);
+        int smallestRing = molecule.ringSizes(atom).stream().mapToInt(Integer::intValue).min().orElse(0);
         return new AtomInvariant(
             atom.element(),
             atom.aromatic(),
@@ -60,7 +61,8 @@ public record AtomInvariant(
             atom.isotope().orElse(-1),
             molecule.totalHydrogenCount(atom),
             bonds.size(),
-            inRing,
+            molecule.ringCount(atom),
+            smallestRing,
             stereoRole);
     }
 
