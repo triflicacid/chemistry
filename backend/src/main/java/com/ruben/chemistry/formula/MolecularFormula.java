@@ -112,6 +112,49 @@ public final class MolecularFormula
     }
 
     /**
+     * Combines this formula with another:
+     * {@code other} becomes a disconnected fragment inside this molecule.
+     *
+     * @param other the formula to add to this one
+     * @return the combined formula
+     */
+    public MolecularFormula plus(MolecularFormula other)
+    {
+        Map<String, Integer> totals = new HashMap<>(counts);
+        other.counts.forEach((nuclide, count) -> totals.merge(nuclide, count, Integer::sum));
+        return new MolecularFormula(inWrittenOrder(totals, ElementOrder.CONVENTIONAL), charge + other.charge);
+    }
+
+    /**
+     * Multiplies every count, and the net charge, by a factor.
+     * That is, adds on {@code factor} copies of this molecule as disconnected fragments.
+     *
+     * @param factor how many times over to count this formula, zero or above
+     * @return the multiplied formula, or an empty formula if {@code factor} is zero
+     * @throws IllegalArgumentException if {@code factor} is negative
+     */
+    public MolecularFormula times(int factor)
+    {
+        if (factor < 0)
+        {
+            throw new IllegalArgumentException("a formula cannot be counted a negative number of times: " + factor);
+        }
+        if (factor == 1)
+        {
+            return this;
+        }
+        if (factor == 0)
+        {
+            return new MolecularFormula(Map.of(), 0);
+        }
+
+        // multiplying every count leaves the elements in the order they already sort in
+        Map<String, Integer> multiplied = new LinkedHashMap<>();
+        counts.forEach((nuclide, count) -> multiplied.put(nuclide, count * factor));
+        return new MolecularFormula(Collections.unmodifiableMap(multiplied), charge * factor);
+    }
+
+    /**
      * Reduces this formula to the simplest whole-number ratio of its elements, e.g., {@code CH2O}
      * from {@code C6H12O6}, or {@code CH} from benzene's {@code C6H6}.
      *

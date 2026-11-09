@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MolecularFormulaTest
 {
@@ -468,6 +469,83 @@ class MolecularFormulaTest
 
             assertThat(formula).hasToString("O22-");
             assertThat(formula.toUnicode()).isEqualTo("O₂²⁻");
+        }
+    }
+
+    @Nested
+    class Arithmetic
+    {
+        @Test
+        void combines_two_formulae_by_adding_their_counts()
+        {
+            MolecularFormula water = MolecularFormula.of(new Molecule.Builder()
+                .addAtom(Atom.organic("O"))
+                .build());
+
+            assertThat(water.plus(water)).hasToString("H4O2");
+        }
+
+        @Test
+        void cancels_the_charges_of_the_ions_it_combines()
+        {
+            // [Cu+2] and [O-][O-], standing in for a salt's two ions
+            MolecularFormula cation = MolecularFormula.of(new Molecule.Builder()
+                .addAtom(Atom.builder("Cu").charge(2).hydrogenCount(0).build())
+                .build());
+            Atom first = Atom.builder("O").charge(-1).hydrogenCount(0).build();
+            Atom second = Atom.builder("O").charge(-1).hydrogenCount(0).build();
+            MolecularFormula anion = MolecularFormula.of(new Molecule.Builder()
+                .addAtoms(first, second)
+                .addBond(first, second, BondOrder.SINGLE)
+                .build());
+
+            MolecularFormula combined = cation.plus(anion);
+
+            assertThat(combined.charge()).isZero();
+            assertThat(combined).hasToString("CuO2");
+        }
+
+        @Test
+        void multiplies_every_count_and_the_charge()
+        {
+            MolecularFormula hydroxide = MolecularFormula.of(new Molecule.Builder()
+                .addAtom(Atom.builder("O").charge(-1).hydrogenCount(1).build())
+                .build());
+
+            MolecularFormula tripled = hydroxide.times(3);
+
+            assertThat(tripled.charge()).isEqualTo(-3);
+            assertThat(tripled).hasToString("H3O33-");
+        }
+
+        @Test
+        void returns_the_same_formula_when_counted_once()
+        {
+            MolecularFormula water = MolecularFormula.of(new Molecule.Builder()
+                .addAtom(Atom.organic("O"))
+                .build());
+
+            assertThat(water.times(1)).isSameAs(water);
+        }
+
+        @Test
+        void counts_nothing_when_multiplied_by_zero()
+        {
+            MolecularFormula water = MolecularFormula.of(new Molecule.Builder()
+                .addAtom(Atom.organic("O"))
+                .build());
+
+            assertThat(water.times(0)).hasToString("");
+        }
+
+        @Test
+        void rejects_being_counted_a_negative_number_of_times()
+        {
+            MolecularFormula water = MolecularFormula.of(new Molecule.Builder()
+                .addAtom(Atom.organic("O"))
+                .build());
+
+            assertThatThrownBy(() -> water.times(-1)).isInstanceOf(IllegalArgumentException.class);
         }
     }
 
