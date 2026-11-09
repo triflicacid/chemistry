@@ -725,4 +725,90 @@ class CondensedFormulaWriterTest
                 .isEqualTo(CondensedFormulaWriter.writeCanonical(builtFromOxygen));
         }
     }
+
+    @Nested
+    class Isotopes
+    {
+        private static Molecule deuteratedEthane()
+        {
+            // CC, with one hydrogen of the second carbon deuterated
+            Atom methyl = Atom.organic("C");
+            Atom deuterated = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            return new Molecule.Builder()
+                .addAtoms(methyl, deuterated)
+                .addBond(methyl, deuterated, BondOrder.SINGLE)
+                .build();
+        }
+
+        @Test
+        void writes_a_labelled_hydrogen_after_its_groups_unlabelled_ones()
+        {
+            Molecule molecule = deuteratedEthane();
+
+            assertThat(write(molecule)).isEqualTo("CH3CH2[2H]");
+            assertThat(unicode(molecule)).isEqualTo("CH₃CH₂²H");
+        }
+
+        @Test
+        void names_heavy_hydrogen_isotopes_conventionally_when_asked()
+        {
+            Molecule molecule = deuteratedEthane();
+
+            assertThat(new CondensedFormulaWriter(molecule)
+                .setIsotopeStyle(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)
+                .write())
+                .isEqualTo("CH3CH2D");
+        }
+
+        @Test
+        void writes_a_labelled_atoms_own_mass_number()
+        {
+            // [13C]C
+            Atom labelled = Atom.builder("C").isotope(13).build();
+            Atom unlabelled = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(labelled, unlabelled)
+                .addBond(labelled, unlabelled, BondOrder.SINGLE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("[13C]H3CH3");
+            assertThat(unicode(molecule)).isEqualTo("¹³CH₃CH₃");
+        }
+
+        @Test
+        void writes_a_bonded_hydrogen_atom_as_a_group_of_its_own()
+        {
+            // C[3H]
+            Atom carbon = Atom.organic("C");
+            Atom tritium = Atom.builder("H").isotope(3).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbon, tritium)
+                .addBond(carbon, tritium, BondOrder.SINGLE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("CH3[3H]");
+            assertThat(unicode(molecule)).isEqualTo("CH₃³H");
+        }
+
+        @Test
+        void does_not_collapse_a_labelled_group_into_a_run_of_unlabelled_ones()
+        {
+            // hexane, with the third carbon carrying a deuterium
+            Molecule.Builder builder = new Molecule.Builder();
+            Atom[] carbons = new Atom[6];
+            for (int i = 0; i < carbons.length; i++)
+            {
+                carbons[i] = i == 2 ? Atom.builder("C").hydrogenIsotope(2, 1).build() : Atom.organic("C");
+                builder.addAtom(carbons[i]);
+            }
+            for (int i = 1; i < carbons.length; i++)
+            {
+                builder.addBond(carbons[i - 1], carbons[i], BondOrder.SINGLE);
+            }
+
+            Molecule hexane = builder.build();
+
+            assertThat(write(hexane)).isEqualTo("CH3CH2CH[2H]CH2CH2CH3");
+        }
+    }
 }

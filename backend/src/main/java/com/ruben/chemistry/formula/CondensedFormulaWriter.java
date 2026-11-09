@@ -59,6 +59,7 @@ public final class CondensedFormulaWriter
     private boolean collapseRepeats = true;
     private int minimumRepeat = DEFAULT_MINIMUM_REPEAT;
     private MolecularFormula.ElementOrder elementOrder = MolecularFormula.ElementOrder.CONVENTIONAL;
+    private MolecularFormula.IsotopeStyle isotopeStyle = MolecularFormula.IsotopeStyle.MASS_NUMBER;
     private Ranker ranker;
     private Ranking ranking;
 
@@ -125,6 +126,27 @@ public final class CondensedFormulaWriter
     public CondensedFormulaWriter setElementOrder(MolecularFormula.ElementOrder elementOrder)
     {
         this.elementOrder = elementOrder;
+        return this;
+    }
+
+    /**
+     * @return how a labelled nuclide is named
+     */
+    public MolecularFormula.IsotopeStyle getIsotopeStyle()
+    {
+        return isotopeStyle;
+    }
+
+    /**
+     * Chooses how an isotopically labelled atom or hydrogen is named, e.g. {@code CH2D} rather
+     * than {@code CH2[2H]}.
+     *
+     * @param isotopeStyle the style to name a labelled nuclide with
+     * @return this writer, for chaining
+     */
+    public CondensedFormulaWriter setIsotopeStyle(MolecularFormula.IsotopeStyle isotopeStyle)
+    {
+        this.isotopeStyle = isotopeStyle;
         return this;
     }
 
@@ -761,7 +783,9 @@ public final class CondensedFormulaWriter
         // comparing symbols rather than orders lets two bonds match when neither of them is written
         return first.atom().element().equals(second.atom().element())
             && first.atom().charge() == second.atom().charge()
+            && first.atom().isotope().equals(second.atom().isotope())
             && molecule.totalHydrogenCount(first.atom()) == molecule.totalHydrogenCount(second.atom())
+            && first.atom().hydrogenIsotopes().equals(second.atom().hydrogenIsotopes())
             && arrivingSymbol(first) == arrivingSymbol(second);
     }
 
@@ -1007,17 +1031,17 @@ public final class CondensedFormulaWriter
     private String groupOf(Atom atom, boolean leading)
     {
         StringBuilder group = new StringBuilder();
-        int hydrogens = molecule.totalHydrogenCount(atom);
+        String symbol = Nuclide.render(Nuclide.symbolOf(atom.element(), atom.isotope().orElse(0)), unicode, isotopeStyle);
 
         if (leading && hydrogensComeFirst(atom.element()))
         {
-            appendHydrogens(group, hydrogens);
-            group.append(atom.element());
+            appendHydrogens(group, atom);
+            group.append(symbol);
         }
         else
         {
-            group.append(atom.element());
-            appendHydrogens(group, hydrogens);
+            group.append(symbol);
+            appendHydrogens(group, atom);
         }
 
         int charge = atom.charge();
@@ -1061,21 +1085,23 @@ public final class CondensedFormulaWriter
     }
 
     /**
-     * Appends a group's hydrogen count, if it has any, as {@code H} and a number above one.
+     * Appends a group's hydrogens, if it has any, as {@code H} and a number above one, each
+     * isotopically labelled hydrogen written as its own nuclide, e.g. {@code CH2D}.
      *
      * @param group the group being built, appended to in place
-     * @param hydrogens the number of hydrogens attached
+     * @param atom the atom whose hydrogens are to be written
      */
-    private void appendHydrogens(StringBuilder group, int hydrogens)
+    private void appendHydrogens(StringBuilder group, Atom atom)
     {
-        if (hydrogens > 0)
+        // ascending by mass number, so unlabelled hydrogens are written before any heavier ones
+        molecule.hydrogenIsotopeCounts(atom).forEach((massNumber, count) ->
         {
-            group.append('H');
-            if (hydrogens > 1)
+            group.append(Nuclide.render(Nuclide.symbolOf("H", massNumber), unicode, isotopeStyle));
+            if (count > 1)
             {
-                group.append(unicode ? Unicode.subscript(hydrogens) : String.valueOf(hydrogens));
+                group.append(unicode ? Unicode.subscript(count) : String.valueOf(count));
             }
-        }
+        });
     }
 
     /**

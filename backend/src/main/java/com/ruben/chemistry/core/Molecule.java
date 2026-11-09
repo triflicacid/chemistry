@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -176,6 +177,32 @@ public final class Molecule
     {
         requireAtom(atom);
         return atom.hydrogenCount().orElseGet(() -> implicitHydrogenCount(atom));
+    }
+
+    /**
+     * Splits an atom's total hydrogen count by nuclide.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return how many of {@code atom}'s hydrogens carry each mass number, ascending and unmodifiable
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     * @throws IllegalStateException if {@code atom} carries more labelled hydrogens than it has hydrogens
+     */
+    public Map<Integer, Integer> hydrogenIsotopeCounts(Atom atom)
+    {
+        int total = totalHydrogenCount(atom);
+        int labelled = atom.labelledHydrogenCount();
+        if (labelled > total)
+        {
+            throw new IllegalStateException("Atom has more labelled hydrogens (" + labelled + ") than its " + total + " hydrogens: " + atom);
+        }
+
+        Map<Integer, Integer> counts = new TreeMap<>(atom.hydrogenIsotopes());
+        // remaining must be protium
+        if (total > labelled)
+        {
+            counts.put(1, total - labelled);
+        }
+        return Collections.unmodifiableMap(counts);
     }
 
     /**

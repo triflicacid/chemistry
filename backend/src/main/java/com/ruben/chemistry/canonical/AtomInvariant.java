@@ -7,6 +7,7 @@ import com.ruben.chemistry.core.Stereochemistry;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Everything about one atom that does not depend on which atoms surround it.
@@ -16,6 +17,7 @@ import java.util.List;
  * @param charge the atom's formal charge
  * @param isotope the atom's mass number, or {@code -1} where it declares none
  * @param hydrogenCount how many hydrogens the atom carries in total, implicit ones included
+ * @param hydrogenIsotopes a stable rendering of how many of those hydrogens are isotopically labelled, empty where none are
  * @param degree how many bonds the atom has
  * @param ringCount how many of the molecule's relevant cycles the atom lies in, or zero if it is in none
  * @param smallestRing the size of the smallest cycle the atom lies in, or zero if it is in none
@@ -27,6 +29,7 @@ public record AtomInvariant(
     int charge,
     int isotope,
     int hydrogenCount,
+    String hydrogenIsotopes,
     int degree,
     int ringCount,
     int smallestRing,
@@ -39,6 +42,7 @@ public record AtomInvariant(
         .thenComparingInt(AtomInvariant::charge)
         .thenComparingInt(AtomInvariant::isotope)
         .thenComparingInt(AtomInvariant::hydrogenCount)
+        .thenComparing(AtomInvariant::hydrogenIsotopes)
         .thenComparingInt(AtomInvariant::degree)
         .thenComparingInt(AtomInvariant::ringCount)
         .thenComparingInt(AtomInvariant::smallestRing)
@@ -60,10 +64,26 @@ public record AtomInvariant(
             atom.charge(),
             atom.isotope().orElse(-1),
             molecule.totalHydrogenCount(atom),
+            renderHydrogenIsotopes(atom),
             bonds.size(),
             molecule.ringCount(atom),
             smallestRing,
             stereoRole);
+    }
+
+    /**
+     * @param atom the atom whose labels are required
+     * @return the labels as text, ascending by mass number, e.g. {@code "2:1"}
+     */
+    private static String renderHydrogenIsotopes(Atom atom)
+    {
+        if (atom.hydrogenIsotopes().isEmpty())
+        {
+            return "";
+        }
+        return atom.hydrogenIsotopes().entrySet().stream()
+            .map(entry -> entry.getKey() + ":" + entry.getValue())
+            .collect(Collectors.joining(","));
     }
 
     @Override
