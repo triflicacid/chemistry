@@ -1,22 +1,24 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.canonical;
 
-import com.ruben.chemistry.core.GraphAutomorphismDetector.DoubleBond;
-import com.ruben.chemistry.core.GraphAutomorphismDetector.Graph;
-import com.ruben.chemistry.core.GraphAutomorphismDetector.StereoElement;
-import com.ruben.chemistry.core.GraphAutomorphismDetector.Tetrahedral;
-import org.junit.jupiter.api.Test;
+import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.canonical.GraphAutomorphismDetector.Graph;
+import com.ruben.chemistry.core.StereoDeclaration.DoubleBond;
+import com.ruben.chemistry.core.StereoDeclaration.Tetrahedral;
+import com.ruben.chemistry.core.StereoDeclaration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.Test;
 
 import static com.ruben.chemistry.core.Chirality.ANTICLOCKWISE;
 import static com.ruben.chemistry.core.Chirality.CLOCKWISE;
 import static com.ruben.chemistry.core.DoubleBondStereo.OPPOSITE_SIDE;
 import static com.ruben.chemistry.core.DoubleBondStereo.SAME_SIDE;
-import static com.ruben.chemistry.core.GraphAutomorphismDetector.Graph.IMPLICIT_HYDROGEN;
+import static com.ruben.chemistry.canonical.GraphAutomorphismDetector.Graph.IMPLICIT_HYDROGEN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -665,7 +667,7 @@ class GraphAutomorphismDetectorTest
     {
         private final int[] atomClasses;
         private final int[][] bondClasses;
-        private final List<StereoElement> stereochemistry = new ArrayList<>();
+        private final List<StereoDeclaration> stereochemistry = new ArrayList<>();
 
         TestGraph(int... atomClasses)
         {
@@ -681,7 +683,7 @@ class GraphAutomorphismDetectorTest
             return this;
         }
 
-        TestGraph declare(StereoElement element)
+        TestGraph declare(StereoDeclaration element)
         {
             stereochemistry.add(element);
 
@@ -706,7 +708,7 @@ class GraphAutomorphismDetectorTest
         }
 
         @Override
-        public List<StereoElement> stereochemistry()
+        public List<StereoDeclaration> stereochemistry()
         {
             return stereochemistry;
         }

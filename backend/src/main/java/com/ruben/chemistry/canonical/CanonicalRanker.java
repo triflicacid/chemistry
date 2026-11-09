@@ -1,11 +1,15 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.canonical;
 
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.StereoDeclaration;
+import com.ruben.chemistry.core.Stereochemistry;
 import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.DisjointSet;
 
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,36 +19,64 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * A {@link Ranker} that ranks each atom by its structural role within the molecule, so that
- * the same molecule built in a different order always yields the same ranks.
+ * Orders a molecule's atoms by their structural roles alone, so that the same molecule built in a
+ * different order is ordered the same way every time. Declared stereochemistry counts towards those
+ * roles unless {@link #setIgnoreStereochemistry} turns it off.
+ * <p>
+ * As a {@link Ranker}, {@link #rank} gives each atom its own rank.
+ * As a {@link Canonicaliser}, {@link #canonicalise} describes the whole molecule in rank order as a {@link CanonicalForm}.
  * <p>
  * Ranks are derived by Morgan-style iterative refinement, with deterministic tie-breaking for
  * atoms that refinement cannot tell apart (such as the two ends of a symmetric molecule).
  * <p>
- * Where a molecule has a non-trivial symmetry its interchangeable atoms cannot be told apart by any
- * ranking, so ranks are canonical only up to that symmetry: which of two interchangeable atoms ends
- * up with the lower rank is arbitrary, but the molecule's overall representation is not.
- * <p>
- * TODO: nothing here looks at stereochemistry.
+ * <strong>Note</strong>: where a molecule has a non-trivial symmetry, its interchangeable atoms cannot
+ * be told apart by any ranking, so ranks are canonical only up to that symmetry.
  */
-public final class CanonicalRanker implements Ranker
+public final class CanonicalRanker implements Ranker, Canonicaliser
 {
-    /** Total ordering for {@link AtomKey}. */
-    private static final Comparator<AtomKey> ATOM_KEY_ORDER = Comparator
-        .comparing(AtomKey::element)
-        .thenComparing(AtomKey::aromatic)
-        .thenComparingInt(AtomKey::charge)
-        .thenComparingInt(AtomKey::isotope)
-        .thenComparingInt(AtomKey::hydrogenCount)
-        .thenComparingInt(AtomKey::degree)
-        .thenComparing(AtomKey::inRing);
-
-    private final Function<Molecule, Ranking> rankings = CachedFunction.byIdentity(molecule -> new Canonicalisation(molecule).rank());
+    private boolean ignoreStereochemistry;
+    private Function<Molecule, Canonicalised> canonicalisations = canonicalisationCache(false);
 
     @Override
     public Ranking rank(Molecule molecule)
     {
-        return rankings.apply(molecule);
+        return canonicalisations.apply(molecule).ranking();
+    }
+
+    @Override
+    public CanonicalForm canonicalise(Molecule molecule)
+    {
+        return canonicalisations.apply(molecule).form().get();
+    }
+
+    /**
+     * @return {@code true} if declared stereochemistry is left out of the ranking
+     */
+    public boolean isIgnoreStereochemistry()
+    {
+        return ignoreStereochemistry;
+    }
+
+    /**
+     * Chooses whether declared stereochemistry takes part in the ranking.
+     *
+     * @param ignoreStereochemistry whether to leave declared stereochemistry out of the ranking
+     * @return this ranker, for chaining
+     */
+    public CanonicalRanker setIgnoreStereochemistry(boolean ignoreStereochemistry)
+    {
+        this.ignoreStereochemistry = ignoreStereochemistry;
+        this.canonicalisations = canonicalisationCache(ignoreStereochemistry);
+        return this;
+    }
+
+    /**
+     * @param ignoreStereochemistry whether the cached canonicalisations are to leave stereochemistry out
+     * @return a cache of the canonicalisations produced under that setting, empty of those produced under any other
+     */
+    private static Function<Molecule, Canonicalised> canonicalisationCache(boolean ignoreStereochemistry)
+    {
+        return CachedFunction.byIdentity(molecule -> new Canonicalisation(molecule, ignoreStereochemistry).canonicalise());
     }
 
     /**
@@ -55,16 +87,23 @@ public final class CanonicalRanker implements Ranker
         private final List<Atom> atoms;
         private final Neighbourhood neighbours;
 
-        /** Each atom's class before any neighbour is looked at, which also orders the canonical representation. */
-        private final Partition initial;
+        /** What the molecule declares about its stereochemistry, or nothing at all when ignoring it. */
+        private final Stereochemistry stereo;
+
+        /** Reused where nothing is declared, so that such a molecule allocates nothing per refinement pass. */
+        private final int[] noParities;
+
+        /** Each atom's class before any neighbour is looked at, which also orders the canonical form. */
+        private final Invariants initial;
 
         /** Only tie-breaking needs the molecule as a graph, and most molecules have no tie to break, hold off for now. */
         private final CachedValue<AtomGraph> graph;
 
         /**
          * @param molecule the molecule to rank
+         * @param ignoreStereochemistry whether to leave the molecule's declared stereochemistry out of the ranking
          */
-        private Canonicalisation(Molecule molecule)
+        private Canonicalisation(Molecule molecule, boolean ignoreStereochemistry)
         {
             this.atoms = molecule.atoms();
 
@@ -74,21 +113,20 @@ public final class CanonicalRanker implements Ranker
                 indexOf.put(atoms.get(atom), atom);
             }
 
-            this.neighbours = new Neighbourhood(molecule, atoms, indexOf);
-            this.initial = initialClasses(molecule, atoms);
-            this.graph = new CachedValue<>(() -> new AtomGraph(molecule, atoms, indexOf));
+            this.stereo = ignoreStereochemistry ? Stereochemistry.none(atoms.size()) : molecule.stereochemistry();
+            this.noParities = new int[atoms.size()];
+            this.neighbours = new Neighbourhood(molecule, atoms, indexOf, stereo);
+            this.initial = initialClasses(molecule, atoms, stereo);
+            this.graph = new CachedValue<>(() -> new AtomGraph(molecule, atoms, indexOf, stereo));
         }
 
         /**
-         * @return each atom's rank, every atom in a class of its own
+         * @return the molecule's canonical labelling as a ranking, together with the form it gives the molecule
          */
-        private Ranking rank()
+        private Canonicalised canonicalise()
         {
-            Partition refined = refineToStability(initial);
-            int[] classOf = refined.classes() == refined.size()
-                ? refined.classOf()
-                : breakTies(refined).classOf();
-            return new Ranking(ranksByAtom(classOf));
+            Candidate canonical = breakTies(refineToStability(initial.partition()));
+            return new Canonicalised(new Ranking(ranksByAtom(canonical.classOf())), canonical.form());
         }
 
         /**
@@ -135,12 +173,18 @@ public final class CanonicalRanker implements Ranker
         {
             int[] classOf = partition.classOf();
             long[] keys = neighbours.keysByAtom(classOf);
+            int[] parities = parityCodes(classOf);
 
             // pairing the old class with the new keys is what keeps classes from merging back together
             return classify(partition.size(), (first, second) ->
             {
                 int byClass = Integer.compare(classOf[first], classOf[second]);
-                return byClass != 0 ? byClass : neighbours.compareKeys(keys, first, second);
+                if (byClass != 0)
+                {
+                    return byClass;
+                }
+                int byParity = Integer.compare(parities[first], parities[second]);
+                return byParity != 0 ? byParity : neighbours.compareKeys(keys, first, second);
             });
         }
 
@@ -153,7 +197,7 @@ public final class CanonicalRanker implements Ranker
             if (partition.classes() == partition.size())
             {
                 int[] classOf = partition.classOf();
-                return new Candidate(classOf, new CachedValue<>(() -> representationOf(classOf)));
+                return new Candidate(classOf, new CachedValue<>(() -> canonicalFormOf(classOf)));
             }
 
             int classToSplit = smallestTiedClass(partition);
@@ -185,7 +229,7 @@ public final class CanonicalRanker implements Ranker
                 split[candidate] = partition.classes();
                 Candidate result = breakTies(refineToStability(new Partition(split, partition.classes() + 1)));
 
-                if (best == null || result.representation().get().compareTo(best.representation().get()) < 0)
+                if (best == null || result.form().get().compareTo(best.form().get()) < 0)
                 {
                     best = result;
                 }
@@ -232,10 +276,29 @@ public final class CanonicalRanker implements Ranker
         }
 
         /**
-         * @param classOf each atom's class, with every atom in a class of its own
-         * @return the molecule described atom-by-atom in class order
+         * @param classOf each atom's current class, by atom index
+         * @return each atom's declared parity against those classes, as {@link Stereochemistry#parityCodeOf} encodes it
          */
-        private Representation representationOf(int[] classOf)
+        private int[] parityCodes(int[] classOf)
+        {
+            if (stereo.isEmpty())
+            {
+                return noParities;
+            }
+
+            int[] codes = new int[classOf.length];
+            for (int atom = 0; atom < codes.length; atom++)
+            {
+                codes[atom] = stereo.parityCodeOf(atom, classOf);
+            }
+            return codes;
+        }
+
+        /**
+         * @param classOf each atom's class, with every atom in a class of its own
+         * @return the molecule described atom by atom in class order
+         */
+        private CanonicalForm canonicalFormOf(int[] classOf)
         {
             int size = classOf.length;
             int[] atomByClass = new int[size];
@@ -244,11 +307,14 @@ public final class CanonicalRanker implements Ranker
                 atomByClass[classOf[atom]] = atom;
             }
 
+            int[] parities = parityCodes(classOf);
             int[] invariantByClass = new int[size];
+            int[] parityByClass = new int[size];
             int[] keyOffset = new int[size + 1];
             for (int position = 0; position < size; position++)
             {
-                invariantByClass[position] = initial.classOf()[atomByClass[position]];
+                invariantByClass[position] = initial.partition().classOf()[atomByClass[position]];
+                parityByClass[position] = parities[atomByClass[position]];
                 keyOffset[position + 1] = keyOffset[position] + neighbours.degree(atomByClass[position]);
             }
 
@@ -258,7 +324,7 @@ public final class CanonicalRanker implements Ranker
                 neighbours.writeKeys(atomByClass[position], classOf, keys, keyOffset[position]);
                 Arrays.sort(keys, keyOffset[position], keyOffset[position + 1]);
             }
-            return new Representation(invariantByClass, keyOffset, keys);
+            return new CanonicalForm(initial.byClass(), invariantByClass, parityByClass, keyOffset, keys);
         }
     }
 
@@ -307,30 +373,35 @@ public final class CanonicalRanker implements Ranker
     /**
      * @param molecule the molecule being ranked
      * @param atoms the molecule's atoms
+     * @param stereo the molecule's declared stereochemistry
      * @return each atom's class under its own structural properties, its neighbours ignored
      */
-    private static Partition initialClasses(Molecule molecule, List<Atom> atoms)
+    private static Invariants initialClasses(Molecule molecule, List<Atom> atoms, Stereochemistry stereo)
     {
         Set<Bond> ringBonds = molecule.ringBonds();
-        AtomKey[] keys = new AtomKey[atoms.size()];
-        for (int atom = 0; atom < keys.length; atom++)
+        AtomInvariant[] invariants = new AtomInvariant[atoms.size()];
+        for (int atom = 0; atom < invariants.length; atom++)
         {
-            keys[atom] = initialInvariant(molecule, ringBonds, atoms.get(atom));
+            invariants[atom] = AtomInvariant.of(molecule, ringBonds, atoms.get(atom), stereo.roleOf(atom));
         }
-        return classify(keys.length, (first, second) -> ATOM_KEY_ORDER.compare(keys[first], keys[second]));
+
+        Partition partition = classify(invariants.length, (first, second) -> invariants[first].compareTo(invariants[second]));
+        return new Invariants(partition, invariantsByClass(partition, invariants));
     }
 
     /**
-     * @param molecule the molecule being ranked
-     * @param ringBonds the molecule's ring bonds
-     * @param atom the atom to describe
-     * @return {@code atom}'s initial structural properties without considering the structural properties of neighbouring atoms
+     * @param partition each atom's class under its own properties
+     * @param invariants each atom's own properties, by atom index
+     * @return the properties each class stands for, in class order
      */
-    private static AtomKey initialInvariant(Molecule molecule, Set<Bond> ringBonds, Atom atom)
+    private static List<AtomInvariant> invariantsByClass(Partition partition, AtomInvariant[] invariants)
     {
-        List<Bond> bonds = molecule.bondsOf(atom);
-        boolean inRing = bonds.stream().anyMatch(ringBonds::contains);
-        return new AtomKey(atom.element(), atom.aromatic(), atom.charge(), atom.isotope().orElse(-1), molecule.totalHydrogenCount(atom), bonds.size(), inRing);
+        AtomInvariant[] byClass = new AtomInvariant[partition.classes()];
+        for (int atom = 0; atom < invariants.length; atom++)
+        {
+            byClass[partition.classOf()[atom]] = invariants[atom];
+        }
+        return List.of(byClass);
     }
 
     /**
@@ -383,20 +454,30 @@ public final class CanonicalRanker implements Ranker
      */
     private static final class Neighbourhood
     {
+        /** How many bits of a key one bond's declared configuration takes up, enough for every code there is. */
+        private static final int CONFIGURATION_BITS = Integer.SIZE - Integer.numberOfLeadingZeros(Stereochemistry.codeCount());
+
         /** Cumulative bond offsets for each atom, with one extra entry marking the end. */
         private final int[] offset;
 
         private final int[] neighbour;
         private final int[] bondOrder;
 
+        /** Which declared double bond each bond is, as {@link Stereochemistry#doubleBondAt} numbers them. */
+        private final int[] doubleBond;
+
+        private final Stereochemistry stereo;
+
         /**
          * @param molecule the molecule being ranked
          * @param atoms the molecule's atoms, in the order giving each its index
          * @param indexOf each atom's index, by atom reference
+         * @param stereo the molecule's declared stereochemistry
          */
-        private Neighbourhood(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> indexOf)
+        private Neighbourhood(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> indexOf, Stereochemistry stereo)
         {
             int size = atoms.size();
+            this.stereo = stereo;
             this.offset = new int[size + 1];
             for (int atom = 0; atom < size; atom++)
             {
@@ -405,6 +486,7 @@ public final class CanonicalRanker implements Ranker
 
             this.neighbour = new int[offset[size]];
             this.bondOrder = new int[offset[size]];
+            this.doubleBond = new int[offset[size]];
             for (int atom = 0; atom < size; atom++)
             {
                 int at = offset[atom];
@@ -412,6 +494,7 @@ public final class CanonicalRanker implements Ranker
                 {
                     neighbour[at] = indexOf.get(bond.getOther(atoms.get(atom)));
                     bondOrder[at] = bond.order().ordinal();
+                    doubleBond[at] = stereo.doubleBondAt(atom, neighbour[at]);
                     at++;
                 }
             }
@@ -458,8 +541,10 @@ public final class CanonicalRanker implements Ranker
         {
             for (int bond = offset[atom]; bond < offset[atom + 1]; bond++)
             {
-                // Bond order occupies the high half so that it takes precedence when keys are compared.
-                keys[at++] = ((long) bondOrder[bond] << Integer.SIZE) | classOf[neighbour[bond]];
+                // Compare high to low bits, so order matters
+                keys[at++] = ((long) bondOrder[bond] << (Integer.SIZE + CONFIGURATION_BITS))
+                    | ((long) stereo.configurationCodeOf(doubleBond[bond], classOf) << Integer.SIZE)
+                    | classOf[neighbour[bond]];
             }
         }
 
@@ -490,14 +575,17 @@ public final class CanonicalRanker implements Ranker
     private static final class AtomGraph implements GraphAutomorphismDetector.Graph
     {
         private final int[][] bondClasses;
+        private final Stereochemistry stereo;
 
         /**
          * @param molecule the molecule being ranked
          * @param atoms the molecule's atoms, in the order giving each its index
          * @param indexOf each atom's index, by atom reference
+         * @param stereo the molecule's declared stereochemistry
          */
-        private AtomGraph(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> indexOf)
+        private AtomGraph(Molecule molecule, List<Atom> atoms, Map<Atom, Integer> indexOf, Stereochemistry stereo)
         {
+            this.stereo = stereo;
             this.bondClasses = new int[atoms.size()][atoms.size()];
             for (Bond bond : molecule.bonds())
             {
@@ -523,6 +611,12 @@ public final class CanonicalRanker implements Ranker
             return bondClasses[firstAtom][secondAtom];
         }
 
+        @Override
+        public List<StereoDeclaration> stereochemistry()
+        {
+            return stereo.declarations();
+        }
+
         /**
          * Prepares a symmetry search against one set of atom classes.
          *
@@ -536,9 +630,20 @@ public final class CanonicalRanker implements Ranker
     }
 
     /**
-     * An atom's own structural properties, used to split atoms into their initial classes.
+     * @param ranking the labelling as each atom's rank
+     * @param form the form the molecule takes under it, computed on first use
      */
-    private record AtomKey(String element, boolean aromatic, int charge, int isotope, int hydrogenCount, int degree, boolean inRing)
+    private record Canonicalised(Ranking ranking, Supplier<CanonicalForm> form)
+    {
+    }
+
+    /**
+     * Each atom's class under its own properties, with the properties each class stands for.
+     *
+     * @param partition each atom's class
+     * @param byClass the properties each class stands for, in class order
+     */
+    private record Invariants(Partition partition, List<AtomInvariant> byClass)
     {
     }
 
@@ -560,57 +665,12 @@ public final class CanonicalRanker implements Ranker
     }
 
     /**
-     * A fully resolved classification together with the canonical representation it produces.
+     * A fully resolved classification together with the form it gives the molecule.
      *
      * @param classOf each atom's class, every atom in a class of its own
-     * @param representation the representation that classification gives the molecule
+     * @param form the form that classification gives the molecule, computed on first use
      */
-    private record Candidate(int[] classOf, Supplier<Representation> representation)
+    private record Candidate(int[] classOf, Supplier<CanonicalForm> form)
     {
-    }
-
-    /**
-     * A molecule described atom by atom in class order.
-     *
-     * @param invariantByClass the initial class of the atom holding each class, in class order
-     * @param keyOffset where each atom's keys begin, one entry longer than the molecule
-     * @param keys every atom's neighbour keys in class order, {@link Neighbourhood#writeKeys}
-     */
-    private record Representation(int[] invariantByClass, int[] keyOffset, long[] keys)
-    {
-        /**
-         * @param other the representation to compare with
-         * @return how the two representations compare, atom by atom in class order
-         */
-        private int compareTo(Representation other)
-        {
-            for (int position = 0; position < invariantByClass.length; position++)
-            {
-                int byInvariant = Integer.compare(invariantByClass[position], other.invariantByClass[position]);
-                if (byInvariant != 0)
-                {
-                    return byInvariant;
-                }
-
-                int ours = keyOffset[position + 1] - keyOffset[position];
-                int theirs = other.keyOffset[position + 1] - other.keyOffset[position];
-                int limit = Math.min(ours, theirs);
-                for (int index = 0; index < limit; index++)
-                {
-                    int byKey = Long.compare(keys[keyOffset[position] + index], other.keys[other.keyOffset[position] + index]);
-                    if (byKey != 0)
-                    {
-                        return byKey;
-                    }
-                }
-
-                // an atom with fewer bonds comes first, as the shorter of two otherwise equal runs
-                if (ours != theirs)
-                {
-                    return Integer.compare(ours, theirs);
-                }
-            }
-            return 0;
-        }
     }
 }

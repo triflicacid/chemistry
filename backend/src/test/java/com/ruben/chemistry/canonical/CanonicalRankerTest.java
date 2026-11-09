@@ -1,13 +1,24 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.canonical;
 
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.smiles.SmilesParser;
-import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.ToIntFunction;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -312,14 +323,86 @@ class CanonicalRankerTest
     }
 
     @Test
-    void currently_does_not_distinguish_stereoisomers()
+    void ranks_enantiomers_alike()
     {
-        // Stereochemistry is deliberately not part of the current ranking.
-        Molecule clockwise = new SmilesParser("N[C@](F)(Cl)Br").parse();
-        Molecule anticlockwise = new SmilesParser("N[C@@](F)(Cl)Br").parse();
+        // mirror images share every structural role, so no ranking separates them; what tells them
+        // apart is the parity read off a ranking, not the ranking itself
+        Molecule anticlockwise = new SmilesParser("N[C@](F)(Cl)Br").parse();
+        Molecule clockwise = new SmilesParser("N[C@@](F)(Cl)Br").parse();
 
-        assertThat(rankFingerprint(clockwise))
-                .isEqualTo(rankFingerprint(anticlockwise));
+        assertThat(rankFingerprint(anticlockwise))
+                .isEqualTo(rankFingerprint(clockwise));
+    }
+
+    @Test
+    void distinguishes_diastereomers_a_symmetric_constitution_ties_together()
+    {
+        Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
+        Molecule chiral = new SmilesParser("C[C@H](Br)[C@@H](Br)C").parse();
+
+        assertThat(stereoFingerprint(meso))
+                .isNotEqualTo(stereoFingerprint(chiral));
+    }
+
+    @Test
+    void ranks_stereochemistry_independently_of_build_order()
+    {
+        for (String smiles : List.of(
+                "N[C@](F)(Cl)Br",                   // bromochlorofluoromethanamine
+                "C[C@H](Br)[C@H](Br)C",             // meso-2,3-dibromobutane
+                "C[C@H](Br)[C@@H](Br)C",            // chiral 2,3-dibromobutane
+                "OC(=O)[C@H](O)[C@H](O)C(=O)O",     // meso-tartaric acid
+                "OC(=O)[C@H](O)[C@@H](O)C(=O)O",    // chiral tartaric acid
+                "O[C@H]1CCCC[C@@H]1O",              // cis-cyclohexane-1,2-diol
+                "O[C@H]1CCCC[C@H]1O",               // trans-cyclohexane-1,2-diol
+                "C/C=C/C",                          // (E)-but-2-ene
+                "C/C=C/C=C\\C",                     // (2E,4Z)-hexa-2,4-diene
+                "C/C=C/CC/C=C\\C"                   // (2E,6Z)-octa-2,6-diene
+        ))
+        {
+            Molecule molecule = new SmilesParser(smiles).parse();
+            String expected = stereoFingerprint(molecule);
+
+            Random random = new Random(smiles.hashCode());
+
+            for (int rebuild = 0; rebuild < 20; rebuild++)
+            {
+                assertThat(stereoFingerprint(
+                        rebuiltInRandomOrder(molecule, random)
+                ))
+                        .as("stereochemistry of %s after rebuild %d", smiles, rebuild)
+                        .isEqualTo(expected);
+            }
+        }
+    }
+
+    @Test
+    void honours_stereochemistry_unless_told_to_ignore_it()
+    {
+        assertThat(new CanonicalRanker().isIgnoreStereochemistry()).isFalse();
+
+        Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
+        CanonicalRanker ranker = new CanonicalRanker();
+
+        String honoured = rankFingerprint(ranker.rank(meso), meso);
+        String ignored = rankFingerprint(ranker.setIgnoreStereochemistry(true).rank(meso), meso);
+
+        assertThat(ignored).isNotEqualTo(honoured);
+    }
+
+    @Test
+    void ranks_stereoisomers_alike_when_ignoring_stereochemistry()
+    {
+        Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
+        Molecule chiral = new SmilesParser("C[C@H](Br)[C@@H](Br)C").parse();
+        Molecule undeclared = new SmilesParser("CC(Br)C(Br)C").parse();
+
+        Ranker ranker = new CanonicalRanker().setIgnoreStereochemistry(true);
+
+        assertThat(rankFingerprint(ranker.rank(meso), meso))
+                .isEqualTo(rankFingerprint(ranker.rank(undeclared), undeclared));
+        assertThat(rankFingerprint(ranker.rank(chiral), chiral))
+                .isEqualTo(rankFingerprint(ranker.rank(undeclared), undeclared));
     }
 
     /**
@@ -407,7 +490,8 @@ class CanonicalRankerTest
     /**
      * @param molecule the molecule to rebuild
      * @param random the source of the new ordering
-     * @return the same molecular graph with atoms and bonds inserted in shuffled order
+     * @return the same molecular graph with atoms and bonds inserted in shuffled order, carrying every
+     *     configuration {@code molecule} declares, so that nothing but the build order differs
      */
     private static Molecule rebuiltInRandomOrder(
             Molecule molecule,
@@ -432,7 +516,198 @@ class CanonicalRankerTest
                 )
         );
 
+        return carryStereochemistryOver(molecule, builder.build());
+    }
+
+    /**
+     * Re-declares one molecule's stereochemistry on a rebuild of it. Insertion order decides what a
+     * declaration means, and the rebuild's differs, so each is read against an order fixed by the
+     * original's atom indices and re-declared against the rebuild's own.
+     *
+     * @param molecule the molecule to take the declarations from
+     * @param rebuilt the same molecule built in a different order, with nothing declared yet
+     * @return {@code rebuilt} with every configuration {@code molecule} declares
+     */
+    private static Molecule carryStereochemistryOver(Molecule molecule, Molecule rebuilt)
+    {
+        // atom references are shared, so an atom's index in the original names it in either molecule
+        Map<Atom, Integer> indexOf = new IdentityHashMap<>();
+        molecule.atoms().forEach(atom -> indexOf.put(atom, indexOf.size()));
+        ToIntFunction<Atom> fixedKey = indexOf::get;
+
+        Molecule.Builder builder = rebuilt.toBuilder();
+
+        for (Atom atom : molecule.atoms())
+        {
+            if (molecule.chiralityOf(atom).isEmpty())
+            {
+                continue;
+            }
+
+            Chirality parity = molecule.chiralityOf(atom, neighbourOrder(molecule, atom, fixedKey)).orElseThrow();
+            boolean reordered = isOddPermutation(
+                    declaredOrder(rebuilt, atom),
+                    neighbourOrder(rebuilt, atom, fixedKey)
+            );
+            builder.setChirality(atom, reordered ? parity.flip() : parity);
+        }
+
+        for (Bond bond : molecule.bonds())
+        {
+            if (molecule.doubleBondStereoOf(bond).isEmpty())
+            {
+                continue;
+            }
+
+            DoubleBondStereo configuration = molecule.doubleBondStereoOf(
+                    bond,
+                    reference(molecule, bond, bond.first(), fixedKey),
+                    reference(molecule, bond, bond.second(), fixedKey)
+            ).orElseThrow();
+
+            Bond rebuiltBond = rebuilt.bondBetween(bond.first(), bond.second()).orElseThrow();
+            boolean remeasured =
+                    (reference(rebuilt, rebuiltBond, bond.first(), fixedKey) != defaultReference(rebuilt, rebuiltBond, bond.first()))
+                            ^ (reference(rebuilt, rebuiltBond, bond.second(), fixedKey) != defaultReference(rebuilt, rebuiltBond, bond.second()));
+            builder.setDoubleBondStereo(bond.first(), bond.second(), remeasured ? configuration.flip() : configuration);
+        }
+
         return builder.build();
+    }
+
+    /**
+     * @param molecule the molecule to describe
+     * @return the molecule described using its canonical atom ranks, with every declared configuration
+     *     read against those ranks
+     */
+    private static String stereoFingerprint(Molecule molecule)
+    {
+        Ranking ranking = rank(molecule);
+        ToIntFunction<Atom> rankKey = ranking::rankOf;
+
+        StringBuilder description = new StringBuilder(rankFingerprint(ranking, molecule));
+
+        for (Atom atom : ranking.atomsByAscendingRank())
+        {
+            molecule.chiralityOf(atom, neighbourOrder(molecule, atom, rankKey)).ifPresent(parity ->
+                    description.append(ranking.rankOf(atom)).append(':').append(parity).append(';')
+            );
+        }
+
+        molecule.bonds().stream()
+                .filter(bond -> molecule.doubleBondStereoOf(bond).isPresent())
+                .map(bond ->
+                {
+                    int first = ranking.rankOf(bond.first());
+                    int second = ranking.rankOf(bond.second());
+                    DoubleBondStereo configuration = molecule.doubleBondStereoOf(
+                            bond,
+                            reference(molecule, bond, bond.first(), rankKey),
+                            reference(molecule, bond, bond.second(), rankKey)
+                    ).orElseThrow();
+                    return Math.min(first, second) + "=" + Math.max(first, second) + ":" + configuration + ";";
+                })
+                .sorted()
+                .forEach(description::append);
+
+        return description.toString();
+    }
+
+    /**
+     * @param molecule the molecule {@code atom} belongs to
+     * @param atom the atom whose neighbours to order
+     * @param keyOf the key to order {@code atom}'s neighbouring atoms by
+     * @return {@code atom}'s neighbours in ascending key order, its implicit hydrogen leading
+     */
+    private static List<NeighbourReference> neighbourOrder(Molecule molecule, Atom atom, ToIntFunction<Atom> keyOf)
+    {
+        List<NeighbourReference> order = new ArrayList<>();
+
+        // the implicit hydrogen is not an atom and so has no key, which leaves it the first slot
+        if (atom.hydrogenCount().orElse(0) > 0)
+        {
+            order.add(Molecule.IMPLICIT_HYDROGEN);
+        }
+
+        molecule.bondsOf(atom).stream()
+                .sorted(Comparator.comparingInt(bond -> keyOf.applyAsInt(bond.getOther(atom))))
+                .forEach(order::add);
+        return order;
+    }
+
+    /**
+     * @param molecule the molecule {@code atom} belongs to
+     * @param atom the atom whose neighbours to order
+     * @return the neighbour order {@link Molecule#chiralityOf(Atom)} is relative to: {@code atom}'s
+     *     implicit hydrogen, then its bonds in insertion order
+     */
+    private static List<NeighbourReference> declaredOrder(Molecule molecule, Atom atom)
+    {
+        List<NeighbourReference> order = new ArrayList<>();
+        if (atom.hydrogenCount().orElse(0) > 0)
+        {
+            order.add(Molecule.IMPLICIT_HYDROGEN);
+        }
+        order.addAll(molecule.bondsOf(atom));
+        return order;
+    }
+
+    /**
+     * @param molecule the molecule {@code doubleBond} belongs to
+     * @param doubleBond the bond whose configuration is being read
+     * @param atom the end of {@code doubleBond} to measure from
+     * @param keyOf the key to order {@code atom}'s neighbouring atoms by
+     * @return the substituent of {@code atom} to measure against: its first neighbour in that order
+     *     other than {@code doubleBond} itself
+     */
+    private static NeighbourReference reference(Molecule molecule, Bond doubleBond, Atom atom, ToIntFunction<Atom> keyOf)
+    {
+        return neighbourOrder(molecule, atom, keyOf).stream()
+                .filter(candidate -> candidate != doubleBond)
+                .findFirst()
+                .orElse(Molecule.IMPLICIT_HYDROGEN);
+    }
+
+    /**
+     * @param molecule the molecule {@code doubleBond} belongs to
+     * @param doubleBond the bond whose configuration is being read
+     * @param atom the end of {@code doubleBond} to measure from
+     * @return the substituent {@link Molecule#doubleBondStereoOf(Bond)} measures that end against
+     */
+    private static NeighbourReference defaultReference(Molecule molecule, Bond doubleBond, Atom atom)
+    {
+        return molecule.bondsOf(atom).stream()
+                .filter(candidate -> candidate != doubleBond)
+                .<NeighbourReference>map(candidate -> candidate)
+                .findFirst()
+                .orElse(Molecule.IMPLICIT_HYDROGEN);
+    }
+
+    /**
+     * @param from a list of neighbour slots
+     * @param to the same slots, in a possibly different order
+     * @return {@code true} if rearranging {@code from} into {@code to} is an odd permutation
+     */
+    private static boolean isOddPermutation(List<NeighbourReference> from, List<NeighbourReference> to)
+    {
+        Map<NeighbourReference, Integer> positionInTo = new IdentityHashMap<>();
+        for (int position = 0; position < to.size(); position++)
+        {
+            positionInTo.put(to.get(position), position);
+        }
+
+        int inversions = 0;
+        for (int first = 0; first < from.size(); first++)
+        {
+            for (int second = first + 1; second < from.size(); second++)
+            {
+                if (positionInTo.get(from.get(first)) > positionInTo.get(from.get(second)))
+                {
+                    inversions++;
+                }
+            }
+        }
+        return inversions % 2 != 0;
     }
 
     /**
