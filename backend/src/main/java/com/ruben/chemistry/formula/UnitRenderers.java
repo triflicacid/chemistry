@@ -1,11 +1,9 @@
 package com.ruben.chemistry.formula;
 
-import com.ruben.chemistry.query.Query;
+import com.ruben.chemistry.query.MoleculeQuery;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -35,7 +33,7 @@ public final class UnitRenderers
      * @param settings the settings to write a matching unit with
      * @return the rules so far, to be closed off by {@link Rules#otherwise}
      */
-    public static Rules when(Query query, FormulaSettings settings)
+    public static Rules when(MoleculeQuery query, FormulaSettings settings)
     {
         return new Rules().add(query, settings);
     }
@@ -45,7 +43,7 @@ public final class UnitRenderers
      */
     public static final class Rules
     {
-        private final List<Query> queries = new ArrayList<>();
+        private final List<MoleculeQuery> queries = new ArrayList<>();
         private final List<FormulaSettings> choices = new ArrayList<>();
 
         private Rules()
@@ -57,7 +55,7 @@ public final class UnitRenderers
          * @param settings the settings to write a matching unit with
          * @return these rules, with the new rule tried after those already given
          */
-        public Rules when(Query query, FormulaSettings settings)
+        public Rules when(MoleculeQuery query, FormulaSettings settings)
         {
             return add(query, settings);
         }
@@ -71,7 +69,7 @@ public final class UnitRenderers
         public Function<FormulaUnit, FormulaSettings> otherwise(FormulaSettings fallback)
         {
             Objects.requireNonNull(fallback, "fallback");
-            List<Query> queries = List.copyOf(this.queries);
+            List<MoleculeQuery> queries = List.copyOf(this.queries);
             List<FormulaSettings> choices = List.copyOf(this.choices);
             return unit ->
             {
@@ -86,7 +84,7 @@ public final class UnitRenderers
             };
         }
 
-        private Rules add(Query query, FormulaSettings settings)
+        private Rules add(MoleculeQuery query, FormulaSettings settings)
         {
             queries.add(Objects.requireNonNull(query, "query"));
             choices.add(Objects.requireNonNull(settings, "settings"));

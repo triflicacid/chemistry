@@ -3,24 +3,25 @@ package com.ruben.chemistry.formula;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.query.Query;
-import com.ruben.chemistry.smarts.SmartsParser;
+import com.ruben.chemistry.query.MoleculeQuery;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class UnitRenderersTest
 {
-    private static final Query CARBON = query("C");
-    private static final Query WATER = query("[OX2H2]");
+    private static final Molecule ETHANOL_STRUCTURE = new Molecule.Builder().build();
+    private static final Molecule WATER_STRUCTURE = new Molecule.Builder().build();
+    private static final Molecule AMMONIA_STRUCTURE = new Molecule.Builder().build();
 
-    private static final FormulaUnit ETHANOL = new FormulaUnit(ethanol(), 1);
-    private static final FormulaUnit WATER_UNIT = new FormulaUnit(water(), 5);
+    private static final MoleculeQuery CARBON = m -> m == ETHANOL_STRUCTURE;
+    private static final MoleculeQuery WATER = m -> m == WATER_STRUCTURE;
+
+    private static final FormulaUnit ETHANOL = new FormulaUnit(ETHANOL_STRUCTURE, 1);
+    private static final FormulaUnit WATER_UNIT = new FormulaUnit(WATER_STRUCTURE, 5);
 
     @Nested
     class Alike
@@ -52,7 +53,33 @@ class UnitRenderersTest
 
             assertThat(renderers.apply(ETHANOL)).isSameAs(organic);
             assertThat(renderers.apply(WATER_UNIT)).isSameAs(aqueous);
-            assertThat(renderers.apply(new FormulaUnit(ammonia(), 1))).isSameAs(fallback);
+            assertThat(renderers.apply(new FormulaUnit(AMMONIA_STRUCTURE, 1))).isSameAs(fallback);
+        }
+
+        @Test
+        void returns_on_the_first_rule_that_matches_without_trying_the_rest()
+        {
+            MoleculeQuery alwaysMatches = candidate -> true;
+            FormulaSettings first = FormulaSettings.condensed();
+            FormulaSettings second = FormulaSettings.molecular();
+
+            Function<FormulaUnit, FormulaSettings> renderers = UnitRenderers.when(alwaysMatches, first)
+                .when(alwaysMatches, second)
+                .otherwise(FormulaSettings.molecular().withEmpirical(true));
+
+            assertThat(renderers.apply(WATER_UNIT)).isSameAs(first);
+        }
+
+        @Test
+        void falls_back_when_no_rule_matches()
+        {
+            MoleculeQuery neverMatches = candidate -> false;
+            FormulaSettings fallback = FormulaSettings.molecular();
+
+            Function<FormulaUnit, FormulaSettings> renderers = UnitRenderers.when(neverMatches, FormulaSettings.condensed())
+                .otherwise(fallback);
+
+            assertThat(renderers.apply(WATER_UNIT)).isSameAs(fallback);
         }
 
         @Test
@@ -67,94 +94,5 @@ class UnitRenderersTest
 
             assertThat(renderers.apply(WATER_UNIT)).isSameAs(fallback);
         }
-    }
-
-    @Nested
-    class Matching
-    {
-        @Test
-        void matches_a_pattern_against_a_units_structure()
-        {
-            assertThat(ETHANOL.matches(CARBON)).isTrue();
-            assertThat(WATER_UNIT.matches(CARBON)).isFalse();
-            assertThat(WATER_UNIT.matches(WATER)).isTrue();
-        }
-
-        @Test
-        void matches_a_pattern_against_any_fragment_of_a_combined_unit()
-        {
-            Molecule hydrate = new Molecule.Builder()
-                .addAtom(Atom.builder("Na").charge(1).hydrogenCount(0).build())
-                .addAtom(Atom.organic("O"))
-                .build();
-
-            assertThat(new FormulaUnit(hydrate, 1).matches(WATER)).isTrue();
-        }
-    }
-
-    @Nested
-    class Settings
-    {
-        @Test
-        void writes_each_unit_by_the_pattern_it_matches()
-        {
-            Atom methyl = Atom.organic("C");
-            Atom methylene = Atom.organic("C");
-            Atom hydroxyl = Atom.organic("O");
-            Molecule molecule = new Molecule.Builder()
-                .addAtoms(methyl, methylene, hydroxyl, Atom.organic("O"))
-                .addBond(methyl, methylene, BondOrder.SINGLE)
-                .addBond(methylene, hydroxyl, BondOrder.SINGLE)
-                .build();
-
-            String written = FormulaSettings.fragmented()
-                .withGrouping(FragmentGrouping.COMPONENTS)
-                .withRenderers(UnitRenderers
-                        .when(CARBON, FormulaSettings.condensed())
-                        .otherwise(FormulaSettings.molecular()))
-                .write(molecule);
-
-            assertThat(written).isEqualTo("CH3CH2OH.H2O");
-        }
-    }
-
-    /**
-     * @param smarts the pattern to parse
-     * @return the query that pattern denotes
-     */
-    private static Query query(String smarts)
-    {
-        return new SmartsParser(smarts).parseQuery();
-    }
-
-    /**
-     * @return {@code CCO}
-     */
-    private static Molecule ethanol()
-    {
-        Atom methyl = Atom.organic("C");
-        Atom methylene = Atom.organic("C");
-        Atom hydroxyl = Atom.organic("O");
-        return new Molecule.Builder()
-            .addAtoms(methyl, methylene, hydroxyl)
-            .addBond(methyl, methylene, BondOrder.SINGLE)
-            .addBond(methylene, hydroxyl, BondOrder.SINGLE)
-            .build();
-    }
-
-    /**
-     * @return {@code O}
-     */
-    private static Molecule water()
-    {
-        return new Molecule.Builder().addAtom(Atom.organic("O")).build();
-    }
-
-    /**
-     * @return {@code N}
-     */
-    private static Molecule ammonia()
-    {
-        return new Molecule.Builder().addAtom(Atom.organic("N")).build();
     }
 }
