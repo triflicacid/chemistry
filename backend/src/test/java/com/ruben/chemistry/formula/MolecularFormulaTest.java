@@ -10,8 +10,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class MolecularFormulaTest
 {
-    private static final MolecularFormula.Settings ALIASES =
-        MolecularFormula.Settings.PLAIN.withIsotopeStyle(IsotopeStyle.HYDROGEN_ALIASES);
+    private static final FormulaStyle ALIASES =
+        FormulaStyle.PLAIN.withIsotopeStyle(IsotopeStyle.HYDROGEN_ALIASES);
 
     @Test
     void writes_nothing_for_an_empty_molecule()
@@ -303,10 +303,8 @@ class MolecularFormulaTest
     @Nested
     class StrictHillOrdering
     {
-        private static final MolecularFormula.Settings HILL =
-            MolecularFormula.Settings.PLAIN.withElementOrder(ElementOrder.HILL);
-
-        private static final MolecularFormula.Settings HILL_UNICODE = HILL.withUnicode(true);
+        private static final FormulaStyle HILL = FormulaStyle.PLAIN.withElementOrder(ElementOrder.HILL);
+        private static final FormulaStyle HILL_UNICODE = HILL.withUnicode(true);
 
         @Test
         void alphabetises_a_carbon_free_molecule_hydrogen_included()

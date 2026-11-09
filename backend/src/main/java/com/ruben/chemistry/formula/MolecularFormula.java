@@ -233,7 +233,7 @@ public final class MolecularFormula
     @Override
     public String toString()
     {
-        return render(Settings.PLAIN);
+        return render(FormulaStyle.PLAIN);
     }
 
     /**
@@ -241,22 +241,22 @@ public final class MolecularFormula
      */
     public String toUnicode()
     {
-        return render(Settings.UNICODE);
+        return render(FormulaStyle.UNICODE);
     }
 
     /**
      * Writes the formula, with any net charge appended.
      *
-     * @param settings how to write it
+     * @param style how to write it
      * @return the formula as text
      */
-    public String render(Settings settings)
+    public String render(FormulaStyle style)
     {
-        boolean unicode = settings.unicode();
+        boolean unicode = style.unicode();
         StringBuilder text = new StringBuilder();
-        inWrittenOrder(counts, settings.elementOrder()).forEach((nuclide, count) ->
+        inWrittenOrder(counts, style.elementOrder()).forEach((nuclide, count) ->
         {
-            text.append(Nuclide.render(nuclide, unicode, settings.isotopeStyle()));
+            text.append(Nuclide.render(nuclide, unicode, style.isotopeStyle()));
             if (count > 1)
             {
                 text.append(unicode ? Unicode.subscript(count) : String.valueOf(count));
@@ -295,48 +295,5 @@ public final class MolecularFormula
     public int hashCode()
     {
         return Objects.hash(counts, charge);
-    }
-
-    /**
-     * Rendering options for {@link MolecularFormula#render}.
-     *
-     * @param unicode whether to write counts and charges as subscripts and superscripts rather than as plain digits
-     * @param elementOrder the order to write the elements in
-     * @param isotopeStyle how to name an isotopically labelled nuclide
-     */
-    public record Settings(boolean unicode, ElementOrder elementOrder, IsotopeStyle isotopeStyle)
-    {
-        /** Plain digits, conventional element order, every labelled nuclide written with its mass number. */
-        public static final Settings PLAIN = new Settings(false, ElementOrder.CONVENTIONAL, IsotopeStyle.MASS_NUMBER);
-
-        /** As {@link #PLAIN}, except that counts and charges are written in Unicode. */
-        public static final Settings UNICODE = new Settings(true, ElementOrder.CONVENTIONAL, IsotopeStyle.MASS_NUMBER);
-
-        /**
-         * @param unicode whether to write counts and charges in Unicode
-         * @return these settings, with {@code unicode} replaced
-         */
-        public Settings withUnicode(boolean unicode)
-        {
-            return new Settings(unicode, elementOrder, isotopeStyle);
-        }
-
-        /**
-         * @param elementOrder the order to write the elements in
-         * @return these settings, with {@code elementOrder} replaced
-         */
-        public Settings withElementOrder(ElementOrder elementOrder)
-        {
-            return new Settings(unicode, elementOrder, isotopeStyle);
-        }
-
-        /**
-         * @param isotopeStyle how to name a labelled nuclide
-         * @return these settings, with {@code isotopeStyle} replaced
-         */
-        public Settings withIsotopeStyle(IsotopeStyle isotopeStyle)
-        {
-            return new Settings(unicode, elementOrder, isotopeStyle);
-        }
     }
 }
