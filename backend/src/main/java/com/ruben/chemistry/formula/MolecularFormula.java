@@ -112,8 +112,7 @@ public final class MolecularFormula
     }
 
     /**
-     * Combines this formula with another:
-     * {@code other} becomes a disconnected fragment inside this molecule.
+     * Combines this formula with another.
      *
      * @param other the formula to add to this one
      * @return the combined formula
@@ -127,7 +126,6 @@ public final class MolecularFormula
 
     /**
      * Multiplies every count, and the net charge, by a factor.
-     * That is, adds on {@code factor} copies of this molecule as disconnected fragments.
      *
      * @param factor how many times over to count this formula, zero or above
      * @return the multiplied formula, or an empty formula if {@code factor} is zero

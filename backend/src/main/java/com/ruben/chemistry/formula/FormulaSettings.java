@@ -4,6 +4,8 @@ import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.canonical.Ranker;
 import com.ruben.chemistry.core.Molecule;
 
+import java.util.function.Function;
+
 /**
  * Configuration for writing a molecular formula.
  * {@link FormulaStyle} is included in this, but this interface offers more options such as condensed formulae.
@@ -34,6 +36,14 @@ public sealed interface FormulaSettings
     static Molecular molecular()
     {
         return new Molecular(FormulaStyle.PLAIN, false);
+    }
+
+    /**
+     * @return settings writing a molecule's fragments as separate units, e.g. {@code CuSO4.5H2O}.
+     */
+    static Fragmented fragmented()
+    {
+        return new Fragmented(FormulaStyle.PLAIN, FragmentGrouping.NEUTRAL_UNITS, unit -> molecular());
     }
 
     /**
@@ -72,6 +82,61 @@ public sealed interface FormulaSettings
         public Molecular withEmpirical(boolean empirical)
         {
             return new Molecular(style, empirical);
+        }
+    }
+
+    /**
+     * The choices made when writing a molecule's fragments as separate units, joined by a {@code .}, e.g. {@code CuSO4.5H2O}.
+     * Each unit is written by settings of its own.
+     *
+     * @param style the text-level choices made about the formula as a whole
+     * @param grouping how to gather the molecule's fragments into units
+     * @param renderers the settings to write a unit with, chosen per unit
+     */
+    record Fragmented(
+        FormulaStyle style,
+        FragmentGrouping grouping,
+        Function<FormulaUnit, FormulaSettings> renderers) implements FormulaSettings
+    {
+        @Override
+        public Fragmented withStyle(FormulaStyle style)
+        {
+            return new Fragmented(style, grouping, renderers);
+        }
+
+        @Override
+        public String write(Molecule molecule)
+        {
+            return FragmentedFormula.of(molecule, grouping).render(style, renderers);
+        }
+
+        /**
+         * @param grouping how to gather the molecule's fragments into units
+         * @return these settings, with {@code grouping} replaced
+         */
+        public Fragmented withGrouping(FragmentGrouping grouping)
+        {
+            return new Fragmented(style, grouping, renderers);
+        }
+
+        /**
+         * Chooses how each unit is written.
+         *
+         * @param renderers the settings to write a unit with, chosen per unit
+         * @return these settings, with {@code renderers} replaced
+         */
+        public Fragmented withRenderers(Function<FormulaUnit, FormulaSettings> renderers)
+        {
+            return new Fragmented(style, grouping, renderers);
+        }
+
+        /**
+         * @param settings the settings to write every unit with
+         * @return these settings, writing every unit alike
+         */
+        public Fragmented withRenderer(FormulaSettings settings)
+        {
+            return withRenderers(unit -> settings);
         }
     }
 

@@ -101,7 +101,7 @@ public final class Molecule
     }
 
     /**
-     * @return the number of atoms in this molecule
+     * @return the number of atoms in this molecule (not including implicit hydrogen)
      */
     public int atomCount()
     {
