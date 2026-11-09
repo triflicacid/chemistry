@@ -4,6 +4,7 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.util.IdentitySet;
 
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -41,6 +42,29 @@ public final class Match
     public Set<Atom> atoms()
     {
         return IdentitySet.copyOf(atomOf.values());
+    }
+
+    /**
+     * Merges this match with another, independently-found match against the same molecule.
+     *
+     * @param other another match against the same molecule
+     * @return a match covering both this match's and {@code other}'s query positions
+     * @throws IllegalArgumentException if {@code other} is a match against a different molecule
+     */
+    Match combinedWith(Match other)
+    {
+        if (molecule != other.molecule)
+        {
+            throw new IllegalArgumentException("Cannot combine matches against different molecules");
+        }
+        if (other.atomOf.isEmpty())
+        {
+            return this;
+        }
+
+        Map<QueryAtom, Atom> merged = new IdentityHashMap<>(atomOf);
+        merged.putAll(other.atomOf);
+        return new Match(merged, molecule);
     }
 
     /**

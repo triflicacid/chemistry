@@ -2,6 +2,7 @@ package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentityMap;
@@ -22,7 +23,7 @@ import java.util.function.Supplier;
  * {@link QueryBond}s, each matched against a real molecule by its own predicate rather than
  * a fixed element or bond order.
  */
-public final class Query
+public final class Query implements MatchingQuery
 {
     private final List<QueryAtom> atoms;
     private final List<QueryBond> bonds;
@@ -47,6 +48,31 @@ public final class Query
         this.incidentBonds = new CachedValue<>(() -> buildIncidentBonds(this.atoms, this.bonds));
         this.chiralityByAtom = IdentityMap.copyOf(chirality);
         this.doubleBondStereoByBond = IdentityMap.copyOf(doubleBondStereo);
+    }
+
+    /**
+     * Searches {@code molecule} for every occurrence of this query, as {@link SubstructureMatcher#findMatches(Query)} does.
+     *
+     * @param molecule the molecule to search
+     * @return every way this query matched {@code molecule}, empty if it didn't match at all
+     */
+    @Override
+    public List<Match> findMatches(Molecule molecule)
+    {
+        return new SubstructureMatcher(molecule).findMatches(this);
+    }
+
+    /**
+     * Tests whether this query matches {@code molecule} at all, stopping at the first match
+     * found rather than enumerating every one.
+     *
+     * @param molecule the molecule to test
+     * @return {@code true} if this query matches some substructure of {@code molecule}
+     */
+    @Override
+    public boolean matches(Molecule molecule)
+    {
+        return new SubstructureMatcher(molecule).matches(this);
     }
 
     /**
