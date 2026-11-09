@@ -61,29 +61,38 @@ class QueryTest
     class And
     {
         @Test
-        void matches_only_when_both_patterns_occur_somewhere_in_the_molecule()
+        void matches_when_the_same_atom_satisfies_both_patterns()
         {
-            MatchingQuery both = query("[#6]").and(query("[#8]"));
+            // ethane: both carbons are plain carbons and have exactly 3 hydrogens
+            MatchingQuery both = query("[#6]").and(query("[CH3]"));
 
-            assertThat(both.matches(molecule("CCO"))).isTrue();
-            assertThat(both.matches(molecule("CC"))).isFalse();
+            assertThat(both.matches(molecule("CC"))).isTrue();
         }
 
         @Test
-        void findMatches_pairs_every_match_of_one_pattern_with_every_match_of_the_other()
+        void does_not_match_when_no_single_atom_satisfies_both_patterns()
         {
-            // CCOO: 2 carbons and 2 oxygens, so each carbon-match pairs with each oxygen-match
+            // no atom can be both carbon and oxygen at once, even though each pattern occurs
             MatchingQuery both = query("[#6]").and(query("[#8]"));
 
-            assertThat(both.findMatches(molecule("CCOO"))).hasSize(4);
+            assertThat(both.matches(molecule("CCO"))).isFalse();
         }
 
         @Test
-        void findMatches_is_empty_when_either_pattern_does_not_occur()
+        void findMatches_returns_only_the_occurrences_common_to_both_patterns()
+        {
+            // propane: the 2 terminal carbons are [CH3], the middle one is not
+            MatchingQuery both = query("[#6]").and(query("[CH3]"));
+
+            assertThat(both.findMatches(molecule("CCC"))).hasSize(2);
+        }
+
+        @Test
+        void findMatches_is_empty_when_no_atom_satisfies_both_patterns()
         {
             MatchingQuery both = query("[#6]").and(query("[#8]"));
 
-            assertThat(both.findMatches(molecule("CC"))).isEmpty();
+            assertThat(both.findMatches(molecule("CCO"))).isEmpty();
         }
     }
 
@@ -103,10 +112,68 @@ class QueryTest
         @Test
         void findMatches_returns_the_matches_of_both_patterns_together()
         {
-            // CCO: 2 carbon matches plus 1 oxygen match
+            // CCO: 2 carbon matches plus 1 oxygen match, none shared between the two patterns
             MatchingQuery either = query("[#6]").or(query("[#8]"));
 
             assertThat(either.findMatches(molecule("CCO"))).hasSize(3);
+        }
+
+        @Test
+        void findMatches_does_not_duplicate_an_occurrence_both_patterns_found()
+        {
+            // propane: both patterns match the 2 terminal carbons, so the union still has 3
+            // entries (one per carbon), not 5
+            MatchingQuery either = query("[#6]").or(query("[CH3]"));
+
+            assertThat(either.findMatches(molecule("CCC"))).hasSize(3);
+        }
+    }
+
+    @Nested
+    class ExclusiveOr
+    {
+        @Test
+        void matches_when_exactly_one_pattern_occurs_in_the_molecule()
+        {
+            MatchingQuery either = query("[#6]").exclusiveOr(query("[#8]"));
+
+            assertThat(either.matches(molecule("CC"))).isTrue();
+            assertThat(either.matches(molecule("OO"))).isTrue();
+        }
+
+        @Test
+        void does_not_match_when_neither_pattern_occurs_in_the_molecule()
+        {
+            MatchingQuery either = query("[#6]").exclusiveOr(query("[#8]"));
+
+            assertThat(either.matches(molecule("N"))).isFalse();
+        }
+
+        @Test
+        void does_not_match_when_both_patterns_found_exactly_the_same_occurrences()
+        {
+            MatchingQuery same = query("[#6]").exclusiveOr(query("[#6]"));
+
+            assertThat(same.matches(molecule("CC"))).isFalse();
+        }
+
+        @Test
+        void matches_when_both_patterns_occur_but_find_different_occurrences()
+        {
+            // propane: [#6] matches all 3 carbons, [CH3] only the 2 terminal ones -
+            // the middle carbon is found by exactly one of the two
+            MatchingQuery partiallyShared = query("[#6]").exclusiveOr(query("[CH3]"));
+
+            assertThat(partiallyShared.matches(molecule("CCC"))).isTrue();
+        }
+
+        @Test
+        void findMatches_excludes_occurrences_both_patterns_found()
+        {
+            // only the middle carbon (not a [CH3]) is found by exactly one pattern
+            MatchingQuery partiallyShared = query("[#6]").exclusiveOr(query("[CH3]"));
+
+            assertThat(partiallyShared.findMatches(molecule("CCC"))).hasSize(1);
         }
     }
 

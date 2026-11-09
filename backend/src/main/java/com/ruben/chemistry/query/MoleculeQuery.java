@@ -33,6 +33,15 @@ public interface MoleculeQuery
     }
 
     /**
+     * @param other another query
+     * @return a query matching a molecule that satisfies exactly one of this query and {@code other}, not both and not neither
+     */
+    default MoleculeQuery exclusiveOr(MoleculeQuery other)
+    {
+        return molecule -> matches(molecule) ^ other.matches(molecule);
+    }
+
+    /**
      * @return a query matching a molecule that does not satisfy this query
      */
     default MoleculeQuery negate()
