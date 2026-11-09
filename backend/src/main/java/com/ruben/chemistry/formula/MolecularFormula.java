@@ -46,6 +46,9 @@ public final class MolecularFormula
     /**
      * Counts a molecule's elements, implicit hydrogens included.
      *
+     * <p>Isotopically labelled atoms and hydrogens are counted separately from their unlabelled
+     * counterparts, so benzene's {@code C6H6} becomes {@code C6H5D} once one hydrogen is deuterated.
+     *
      * @param molecule the molecule to count
      * @param order the order to write the elements in
      * @return the molecule's formula
@@ -56,19 +59,16 @@ public final class MolecularFormula
         int charge = 0;
         for (Atom atom : molecule.atoms())
         {
-            totals.merge(atom.element(), 1, Integer::sum);
-            int hydrogens = molecule.totalHydrogenCount(atom);
-            if (hydrogens > 0)
-            {
-                totals.merge("H", hydrogens, Integer::sum);
-            }
+            totals.merge(Nuclide.symbolOf(atom.element(), atom.isotope().orElse(0)), 1, Integer::sum);
+            molecule.hydrogenIsotopeCounts(atom).forEach((massNumber, count) ->
+                totals.merge(Nuclide.symbolOf("H", massNumber), count, Integer::sum));
             charge += atom.charge();
         }
         return new MolecularFormula(inWrittenOrder(totals, order), charge);
     }
 
     /**
-     * @return each element's count, iterating in the order they are written, unmodifiable
+     * @return each nuclide's count, iterating in the order they are written, unmodifiable
      */
     public Map<String, Integer> counts()
     {
@@ -76,16 +76,33 @@ public final class MolecularFormula
     }
 
     /**
-     * @param element an element symbol, e.g. {@code "C"}
-     * @return the number of {@code element} atoms counted, or {@code 0} if the molecule has none
+     * Counts one nuclide exactly. A labelled nuclide is counted apart from its element, so
+     * {@code countOf("H")} excludes any deuterium; use {@link #countOfElement} to include it.
+     *
+     * @param nuclide a nuclide symbol, e.g. {@code "C"} or {@code "2H"}
+     * @return the number of {@code nuclide} atoms counted, or {@code 0} if the molecule has none
      */
-    public int countOf(String element)
+    public int countOf(String nuclide)
     {
-        return counts.getOrDefault(element, 0);
+        return counts.getOrDefault(nuclide, 0);
     }
 
     /**
-     * @return the number of distinct elements present
+     * Counts an element across every one of its nuclides, labelled or not.
+     *
+     * @param element an element symbol, e.g. {@code "H"}
+     * @return the number of {@code element} atoms counted, whatever their mass number
+     */
+    public int countOfElement(String element)
+    {
+        return counts.entrySet().stream()
+            .filter(entry -> Nuclide.elementOf(entry.getKey()).equals(element))
+            .mapToInt(Map.Entry::getValue)
+            .sum();
+    }
+
+    /**
+     * @return the number of distinct nuclides present
      */
     public int elementCount()
     {
@@ -145,9 +162,9 @@ public final class MolecularFormula
     }
 
     /**
-     * Sorts element counts into the order they are written in.
+     * Sorts nuclide counts into the order they are written in.
      *
-     * @param counts each element's count
+     * @param counts each nuclide's count
      * @param order the order to write the elements in
      * @return the same counts, iterating in written order
      */
@@ -163,13 +180,13 @@ public final class MolecularFormula
     }
 
     /**
-     * @param counts each element's count
+     * @param counts each nuclide's count
      * @param order the order to write the elements in
-     * @return the comparator to sort the element symbols with
+     * @return the comparator to sort the nuclide symbols with
      */
     private static Comparator<String> comparatorFor(Map<String, Integer> counts, ElementOrder order)
     {
-        if (counts.containsKey("C"))
+        if (counts.keySet().stream().anyMatch(nuclide -> Nuclide.elementOf(nuclide).equals("C")))
         {
             return hillOrder();
         }
@@ -177,20 +194,22 @@ public final class MolecularFormula
     }
 
     /**
-     * @return a comparator placing one element symbol against another, in Hill order
+     * @return a comparator placing one nuclide symbol against another, in Hill order
      */
     private static Comparator<String> hillOrder()
     {
-        return Comparator.comparingInt(MolecularFormula::hillBand).thenComparing(Comparator.naturalOrder());
+        return Comparator.comparingInt(MolecularFormula::hillBand)
+            .thenComparing(Nuclide::elementOf)
+            .thenComparingInt(Nuclide::massNumberOf);
     }
 
     /**
-     * @param element the element symbol to place
-     * @return the element's band under Hill ordering, a lower band being written first
+     * @param nuclide the nuclide symbol to place
+     * @return the nuclide's band under Hill ordering, a lower band being written first
      */
-    private static int hillBand(String element)
+    private static int hillBand(String nuclide)
     {
-        return switch (element)
+        return switch (Nuclide.elementOf(nuclide))
         {
             case "C" -> 0;
             case "H" -> 1;
@@ -200,31 +219,44 @@ public final class MolecularFormula
     }
 
     /**
-     * @return a comparator placing one element symbol against another alphabetically
+     * @return a comparator placing one nuclide symbol against another alphabetically
      */
     private static Comparator<String> alphabeticalOrder()
     {
         // '*' sorts below 'A', so the wildcard needs lifting out of the alphabet to stay last
-        return Comparator.comparingInt((String element) -> element.equals(WILDCARD) ? 1 : 0)
-            .thenComparing(Comparator.naturalOrder());
+        return Comparator.comparingInt((String nuclide) -> Nuclide.isWildcard(nuclide) ? 1 : 0)
+            .thenComparing(Nuclide::elementOf)
+            .thenComparingInt(Nuclide::massNumberOf);
     }
 
     /**
-     * @return a comparator placing one element symbol against another, in IUPAC sequence order
+     * @return a comparator placing one nuclide symbol against another, in IUPAC sequence order
      */
     private static Comparator<String> sequenceOrder()
     {
         // a wildcard stands for no element, so it has no place in the sequence and goes last
-        return Comparator.comparingInt(element -> element.equals(WILDCARD) ? Integer.MAX_VALUE : Elements.iupacOrderOf(element));
+        return Comparator
+            .comparingInt((String nuclide) ->
+                Nuclide.isWildcard(nuclide) ? Integer.MAX_VALUE : Elements.iupacOrderOf(Nuclide.elementOf(nuclide)))
+            .thenComparingInt(Nuclide::massNumberOf);
     }
 
     /**
-     * @return the formula, with any net charge appended, e.g., {@code C2H6} or {@code NH4+}
+     * @return the formula, with any net charge appended, e.g., {@code C2H6}, {@code NH4+}, or {@code C6H5[2H]}
      */
     @Override
     public String toString()
     {
-        return render(false);
+        return render(false, IsotopeStyle.MASS_NUMBER);
+    }
+
+    /**
+     * @param isotopeStyle how to name a labelled nuclide
+     * @return the formula, with any net charge appended
+     */
+    public String toString(IsotopeStyle isotopeStyle)
+    {
+        return render(false, isotopeStyle);
     }
 
     /**
@@ -232,19 +264,29 @@ public final class MolecularFormula
      */
     public String toUnicode()
     {
-        return render(true);
+        return render(true, IsotopeStyle.MASS_NUMBER);
+    }
+
+    /**
+     * @param isotopeStyle how to name a labelled nuclide
+     * @return the formula in Unicode, with any net charge appended
+     */
+    public String toUnicode(IsotopeStyle isotopeStyle)
+    {
+        return render(true, isotopeStyle);
     }
 
     /**
      * @param unicode whether to render the numbers as subscripts and superscripts rather than as plain digits
+     * @param isotopeStyle how to name a labelled nuclide
      * @return the formula, with any net charge appended
      */
-    private String render(boolean unicode)
+    private String render(boolean unicode, IsotopeStyle isotopeStyle)
     {
         StringBuilder text = new StringBuilder();
-        counts.forEach((element, count) ->
+        counts.forEach((nuclide, count) ->
         {
-            text.append(element);
+            text.append(Nuclide.render(nuclide, unicode, isotopeStyle));
             if (count > 1)
             {
                 text.append(unicode ? Unicode.subscript(count) : String.valueOf(count));
@@ -307,5 +349,22 @@ public final class MolecularFormula
          * </ul>
          */
         HILL
+    }
+
+    /**
+     * How a {@link MolecularFormula} names an isotopically labelled nuclide.
+     */
+    public enum IsotopeStyle
+    {
+        /**
+         * The mass number prefixes every element alike, e.g. {@code [2H]} and {@code [13C]}.
+         */
+        MASS_NUMBER,
+
+        /**
+         * As {@link #MASS_NUMBER}, except that the heavy hydrogen isotopes take their conventional
+         * names, {@code D} and {@code T}.
+         */
+        HYDROGEN_ALIASES
     }
 }

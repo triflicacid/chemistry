@@ -165,6 +165,26 @@ class CanonicalRankerTest
     }
 
     @Test
+    void distinguishes_implicit_hydrogens_of_different_isotopes()
+    {
+        // Two disconnected carbons, each carrying four hydrogens; only the label on one hydrogen differs.
+        Atom deuterated = Atom.builder("C").hydrogenIsotope(2, 1).build();
+        Atom tritiated = Atom.builder("C").hydrogenIsotope(3, 1).build();
+
+        Molecule molecule = new Molecule.Builder()
+                .addAtoms(deuterated, tritiated)
+                .build();
+
+        assertThat(molecule.totalHydrogenCount(deuterated))
+                .isEqualTo(molecule.totalHydrogenCount(tritiated));
+
+        Ranking ranking = rank(molecule);
+
+        assertThat(ranking.rankOf(deuterated))
+                .isNotEqualTo(ranking.rankOf(tritiated));
+    }
+
+    @Test
     void distinguishes_different_bond_orders()
     {
         Molecule single = new SmilesParser("CC").parse();

@@ -8,6 +8,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.entry;
 
 class MoleculeTest
 {
@@ -947,6 +948,99 @@ class MoleculeTest
             Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("C")).build();
 
             assertThatThrownBy(() -> molecule.implicitHydrogenCount(carbon))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    class HydrogenIsotopeCounts
+    {
+        @Test
+        void counts_every_unlabelled_hydrogen_as_protium()
+        {
+            Atom carbon = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(carbon).build();
+
+            assertThat(molecule.hydrogenIsotopeCounts(carbon)).containsExactly(entry(1, 4));
+        }
+
+        @Test
+        void counts_nothing_for_an_atom_with_no_hydrogens()
+        {
+            Atom carbon = Atom.builder("C").hydrogenCount(0).build();
+            Molecule molecule = new Molecule.Builder().addAtom(carbon).build();
+
+            assertThat(molecule.hydrogenIsotopeCounts(carbon)).isEmpty();
+        }
+
+        @Test
+        void splits_inferred_hydrogens_between_protium_and_a_label()
+        {
+            Atom carbon = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            Molecule molecule = new Molecule.Builder().addAtom(carbon).build();
+
+            assertThat(molecule.hydrogenIsotopeCounts(carbon)).containsExactly(entry(1, 3), entry(2, 1));
+        }
+
+        @Test
+        void leaves_no_protium_where_every_hydrogen_is_labelled()
+        {
+            Atom carbon = Atom.builder("C").hydrogenCount(4).hydrogenIsotope(2, 4).build();
+            Molecule molecule = new Molecule.Builder().addAtom(carbon).build();
+
+            assertThat(molecule.hydrogenIsotopeCounts(carbon)).containsExactly(entry(2, 4));
+        }
+
+        @Test
+        void orders_labels_by_ascending_mass_number()
+        {
+            Atom carbon = Atom.builder("C").hydrogenIsotope(3, 2).hydrogenIsotope(2, 1).build();
+            Molecule molecule = new Molecule.Builder().addAtom(carbon).build();
+
+            assertThat(molecule.hydrogenIsotopeCounts(carbon)).containsExactly(entry(1, 1), entry(2, 1), entry(3, 2));
+        }
+
+        @Test
+        void throws_when_bonding_leaves_too_few_hydrogens_for_the_labels()
+        {
+            // bonding the carbon to three chlorines leaves it a single hydrogen, one short of its labels
+            Atom carbon = Atom.builder("C").hydrogenIsotope(2, 2).build();
+            Atom cl1 = Atom.organic("Cl");
+            Atom cl2 = Atom.organic("Cl");
+            Atom cl3 = Atom.organic("Cl");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbon, cl1, cl2, cl3)
+                .addBond(carbon, cl1, BondOrder.SINGLE)
+                .addBond(carbon, cl2, BondOrder.SINGLE)
+                .addBond(carbon, cl3, BondOrder.SINGLE)
+                .build();
+
+            assertThatThrownBy(() -> molecule.hydrogenIsotopeCounts(carbon))
+                .isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void ignores_a_bonded_hydrogen_atom_of_its_own()
+        {
+            // C[3H]: the tritium is an atom in its own right, not one of the carbon's attached hydrogens
+            Atom carbon = Atom.organic("C");
+            Atom tritium = Atom.builder("H").isotope(3).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbon, tritium)
+                .addBond(carbon, tritium, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.hydrogenIsotopeCounts(carbon)).containsExactly(entry(1, 3));
+            assertThat(molecule.hydrogenIsotopeCounts(tritium)).isEmpty();
+        }
+
+        @Test
+        void throws_for_an_atom_not_part_of_the_molecule()
+        {
+            Atom carbon = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("C")).build();
+
+            assertThatThrownBy(() -> molecule.hydrogenIsotopeCounts(carbon))
                 .isInstanceOf(IllegalArgumentException.class);
         }
     }

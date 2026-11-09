@@ -1,7 +1,10 @@
 package com.ruben.chemistry.core;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalInt;
+import java.util.TreeMap;
 
 /**
  * An atom within a {@link Molecule}.
@@ -11,6 +14,7 @@ import java.util.OptionalInt;
  * @param charge the net formal charge, {@code 0} if unspecified
  * @param isotope the isotope mass number, or empty if unspecified
  * @param hydrogenCount the number of attached hydrogens, or empty if implicit
+ * @param hydrogenIsotopes how many attached hydrogens carry each mass number above one, unmodifiable and ascending
  * @param atomClass the atom class number, or empty if unspecified
  */
 public record Atom(
@@ -19,8 +23,63 @@ public record Atom(
     int charge,
     OptionalInt isotope,
     OptionalInt hydrogenCount,
+    Map<Integer, Integer> hydrogenIsotopes,
     OptionalInt atomClass)
 {
+    /**
+     * Normalises the hydrogen isotope labels and checks they fit within a declared hydrogen count.
+     */
+    public Atom
+    {
+        hydrogenIsotopes = normaliseHydrogenIsotopes(hydrogenIsotopes);
+
+        int labelled = hydrogenIsotopes.values().stream().mapToInt(Integer::intValue).sum();
+        if (hydrogenCount.isPresent() && labelled > hydrogenCount.getAsInt())
+        {
+            throw new IllegalArgumentException("Atom has more labelled hydrogens (" + labelled + ") than hydrogens (" + hydrogenCount.getAsInt() + ")");
+        }
+    }
+
+    /**
+     * @param labels how many attached hydrogens carry each mass number
+     * @return the same labels, protium dropped, as an unmodifiable ascending map
+     * @throws IllegalArgumentException if a mass number is below one or a count is negative
+     */
+    private static Map<Integer, Integer> normaliseHydrogenIsotopes(Map<Integer, Integer> labels)
+    {
+        if (labels.isEmpty())
+        {
+            return Map.of();
+        }
+
+        Map<Integer, Integer> normalised = new TreeMap<>();
+        labels.forEach((massNumber, count) ->
+        {
+            if (massNumber < 1)
+            {
+                throw new IllegalArgumentException("Hydrogen mass number must be at least 1, but was " + massNumber);
+            }
+            if (count < 0)
+            {
+                throw new IllegalArgumentException("Hydrogen isotope count cannot be negative, but was " + count);
+            }
+            // protium is what an unlabelled hydrogen already means, so labelling it says nothing
+            if (count > 0 && massNumber > 1)
+            {
+                normalised.put(massNumber, count);
+            }
+        });
+        return Collections.unmodifiableMap(normalised);
+    }
+
+    /**
+     * @return how many of this atom's attached hydrogens carry a mass number above one
+     */
+    public int labelledHydrogenCount()
+    {
+        return hydrogenIsotopes.values().stream().mapToInt(Integer::intValue).sum();
+    }
+
     /**
      * Creates a non-aromatic atom with no charge, isotope, or atom class, and an implicit hydrogen count.
      *
@@ -120,6 +179,7 @@ public record Atom(
         private int charge;
         private OptionalInt isotope = OptionalInt.empty();
         private OptionalInt hydrogenCount = OptionalInt.empty();
+        private final Map<Integer, Integer> hydrogenIsotopes = new TreeMap<>();
         private OptionalInt atomClass = OptionalInt.empty();
 
         private Builder(String element)
@@ -188,6 +248,31 @@ public record Atom(
         }
 
         /**
+         * Labels some of this atom's attached hydrogens as a heavier nuclide, e.g. deuterium.
+         * Protium is what an unlabelled hydrogen already means, so a mass number of one is ignored.
+         *
+         * @param massNumber the hydrogen isotope's mass number, e.g. {@code 2} for deuterium
+         * @param count how many attached hydrogens carry it, replacing any count already given for {@code massNumber}
+         * @return this builder, for chaining
+         */
+        public Builder hydrogenIsotope(int massNumber, int count)
+        {
+            hydrogenIsotopes.put(massNumber, count);
+            return this;
+        }
+
+        /**
+         * @param hydrogenIsotopes how many attached hydrogens carry each mass number, replacing any labels already given
+         * @return this builder, for chaining
+         */
+        public Builder hydrogenIsotopes(Map<Integer, Integer> hydrogenIsotopes)
+        {
+            this.hydrogenIsotopes.clear();
+            this.hydrogenIsotopes.putAll(hydrogenIsotopes);
+            return this;
+        }
+
+        /**
          * @param atomClass the atom class number
          * @return this builder, for chaining
          */
@@ -212,7 +297,7 @@ public record Atom(
          */
         public Atom build()
         {
-            return new Atom(element, aromatic, charge, isotope, hydrogenCount, atomClass);
+            return new Atom(element, aromatic, charge, isotope, hydrogenCount, hydrogenIsotopes, atomClass);
         }
     }
 }

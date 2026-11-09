@@ -468,4 +468,175 @@ class MolecularFormulaTest
             assertThat(formula.toUnicode()).isEqualTo("O₂²⁻");
         }
     }
+
+    @Nested
+    class Isotopes
+    {
+        @Test
+        void counts_a_labelled_hydrogen_apart_from_its_unlabelled_siblings()
+        {
+            // CC, with one hydrogen of the second carbon deuterated
+            Atom methyl = Atom.organic("C");
+            Atom deuterated = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(methyl, deuterated)
+                .addBond(methyl, deuterated, BondOrder.SINGLE)
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula).hasToString("C2H5[2H]");
+            assertThat(formula.toUnicode()).isEqualTo("C₂H₅²H");
+        }
+
+        @Test
+        void names_heavy_hydrogen_isotopes_conventionally_when_asked()
+        {
+            Atom methyl = Atom.organic("C");
+            Atom deuterated = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(methyl, deuterated)
+                .addBond(methyl, deuterated, BondOrder.SINGLE)
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula.toString(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("C2H5D");
+            assertThat(formula.toUnicode(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("C₂H₅D");
+        }
+
+        @Test
+        void writes_hydrogen_isotopes_after_unlabelled_hydrogen_in_ascending_mass_order()
+        {
+            // a single carbon carrying one protium, one deuterium and two tritium
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.builder("C").hydrogenIsotope(3, 2).hydrogenIsotope(2, 1).build())
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula).hasToString("CH[2H][3H]2");
+            assertThat(formula.toString(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("CHDT2");
+        }
+
+        @Test
+        void counts_a_labelled_atom_apart_from_its_unlabelled_siblings()
+        {
+            // [13C]C
+            Atom labelled = Atom.builder("C").isotope(13).build();
+            Atom unlabelled = Atom.organic("C");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(labelled, unlabelled)
+                .addBond(labelled, unlabelled, BondOrder.SINGLE)
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula).hasToString("C[13C]H6");
+            assertThat(formula.toUnicode()).isEqualTo("C¹³CH₆");
+        }
+
+        @Test
+        void treats_an_explicit_protium_label_as_plain_hydrogen()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.builder("C").hydrogenIsotope(1, 4).build())
+                .build();
+
+            assertThat(MolecularFormula.of(molecule)).hasToString("CH4");
+        }
+
+        @Test
+        void counts_a_nuclide_exactly_but_an_element_across_its_nuclides()
+        {
+            Atom methyl = Atom.organic("C");
+            Atom deuterated = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(methyl, deuterated)
+                .addBond(methyl, deuterated, BondOrder.SINGLE)
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula.countOf("H")).isEqualTo(5);
+            assertThat(formula.countOf("2H")).isEqualTo(1);
+            assertThat(formula.countOfElement("H")).isEqualTo(6);
+            assertThat(formula.elementCount()).isEqualTo(3);
+            assertThat(formula.atomCount()).isEqualTo(8);
+        }
+
+        @Test
+        void separates_an_isotopologue_from_the_molecule_it_labels()
+        {
+            Atom plainFirst = Atom.organic("C");
+            Atom plainSecond = Atom.organic("C");
+            Molecule ethane = new Molecule.Builder()
+                .addAtoms(plainFirst, plainSecond)
+                .addBond(plainFirst, plainSecond, BondOrder.SINGLE)
+                .build();
+
+            Atom methyl = Atom.organic("C");
+            Atom deuterated = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            Molecule deuteroethane = new Molecule.Builder()
+                .addAtoms(methyl, deuterated)
+                .addBond(methyl, deuterated, BondOrder.SINGLE)
+                .build();
+
+            assertThat(MolecularFormula.of(ethane)).isNotEqualTo(MolecularFormula.of(deuteroethane));
+        }
+
+        @Test
+        void counts_a_bonded_hydrogen_atom_as_its_own_nuclide()
+        {
+            // C[3H]: three attached protium, plus a tritium atom of its own
+            Atom carbon = Atom.organic("C");
+            Atom tritium = Atom.builder("H").isotope(3).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbon, tritium)
+                .addBond(carbon, tritium, BondOrder.SINGLE)
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula).hasToString("CH3[3H]");
+            assertThat(formula.toUnicode()).isEqualTo("CH₃³H");
+            assertThat(formula.countOf("H")).isEqualTo(3);
+            assertThat(formula.countOf("3H")).isEqualTo(1);
+            assertThat(formula.countOfElement("H")).isEqualTo(4);
+        }
+
+        @Test
+        void gathers_a_bonded_hydrogen_atom_and_a_labelled_attached_one_under_the_same_nuclide()
+        {
+            // C([2H])[2H], one deuterium bonded as an atom and one labelled as an attached hydrogen
+            Atom carbon = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            Atom deuterium = Atom.builder("H").isotope(2).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(carbon, deuterium)
+                .addBond(carbon, deuterium, BondOrder.SINGLE)
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula).hasToString("CH2[2H]2");
+            assertThat(formula.toString(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("CH2D2");
+        }
+
+        @Test
+        void reduces_an_isotopologue_to_its_simplest_ratio()
+        {
+            // C(=C), each carbon carrying one protium and one deuterium
+            Atom first = Atom.builder("C").hydrogenCount(2).hydrogenIsotope(2, 1).build();
+            Atom second = Atom.builder("C").hydrogenCount(2).hydrogenIsotope(2, 1).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(first, second)
+                .addBond(first, second, BondOrder.DOUBLE)
+                .build();
+
+            MolecularFormula formula = MolecularFormula.of(molecule);
+
+            assertThat(formula).hasToString("C2H2[2H]2");
+            assertThat(formula.empirical()).hasToString("CH[2H]");
+        }
+    }
 }
