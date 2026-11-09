@@ -399,6 +399,81 @@ class SmilesWriterTest
 
             assertThat(smiles).isEqualTo("N[CH](Br)Cl");
         }
+
+        @Test
+        void keeps_the_declared_chirality_when_a_labelled_hydrogen_takes_the_same_slot()
+        {
+            // as the root stereocentre above, except the hydrogen is deuterated and so written
+            // as an atom of its own, which leaves it in the same position in the written order
+            Atom c = Atom.builder("C").hydrogenCount(1).hydrogenIsotope(2, 1).build();
+            Atom n = Atom.organic("N");
+            Atom br = Atom.organic("Br");
+            Atom cl = Atom.organic("Cl");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(c, n, br, cl)
+                .addBond(c, n, BondOrder.SINGLE)
+                .addBond(c, br, BondOrder.SINGLE)
+                .addBond(c, cl, BondOrder.SINGLE);
+            builder.setChirality(c, Chirality.ANTICLOCKWISE);
+            Molecule molecule = builder.build();
+
+            assertThat(write(molecule)).isEqualTo("[C@]([2H])(N)(Br)Cl");
+        }
+
+        @Test
+        void flips_the_declared_chirality_of_a_labelled_hydrogen_displaced_by_the_arriving_bond()
+        {
+            Atom n = Atom.organic("N");
+            Atom c = Atom.builder("C").hydrogenCount(1).hydrogenIsotope(2, 1).build();
+            Atom br = Atom.organic("Br");
+            Atom cl = Atom.organic("Cl");
+            Molecule.Builder builder = new Molecule.Builder()
+                .addAtoms(n, c, br, cl)
+                .addBond(n, c, BondOrder.SINGLE)
+                .addBond(c, br, BondOrder.SINGLE)
+                .addBond(c, cl, BondOrder.SINGLE);
+            builder.setChirality(c, Chirality.ANTICLOCKWISE);
+            Molecule molecule = builder.build();
+
+            assertThat(write(molecule)).isEqualTo("N[C@@]([2H])(Br)Cl");
+        }
+    }
+
+    @Nested
+    class HydrogenIsotopeExpansion
+    {
+        @Test
+        void writes_a_labelled_hydrogen_as_an_atom_of_its_own()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.builder("C").hydrogenIsotope(2, 1).build())
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("C[2H]");
+        }
+
+        @Test
+        void writes_every_labelled_hydrogen_of_a_fully_labelled_atom()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtom(Atom.builder("C").hydrogenCount(4).hydrogenIsotope(2, 4).build())
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("[C]([2H])([2H])([2H])[2H]");
+        }
+
+        @Test
+        void leaves_the_remaining_hydrogens_inferred_where_they_already_were()
+        {
+            Atom c1 = Atom.organic("C");
+            Atom c2 = Atom.builder("C").hydrogenIsotope(2, 1).build();
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c1, c2)
+                .addBond(c1, c2, BondOrder.SINGLE)
+                .build();
+
+            assertThat(write(molecule)).isEqualTo("CC[2H]");
+        }
     }
 
     @Nested

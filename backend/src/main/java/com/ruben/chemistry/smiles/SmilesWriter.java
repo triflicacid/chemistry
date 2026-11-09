@@ -18,6 +18,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -416,9 +417,26 @@ public final class SmilesWriter
             branches.add(bond);
         }
 
-        text.append(atom.toString(ringClosureTokens(atom), resolveChirality(atom, arrivingBond, branches)));
+        List<Atom> labelledHydrogens = labelledHydrogensOf(atom);
+        int expanded = labelledHydrogens.size();
+        text.append(asWritten(atom, expanded)
+            .toString(ringClosureTokens(atom), resolveChirality(atom, arrivingBond, branches, expanded)));
 
         // All but the last branch are wrapped in brackets so the chain can resume from this atom afterwards
+        int remaining = expanded + branches.size();
+        for (Atom hydrogen : labelledHydrogens)
+        {
+            remaining--;
+            if (remaining == 0)
+            {
+                text.append(hydrogen);
+            }
+            else
+            {
+                text.append('(').append(hydrogen).append(')');
+            }
+        }
+
         for (int i = 0; i < branches.size(); i++)
         {
             Bond bond = branches.get(i);
@@ -439,6 +457,51 @@ public final class SmilesWriter
     }
 
     /**
+     * @param atom the atom whose labelled hydrogens are required
+     * @return one atom per labelled hydrogen, ascending by mass number
+     */
+    private List<Atom> labelledHydrogensOf(Atom atom)
+    {
+        List<Atom> hydrogens = new ArrayList<>();
+        atom.hydrogenIsotopes().forEach((massNumber, count) ->
+        {
+            for (int i = 0; i < count; i++)
+            {
+                hydrogens.add(Atom.builder("H").isotope(massNumber).build());
+            }
+        });
+        return hydrogens;
+    }
+
+    /**
+     * Strips the hydrogens about to be written as atoms of their own out of an atom's own token.
+     *
+     * @param atom the atom about to be written
+     * @param expanded how many of its hydrogens are being written as atoms of their own
+     * @return the atom to render in place of {@code atom}
+     */
+    private Atom asWritten(Atom atom, int expanded)
+    {
+        if (expanded == 0)
+        {
+            return atom;
+        }
+
+        // each expanded hydrogen becomes a bond, so an inferred count drops by itself and stays inferred
+        OptionalInt hydrogenCount = atom.hydrogenCount().isPresent()
+            ? OptionalInt.of(atom.hydrogenCount().getAsInt() - expanded)
+            : OptionalInt.empty();
+
+        return Atom.builder(atom.element())
+            .aromatic(atom.aromatic())
+            .charge(atom.charge())
+            .isotope(atom.isotope())
+            .hydrogenCount(hydrogenCount)
+            .atomClass(atom.atomClass())
+            .build();
+    }
+
+    /**
      * Resolves the chirality to render for an atom, if it is a stereocentre.
      *
      * <p>{@link Molecule} stores chirality relative to a fixed neighbour order
@@ -448,14 +511,19 @@ public final class SmilesWriter
      * @param atom the atom about to be written
      * @param arrivingBond the bond traversed to reach {@code atom}, or {@code null} for a root atom
      * @param branches the bonds to be written as this atom's branches, in emission order
+     * @param expanded how many of {@code atom}'s hydrogens are being written as atoms of their own
      * @return the chirality to render, or {@code null} if {@code atom} is not a stereocentre or rendering is disabled
      */
-    private Chirality resolveChirality(Atom atom, Bond arrivingBond, List<Bond> branches)
+    private Chirality resolveChirality(Atom atom, Bond arrivingBond, List<Bond> branches, int expanded)
     {
         if (!renderChirality)
         {
             return null;
         }
+
+        int hydrogens = atom.hydrogenCount().orElse(0);
+        // an expanded hydrogen is written after the ring bonds
+        boolean hydrogenWrittenAsAtom = hydrogens > 0 && hydrogens == expanded;
 
         List<NeighbourReference> writtenOrder = new ArrayList<>();
         // start from our arrival
@@ -463,13 +531,18 @@ public final class SmilesWriter
         {
             writtenOrder.add(arrivingBond);
         }
-        // then any implicit hydrogens
-        if (atom.hydrogenCount().orElse(0) > 0)
+        // then any implicit hydrogens still written inside the atom's own token
+        if (hydrogens > 0 && !hydrogenWrittenAsAtom)
         {
             writtenOrder.add(Molecule.IMPLICIT_HYDROGEN);
         }
         // then any ring bonds
         writtenOrder.addAll(ringBondsOfAtom.get(atom));
+        // then any hydrogen written as an atom of its own
+        if (hydrogenWrittenAsAtom)
+        {
+            writtenOrder.add(Molecule.IMPLICIT_HYDROGEN);
+        }
         // then any branches
         writtenOrder.addAll(branches);
 
