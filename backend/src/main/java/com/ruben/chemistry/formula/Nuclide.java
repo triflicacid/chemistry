@@ -58,7 +58,7 @@ final class Nuclide
      * @param style how to name a labelled nuclide
      * @return the symbol as it should appear in a formula, e.g. {@code [2H]}, {@code ²H}, or {@code D}
      */
-    static String render(String symbol, boolean unicode, MolecularFormula.IsotopeStyle style)
+    static String render(String symbol, boolean unicode, IsotopeStyle style)
     {
         int massNumber = massNumberOf(symbol);
         if (massNumber == 0)
@@ -67,7 +67,7 @@ final class Nuclide
         }
 
         String element = elementOf(symbol);
-        if (style == MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES
+        if (style == IsotopeStyle.HYDROGEN_ALIASES
             && element.equals("H") && massNumber < HYDROGEN_ALIASES.length
             && HYDROGEN_ALIASES[massNumber] != null)
         {

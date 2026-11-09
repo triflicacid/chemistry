@@ -58,8 +58,8 @@ public final class CondensedFormulaWriter
     private boolean unicode;
     private boolean collapseRepeats = true;
     private int minimumRepeat = DEFAULT_MINIMUM_REPEAT;
-    private MolecularFormula.ElementOrder elementOrder = MolecularFormula.ElementOrder.CONVENTIONAL;
-    private MolecularFormula.IsotopeStyle isotopeStyle = MolecularFormula.IsotopeStyle.MASS_NUMBER;
+    private ElementOrder elementOrder = ElementOrder.CONVENTIONAL;
+    private IsotopeStyle isotopeStyle = IsotopeStyle.MASS_NUMBER;
     private Ranker ranker;
     private Ranking ranking;
 
@@ -112,7 +112,7 @@ public final class CondensedFormulaWriter
     /**
      * @return the order deciding whether a leading group's hydrogens come before its symbol
      */
-    public MolecularFormula.ElementOrder getElementOrder()
+    public ElementOrder getElementOrder()
     {
         return elementOrder;
     }
@@ -123,7 +123,7 @@ public final class CondensedFormulaWriter
      * @param elementOrder the order to write a leading group in
      * @return this writer, for chaining
      */
-    public CondensedFormulaWriter setElementOrder(MolecularFormula.ElementOrder elementOrder)
+    public CondensedFormulaWriter setElementOrder(ElementOrder elementOrder)
     {
         this.elementOrder = elementOrder;
         return this;
@@ -132,19 +132,16 @@ public final class CondensedFormulaWriter
     /**
      * @return how a labelled nuclide is named
      */
-    public MolecularFormula.IsotopeStyle getIsotopeStyle()
+    public IsotopeStyle getIsotopeStyle()
     {
         return isotopeStyle;
     }
 
     /**
-     * Chooses how an isotopically labelled atom or hydrogen is named, e.g. {@code CH2D} rather
-     * than {@code CH2[2H]}.
-     *
      * @param isotopeStyle the style to name a labelled nuclide with
      * @return this writer, for chaining
      */
-    public CondensedFormulaWriter setIsotopeStyle(MolecularFormula.IsotopeStyle isotopeStyle)
+    public CondensedFormulaWriter setIsotopeStyle(IsotopeStyle isotopeStyle)
     {
         this.isotopeStyle = isotopeStyle;
         return this;
@@ -1076,7 +1073,7 @@ public final class CondensedFormulaWriter
         {
             return false;
         }
-        if (elementOrder == MolecularFormula.ElementOrder.HILL)
+        if (elementOrder == ElementOrder.HILL)
         {
             // Hill promotes carbon above hydrogen and leaves every other element to the alphabet
             return !element.equals("C") && "H".compareTo(element) < 0;

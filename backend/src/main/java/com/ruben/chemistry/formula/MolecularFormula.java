@@ -32,28 +32,14 @@ public final class MolecularFormula
     }
 
     /**
-     * Counts a molecule's elements, implicit hydrogens included, writing them in
-     * {@link ElementOrder#CONVENTIONAL} order.
+     * Counts a molecule's elements, implicit hydrogens included.
+     * <p>
+     * The formulae can be rendered via {@link #toString} or {@link #render}, which allows for configuration.
      *
      * @param molecule the molecule to count
      * @return the molecule's formula
      */
     public static MolecularFormula of(Molecule molecule)
-    {
-        return of(molecule, ElementOrder.CONVENTIONAL);
-    }
-
-    /**
-     * Counts a molecule's elements, implicit hydrogens included.
-     *
-     * <p>Isotopically labelled atoms and hydrogens are counted separately from their unlabelled
-     * counterparts, so benzene's {@code C6H6} becomes {@code C6H5D} once one hydrogen is deuterated.
-     *
-     * @param molecule the molecule to count
-     * @param order the order to write the elements in
-     * @return the molecule's formula
-     */
-    public static MolecularFormula of(Molecule molecule, ElementOrder order)
     {
         Map<String, Integer> totals = new HashMap<>();
         int charge = 0;
@@ -64,11 +50,11 @@ public final class MolecularFormula
                 totals.merge(Nuclide.symbolOf("H", massNumber), count, Integer::sum));
             charge += atom.charge();
         }
-        return new MolecularFormula(inWrittenOrder(totals, order), charge);
+        return new MolecularFormula(inWrittenOrder(totals, ElementOrder.CONVENTIONAL), charge);
     }
 
     /**
-     * @return each nuclide's count, iterating in the order they are written, unmodifiable
+     * @return each nuclide's count, iterating in {@link ElementOrder#CONVENTIONAL} order, unmodifiable
      */
     public Map<String, Integer> counts()
     {
@@ -247,16 +233,7 @@ public final class MolecularFormula
     @Override
     public String toString()
     {
-        return render(false, IsotopeStyle.MASS_NUMBER);
-    }
-
-    /**
-     * @param isotopeStyle how to name a labelled nuclide
-     * @return the formula, with any net charge appended
-     */
-    public String toString(IsotopeStyle isotopeStyle)
-    {
-        return render(false, isotopeStyle);
+        return render(Settings.PLAIN);
     }
 
     /**
@@ -264,29 +241,22 @@ public final class MolecularFormula
      */
     public String toUnicode()
     {
-        return render(true, IsotopeStyle.MASS_NUMBER);
+        return render(Settings.UNICODE);
     }
 
     /**
-     * @param isotopeStyle how to name a labelled nuclide
-     * @return the formula in Unicode, with any net charge appended
+     * Writes the formula, with any net charge appended.
+     *
+     * @param settings how to write it
+     * @return the formula as text
      */
-    public String toUnicode(IsotopeStyle isotopeStyle)
+    public String render(Settings settings)
     {
-        return render(true, isotopeStyle);
-    }
-
-    /**
-     * @param unicode whether to render the numbers as subscripts and superscripts rather than as plain digits
-     * @param isotopeStyle how to name a labelled nuclide
-     * @return the formula, with any net charge appended
-     */
-    private String render(boolean unicode, IsotopeStyle isotopeStyle)
-    {
+        boolean unicode = settings.unicode();
         StringBuilder text = new StringBuilder();
-        counts.forEach((nuclide, count) ->
+        inWrittenOrder(counts, settings.elementOrder()).forEach((nuclide, count) ->
         {
-            text.append(Nuclide.render(nuclide, unicode, isotopeStyle));
+            text.append(Nuclide.render(nuclide, unicode, settings.isotopeStyle()));
             if (count > 1)
             {
                 text.append(unicode ? Unicode.subscript(count) : String.valueOf(count));
@@ -328,43 +298,45 @@ public final class MolecularFormula
     }
 
     /**
-     * The order a {@link MolecularFormula}'s elements are written in.
+     * Rendering options for {@link MolecularFormula#render}.
+     *
+     * @param unicode whether to write counts and charges as subscripts and superscripts rather than as plain digits
+     * @param elementOrder the order to write the elements in
+     * @param isotopeStyle how to name an isotopically labelled nuclide
      */
-    public enum ElementOrder
+    public record Settings(boolean unicode, ElementOrder elementOrder, IsotopeStyle isotopeStyle)
     {
-        /**
-         * Conventional ordering
-         * <ul>
-         *     <li>Organic: carbon, then hydrogen, then every other element alphabetically</li>
-         *     <li>Inorganic: follows {@link Elements#iupacOrderOf}</li>
-         * </ul>
-         */
-        CONVENTIONAL,
+        /** Plain digits, conventional element order, every labelled nuclide written with its mass number. */
+        public static final Settings PLAIN = new Settings(false, ElementOrder.CONVENTIONAL, IsotopeStyle.MASS_NUMBER);
+
+        /** As {@link #PLAIN}, except that counts and charges are written in Unicode. */
+        public static final Settings UNICODE = new Settings(true, ElementOrder.CONVENTIONAL, IsotopeStyle.MASS_NUMBER);
 
         /**
-         * Hill-system ordering
-         * <ul>
-         *     <li>Organic: carbon, then hydrogen, then every other element alphabetically</li>
-         *     <li>Inorganic: alphabetical throughout (including hydrogen)</li>
-         * </ul>
+         * @param unicode whether to write counts and charges in Unicode
+         * @return these settings, with {@code unicode} replaced
          */
-        HILL
-    }
-
-    /**
-     * How a {@link MolecularFormula} names an isotopically labelled nuclide.
-     */
-    public enum IsotopeStyle
-    {
-        /**
-         * The mass number prefixes every element alike, e.g. {@code [2H]} and {@code [13C]}.
-         */
-        MASS_NUMBER,
+        public Settings withUnicode(boolean unicode)
+        {
+            return new Settings(unicode, elementOrder, isotopeStyle);
+        }
 
         /**
-         * As {@link #MASS_NUMBER}, except that the heavy hydrogen isotopes take their conventional
-         * names, {@code D} and {@code T}.
+         * @param elementOrder the order to write the elements in
+         * @return these settings, with {@code elementOrder} replaced
          */
-        HYDROGEN_ALIASES
+        public Settings withElementOrder(ElementOrder elementOrder)
+        {
+            return new Settings(unicode, elementOrder, isotopeStyle);
+        }
+
+        /**
+         * @param isotopeStyle how to name a labelled nuclide
+         * @return these settings, with {@code isotopeStyle} replaced
+         */
+        public Settings withIsotopeStyle(IsotopeStyle isotopeStyle)
+        {
+            return new Settings(unicode, elementOrder, isotopeStyle);
+        }
     }
 }

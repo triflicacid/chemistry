@@ -239,11 +239,11 @@ class CondensedFormulaWriterTest
                 .build();
 
             assertThat(new CondensedFormulaWriter(hydrogenChloride)
-                .setElementOrder(MolecularFormula.ElementOrder.HILL).write()).isEqualTo("ClH");
+                .setElementOrder(ElementOrder.HILL).write()).isEqualTo("ClH");
             assertThat(new CondensedFormulaWriter(ammonia)
-                .setElementOrder(MolecularFormula.ElementOrder.HILL).write()).isEqualTo("H3N");
+                .setElementOrder(ElementOrder.HILL).write()).isEqualTo("H3N");
             assertThat(new CondensedFormulaWriter(ammonia)
-                .setElementOrder(MolecularFormula.ElementOrder.HILL).setUnicode(true).write()).isEqualTo("H₃N");
+                .setElementOrder(ElementOrder.HILL).setUnicode(true).write()).isEqualTo("H₃N");
         }
     }
 
@@ -755,7 +755,7 @@ class CondensedFormulaWriterTest
             Molecule molecule = deuteratedEthane();
 
             assertThat(new CondensedFormulaWriter(molecule)
-                .setIsotopeStyle(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)
+                .setIsotopeStyle(IsotopeStyle.HYDROGEN_ALIASES)
                 .write())
                 .isEqualTo("CH3CH2D");
         }

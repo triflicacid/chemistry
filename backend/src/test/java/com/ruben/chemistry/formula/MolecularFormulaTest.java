@@ -6,12 +6,13 @@ import com.ruben.chemistry.core.Molecule;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MolecularFormulaTest
 {
+    private static final MolecularFormula.Settings ALIASES =
+        MolecularFormula.Settings.PLAIN.withIsotopeStyle(IsotopeStyle.HYDROGEN_ALIASES);
+
     @Test
     void writes_nothing_for_an_empty_molecule()
     {
@@ -302,6 +303,11 @@ class MolecularFormulaTest
     @Nested
     class StrictHillOrdering
     {
+        private static final MolecularFormula.Settings HILL =
+            MolecularFormula.Settings.PLAIN.withElementOrder(ElementOrder.HILL);
+
+        private static final MolecularFormula.Settings HILL_UNICODE = HILL.withUnicode(true);
+
         @Test
         void alphabetises_a_carbon_free_molecule_hydrogen_included()
         {
@@ -319,10 +325,10 @@ class MolecularFormulaTest
                 .addBond(s, oxo2, BondOrder.DOUBLE)
                 .build();
 
-            MolecularFormula formula = MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL);
+            MolecularFormula formula = MolecularFormula.of(molecule);
 
-            assertThat(formula).hasToString("H2O4S");
-            assertThat(formula.toUnicode()).isEqualTo("H₂O₄S");
+            assertThat(formula.render(HILL)).isEqualTo("H2O4S");
+            assertThat(formula.render(HILL_UNICODE)).isEqualTo("H₂O₄S");
         }
 
         @Test
@@ -332,10 +338,10 @@ class MolecularFormulaTest
                 .addAtom(Atom.organic("N"))
                 .build();
 
-            MolecularFormula formula = MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL);
+            MolecularFormula formula = MolecularFormula.of(molecule);
 
-            assertThat(formula).hasToString("H3N");
-            assertThat(formula.toUnicode()).isEqualTo("H₃N");
+            assertThat(formula.render(HILL)).isEqualTo("H3N");
+            assertThat(formula.render(HILL_UNICODE)).isEqualTo("H₃N");
         }
 
         @Test
@@ -345,13 +351,12 @@ class MolecularFormulaTest
                 .addAtom(Atom.organic("Cl"))
                 .build();
 
-            MolecularFormula hill = MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL);
-            MolecularFormula conventional = MolecularFormula.of(molecule, MolecularFormula.ElementOrder.CONVENTIONAL);
+            MolecularFormula formula = MolecularFormula.of(molecule);
 
-            assertThat(hill).hasToString("ClH");
-            assertThat(hill.toUnicode()).isEqualTo("ClH");
-            assertThat(conventional).hasToString("HCl");
-            assertThat(conventional.toUnicode()).isEqualTo("HCl");
+            assertThat(formula.render(HILL)).isEqualTo("ClH");
+            assertThat(formula.render(HILL_UNICODE)).isEqualTo("ClH");
+            assertThat(formula).hasToString("HCl");
+            assertThat(formula.toUnicode()).isEqualTo("HCl");
         }
 
         @Test
@@ -369,13 +374,12 @@ class MolecularFormulaTest
                 .addBond(carbonyl, hydroxyl, BondOrder.SINGLE)
                 .build();
 
-            MolecularFormula hill = MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL);
-            MolecularFormula conventional = MolecularFormula.of(molecule, MolecularFormula.ElementOrder.CONVENTIONAL);
+            MolecularFormula formula = MolecularFormula.of(molecule);
 
-            assertThat(hill).hasToString("C2H4O2");
-            assertThat(hill.toUnicode()).isEqualTo("C₂H₄O₂");
-            assertThat(conventional).hasToString("C2H4O2");
-            assertThat(conventional.toUnicode()).isEqualTo("C₂H₄O₂");
+            assertThat(formula.render(HILL)).isEqualTo("C2H4O2");
+            assertThat(formula.render(HILL_UNICODE)).isEqualTo("C₂H₄O₂");
+            assertThat(formula).hasToString("C2H4O2");
+            assertThat(formula.toUnicode()).isEqualTo("C₂H₄O₂");
         }
 
         @Test
@@ -389,10 +393,10 @@ class MolecularFormulaTest
                 .addBond(o, wildcard, BondOrder.SINGLE)
                 .build();
 
-            MolecularFormula formula = MolecularFormula.of(molecule, MolecularFormula.ElementOrder.HILL);
+            MolecularFormula formula = MolecularFormula.of(molecule);
 
-            assertThat(formula).hasToString("HO*");
-            assertThat(formula.toUnicode()).isEqualTo("HO*");
+            assertThat(formula.render(HILL)).isEqualTo("HO*");
+            assertThat(formula.render(HILL_UNICODE)).isEqualTo("HO*");
         }
     }
 
@@ -501,8 +505,8 @@ class MolecularFormulaTest
 
             MolecularFormula formula = MolecularFormula.of(molecule);
 
-            assertThat(formula.toString(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("C2H5D");
-            assertThat(formula.toUnicode(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("C₂H₅D");
+            assertThat(formula.render(ALIASES)).isEqualTo("C2H5D");
+            assertThat(formula.render(ALIASES.withUnicode(true))).isEqualTo("C₂H₅D");
         }
 
         @Test
@@ -516,7 +520,7 @@ class MolecularFormulaTest
             MolecularFormula formula = MolecularFormula.of(molecule);
 
             assertThat(formula).hasToString("CH[2H][3H]2");
-            assertThat(formula.toString(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("CHDT2");
+            assertThat(formula.render(ALIASES)).isEqualTo("CHDT2");
         }
 
         @Test
@@ -619,7 +623,7 @@ class MolecularFormulaTest
             MolecularFormula formula = MolecularFormula.of(molecule);
 
             assertThat(formula).hasToString("CH2[2H]2");
-            assertThat(formula.toString(MolecularFormula.IsotopeStyle.HYDROGEN_ALIASES)).isEqualTo("CH2D2");
+            assertThat(formula.render(ALIASES)).isEqualTo("CH2D2");
         }
 
         @Test
