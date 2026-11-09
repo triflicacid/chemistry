@@ -21,12 +21,9 @@ import java.util.Map;
  * assignments for the supplied molecule, rather than intrinsic symmetries
  * of the query or automorphisms of the molecule itself.
  * <p>
- * This target-relative symmetry information can be used to avoid
- * returning multiple matches that differ only by an interchangeable
- * assignment of query positions.
- * <p>
  * Queries containing atom chirality or double-bond stereochemistry are
- * not currently supported.
+ * not supported, as stereochemistry needs to be relative to atom bindings,
+ * and this just involves atom predicates.
  */
 final class QuerySymmetry
 {
