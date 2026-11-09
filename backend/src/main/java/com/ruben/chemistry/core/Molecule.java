@@ -4,10 +4,8 @@ import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentitySet;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +55,7 @@ public final class Molecule
     private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
     private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
+    private final CachedValue<CycleFinder.Cycles> cycles = new CachedValue<>(() -> CycleFinder.analyse(this));
 
     /**
      * Creates a molecule from an already-built atom and bond list.
@@ -309,138 +308,13 @@ public final class Molecule
     }
 
     /**
-     * @return every bond lying on a cycle, found by depth-first search
+     * @return the union of the relevant cycles' bonds: every non-bridge bond lies on some cycle, and relevant cycles span all cycles
      */
     private Set<Bond> computeRingBonds()
     {
         Set<Bond> ringBonds = IdentitySet.of();
-        Set<Atom> visited = IdentitySet.of();
-        Map<Atom, Integer> discoveryTime = new IdentityHashMap<>();
-        Map<Atom, Integer> low = new IdentityHashMap<>();
-        // numbers atoms in the order they are reached, so a bond leading back to an earlier one can be spotted as closing a cycle
-        int clock = 0;
-
-        // a molecule may be several disconnected fragments, so every atom needs its own search
-        for (Atom atom : atoms)
-        {
-            if (!visited.contains(atom))
-            {
-                clock = collectRingBonds(atom, ringBonds, visited, discoveryTime, low, clock);
-            }
-        }
+        cycles.get().relevant().forEach(cycle -> ringBonds.addAll(cycle.bonds()));
         return ringBonds;
-    }
-
-    /**
-     * Searches outwards from an atom, collecting the ring bonds found below it.
-     *
-     * @param root the atom to search from
-     * @param ringBonds collects the ring bonds found
-     * @param visited the atoms already reached by this or an earlier search, added to in place
-     * @param discoveryTime when each atom was first reached, added to in place
-     * @param low the earliest discovery time reachable from each atom's subtree, added to in place
-     * @param clock the number of atoms reached by earlier searches
-     * @return the number of atoms reached once this search is done
-     */
-    private int collectRingBonds(Atom root, Set<Bond> ringBonds, Set<Atom> visited, Map<Atom, Integer> discoveryTime, Map<Atom, Integer> low, int clock)
-    {
-        Deque<SearchFrame> stack = new ArrayDeque<>();
-        visited.add(root);
-        discoveryTime.put(root, clock);
-        low.put(root, clock);
-        stack.push(new SearchFrame(root, null, bondsOf(root))); // don't rely on recursion
-        int reached = clock + 1;
-
-        while (!stack.isEmpty())
-        {
-            SearchFrame frame = stack.peek();
-            Bond bond = frame.nextBond();
-            if (bond == null)
-            {
-                stack.pop();
-                SearchFrame parent = stack.peek();
-                if (parent != null)
-                {
-                    // whatever the subtree below this atom can reach, its parent can reach through it
-                    low.put(parent.atom(), Math.min(low.get(parent.atom()), low.get(frame.atom())));
-                    // if that subtree reaches back to the parent or above it, some cycle runs through the bond between them
-                    if (low.get(frame.atom()) <= discoveryTime.get(parent.atom()))
-                    {
-                        ringBonds.add(frame.arrivingBond());
-                    }
-                }
-                continue;
-            }
-
-            if (bond == frame.arrivingBond())
-            {
-                continue;
-            }
-
-            Atom neighbour = bond.getOther(frame.atom());
-            if (visited.contains(neighbour))
-            {
-                // back edge: neighbour was reached earlier, so this bond closes a cycle
-                low.put(frame.atom(), Math.min(low.get(frame.atom()), discoveryTime.get(neighbour)));
-                ringBonds.add(bond);
-            }
-            else
-            {
-                visited.add(neighbour);
-                discoveryTime.put(neighbour, reached);
-                low.put(neighbour, reached);
-                reached++;
-                stack.push(new SearchFrame(neighbour, bond, bondsOf(neighbour)));
-            }
-        }
-        return reached;
-    }
-
-    /**
-     * One atom of a depth-first search, holding the bonds left to follow from it.
-     */
-    private static final class SearchFrame
-    {
-        private final Atom atom;
-        private final Bond arrivingBond;
-        private final List<Bond> bonds;
-        private int next;
-
-        /**
-         * @param atom the atom being searched from
-         * @param arrivingBond the bond the search arrived by, or {@code null} at the root
-         * @param bonds {@code atom}'s incident bonds
-         */
-        private SearchFrame(Atom atom, Bond arrivingBond, List<Bond> bonds)
-        {
-            this.atom = atom;
-            this.arrivingBond = arrivingBond;
-            this.bonds = bonds;
-        }
-
-        /**
-         * @return the atom being searched from
-         */
-        private Atom atom()
-        {
-            return atom;
-        }
-
-        /**
-         * @return the bond the search arrived by, or {@code null} at the root
-         */
-        private Bond arrivingBond()
-        {
-            return arrivingBond;
-        }
-
-        /**
-         * @return the next bond to follow from this atom, or {@code null} once they are all followed
-         */
-        private Bond nextBond()
-        {
-            return next < bonds.size() ? bonds.get(next++) : null;
-        }
     }
 
     /**
@@ -454,8 +328,10 @@ public final class Molecule
     }
 
     /**
+     * Counts the relevant cycles through an atom.
+     *
      * @param atom an atom of this molecule
-     * @return the number of {@link #rings()} that {@code atom} belongs to
+     * @return the number of relevant cycles (cycles that are not a combination of strictly shorter ones) that {@code atom} belongs to
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
     public int ringCount(Atom atom)
@@ -465,18 +341,20 @@ public final class Molecule
 
     /**
      * @param atom an atom of this molecule, by reference identity
-     * @return the number of {@link #rings()} that {@code atom} belongs to
+     * @return the number of relevant cycles that {@code atom} belongs to
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
     private int computeRingCount(Atom atom)
     {
         requireAtom(atom);
-        return (int) rings().stream().filter(ring -> ring.containsAtom(atom)).count();
+        return (int) cycles.get().relevant().stream().filter(cycle -> cycle.atoms().contains(atom)).count();
     }
 
     /**
+     * Finds the sizes of the relevant cycles through an atom, independent of atom order (see {@link #ringCount(Atom)}).
+     *
      * @param atom an atom of this molecule
-     * @return the sizes of the {@link #rings()} that {@code atom} belongs to, unmodifiable
+     * @return the sizes of the relevant cycles that {@code atom} belongs to, unmodifiable
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
     public Set<Integer> ringSizes(Atom atom)
@@ -486,118 +364,24 @@ public final class Molecule
 
     /**
      * @param atom an atom of this molecule, by reference identity
-     * @return the sizes of the {@link #rings()} that {@code atom} belongs to
+     * @return the sizes of the relevant cycles that {@code atom} belongs to
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
     private Set<Integer> computeRingSizes(Atom atom)
     {
         requireAtom(atom);
-        return rings().stream()
-            .filter(ring -> ring.containsAtom(atom))
-            .map(Molecule::atomCount)
+        return cycles.get().relevant().stream()
+            .filter(cycle -> cycle.atoms().contains(atom))
+            .map(cycle -> cycle.atoms().size())
             .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
-     * @return one sub-molecule per distinct smallest ring, covering every {@link #ringBonds()}
+     * @return one sub-molecule per ring of a minimum cycle basis, so exactly as many rings as independent cycles
      */
     private List<Molecule> computeRings()
     {
-        List<Set<Bond>> ringBondSets = new ArrayList<>();
-        for (Bond ringBond : ringBonds())
-        {
-            // skip duplicates: different ring bonds of the same ring find the same bond set
-            Set<Bond> ring = smallestRingContaining(ringBond);
-            if (ringBondSets.stream().noneMatch(existing -> existing.size() == ring.size() && existing.containsAll(ring)))
-            {
-                ringBondSets.add(ring);
-            }
-        }
-        // reconstruct the molecule from the ring's bonds
-        return ringBondSets.stream().map(Molecule::buildRingMolecule).toList();
-    }
-
-    /**
-     * Finds the shortest cycle through {@code ringBond}.
-     *
-     * @param ringBond a bond known to lie on some cycle (see {@link #ringBonds()})
-     * @return the bonds making up that cycle, by reference identity
-     */
-    private Set<Bond> smallestRingContaining(Bond ringBond)
-    {
-        Atom start = ringBond.first();
-        Atom goal = ringBond.second();
-
-        // BFS from start to goal, so the path found back is the shortest way around
-        Map<Atom, Bond> predecessorBond = new IdentityHashMap<>();
-        Set<Atom> visited = IdentitySet.of();
-        Deque<Atom> queue = new ArrayDeque<>();
-        visited.add(start);
-        queue.add(start);
-
-        while (!queue.isEmpty())
-        {
-            Atom current = queue.poll();
-            if (current == goal)
-            {
-                break;
-            }
-
-            for (Bond bond : bondsOf(current))
-            {
-                // never cross the very bond we're trying to find another way around
-                if (bond == ringBond)
-                {
-                    continue;
-                }
-
-                Atom neighbour = bond.getOther(current);
-                if (!visited.contains(neighbour))
-                {
-                    // remember the bond used to reach neighbour, to backtrack with below
-                    visited.add(neighbour);
-                    predecessorBond.put(neighbour, bond);
-                    queue.add(neighbour);
-                }
-            }
-        }
-
-        // backtrack from goal to start to collect the path's bonds, then close the cycle
-        Set<Bond> ring = IdentitySet.of();
-        ring.add(ringBond);
-        Atom step = goal;
-        while (step != start)
-        {
-            Bond bond = predecessorBond.get(step);
-            ring.add(bond);
-            step = bond.getOther(step);
-        }
-        return ring;
-    }
-
-    /**
-     * Builds a standalone {@link Molecule} from exactly one ring's atoms and bonds.
-     *
-     * @param ringBonds one ring's bonds, as found by {@link #smallestRingContaining(Bond)}
-     * @return a sub-molecule containing just those bonds and their endpoint atoms
-     */
-    private static Molecule buildRingMolecule(Set<Bond> ringBonds)
-    {
-        Builder builder = new Builder();
-        Set<Atom> added = IdentitySet.of();
-        for (Bond bond : ringBonds)
-        {
-            if (added.add(bond.first()))
-            {
-                builder.addAtom(bond.first());
-            }
-            if (added.add(bond.second()))
-            {
-                builder.addAtom(bond.second());
-            }
-        }
-        ringBonds.forEach(builder::addBond);
-        return builder.build();
+        return cycles.get().basis().stream().map(CycleFinder::toMolecule).toList();
     }
 
     /**
