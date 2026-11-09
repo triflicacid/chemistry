@@ -1,7 +1,13 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.canonical;
 
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.smiles.SmilesParser;
-import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,6 +18,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.ToIntFunction;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

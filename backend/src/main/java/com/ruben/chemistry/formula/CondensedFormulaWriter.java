@@ -1,13 +1,13 @@
 package com.ruben.chemistry.formula;
 
+import com.ruben.chemistry.canonical.CanonicalRanker;
+import com.ruben.chemistry.canonical.Ranker;
+import com.ruben.chemistry.canonical.Ranking;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
-import com.ruben.chemistry.core.CanonicalRanker;
 import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.core.Ranker;
-import com.ruben.chemistry.core.Ranking;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayDeque;

@@ -1,5 +1,7 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.canonical;
 
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentityMap;
 

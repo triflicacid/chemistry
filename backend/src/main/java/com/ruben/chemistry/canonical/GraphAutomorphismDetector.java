@@ -1,6 +1,11 @@
+package com.ruben.chemistry.canonical;
 
-package com.ruben.chemistry.core;
-
+import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.core.StereoDeclaration;
+import com.ruben.chemistry.core.StereoDeclaration.DoubleBond;
+import com.ruben.chemistry.core.StereoDeclaration.Tetrahedral;
+import com.ruben.chemistry.core.Stereochemistry;
 import com.ruben.chemistry.util.PermutationSearch;
 
 import java.util.ArrayList;
@@ -296,43 +301,21 @@ final class GraphAutomorphismDetector
      */
     private static TetrahedralSignature createTetrahedralSignature(Tetrahedral stereo, int[] colours)
     {
-        int[] neighbours = stereo.neighbours();
-        List<Integer> ligandColours = new ArrayList<>(neighbours.length);
+        List<Integer> ligandColours = new ArrayList<>(stereo.ligands().length);
 
         // Implicit hydrogen has a reserved colour distinct from real atoms.
-        for (int neighbour : neighbours)
+        for (int ligand : stereo.ligands())
         {
-            ligandColours.add(neighbour == Graph.IMPLICIT_HYDROGEN
+            ligandColours.add(ligand == Graph.IMPLICIT_HYDROGEN
                     ? Graph.IMPLICIT_HYDROGEN
-                    : colours[neighbour]);
+                    : colours[ligand]);
         }
+        ligandColours.sort(Integer::compareTo);
 
-        List<Integer> sorted = new ArrayList<>(ligandColours);
-        sorted.sort(Integer::compareTo);
-
-        // Repeated colours make the parity ambiguous at this refinement level.
-        if (new HashSet<>(ligandColours).size() != ligandColours.size())
-        {
-            return new TetrahedralSignature(List.copyOf(sorted), null);
-        }
-
-        // Count the inversions needed to reach canonical ligand order.
-        int inversions = 0;
-
-        for (int first = 0; first < ligandColours.size(); first++)
-        {
-            for (int second = first + 1; second < ligandColours.size(); second++)
-            {
-                if (ligandColours.get(first) > ligandColours.get(second))
-                {
-                    inversions++;
-                }
-            }
-        }
-
-        // Re-express parity against the canonical ligand ordering.
-        Chirality canonicalParity = inversions % 2 == 0 ? stereo.parity() : stereo.parity().flip();
-        return new TetrahedralSignature(List.copyOf(sorted), canonicalParity);
+        // Empty where repeated colours leave the parity ambiguous at this refinement level.
+        return new TetrahedralSignature(
+                List.copyOf(ligandColours),
+                stereo.parityAgainst(colours).orElse(null));
     }
 
     /**
@@ -444,7 +427,7 @@ final class GraphAutomorphismDetector
     interface Graph
     {
         /** Represents an implicit hydrogen instead of a graph atom. */
-        int IMPLICIT_HYDROGEN = -1;
+        int IMPLICIT_HYDROGEN = StereoDeclaration.IMPLICIT_HYDROGEN;
 
         /** The bond class of two atoms with no bond between them. */
         int NO_BOND = 0;
@@ -459,40 +442,10 @@ final class GraphAutomorphismDetector
         /**
          * @return every declared configuration
          */
-        default List<StereoElement> stereochemistry()
+        default List<StereoDeclaration> stereochemistry()
         {
             return List.of();
         }
-    }
-
-    sealed interface StereoElement permits Tetrahedral, DoubleBond
-    {
-    }
-
-    /**
-     * A tetrahedral configuration relative to a stated neighbour order.
-     */
-    record Tetrahedral(
-            int centre,
-            Chirality parity,
-            int... neighbours) implements StereoElement
-    {
-        Tetrahedral
-        {
-            neighbours = neighbours.clone();
-        }
-    }
-
-    /**
-     * A double-bond configuration relative to reference substituents.
-     */
-    record DoubleBond(
-            int firstAtom,
-            int secondAtom,
-            DoubleBondStereo configuration,
-            int firstReference,
-            int secondReference) implements StereoElement
-    {
     }
 
     private sealed interface Signature permits BaseSignature, NeighbourSignature, TetrahedralSignature, AtomSignature
@@ -528,15 +481,12 @@ final class GraphAutomorphismDetector
      */
     private static final class StereoIndex
     {
-        private static final int STEREOCENTRE = 1;
-        private static final int STEREO_BOND_ENDPOINT = 2;
-
         private final int[] roleByAtom;
 
         private final Tetrahedral[] tetrahedralByCentre;
         private final Map<Long, DoubleBond> doubleBondByPair;
 
-        private final StereoElement[] elements;
+        private final StereoDeclaration[] elements;
 
         /**
          * @param graph the molecular graph
@@ -549,9 +499,9 @@ final class GraphAutomorphismDetector
             this.tetrahedralByCentre = new Tetrahedral[size];
             this.doubleBondByPair = new HashMap<>();
 
-            this.elements = graph.stereochemistry().toArray(StereoElement[]::new);
+            this.elements = graph.stereochemistry().toArray(StereoDeclaration[]::new);
 
-            for (StereoElement element : elements)
+            for (StereoDeclaration element : elements)
             {
                 register(element, graph, size);
             }
@@ -572,7 +522,7 @@ final class GraphAutomorphismDetector
         /**
          * Registers and validates a stereochemical declaration.
          */
-        private void register(StereoElement element, Graph graph, int size)
+        private void register(StereoDeclaration element, Graph graph, int size)
         {
             switch (element)
             {
@@ -584,7 +534,7 @@ final class GraphAutomorphismDetector
                         throw new IllegalArgumentException("Atom " + centre + " declares more than one parity");
                     }
 
-                    int[] neighbours = tetrahedral.neighbours();
+                    int[] neighbours = tetrahedral.ligands();
 
                     // A tetrahedral centre must have exactly four distinct ligands.
                     if (neighbours.length != 4)
@@ -617,7 +567,7 @@ final class GraphAutomorphismDetector
                     }
 
                     tetrahedralByCentre[centre] = tetrahedral;
-                    roleByAtom[centre] |= STEREOCENTRE;
+                    roleByAtom[centre] |= Stereochemistry.STEREOCENTRE;
                 }
                 case DoubleBond doubleBond ->
                 {
@@ -646,13 +596,13 @@ final class GraphAutomorphismDetector
                     checkReferenceBond(graph, first, firstReference);
                     checkReferenceBond(graph, second, secondReference);
 
-                    if (doubleBondByPair.putIfAbsent(pairKey(first, second), doubleBond) != null)
+                    if (doubleBondByPair.putIfAbsent(DoubleBond.pairKey(first, second), doubleBond) != null)
                     {
                         throw new IllegalArgumentException("Bond " + first + "-" + second + " declares more than one configuration");
                     }
 
-                    roleByAtom[first] |= STEREO_BOND_ENDPOINT;
-                    roleByAtom[second] |= STEREO_BOND_ENDPOINT;
+                    roleByAtom[first] |= Stereochemistry.STEREO_BOND_ENDPOINT;
+                    roleByAtom[second] |= Stereochemistry.STEREO_BOND_ENDPOINT;
                 }
             }
         }
@@ -747,14 +697,6 @@ final class GraphAutomorphismDetector
         }
 
         /**
-         * Creates an order-independent key for a bond.
-         */
-        private static long pairKey(int firstAtom, int secondAtom)
-        {
-            return ((long) Math.min(firstAtom, secondAtom) << Integer.SIZE) | Math.max(firstAtom, secondAtom);
-        }
-
-        /**
          * The stereochemical constraints a {@link StereoIndex} places on a search in one particular order.
          */
         final class StereoConstraints
@@ -843,10 +785,10 @@ final class GraphAutomorphismDetector
                     return false;
                 }
 
-                int[] mapped = images.mapAll(stereo.neighbours());
+                int[] mapped = images.mapAll(stereo.ligands());
 
                 // Determine whether the mapping changes neighbour ordering parity.
-                Boolean odd = isOddPermutation(image.neighbours(), mapped);
+                Boolean odd = isOddPermutation(image.ligands(), mapped);
                 if (odd == null)
                 {
                     return false;
@@ -865,7 +807,7 @@ final class GraphAutomorphismDetector
                 int imageSecond = images.of(stereo.secondAtom());
 
                 // Bond lookup is independent of endpoint order.
-                DoubleBond image = doubleBondByPair.get(pairKey(imageFirst, imageSecond));
+                DoubleBond image = doubleBondByPair.get(DoubleBond.pairKey(imageFirst, imageSecond));
                 if (image == null)
                 {
                     return false;
@@ -887,13 +829,13 @@ final class GraphAutomorphismDetector
             /**
              * Determines the search position at which all atoms participating in the stereochemical element have been mapped.
              */
-            private int triggerPosition(StereoElement element)
+            private int triggerPosition(StereoDeclaration element)
             {
                 return switch (element)
                 {
                     case Tetrahedral tetrahedral -> Math.max(
                             slotByAtom[tetrahedral.centre()],
-                            lastSlotOf(tetrahedral.neighbours()));
+                            lastSlotOf(tetrahedral.ligands()));
 
                     case DoubleBond doubleBond -> lastSlotOf(
                             doubleBond.firstAtom(),

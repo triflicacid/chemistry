@@ -1,4 +1,6 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.canonical;
+
+import com.ruben.chemistry.core.Molecule;
 
 /**
  * Computes a {@link Ranking} of a molecule's atoms, used to pick a deterministic

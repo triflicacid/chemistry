@@ -1,12 +1,17 @@
-package com.ruben.chemistry.core;
+package com.ruben.chemistry.canonical;
 
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Chirality;
+import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.smiles.SmilesParser;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,6 +24,26 @@ class MoleculeComparatorTest
         Molecule second = ccoBuiltForwards();
 
         assertThat(compare(first, second)).isZero();
+    }
+
+    @Test
+    void treats_a_written_out_hydrogen_count_as_equal_to_the_same_count_left_implicit()
+    {
+        Atom written1 = Atom.builder("C").hydrogenCount(3).build();
+        Atom written2 = Atom.builder("C").hydrogenCount(3).build();
+        Molecule written = new Molecule.Builder()
+            .addAtoms(written1, written2)
+            .addBond(written1, written2, BondOrder.SINGLE)
+            .build();
+
+        Atom implicit1 = Atom.organic("C");
+        Atom implicit2 = Atom.organic("C");
+        Molecule implicit = new Molecule.Builder()
+            .addAtoms(implicit1, implicit2)
+            .addBond(implicit1, implicit2, BondOrder.SINGLE)
+            .build();
+
+        assertThat(compare(written, implicit)).isZero();
     }
 
     @Test
@@ -330,9 +355,9 @@ class MoleculeComparatorTest
         }
 
         @Test
-        void falls_back_to_bond_signature_when_atom_and_atom_signature_tiers_match()
+        void sorts_by_how_many_hydrogens_an_atom_carries_before_reaching_its_bonds()
         {
-            // same two carbons either way, differing only in bond order
+            // the same two carbons either way, but a double bond leaves each of them one hydrogen fewer
             Atom sc1 = Atom.organic("C");
             Atom sc2 = Atom.organic("C");
             Molecule singleBonded = new Molecule.Builder()
@@ -347,7 +372,17 @@ class MoleculeComparatorTest
                 .addBond(dc1, dc2, BondOrder.DOUBLE)
                 .build();
 
-            assertThat(compare(singleBonded, doubleBonded)).isNegative();
+            assertThat(compare(doubleBonded, singleBonded)).isNegative();
+        }
+
+        @Test
+        void falls_back_to_the_bonds_when_every_atom_matches()
+        {
+            // o- and m-xylene: the same atoms in the same roles, so only what they bond to separates them
+            Molecule ortho = new SmilesParser("Cc1ccccc1C").parse();
+            Molecule meta = new SmilesParser("Cc1cccc(C)c1").parse();
+
+            assertThat(compare(ortho, meta)).isNotZero();
         }
 
         @Test

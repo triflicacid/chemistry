@@ -55,6 +55,7 @@ public final class Molecule
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
     private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
+    private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
 
     /**
@@ -611,7 +612,7 @@ public final class Molecule
      */
     public Optional<Chirality> chiralityOf(Atom atom)
     {
-        return chiralityOf(atom, declaredOrder(atom));
+        return chiralityOf(atom, declaredNeighbourOrder(atom));
     }
 
     /**
@@ -635,7 +636,15 @@ public final class Molecule
         {
             return Optional.empty();
         }
-        return Optional.of(isOddPermutation(declaredOrder(atom), order) ? declared.flip() : declared);
+        return Optional.of(isOddPermutation(declaredNeighbourOrder(atom), order) ? declared.flip() : declared);
+    }
+
+    /**
+     * @return this molecule's declared stereochemistry, indexed as {@link #atoms()} is
+     */
+    public Stereochemistry stereochemistry()
+    {
+        return stereochemistry.get();
     }
 
     /**
@@ -645,15 +654,24 @@ public final class Molecule
      * @param atom an atom of this molecule
      * @return the stored neighbour order for {@code atom}
      */
-    private List<NeighbourReference> declaredOrder(Atom atom)
+    List<NeighbourReference> declaredNeighbourOrder(Atom atom)
     {
         List<NeighbourReference> order = new ArrayList<>();
-        if (atom.hydrogenCount().orElse(0) > 0)
+        if (hasImplicitHydrogenSlot(atom))
         {
             order.add(IMPLICIT_HYDROGEN);
         }
         order.addAll(bondsOf(atom));
         return order;
+    }
+
+    /**
+     * @param atom an atom of this molecule
+     * @return whether {@code atom}'s implicit hydrogen takes a neighbour slot of its own
+     */
+    boolean hasImplicitHydrogenSlot(Atom atom)
+    {
+        return atom.hydrogenCount().orElse(0) > 0;
     }
 
     /**
@@ -712,7 +730,7 @@ public final class Molecule
      */
     public Optional<DoubleBondStereo> doubleBondStereoOf(Bond bond)
     {
-        return doubleBondStereoOf(bond, defaultReference(bond, bond.first()), defaultReference(bond, bond.second()));
+        return doubleBondStereoOf(bond, declaredReference(bond, bond.first()), declaredReference(bond, bond.second()));
     }
 
     /**
@@ -741,7 +759,7 @@ public final class Molecule
 
         // swapping the reference substituent at one end swaps cis and trans; doing it at both
         // ends swaps it back, so only an odd number of swaps actually flips the configuration
-        boolean flipped = (firstReference != defaultReference(bond, bond.first())) ^ (secondReference != defaultReference(bond, bond.second()));
+        boolean flipped = (firstReference != declaredReference(bond, bond.first())) ^ (secondReference != declaredReference(bond, bond.second()));
         return Optional.of(flipped ? declared.flip() : declared);
     }
 
@@ -752,7 +770,7 @@ public final class Molecule
      * @param atom one endpoint of {@code doubleBond}
      * @return the default reference substituent for {@code atom}
      */
-    private NeighbourReference defaultReference(Bond doubleBond, Atom atom)
+    NeighbourReference declaredReference(Bond doubleBond, Atom atom)
     {
         for (Bond candidate : bondsOf(atom))
         {

@@ -1,14 +1,14 @@
 package com.ruben.chemistry.formula;
 
+import com.ruben.chemistry.canonical.Ranker;
+import com.ruben.chemistry.canonical.Ranking;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.core.Ranker;
-import com.ruben.chemistry.core.Ranking;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 import static com.ruben.chemistry.formula.CondensedFormulaWriter.write;
 import static org.assertj.core.api.Assertions.assertThat;
