@@ -3,7 +3,9 @@ package com.ruben.chemistry.formula;
 import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.canonical.Ranker;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.query.Query;
 
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -136,7 +138,7 @@ public sealed interface FormulaSettings
          */
         public Fragmented withRenderer(FormulaSettings settings)
         {
-            return withRenderers(unit -> settings);
+            return withRenderers(UnitRenderers.alike(settings));
         }
     }
 

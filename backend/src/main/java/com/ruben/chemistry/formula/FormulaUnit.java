@@ -1,8 +1,8 @@
 package com.ruben.chemistry.formula;
 
 import com.ruben.chemistry.core.Molecule;
-
-import java.util.Objects;
+import com.ruben.chemistry.query.Query;
+import com.ruben.chemistry.query.SubstructureMatcher;
 
 /**
  * One of the units written either side of a {@code .} in a fragmented formula, such as the
@@ -35,6 +35,15 @@ public record FormulaUnit(Molecule structure, int count)
     public boolean isCharged()
     {
         return formula().charge() != 0;
+    }
+
+    /**
+     * @param query the pattern to search this unit's structure for
+     * @return whether {@code query} matches some substructure of this unit's structure
+     */
+    public boolean matches(Query query)
+    {
+        return new SubstructureMatcher(structure).matches(query);
     }
 
     /**
