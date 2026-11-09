@@ -1,5 +1,6 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -133,6 +134,35 @@ class MoleculeComparatorTest
                     .build();
 
             assertThat(compare(declaredNFirst, declaredBrFirst)).isNotZero();
+        }
+
+        @Test
+        void treats_an_achiral_molecule_as_equal_to_its_mirror_image()
+        {
+            // meso-2,3-dibromobutane: a symmetry of its constitution maps one stereocentre onto the
+            // other and inverts it, so reflecting the molecule reproduces the molecule itself
+            Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
+            Molecule reflected = new SmilesParser("C[C@@H](Br)[C@@H](Br)C").parse();
+
+            assertThat(compare(meso, reflected)).isZero();
+        }
+
+        @Test
+        void treats_an_achiral_ring_as_equal_to_its_mirror_image()
+        {
+            Molecule cis = new SmilesParser("O[C@H]1CCCC[C@@H]1O").parse();
+            Molecule reflected = new SmilesParser("O[C@@H]1CCCC[C@H]1O").parse();
+
+            assertThat(compare(cis, reflected)).isZero();
+        }
+
+        @Test
+        void treats_a_chiral_molecule_as_unequal_to_its_mirror_image()
+        {
+            Molecule chiral = new SmilesParser("C[C@H](Br)[C@@H](Br)C").parse();
+            Molecule reflected = new SmilesParser("C[C@@H](Br)[C@H](Br)C").parse();
+
+            assertThat(compare(chiral, reflected)).isNotZero();
         }
 
         private Molecule bromochlorofluoromethane(Chirality chirality)
