@@ -56,6 +56,7 @@ public final class Molecule
     private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
     private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
+    private final CachedValue<List<Molecule>> fragments = new CachedValue<>(() -> MoleculeFragmenter.fragment(this));
     private final CachedValue<CycleFinder.Cycles> cycles = new CachedValue<>(() -> CycleFinder.analyse(this));
 
     /**
@@ -100,7 +101,7 @@ public final class Molecule
     }
 
     /**
-     * @return the number of atoms in this molecule
+     * @return the number of atoms in this molecule (not including implicit hydrogen)
      */
     public int atomCount()
     {
@@ -322,6 +323,36 @@ public final class Molecule
         {
             return Math.round(1.5f * aromaticCount);
         }
+    }
+
+    /**
+     * Separates this molecule into its connected fragments, i.e. the disconnected structures
+     * written either side of a {@code .} in SMILES.
+     * The resulting molecules preserve their stereochemical properties.
+     * <p>
+     * E.g., copper(II) sulfate pentahydrate gives seven: the copper ion, the sulfate ion, and five waters.
+     *
+     * @return one sub-molecule per connected fragment
+     */
+    public List<Molecule> fragments()
+    {
+        return fragments.get();
+    }
+
+    /**
+     * @return the number of connected fragments, which is zero only if this molecule has no atoms
+     */
+    public int fragmentCount()
+    {
+        return fragments.get().size();
+    }
+
+    /**
+     * @return whether every atom is reachable from every other, which an empty molecule is not
+     */
+    public boolean isConnected()
+    {
+        return fragmentCount() == 1;
     }
 
     /**

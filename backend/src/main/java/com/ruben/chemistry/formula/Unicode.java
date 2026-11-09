@@ -1,7 +1,7 @@
 package com.ruben.chemistry.formula;
 
 /**
- * Unicode utilities - plus, minus, and superscript/subscript numbers.
+ * Unicode utilities.
  */
 final class Unicode
 {
@@ -16,6 +16,9 @@ final class Unicode
 
     /** Superscript minus. */
     static final char MINUS = '⁻';
+
+    /** A middle dot. */
+    static final char MIDDLE_DOT = '·';
 
     private Unicode()
     {

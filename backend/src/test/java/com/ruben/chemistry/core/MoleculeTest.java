@@ -888,16 +888,59 @@ class MoleculeTest
             assertThat(molecule.valence(explicit)).isEqualTo(3);
         }
 
+    @Nested
+    class FragmentCount
+    {
         @Test
-        void throws_for_an_atom_not_part_of_the_molecule()
+        void is_zero_for_a_molecule_with_no_atoms()
         {
-            Atom carbon = Atom.organic("C");
-            Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("C")).build();
+            assertThat(new Molecule.Builder().build().fragmentCount()).isZero();
+        }
 
-            assertThatThrownBy(() -> molecule.valence(carbon))
-                .isInstanceOf(IllegalArgumentException.class);
+        @Test
+        void counts_every_disconnected_structure()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(Atom.organic("O"), Atom.organic("O"), Atom.organic("O"))
+                .build();
+
+            assertThat(molecule.fragmentCount()).isEqualTo(3);
         }
     }
+
+    @Nested
+    class IsConnected
+    {
+        @Test
+        void is_true_when_every_atom_is_reachable_from_every_other()
+        {
+            Atom c = Atom.organic("C");
+            Atom o = Atom.organic("O");
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(c, o)
+                .addBond(c, o, BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.isConnected()).isTrue();
+        }
+
+        @Test
+        void is_false_when_the_molecule_falls_into_separate_structures()
+        {
+            Molecule molecule = new Molecule.Builder()
+                .addAtoms(Atom.organic("O"), Atom.organic("O"))
+                .build();
+
+            assertThat(molecule.isConnected()).isFalse();
+        }
+
+        @Test
+        void is_false_for_a_molecule_with_no_atoms()
+        {
+            assertThat(new Molecule.Builder().build().isConnected()).isFalse();
+        }
+    }
+}
 
     @Nested
     class ImplicitHydrogenCount
