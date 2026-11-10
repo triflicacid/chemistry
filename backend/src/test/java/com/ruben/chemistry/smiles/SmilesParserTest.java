@@ -10,7 +10,6 @@ import com.ruben.chemistry.notation.InvalidNotationException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,13 +20,6 @@ class SmilesParserTest
     private static Molecule parse(String smiles)
     {
         return new SmilesParser(smiles).parse();
-    }
-
-    private static List<Atom> atomsOf(Molecule molecule)
-    {
-        List<Atom> atoms = new ArrayList<>();
-        molecule.atoms().forEach(atoms::add);
-        return atoms;
     }
 
     private static BondOrder orderBetween(Molecule molecule, Atom first, Atom second)
@@ -51,7 +43,7 @@ class SmilesParserTest
             Molecule molecule = parse("C");
 
             assertThat(molecule.atomCount()).isEqualTo(1);
-            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("C");
+            assertThat(molecule.atoms().getFirst().element()).isEqualTo("C");
         }
 
         @Test
@@ -59,7 +51,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("CCO");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(atoms).extracting(Atom::element).containsExactly("C", "C", "O");
             assertThat(molecule.bondCount()).isEqualTo(2);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
@@ -71,7 +63,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("ClBr");
 
-            assertThat(atomsOf(molecule)).extracting(Atom::element).containsExactly("Cl", "Br");
+            assertThat(molecule.atoms()).extracting(Atom::element).containsExactly("Cl", "Br");
         }
 
         @Test
@@ -79,7 +71,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("*");
 
-            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("*");
+            assertThat(molecule.atoms().getFirst().element()).isEqualTo("*");
         }
 
         @Test
@@ -87,16 +79,25 @@ class SmilesParserTest
         {
             Molecule molecule = parse("c");
 
-            assertThat(atomsOf(molecule).getFirst().aromatic()).isTrue();
+            assertThat(molecule.atoms().getFirst().aromatic()).isTrue();
         }
 
         @Test
-        void infers_an_aromatic_bond_between_two_aromatic_atoms()
+        void infers_an_aromatic_bond_between_two_aromatic_atoms_on_a_ring()
+        {
+            Molecule molecule = parse("c1ccccc1");
+
+            List<Atom> atoms = molecule.atoms();
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.AROMATIC);
+        }
+
+        @Test
+        void infers_a_single_bond_between_two_aromatic_atoms_on_no_ring()
         {
             Molecule molecule = parse("cc");
 
-            List<Atom> atoms = atomsOf(molecule);
-            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.AROMATIC);
+            List<Atom> atoms = molecule.atoms();
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
         }
 
         @Test
@@ -104,7 +105,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("Cc");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
         }
     }
@@ -117,7 +118,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C=C");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.DOUBLE);
         }
 
@@ -126,7 +127,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C#C");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.TRIPLE);
         }
 
@@ -135,7 +136,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C$C");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.QUADRUPLE);
         }
 
@@ -144,7 +145,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C:C");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.AROMATIC);
         }
 
@@ -153,7 +154,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("c-c");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
         }
 
@@ -164,7 +165,7 @@ class SmilesParserTest
             // here we're just confirming it doesn't change the bond order itself
             Molecule molecule = parse("C/C");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
         }
 
@@ -214,7 +215,7 @@ class SmilesParserTest
             // CC(O)C : propan-2-ol skeleton
             Molecule molecule = parse("CC(O)C");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Atom c1 = atoms.get(0);
             Atom c2 = atoms.get(1);
             Atom o = atoms.get(2);
@@ -232,7 +233,7 @@ class SmilesParserTest
             // C(F)(Cl)Br
             Molecule molecule = parse("C(F)(Cl)Br");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Atom c = atoms.get(0);
             Atom f = atoms.get(1);
             Atom cl = atoms.get(2);
@@ -250,7 +251,7 @@ class SmilesParserTest
             // CC(C(F)Cl)O
             Molecule molecule = parse("CC(C(F)Cl)O");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Atom c1 = atoms.get(0);
             Atom c2 = atoms.get(1);
             Atom c3 = atoms.get(2);
@@ -270,7 +271,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C(=O)O");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Atom c = atoms.get(0);
             Atom o1 = atoms.get(1);
             Atom o2 = atoms.get(2);
@@ -321,7 +322,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("CC.OC");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(molecule.bondCount()).isEqualTo(2);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
             assertThat(orderBetween(molecule, atoms.get(2), atoms.get(3))).isEqualTo(BondOrder.SINGLE);
@@ -344,7 +345,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[C]");
 
-            Atom atom = atomsOf(molecule).getFirst();
+            Atom atom = molecule.atoms().getFirst();
             assertThat(atom.element()).isEqualTo("C");
             assertThat(atom.charge()).isZero();
             assertThat(atom.isotope()).isEmpty();
@@ -357,7 +358,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[13C]");
 
-            assertThat(atomsOf(molecule).getFirst().isotope()).hasValue(13);
+            assertThat(molecule.atoms().getFirst().isotope()).hasValue(13);
         }
 
         @Test
@@ -365,7 +366,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[CH]");
 
-            assertThat(atomsOf(molecule).getFirst().hydrogenCount()).hasValue(1);
+            assertThat(molecule.atoms().getFirst().hydrogenCount()).hasValue(1);
         }
 
         @Test
@@ -373,7 +374,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[CH4]");
 
-            assertThat(atomsOf(molecule).getFirst().hydrogenCount()).hasValue(4);
+            assertThat(molecule.atoms().getFirst().hydrogenCount()).hasValue(4);
         }
 
         @Test
@@ -381,7 +382,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[N+3]");
 
-            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(3);
+            assertThat(molecule.atoms().getFirst().charge()).isEqualTo(3);
         }
 
         @Test
@@ -389,7 +390,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[NH4+]");
 
-            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(1);
+            assertThat(molecule.atoms().getFirst().charge()).isEqualTo(1);
         }
 
         @Test
@@ -397,7 +398,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[O-]");
 
-            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(-1);
+            assertThat(molecule.atoms().getFirst().charge()).isEqualTo(-1);
         }
 
         @Test
@@ -405,7 +406,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[Fe++]");
 
-            assertThat(atomsOf(molecule).getFirst().charge()).isEqualTo(2);
+            assertThat(molecule.atoms().getFirst().charge()).isEqualTo(2);
         }
 
         @Test
@@ -413,7 +414,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[CH4:1]");
 
-            assertThat(atomsOf(molecule).getFirst().atomClass()).hasValue(1);
+            assertThat(molecule.atoms().getFirst().atomClass()).hasValue(1);
         }
 
         @Test
@@ -421,7 +422,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[13CH3+:5]");
 
-            Atom atom = atomsOf(molecule).getFirst();
+            Atom atom = molecule.atoms().getFirst();
             assertThat(atom.isotope()).hasValue(13);
             assertThat(atom.element()).isEqualTo("C");
             assertThat(atom.hydrogenCount()).hasValue(3);
@@ -434,7 +435,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[Fe]");
 
-            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("Fe");
+            assertThat(molecule.atoms().getFirst().element()).isEqualTo("Fe");
         }
 
         @Test
@@ -442,7 +443,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[se]");
 
-            Atom atom = atomsOf(molecule).getFirst();
+            Atom atom = molecule.atoms().getFirst();
             assertThat(atom.element()).isEqualTo("Se");
             assertThat(atom.aromatic()).isTrue();
         }
@@ -452,7 +453,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[*]");
 
-            assertThat(atomsOf(molecule).getFirst().element()).isEqualTo("*");
+            assertThat(molecule.atoms().getFirst().element()).isEqualTo("*");
         }
 
         @Test
@@ -460,7 +461,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C[O-]");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(molecule.bondCount()).isEqualTo(1);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.SINGLE);
         }
@@ -508,7 +509,7 @@ class SmilesParserTest
             // the stored order and no flip should occur
             Molecule molecule = parse("[C@](N)(Br)(Cl)F");
 
-            Atom c = atomsOf(molecule).getFirst();
+            Atom c = molecule.atoms().getFirst();
             assertThat(molecule.chiralityOf(c)).contains(Chirality.ANTICLOCKWISE);
         }
 
@@ -520,7 +521,7 @@ class SmilesParserTest
             // bond is accounted for, an odd reordering
             Molecule molecule = parse("N[C@H](Br)Cl");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Atom c = atoms.get(1);
             assertThat(molecule.chiralityOf(c)).contains(Chirality.CLOCKWISE);
         }
@@ -530,7 +531,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[C@@](N)(Br)(Cl)F");
 
-            Atom c = atomsOf(molecule).getFirst();
+            Atom c = molecule.atoms().getFirst();
             assertThat(molecule.chiralityOf(c)).contains(Chirality.CLOCKWISE);
         }
 
@@ -539,7 +540,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("[CH4]");
 
-            Atom c = atomsOf(molecule).getFirst();
+            Atom c = molecule.atoms().getFirst();
             assertThat(molecule.chiralityOf(c)).isEmpty();
         }
     }
@@ -552,7 +553,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("F/C=C/F");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Bond doubleBond = molecule.bondBetween(atoms.get(1), atoms.get(2)).orElseThrow();
             assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.OPPOSITE_SIDE);
         }
@@ -562,7 +563,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("F/C=C\\F");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Bond doubleBond = molecule.bondBetween(atoms.get(1), atoms.get(2)).orElseThrow();
             assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.SAME_SIDE);
         }
@@ -573,7 +574,7 @@ class SmilesParserTest
             // F/C=C\C=C/F
             Molecule molecule = parse("F/C=C\\C=C/F");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Bond firstDoubleBond = molecule.bondBetween(atoms.get(1), atoms.get(2)).orElseThrow();
             Bond secondDoubleBond = molecule.bondBetween(atoms.get(3), atoms.get(4)).orElseThrow();
             assertThat(molecule.doubleBondStereoOf(firstDoubleBond)).contains(DoubleBondStereo.SAME_SIDE);
@@ -586,7 +587,7 @@ class SmilesParserTest
             // https://github.com/timvdm/OpenSMILES/blob/master/opensmiles.asciidoc
             Molecule molecule = parse("C/1=C\\C=C/C=C\\1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Atom a1 = atoms.get(0);
             Atom a2 = atoms.get(1);
             Atom a3 = atoms.get(2);
@@ -604,7 +605,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C/1=C/CC\\1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Bond doubleBond = molecule.bondBetween(atoms.get(0), atoms.get(1)).orElseThrow();
             assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.SAME_SIDE);
         }
@@ -615,7 +616,7 @@ class SmilesParserTest
             // the direction on Cl repeats what the one on F already said
             Molecule molecule = parse("F/C(/Cl)=C/F");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             Bond doubleBond = molecule.bondBetween(atoms.get(1), atoms.get(3)).orElseThrow();
             assertThat(molecule.doubleBondStereoOf(doubleBond)).contains(DoubleBondStereo.OPPOSITE_SIDE);
         }
@@ -646,7 +647,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C1CC1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(molecule.atomCount()).isEqualTo(3);
             assertThat(molecule.bondCount()).isEqualTo(3);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
@@ -657,7 +658,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C1CCCCC1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(molecule.atomCount()).isEqualTo(6);
             assertThat(molecule.bondCount()).isEqualTo(6);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.SINGLE);
@@ -668,7 +669,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C%12CC%12");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(molecule.atomCount()).isEqualTo(3);
             assertThat(molecule.bondCount()).isEqualTo(3);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
@@ -679,8 +680,42 @@ class SmilesParserTest
         {
             Molecule molecule = parse("c1ccccc1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.AROMATIC);
+        }
+
+        @Test
+        void joins_the_rings_of_biphenyl_with_a_single_bond()
+        {
+            // when parsed, the `c1)c1` bond is marked as aromatic
+            // afterwards, this is reverted to a single bond as it is not inside a ring
+            Molecule molecule = parse("c1ccc(cc1)c1ccccc1");
+
+            List<Atom> atoms = molecule.atoms();
+            assertThat(molecule.bondCount()).isEqualTo(13);
+            assertThat(orderBetween(molecule, atoms.get(3), atoms.get(6))).isEqualTo(BondOrder.SINGLE);
+            assertThat(molecule.bridges()).containsExactly(molecule.bondBetween(atoms.get(3), atoms.get(6)).orElseThrow());
+            assertThat(molecule.bonds()).filteredOn(bond -> bond.order() == BondOrder.AROMATIC).hasSize(12);
+        }
+
+        @Test
+        void keeps_an_unwritten_aromatic_bond_closed_into_a_ring_by_a_later_branch()
+        {
+            // the bond from atom 0 to atom 1 is only found to be on a ring when the final digit closes it
+            Molecule molecule = parse("c(c1)cc1");
+
+            List<Atom> atoms = molecule.atoms();
+            assertThat(orderBetween(molecule, atoms.get(0), atoms.get(1))).isEqualTo(BondOrder.AROMATIC);
+        }
+
+        @Test
+        void joins_a_ring_to_a_chain_of_aromatic_atoms_with_single_bonds()
+        {
+            Molecule molecule = parse("c1ccccc1cc");
+
+            List<Atom> atoms = molecule.atoms();
+            assertThat(orderBetween(molecule, atoms.get(5), atoms.get(6))).isEqualTo(BondOrder.SINGLE);
+            assertThat(orderBetween(molecule, atoms.get(6), atoms.get(7))).isEqualTo(BondOrder.SINGLE);
         }
 
         @Test
@@ -688,7 +723,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C=1CCCCC1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.DOUBLE);
         }
 
@@ -697,7 +732,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C1CCCCC=1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.DOUBLE);
         }
 
@@ -706,7 +741,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C=1CCCCC=1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(5))).isEqualTo(BondOrder.DOUBLE);
         }
 
@@ -747,7 +782,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C1CC1C1CC1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(molecule.atomCount()).isEqualTo(6);
             assertThat(molecule.bondCount()).isEqualTo(7);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
@@ -760,7 +795,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C1CC1.C1CC1");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(molecule.atomCount()).isEqualTo(6);
             assertThat(molecule.bondCount()).isEqualTo(6);
             assertThat(orderBetween(molecule, atoms.get(0), atoms.get(2))).isEqualTo(BondOrder.SINGLE);
@@ -843,7 +878,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("CC(=O)O");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(atoms).extracting(Atom::element).containsExactly("C", "C", "O", "O");
             assertThat(orderBetween(molecule, atoms.get(1), atoms.get(2))).isEqualTo(BondOrder.DOUBLE);
             assertThat(orderBetween(molecule, atoms.get(1), atoms.get(3))).isEqualTo(BondOrder.SINGLE);
@@ -863,7 +898,7 @@ class SmilesParserTest
         {
             Molecule molecule = parse("C(F)(F)(F)S(=O)(=O)O");
 
-            List<Atom> atoms = atomsOf(molecule);
+            List<Atom> atoms = molecule.atoms();
             assertThat(atoms).extracting(Atom::element)
                 .containsExactly("C", "F", "F", "F", "S", "O", "O", "O");
             assertThat(molecule.bondCount()).isEqualTo(7);
