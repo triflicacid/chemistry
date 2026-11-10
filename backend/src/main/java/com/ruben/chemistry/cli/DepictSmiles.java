@@ -1,6 +1,7 @@
 package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.render.Depiction;
+import com.ruben.chemistry.render.Layout;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.SvgRenderer;
 import com.ruben.chemistry.smiles.SmilesParser;
@@ -97,7 +98,7 @@ public final class DepictSmiles
      */
     static String render(String smiles, CommandOptions options)
     {
-        Depiction depiction = MoleculeLayout.layout(new SmilesParser(smiles).parse(), options.depictionOptions());
-        return SvgRenderer.render(depiction, options.style());
+        Layout layout = MoleculeLayout.layout(new SmilesParser(smiles).parse(), options.depictionOptions());
+        return SvgRenderer.render(layout.depiction(), options.style());
     }
 }

@@ -3,14 +3,15 @@ package com.ruben.chemistry.render;
 import com.ruben.chemistry.core.Molecule;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
  * A laid-out {@link Molecule}: every atom to draw, where it sits, and every bond between them.
  *
- * @param atoms the atoms to draw, each holding its own {@link AtomPlacement#index()}, in index order
- * @param bonds the bonds to draw, referring to atoms by index
- * @param rings the rings the molecule has, referring to atoms by index
+ * @param atoms the atoms to draw, each holding its own {@link AtomPlacement#placementIndex()}, in index order
+ * @param bonds the bonds to draw, referring to atom placements by their placement index
+ * @param rings the rings the molecule has, referring to atom placements by their placement index
  */
 public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, List<RingPlacement> rings)
 {
@@ -38,9 +39,9 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
 
         for (int index = 0; index < atoms.size(); index++)
         {
-            if (atoms.get(index).index() != index)
+            if (atoms.get(index).placementIndex() != index)
             {
-                throw new IllegalArgumentException("Atom at position " + index + " reports index " + atoms.get(index).index());
+                throw new IllegalArgumentException("Atom at position " + index + " reports index " + atoms.get(index).placementIndex());
             }
         }
         for (BondPlacement bond : bonds)
@@ -76,13 +77,38 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
     }
 
     /**
-     * @param index an atom's index
-     * @return that atom
-     * @throws IndexOutOfBoundsException if no atom has that index
+     * @param placementIndex an atom placement's index
+     * @return that atom placement
+     * @throws IndexOutOfBoundsException if no atom placement has that index
      */
-    public AtomPlacement atom(int index)
+    public AtomPlacement atom(int placementIndex)
     {
-        return atoms.get(index);
+        return atoms.get(placementIndex);
+    }
+
+    /**
+     * @param placementIndex a bond placement's index, i.e. its position in {@link #bonds()}
+     * @return that bond placement
+     * @throws IndexOutOfBoundsException if no bond placement has that index
+     */
+    public BondPlacement bond(int placementIndex)
+    {
+        return bonds.get(placementIndex);
+    }
+
+    /**
+     * @param first one atom placement's index
+     * @param second the other atom placement's index
+     * @return the bond placement drawn between them, whichever way round it is drawn
+     * @throws NoSuchElementException if no bond was drawn between them
+     */
+    public BondPlacement bondBetween(int first, int second)
+    {
+        return bonds.stream()
+                .filter(bond -> (bond.first() == first && bond.second() == second)
+                        || (bond.first() == second && bond.second() == first))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("No bond was drawn between " + first + " and " + second));
     }
 
     /**

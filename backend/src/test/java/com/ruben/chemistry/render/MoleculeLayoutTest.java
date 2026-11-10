@@ -33,7 +33,7 @@ class MoleculeLayoutTest
      * @param smiles the molecule to lay out
      * @return its layout, drawn with every hydrogen and with straight chains
      */
-    private static Depiction depict(String smiles)
+    private static Layout depict(String smiles)
     {
         return MoleculeLayout.layout(parse(smiles));
     }
@@ -43,57 +43,30 @@ class MoleculeLayoutTest
      * @param hydrogens how its hydrogens should be drawn
      * @return it laid out that way
      */
-    private static Depiction depict(String smiles, HydrogenStyle hydrogens)
+    private static Layout depict(String smiles, HydrogenStyle hydrogens)
     {
         return MoleculeLayout.layout(parse(smiles), DepictionOptions.defaults().withHydrogens(hydrogens));
     }
 
     /**
-     * @param depiction a layout
-     * @param atom the index of one of the laid-out molecule's own atoms
-     * @return where that atom was placed
-     */
-    private static AtomPlacement placementOf(Depiction depiction, int atom)
-    {
-        return depiction.atoms().stream()
-            .filter(placement -> placement.sourceAtom().equals(OptionalInt.of(atom)))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Atom " + atom + " was not placed"));
-    }
-
-    /**
-     * @param depiction a layout
+     * @param layout a layout
      * @param atom the index of one of the laid-out molecule's own atoms
      * @return where that atom sits
      */
-    private static Point positionOf(Depiction depiction, int atom)
+    private static Point positionOf(Layout layout, int atom)
     {
-        return placementOf(depiction, atom).position();
+        return layout.placementOfAtom(atom).position();
     }
 
     /**
-     * @param depiction a layout
-     * @param first one placement's index
-     * @param second the other placement's index
-     * @return the bond drawn between them, whichever way round it is drawn
-     */
-    private static BondPlacement bondBetween(Depiction depiction, int first, int second)
-    {
-        return depiction.bonds().stream()
-            .filter(bond -> (bond.first() == first && bond.second() == second)
-                || (bond.first() == second && bond.second() == first))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("No bond was drawn between " + first + " and " + second));
-    }
-
-    /**
-     * @param depiction a layout
+     * @param layout a layout
      * @param atom the index of one of the laid-out molecule's own atoms
      * @return the hydrogens the layout made up for that atom
      */
-    private static List<AtomPlacement> hydrogensOf(Depiction depiction, int atom)
+    private static List<AtomPlacement> hydrogensOf(Layout layout, int atom)
     {
-        int centre = placementOf(depiction, atom).index();
+        Depiction depiction = layout.depiction();
+        int centre = layout.placementOfAtom(atom).placementIndex();
         List<AtomPlacement> hydrogens = new ArrayList<>();
         for (BondPlacement bond : depiction.bonds())
         {
@@ -121,17 +94,17 @@ class MoleculeLayoutTest
     }
 
     /**
-     * @param depiction a layout
+     * @param layout a layout
      * @param corner the atom the angle is measured at
      * @param first one of its neighbours
      * @param second the other
      * @return the angle between the two bonds, in degrees, from zero to half a turn
      */
-    private static double angleAt(Depiction depiction, int corner, int first, int second)
+    private static double angleAt(Layout layout, int corner, int first, int second)
     {
-        Point centre = positionOf(depiction, corner);
-        Point one = positionOf(depiction, first).minus(centre);
-        Point other = positionOf(depiction, second).minus(centre);
+        Point centre = positionOf(layout, corner);
+        Point one = positionOf(layout, first).minus(centre);
+        Point other = positionOf(layout, second).minus(centre);
         double dot = one.x() * other.x() + one.y() * other.y();
         return Math.toDegrees(Math.acos(dot / (one.length() * other.length())));
     }
@@ -139,17 +112,17 @@ class MoleculeLayoutTest
     /**
      * Works out which side of a double bond a substituent falls.
      *
-     * @param depiction a layout
+     * @param layout a layout
      * @param first the atom index of one end of the double bond
      * @param second the atom index of the other end
      * @param end the atom index of the end the substituent hangs off
      * @param substituent the substituent's atom index
      * @return a positive number one side of the bond and a negative number the other
      */
-    private static double sideOf(Depiction depiction, int first, int second, int end, int substituent)
+    private static double sideOf(Layout layout, int first, int second, int end, int substituent)
     {
-        Point axis = positionOf(depiction, second).minus(positionOf(depiction, first));
-        return axis.cross(positionOf(depiction, substituent).minus(positionOf(depiction, end)));
+        Point axis = positionOf(layout, second).minus(positionOf(layout, first));
+        return axis.cross(positionOf(layout, substituent).minus(positionOf(layout, end)));
     }
 
     /**
@@ -160,7 +133,8 @@ class MoleculeLayoutTest
     private static void assertParitiesAreDrawn(String smiles)
     {
         Molecule molecule = parse(smiles);
-        Depiction depiction = MoleculeLayout.layout(molecule);
+        Layout layout = MoleculeLayout.layout(molecule);
+        Depiction depiction = layout.depiction();
         List<StereoDeclaration.Tetrahedral> declarations = molecule.stereochemistry().declarations().stream()
             .filter(StereoDeclaration.Tetrahedral.class::isInstance)
             .map(StereoDeclaration.Tetrahedral.class::cast)
@@ -169,19 +143,19 @@ class MoleculeLayoutTest
 
         for (StereoDeclaration.Tetrahedral declaration : declarations)
         {
-            AtomPlacement centre = placementOf(depiction, declaration.centre());
+            AtomPlacement centre = layout.placementOfAtom(declaration.centre());
             List<Point> ligands = new ArrayList<>();
             double[] depths = new double[Parity.LIGANDS];
             for (int slot = 0; slot < declaration.ligands().length; slot++)
             {
                 int ligand = declaration.ligands()[slot];
                 AtomPlacement placement = ligand == StereoDeclaration.IMPLICIT_HYDROGEN
-                    ? hydrogensOf(depiction, declaration.centre()).getFirst()
-                    : placementOf(depiction, ligand);
-                BondPlacement bond = bondBetween(depiction, centre.index(), placement.index());
+                    ? hydrogensOf(layout, declaration.centre()).getFirst()
+                    : layout.placementOfAtom(ligand);
+                BondPlacement bond = depiction.bondBetween(centre.placementIndex(), placement.placementIndex());
                 if (bond.style().isStereo())
                 {
-                    assertThat(bond.first()).as("stereo bonds are drawn from the stereocentre").isEqualTo(centre.index());
+                    assertThat(bond.first()).as("stereo bonds are drawn from the stereocentre").isEqualTo(centre.placementIndex());
                 }
                 ligands.add(placement.position());
                 depths[slot] = Parity.depthOf(bond.style());
@@ -199,7 +173,7 @@ class MoleculeLayoutTest
         @Test
         void lays_out_nothing_for_a_molecule_with_no_atoms()
         {
-            assertThat(MoleculeLayout.layout(new Molecule.Builder().build()).isEmpty()).isTrue();
+            assertThat(MoleculeLayout.layout(new Molecule.Builder().build()).depiction().isEmpty()).isTrue();
         }
 
         @Test
@@ -225,7 +199,7 @@ class MoleculeLayoutTest
         @Test
         void draws_a_bond_one_bond_length_long_and_holds_a_hydrogen_closer_in()
         {
-            Depiction depiction = depict("CC(C)C(=O)O");
+            Depiction depiction = depict("CC(C)C(=O)O").depiction();
 
             for (BondPlacement bond : depiction.bonds())
             {
@@ -243,7 +217,7 @@ class MoleculeLayoutTest
         void draws_one_bond_for_every_bond_the_molecule_has_and_every_hydrogen_it_implies()
         {
             Molecule propanol = parse("CCO");
-            Depiction depiction = MoleculeLayout.layout(propanol);
+            Depiction depiction = MoleculeLayout.layout(propanol).depiction();
 
             int hydrogens = propanol.atoms().stream().mapToInt(propanol::totalHydrogenCount).sum();
             assertThat(depiction.atoms()).hasSize(propanol.atoms().size() + hydrogens);
@@ -254,9 +228,10 @@ class MoleculeLayoutTest
         void carries_each_atom_s_element_charge_and_isotope_across()
         {
             Atom carbanion = Atom.builder("C").isotope(13).charge(-1).hydrogenCount(3).build();
-            Depiction depiction = MoleculeLayout.layout(new Molecule.Builder().addAtom(carbanion).build());
+            Layout layout = MoleculeLayout.layout(new Molecule.Builder().addAtom(carbanion).build());
+            Depiction depiction = layout.depiction();
 
-            AtomPlacement placement = placementOf(depiction, 0);
+            AtomPlacement placement = layout.placementOfAtom(0);
             assertThat(placement.element()).isEqualTo("C");
             assertThat(placement.isotope()).hasValue(13);
             assertThat(placement.charge()).isEqualTo(-1);
@@ -267,11 +242,11 @@ class MoleculeLayoutTest
         @Test
         void numbers_its_atoms_from_zero_in_the_order_they_are_held()
         {
-            Depiction depiction = depict("CCO");
+            Depiction depiction = depict("CCO").depiction();
 
             for (int index = 0; index < depiction.atoms().size(); index++)
             {
-                assertThat(depiction.atom(index).index()).isEqualTo(index);
+                assertThat(depiction.atom(index).placementIndex()).isEqualTo(index);
             }
         }
     }
@@ -282,10 +257,11 @@ class MoleculeLayoutTest
         @Test
         void draws_methane_as_a_cross()
         {
-            Depiction depiction = depict("C");
+            Layout layout = depict("C");
+            Depiction depiction = layout.depiction();
 
-            assertAt(positionOf(depiction, 0), 0, 0);
-            List<Double> directions = hydrogensOf(depiction, 0).stream()
+            assertAt(positionOf(layout, 0), 0, 0);
+            List<Double> directions = hydrogensOf(layout, 0).stream()
                 .map(hydrogen -> Math.toDegrees(AngleFan.normalise(hydrogen.position().angle())))
                 .sorted()
                 .toList();
@@ -311,9 +287,10 @@ class MoleculeLayoutTest
         void labels_a_heavy_hydrogen_with_its_mass_number_and_leaves_protium_bare()
         {
             Atom water = Atom.builder("O").hydrogenCount(2).hydrogenIsotope(2, 1).build();
-            Depiction depiction = MoleculeLayout.layout(new Molecule.Builder().addAtom(water).build());
+            Layout layout = MoleculeLayout.layout(new Molecule.Builder().addAtom(water).build());
+            Depiction depiction = layout.depiction();
 
-            assertThat(hydrogensOf(depiction, 0)).extracting(AtomPlacement::isotope)
+            assertThat(hydrogensOf(layout, 0)).extracting(AtomPlacement::isotope)
                 .containsExactlyInAnyOrder(OptionalInt.empty(), OptionalInt.of(2));
         }
 
@@ -321,7 +298,7 @@ class MoleculeLayoutTest
         void leaves_hydrogens_out_when_asked()
         {
             Depiction depiction = MoleculeLayout.layout(
-                parse("CCO"), DepictionOptions.defaults().withHydrogens(HydrogenStyle.NONE));
+                parse("CCO"), DepictionOptions.defaults().withHydrogens(HydrogenStyle.NONE)).depiction();
 
             assertThat(depiction.atoms()).hasSize(3)
                 .allMatch(placement -> placement.sourceAtom().isPresent());
@@ -335,52 +312,57 @@ class MoleculeLayoutTest
         @Test
         void draws_a_chain_of_single_bonds_straight()
         {
-            Depiction depiction = depict("CCC");
+            Layout layout = depict("CCC");
+            Depiction depiction = layout.depiction();
 
-            assertAt(positionOf(depiction, 0), 0, 0);
-            assertAt(positionOf(depiction, 1), 1, 0);
-            assertAt(positionOf(depiction, 2), 2, 0);
+            assertAt(positionOf(layout, 0), 0, 0);
+            assertAt(positionOf(layout, 1), 1, 0);
+            assertAt(positionOf(layout, 2), 2, 0);
         }
 
         @Test
         void zig_zags_a_chain_when_asked()
         {
-            Depiction depiction = MoleculeLayout.layout(
+            Layout layout = MoleculeLayout.layout(
                 parse("CCC"), DepictionOptions.defaults().withChainGeometry(com.ruben.chemistry.render.ChainGeometry.ZIGZAG));
+            Depiction depiction = layout.depiction();
 
-            assertAt(positionOf(depiction, 0), 0, 0);
-            assertAt(positionOf(depiction, 1), Math.sqrt(3) / 2, -0.5);
-            assertAt(positionOf(depiction, 2), Math.sqrt(3), 0);
+            assertAt(positionOf(layout, 0), 0, 0);
+            assertAt(positionOf(layout, 1), Math.sqrt(3) / 2, -0.5);
+            assertAt(positionOf(layout, 2), Math.sqrt(3), 0);
         }
 
         @Test
         void keeps_a_triple_bond_and_the_atoms_at_each_end_of_it_in_line()
         {
-            Depiction depiction = depict("CC#CC");
+            Layout layout = depict("CC#CC");
+            Depiction depiction = layout.depiction();
 
-            assertAt(positionOf(depiction, 0), 0, 0);
-            assertAt(positionOf(depiction, 1), 1, 0);
-            assertAt(positionOf(depiction, 2), 2, 0);
-            assertAt(positionOf(depiction, 3), 3, 0);
+            assertAt(positionOf(layout, 0), 0, 0);
+            assertAt(positionOf(layout, 1), 1, 0);
+            assertAt(positionOf(layout, 2), 2, 0);
+            assertAt(positionOf(layout, 3), 3, 0);
         }
 
         @Test
         void bends_a_straight_chain_at_a_double_bond_so_its_ends_are_trigonal()
         {
-            Depiction depiction = depict("CC=CC");
+            Layout layout = depict("CC=CC");
+            Depiction depiction = layout.depiction();
 
-            assertThat(angleAt(depiction, 1, 0, 2)).isCloseTo(120, within(1e-6));
-            assertThat(angleAt(depiction, 2, 1, 3)).isCloseTo(120, within(1e-6));
+            assertThat(angleAt(layout, 1, 0, 2)).isCloseTo(120, within(1e-6));
+            assertThat(angleAt(layout, 2, 1, 3)).isCloseTo(120, within(1e-6));
         }
 
         @Test
         void draws_each_bond_at_the_order_the_molecule_gives_it()
         {
-            Depiction depiction = depict("CC=O");
+            Layout layout = depict("CC=O");
+            Depiction depiction = layout.depiction();
 
-            assertThat(bondBetween(depiction, placementOf(depiction, 0).index(), placementOf(depiction, 1).index()).order())
+            assertThat(depiction.bondBetween(layout.placementOfAtom(0).placementIndex(), layout.placementOfAtom(1).placementIndex()).order())
                 .isEqualTo(BondOrder.SINGLE);
-            assertThat(bondBetween(depiction, placementOf(depiction, 1).index(), placementOf(depiction, 2).index()).order())
+            assertThat(depiction.bondBetween(layout.placementOfAtom(1).placementIndex(), layout.placementOfAtom(2).placementIndex()).order())
                 .isEqualTo(BondOrder.DOUBLE);
         }
     }
@@ -391,7 +373,7 @@ class MoleculeLayoutTest
         @Test
         void lays_a_ring_out_as_a_regular_polygon()
         {
-            Depiction depiction = depict("C1CCCCC1", HydrogenStyle.CONDENSED);
+            Depiction depiction = depict("C1CCCCC1", HydrogenStyle.CONDENSED).depiction();
 
             assertThat(depiction.atoms()).hasSize(6);
             assertThat(depiction.rings()).hasSize(1);
@@ -405,7 +387,7 @@ class MoleculeLayoutTest
         @Test
         void fuses_rings_along_a_shared_bond()
         {
-            Depiction depiction = depict("c1ccc2ccccc2c1", HydrogenStyle.CONDENSED);
+            Depiction depiction = depict("c1ccc2ccccc2c1", HydrogenStyle.CONDENSED).depiction();
 
             assertThat(depiction.atoms()).hasSize(10);
             assertThat(depiction.rings()).hasSize(2);
@@ -421,7 +403,7 @@ class MoleculeLayoutTest
         {
             for (String smiles : List.of("c1ccc2cc3ccccc3cc2c1", "c1ccc2c(c1)ccc3ccccc23", "c1cc2ccc3cccc4ccc(c1)c2c34"))
             {
-                Depiction depiction = depict(smiles, HydrogenStyle.CONDENSED);
+                Depiction depiction = depict(smiles, HydrogenStyle.CONDENSED).depiction();
                 for (BondPlacement bond : depiction.bonds())
                 {
                     assertThat(depiction.atom(bond.first()).position().distanceTo(depiction.atom(bond.second()).position()))
@@ -436,7 +418,7 @@ class MoleculeLayoutTest
         {
             for (String smiles : List.of("C1CC1", "C1CCCCC1", "C1CCCCCCCCCCC1"))
             {
-                Depiction depiction = depict(smiles);
+                Depiction depiction = depict(smiles).depiction();
                 double x = depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().x()).average().orElseThrow();
                 double y = depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().y()).average().orElseThrow();
                 Point middle = new Point(x, y);
@@ -456,7 +438,7 @@ class MoleculeLayoutTest
         @Test
         void lays_out_a_spiro_atom_shared_by_several_rings()
         {
-            Depiction depiction = depict("C12(CCC1)CCC2", HydrogenStyle.CONDENSED);
+            Depiction depiction = depict("C12(CCC1)CCC2", HydrogenStyle.CONDENSED).depiction();
 
             assertThat(depiction.rings()).hasSize(2);
             for (int first = 0; first < depiction.atoms().size(); first++)
@@ -473,7 +455,7 @@ class MoleculeLayoutTest
         {
             for (String smiles : List.of("C1CCC2(CC1)CCCC2", "C1CC2CCC1C2", "C1CC1", "OC1CCCCC1CC2CC2"))
             {
-                Depiction depiction = depict(smiles, HydrogenStyle.CONDENSED);
+                Depiction depiction = depict(smiles, HydrogenStyle.CONDENSED).depiction();
                 for (int first = 0; first < depiction.atoms().size(); first++)
                 {
                     for (int second = first + 1; second < depiction.atoms().size(); second++)
@@ -491,28 +473,29 @@ class MoleculeLayoutTest
         {
             Molecule benzene = parse("c1ccccc1");
 
-            assertThat(MoleculeLayout.layout(benzene, DepictionOptions.skeletal()).rings())
+            assertThat(MoleculeLayout.layout(benzene, DepictionOptions.skeletal()).depiction().rings())
                 .singleElement().extracting(RingPlacement::circle).isEqualTo(true);
-            assertThat(MoleculeLayout.layout(benzene).rings())
+            assertThat(MoleculeLayout.layout(benzene).depiction().rings())
                 .singleElement().extracting(RingPlacement::circle).isEqualTo(false);
         }
 
         @Test
         void does_not_circle_a_ring_that_is_not_aromatic()
         {
-            assertThat(MoleculeLayout.layout(parse("C1CCCCC1"), DepictionOptions.skeletal()).rings())
+            assertThat(MoleculeLayout.layout(parse("C1CCCCC1"), DepictionOptions.skeletal()).depiction().rings())
                 .singleElement().extracting(RingPlacement::circle).isEqualTo(false);
         }
 
         @Test
         void keeps_substituents_outside_the_ring()
         {
-            Depiction depiction = MoleculeLayout.layout(parse("Cc1ccccc1"), DepictionOptions.skeletal());
+            Layout layout = MoleculeLayout.layout(parse("Cc1ccccc1"), DepictionOptions.skeletal());
+            Depiction depiction = layout.depiction();
             Point middle = new Point(
                 depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().x()).average().orElseThrow(),
                 depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().y()).average().orElseThrow());
 
-            assertThat(positionOf(depiction, 0).distanceTo(middle)).isCloseTo(1.0 + 1.0, within(TOLERANCE));
+            assertThat(positionOf(layout, 0).distanceTo(middle)).isCloseTo(1.0 + 1.0, within(TOLERANCE));
         }
     }
 
@@ -522,11 +505,12 @@ class MoleculeLayoutTest
         @Test
         void spreads_the_parts_of_a_molecule_apart()
         {
-            Depiction depiction = depict("C.C");
+            Layout layout = depict("C.C");
+            Depiction depiction = layout.depiction();
 
             // each methane is two short hydrogen bonds wide, and the two are set a gap apart
-            assertAt(positionOf(depiction, 0), 0.7, 0);
-            assertAt(positionOf(depiction, 1), 3.6, 0);
+            assertAt(positionOf(layout, 0), 0.7, 0);
+            assertAt(positionOf(layout, 1), 3.6, 0);
         }
     }
 
@@ -536,7 +520,7 @@ class MoleculeLayoutTest
         @Test
         void draws_exactly_one_bond_out_of_the_page_at_a_stereocentre()
         {
-            assertThat(depict("N[C@@H](C)C(=O)O").bonds())
+            assertThat(depict("N[C@@H](C)C(=O)O").depiction().bonds())
                 .filteredOn(bond -> bond.style().isStereo())
                 .hasSize(1);
         }
@@ -544,7 +528,7 @@ class MoleculeLayoutTest
         @Test
         void draws_no_stereo_bond_where_no_parity_is_declared()
         {
-            assertThat(depict("NC(C)C(=O)O").bonds()).allMatch(bond -> bond.style() == BondStyle.PLAIN);
+            assertThat(depict("NC(C)C(=O)O").depiction().bonds()).allMatch(bond -> bond.style() == BondStyle.PLAIN);
         }
 
         @Test
@@ -578,7 +562,7 @@ class MoleculeLayoutTest
         @Test
         void draws_a_parity_whose_hydrogen_it_was_told_not_to_draw_on_another_ligand_instead()
         {
-            Depiction depiction = depict("N[C@@H](C)C(=O)O", HydrogenStyle.NONE);
+            Depiction depiction = depict("N[C@@H](C)C(=O)O", HydrogenStyle.NONE).depiction();
 
             assertThat(depiction.bonds()).filteredOn(bond -> bond.style().isStereo()).hasSize(1);
             assertThat(depiction.atoms()).noneMatch(AtomPlacement::isGeneratedHydrogen);
@@ -599,8 +583,8 @@ class MoleculeLayoutTest
         @Test
         void draws_the_same_arrangement_whether_or_not_the_hydrogen_is_drawn()
         {
-            Depiction shown = depict("N[C@@H](C)C(=O)O", HydrogenStyle.SEPARATE);
-            Depiction hidden = depict("N[C@@H](C)C(=O)O", HydrogenStyle.NONE);
+            Depiction shown = depict("N[C@@H](C)C(=O)O", HydrogenStyle.SEPARATE).depiction();
+            Depiction hidden = depict("N[C@@H](C)C(=O)O", HydrogenStyle.NONE).depiction();
 
             assertThat(shown.bonds()).filteredOn(bond -> bond.style().isStereo()).hasSize(1);
             assertThat(hidden.bonds()).filteredOn(bond -> bond.style().isStereo()).hasSize(1);
@@ -634,7 +618,7 @@ class MoleculeLayoutTest
          */
         private static BondStyle stereoStyleOf(String smiles, HydrogenStyle hydrogens)
         {
-            return depict(smiles, hydrogens).bonds().stream()
+            return depict(smiles, hydrogens).depiction().bonds().stream()
                 .map(BondPlacement::style)
                 .filter(BondStyle::isStereo)
                 .findFirst()
@@ -648,48 +632,53 @@ class MoleculeLayoutTest
         @Test
         void draws_trans_substituents_on_opposite_sides_of_the_bond()
         {
-            Depiction depiction = depict("F/C=C/F");
+            Layout layout = depict("F/C=C/F");
+            Depiction depiction = layout.depiction();
 
-            assertThat(sideOf(depiction, 1, 2, 1, 0) * sideOf(depiction, 1, 2, 2, 3)).isNegative();
+            assertThat(sideOf(layout, 1, 2, 1, 0) * sideOf(layout, 1, 2, 2, 3)).isNegative();
         }
 
         @Test
         void draws_cis_substituents_on_the_same_side_of_the_bond()
         {
-            Depiction depiction = depict("F/C=C\\F");
+            Layout layout = depict("F/C=C\\F");
+            Depiction depiction = layout.depiction();
 
-            assertThat(sideOf(depiction, 1, 2, 1, 0) * sideOf(depiction, 1, 2, 2, 3)).isPositive();
+            assertThat(sideOf(layout, 1, 2, 1, 0) * sideOf(layout, 1, 2, 2, 3)).isPositive();
         }
 
         @Test
         void draws_a_trans_alkene_with_its_chains_on_opposite_sides()
         {
-            Depiction depiction = depict("C/C=C/C");
+            Layout layout = depict("C/C=C/C");
+            Depiction depiction = layout.depiction();
 
-            assertThat(sideOf(depiction, 1, 2, 1, 0) * sideOf(depiction, 1, 2, 2, 3)).isNegative();
+            assertThat(sideOf(layout, 1, 2, 1, 0) * sideOf(layout, 1, 2, 2, 3)).isNegative();
         }
 
         @Test
         void draws_a_cis_alkene_with_its_chains_on_the_same_side()
         {
-            Depiction depiction = depict("C/C=C\\C");
+            Layout layout = depict("C/C=C\\C");
+            Depiction depiction = layout.depiction();
 
-            assertThat(sideOf(depiction, 1, 2, 1, 0) * sideOf(depiction, 1, 2, 2, 3)).isPositive();
+            assertThat(sideOf(layout, 1, 2, 1, 0) * sideOf(layout, 1, 2, 2, 3)).isPositive();
         }
 
         @Test
         void keeps_the_substituents_clear_of_the_bond_they_are_measured_against()
         {
-            Depiction depiction = depict("F/C=C/F");
+            Layout layout = depict("F/C=C/F");
+            Depiction depiction = layout.depiction();
 
-            assertThat(Math.abs(sideOf(depiction, 1, 2, 1, 0))).isGreaterThan(0.1);
-            assertThat(Math.abs(sideOf(depiction, 1, 2, 2, 3))).isGreaterThan(0.1);
+            assertThat(Math.abs(sideOf(layout, 1, 2, 1, 0))).isGreaterThan(0.1);
+            assertThat(Math.abs(sideOf(layout, 1, 2, 2, 3))).isGreaterThan(0.1);
         }
 
         @Test
         void leaves_an_undeclared_double_bond_to_fall_where_it_may()
         {
-            assertThat(depict("FC=CF").bonds()).isNotEmpty();
+            assertThat(depict("FC=CF").depiction().bonds()).isNotEmpty();
         }
     }
 
@@ -699,7 +688,8 @@ class MoleculeLayoutTest
         @Test
         void leaves_a_carbon_in_a_chain_as_a_bare_vertex()
         {
-            Depiction depiction = skeletal("CCCC");
+            Layout layout = skeletal("CCCC");
+            Depiction depiction = layout.depiction();
 
             assertThat(depiction.atoms()).allMatch(AtomPlacement::vertex);
         }
@@ -707,10 +697,10 @@ class MoleculeLayoutTest
         @Test
         void still_writes_a_heteroatom_out()
         {
-            Depiction depiction = skeletal("CCO");
+            Layout layout = skeletal("CCO");
 
-            assertThat(atomOf(depiction, "O").vertex()).isFalse();
-            assertThat(atomOf(depiction, "C").vertex()).isTrue();
+            assertThat(atomOf(layout, "O").vertex()).isFalse();
+            assertThat(atomOf(layout, "C").vertex()).isTrue();
         }
 
         @Test
@@ -722,7 +712,7 @@ class MoleculeLayoutTest
         @Test
         void draws_no_hydrogen_of_its_own()
         {
-            assertThat(skeletal("CCO").atoms()).noneMatch(AtomPlacement::isGeneratedHydrogen);
+            assertThat(skeletal("CCO").depiction().atoms()).noneMatch(AtomPlacement::isGeneratedHydrogen);
         }
 
         @Test
@@ -735,7 +725,7 @@ class MoleculeLayoutTest
         void writes_a_carbon_carrying_a_charge()
         {
             assertThat(atomOf(skeletal("CC[CH2-]"), "C").vertex()).isTrue();
-            assertThat(skeletal("CC[CH2-]").atoms()).anySatisfy(atom ->
+            assertThat(skeletal("CC[CH2-]").depiction().atoms()).anySatisfy(atom ->
             {
                 assertThat(atom.charge()).isEqualTo(-1);
                 assertThat(atom.vertex()).isFalse();
@@ -745,7 +735,7 @@ class MoleculeLayoutTest
         @Test
         void writes_a_carbon_carrying_a_mass_number()
         {
-            assertThat(skeletal("CC[13CH3]").atoms()).anySatisfy(atom ->
+            assertThat(skeletal("CC[13CH3]").depiction().atoms()).anySatisfy(atom ->
             {
                 assertThat(atom.isotope()).hasValue(13);
                 assertThat(atom.vertex()).isFalse();
@@ -755,10 +745,10 @@ class MoleculeLayoutTest
         @Test
         void bends_a_chain_so_that_each_vertex_can_be_told_apart()
         {
-            Depiction depiction = skeletal("CCCC");
+            Layout layout = skeletal("CCCC");
 
-            assertThat(sideOf(depiction, 0, 1, 1, 2) * sideOf(depiction, 1, 2, 2, 3)).isNotZero();
-            assertThat(positionOf(depiction, 0).y()).isNotEqualTo(positionOf(depiction, 1).y());
+            assertThat(sideOf(layout, 0, 1, 1, 2) * sideOf(layout, 1, 2, 2, 3)).isNotZero();
+            assertThat(positionOf(layout, 0).y()).isNotEqualTo(positionOf(layout, 1).y());
         }
 
         @Test
@@ -766,13 +756,13 @@ class MoleculeLayoutTest
         {
             Molecule propanol = parse("CCO");
 
-            assertThat(skeletal("CCO").bonds()).hasSize(propanol.bonds().size());
+            assertThat(skeletal("CCO").depiction().bonds()).hasSize(propanol.bonds().size());
         }
 
         @Test
         void still_draws_a_stereocentre_out_of_the_plane()
         {
-            assertThat(skeletal("N[C@@H](C)C(=O)O").bonds())
+            assertThat(skeletal("N[C@@H](C)C(=O)O").depiction().bonds())
                 .filteredOn(bond -> bond.style().isStereo())
                 .hasSize(1);
         }
@@ -781,19 +771,19 @@ class MoleculeLayoutTest
          * @param smiles a molecule
          * @return it laid out as a line-angle drawing
          */
-        private static Depiction skeletal(String smiles)
+        private static Layout skeletal(String smiles)
         {
             return MoleculeLayout.layout(parse(smiles), DepictionOptions.skeletal());
         }
 
         /**
-         * @param depiction a layout
+         * @param layout a layout
          * @param element an element symbol
          * @return the first atom of that element
          */
-        private static AtomPlacement atomOf(Depiction depiction, String element)
+        private static AtomPlacement atomOf(Layout layout, String element)
         {
-            return depiction.atoms().stream()
+            return layout.depiction().atoms().stream()
                 .filter(atom -> atom.element().equals(element))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Nothing was drawn for " + element));
@@ -806,7 +796,7 @@ class MoleculeLayoutTest
         @Test
         void surrounds_every_atom_it_drew()
         {
-            Depiction depiction = depict("CCO");
+            Depiction depiction = depict("CCO").depiction();
             Bounds bounds = depiction.bounds();
 
             for (AtomPlacement placement : depiction.atoms())

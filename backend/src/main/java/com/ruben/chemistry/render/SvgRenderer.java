@@ -96,7 +96,7 @@ public final class SvgRenderer
         for (AtomPlacement atom : depiction.atoms())
         {
             double clearance = clearanceOf(atom);
-            clearances[atom.index()] = clearance;
+            clearances[atom.placementIndex()] = clearance;
             widest = Math.max(widest, clearance);
         }
         this.overhang = widest;
@@ -278,11 +278,68 @@ public final class SvgRenderer
 
         bondPaint = paintFor(firstAtom, secondAtom, start, end);
 
+        if (style.metadata())
+        {
+            openBond(bond, start, end);
+        }
+
         switch (bond.style())
         {
             case WEDGE -> drawWedge(start, end, unit);
             case HASH -> drawHash(start, end, unit);
             case PLAIN -> drawPlain(start, end, unit, bond);
+        }
+
+        if (style.metadata())
+        {
+            svg.append("  </g>\n");
+        }
+    }
+
+    /**
+     * Opens the group a bond is drawn in, which says which bond of the molecule it is, and lays an
+     * invisible, wider line along it so that it is easy to click.
+     *
+     * @param bond the bond being drawn
+     * @param start where the line begins, in pixels
+     * @param end where the line ends, in pixels
+     */
+    private void openBond(BondPlacement bond, Point start, Point end)
+    {
+        AtomPlacement first = depiction.atom(bond.first());
+        AtomPlacement second = depiction.atom(bond.second());
+
+        svg.append("  <g class=\"bond\"");
+        attribute("data-bond", bond.sourceBond().isPresent() ? String.valueOf(bond.sourceBond().getAsInt()) : null);
+        attribute("data-order", bond.order().name().toLowerCase(Locale.ROOT));
+        attribute("data-style", bond.style().name().toLowerCase(Locale.ROOT));
+        attribute("data-first", String.valueOf(bond.first()));
+        attribute("data-second", String.valueOf(bond.second()));
+        attribute("data-first-atom", first.sourceAtom().isPresent() ? String.valueOf(first.sourceAtom().getAsInt()) : null);
+        attribute("data-second-atom", second.sourceAtom().isPresent() ? String.valueOf(second.sourceAtom().getAsInt()) : null);
+        attribute("data-fragment", String.valueOf(first.fragment()));
+        svg.append(">\n");
+
+        svg.append("  <line x1=\"").append(number(start.x()))
+            .append("\" y1=\"").append(number(start.y()))
+            .append("\" x2=\"").append(number(end.x()))
+            .append("\" y2=\"").append(number(end.y()))
+            .append("\" stroke=\"transparent\" stroke-width=\"")
+            .append(number(Math.max(style.wedgeWidth(), 3 * style.bondGap())))
+            .append("\" stroke-linecap=\"round\"/>\n");
+    }
+
+    /**
+     * Writes one {@code data-*} attribute, as the tail of a tag being written.
+     *
+     * @param name the attribute's name
+     * @param value its value, or {@code null} to leave the attribute out
+     */
+    private void attribute(String name, String value)
+    {
+        if (value != null)
+        {
+            svg.append(' ').append(name).append("=\"").append(escape(value)).append('"');
         }
     }
 
@@ -597,6 +654,11 @@ public final class SvgRenderer
      */
     private void drawAtom(AtomPlacement atom)
     {
+        if (style.metadata())
+        {
+            openAtom(atom);
+        }
+
         if (style.atomShape() == AtomShape.CIRCLE)
         {
             drawCircle(atom);
@@ -606,6 +668,39 @@ public final class SvgRenderer
             // a bare vertex is the corner its bonds already draw, so there is nothing to write
             drawLabel(atom);
         }
+
+        if (style.metadata())
+        {
+            svg.append("  </g>\n");
+        }
+    }
+
+    /**
+     * Opens the group an atom is drawn in, which says which atom of the molecule it is, and lays an
+     * invisible disc over it so that it is easy to click, even where it is a bare vertex.
+     *
+     * @param atom the atom being drawn
+     */
+    private void openAtom(AtomPlacement atom)
+    {
+        Point centre = toPage(atom.position());
+
+        svg.append("  <g class=\"atom\"");
+        attribute("data-atom", atom.sourceAtom().isPresent() ? String.valueOf(atom.sourceAtom().getAsInt()) : null);
+        attribute("data-placement", String.valueOf(atom.placementIndex()));
+        attribute("data-fragment", String.valueOf(atom.fragment()));
+        attribute("data-element", atom.element());
+        attribute("data-isotope", atom.isotope().isPresent() ? String.valueOf(atom.isotope().getAsInt()) : null);
+        attribute("data-charge", String.valueOf(atom.charge()));
+        attribute("data-hydrogens", String.valueOf(atom.hydrogens()));
+        attribute("data-aromatic", String.valueOf(atom.aromatic()));
+        attribute("data-implicit", String.valueOf(atom.isGeneratedHydrogen()));
+        svg.append(">\n");
+
+        svg.append("  <circle cx=\"").append(number(centre.x()))
+            .append("\" cy=\"").append(number(centre.y()))
+            .append("\" r=\"").append(number(Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()))))
+            .append("\" fill=\"transparent\"/>\n");
     }
 
     /**

@@ -43,13 +43,15 @@ final class CommandOptions
           --bond-colour=<colour>       the colour a bond is drawn in
           --bond-gradient=true|false   whether a bond runs between the colours of the atoms at its
                                        ends instead (default false)
+          --metadata=true|false        whether each atom and bond carries data-* attributes tracing
+                                       it back to the molecule (default false)
           --colour=<element>:<colour>  the colour one element is drawn in, repeatable
         """;
 
     /** The settings this class itself understands; a command adds whatever else it takes. */
     private static final Set<String> KNOWN = Set.of(
         "style", "geometry", "hydrogens", "isotopes", "charges", "bond-length", "margin",
-        "font-size", "background", "bond-colour", "bond-gradient", "colour");
+        "font-size", "background", "bond-colour", "bond-gradient", "colour", "metadata");
 
     /** The arguments that name something to draw. */
     private final List<String> subjects;
@@ -245,7 +247,8 @@ final class CommandOptions
             .atomShape(drawing().shape)
             .isotopes(flag("isotopes", true))
             .charges(flag("charges", true))
-            .bondGradient(flag("bond-gradient", false));
+            .bondGradient(flag("bond-gradient", false))
+            .metadata(flag("metadata", false));
 
         if (values.containsKey("bond-length"))
         {

@@ -62,7 +62,7 @@ class MoleculeSnapshotTest
     @Test
     void agrees_with_the_depiction_it_was_laid_out_with()
     {
-        Layout layout = MoleculeLayout.layoutWithSnapshot(parse("CC.O"));
+        Layout layout = MoleculeLayout.layout(parse("CC.O"));
 
         for (AtomPlacement atom : layout.depiction().atoms())
         {

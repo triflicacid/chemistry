@@ -59,9 +59,13 @@ public final class MoleculeLayout
     private static final int UNDRAWN = -1;
 
     private final Molecule molecule;
+    private final MoleculeSnapshot snapshot;
     private final DepictionOptions options;
     private final List<Atom> atoms;
     private final Map<Atom, Integer> indices;
+
+    /** Each of the molecule's own bonds' index within {@link Molecule#bonds()}. */
+    private final Map<Bond, Integer> bondIndices = new IdentityHashMap<>();
 
     /** Where each of the molecule's own atoms ended up, by atom index. */
     private final Point[] positions;
@@ -90,7 +94,7 @@ public final class MoleculeLayout
     /** Every declared double bond configuration, by the atom pair it is declared across. */
     private final Map<Long, StereoDeclaration.DoubleBond> configurations = new HashMap<>();
 
-    /** The half-open range of placements belonging to each disconnected part of the molecule. */
+    /** The half-open range of placements belonging to each disconnected part of the molecule, then that part's fragment index. */
     private final List<int[]> parts = new ArrayList<>();
 
     /** Where the part being laid out starts in {@link #placements}. */
@@ -103,6 +107,7 @@ public final class MoleculeLayout
     private MoleculeLayout(Molecule molecule, DepictionOptions options)
     {
         this.molecule = molecule;
+        this.snapshot = MoleculeSnapshot.of(molecule);
         this.options = options;
         this.atoms = molecule.atoms();
         this.indices = new IdentityHashMap<>();
@@ -115,16 +120,21 @@ public final class MoleculeLayout
             indices.put(atoms.get(index), index);
             hydrogensOfAtom.add(new ArrayList<>());
         }
+        List<Bond> moleculeBonds = molecule.bonds();
+        for (int index = 0; index < moleculeBonds.size(); index++)
+        {
+            bondIndices.put(moleculeBonds.get(index), index);
+        }
     }
 
     /**
-     * Lays a molecule out as an ordinary structural diagram, drawing every hydrogen.
+     * Lays a molecule out as an ordinary structural diagram.
      *
      * @param molecule the molecule to lay out
-     * @return where every atom and bond goes
+     * @return the layout
      * @throws NullPointerException if {@code molecule} is {@code null}
      */
-    public static Depiction layout(Molecule molecule)
+    public static Layout layout(Molecule molecule)
     {
         return layout(molecule, DepictionOptions.defaults());
     }
@@ -134,15 +144,14 @@ public final class MoleculeLayout
      *
      * @param molecule the molecule to lay out
      * @param options the choices to lay it out by
-     * @return where every atom and bond goes
+     * @return the layout
      * @throws NullPointerException if either argument is {@code null}
      * @throws IllegalArgumentException if {@code molecule} declares a parity at an atom whose hydrogen the options leave undrawn
      */
-    public static Depiction layout(Molecule molecule, DepictionOptions options)
+    public static Layout layout(Molecule molecule, DepictionOptions options)
     {
-        Objects.requireNonNull(molecule, "molecule");
-        Objects.requireNonNull(options, "options");
-        return new MoleculeLayout(molecule, options).build();
+        MoleculeLayout layout = new MoleculeLayout(molecule, options);
+        return new Layout(layout.build(), layout.snapshot);
     }
 
     /**
@@ -166,6 +175,13 @@ public final class MoleculeLayout
 
         applyParities();
         markVertices();
+        for (int[] part : parts)
+        {
+            for (int placement = part[0]; placement < part[1]; placement++)
+            {
+                placements.set(placement, placements.get(placement).inFragment(part[2]));
+            }
+        }
         spreadParts();
         return new Depiction(placements, bonds, ringPlacements);
     }
@@ -230,7 +246,7 @@ public final class MoleculeLayout
             expand(pending.pop(), pending);
         }
 
-        parts.add(new int[] {start, placements.size()});
+        parts.add(new int[] {start, placements.size(), snapshot.getFragmentIndexOf(indexOf(root))});
     }
 
     /**
@@ -313,7 +329,7 @@ public final class MoleculeLayout
         {
             if (molecule.ringBonds().contains(bond) && seen.containsKey(bond.first()))
             {
-                addBond(placementOfAtom[indexOf(bond.first())], placementOfAtom[indexOf(bond.second())], bond.order());
+                addBond(placementOfAtom[indexOf(bond.first())], placementOfAtom[indexOf(bond.second())], bond);
             }
         }
 
@@ -415,11 +431,11 @@ public final class MoleculeLayout
             if (isRingAtom(neighbour))
             {
                 int placement = placeRingSystem(neighbour, position, directions[child] + Math.PI, pending);
-                addBond(placementOfAtom[index], placement, bond.order());
+                addBond(placementOfAtom[index], placement, bond);
                 continue;
             }
             int placement = place(neighbour, position);
-            addBond(placementOfAtom[index], placement, bond.order());
+            addBond(placementOfAtom[index], placement, bond);
             pending.push(new Walk(neighbour, atom, bond, directions[child] + Math.PI, -walk.zigzagSign()));
         }
 
@@ -1237,7 +1253,7 @@ public final class MoleculeLayout
     private int addPlacement(String element, OptionalInt isotope, int charge, int hydrogens, boolean aromatic, OptionalInt sourceAtom, Point position)
     {
         int index = placements.size();
-        placements.add(new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, false, sourceAtom, position));
+        placements.add(new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, false, sourceAtom, 0, position));
         return index;
     }
 
@@ -1248,8 +1264,29 @@ public final class MoleculeLayout
      */
     private void addBond(int first, int second, BondOrder order)
     {
+        addBond(first, second, order, OptionalInt.empty());
+    }
+
+    /**
+     * @param first the placement the bond is drawn from
+     * @param second the placement it is drawn to
+     * @param bond the molecule's own bond being drawn
+     */
+    private void addBond(int first, int second, Bond bond)
+    {
+        addBond(first, second, bond.order(), OptionalInt.of(bondIndices.get(bond)));
+    }
+
+    /**
+     * @param first the placement the bond is drawn from
+     * @param second the placement it is drawn to
+     * @param order the bond order
+     * @param sourceBond the index of the molecule bond it came from, or empty for a made-up hydrogen's
+     */
+    private void addBond(int first, int second, BondOrder order, OptionalInt sourceBond)
+    {
         bondsByPair.put(pairOf(first, second), bonds.size());
-        bonds.add(new BondPlacement(first, second, order, BondStyle.PLAIN));
+        bonds.add(new BondPlacement(first, second, order, BondStyle.PLAIN, sourceBond));
     }
 
     /**

@@ -663,13 +663,70 @@ class SvgRendererTest
         }
     }
 
+    @Nested
+    class Metadata
+    {
+        @Test
+        void is_absent_unless_asked_for()
+        {
+            String svg = SvgRenderer.render(depict("CCO"));
+
+            assertThat(svg).doesNotContain("data-");
+        }
+
+        @Test
+        void traces_each_atom_back_to_the_molecule()
+        {
+            String svg = SvgRenderer.render(depict("[13CH3]O"), RenderStyle.builder().metadata(true).build());
+
+            assertThatIsWellFormed(svg);
+            assertThat(svg).contains("data-atom=\"0\"").contains("data-element=\"C\"").contains("data-isotope=\"13\"");
+            assertThat(svg).contains("data-atom=\"1\"").contains("data-element=\"O\"");
+            assertThat(svg).contains("data-implicit=\"true\"");
+        }
+
+        @Test
+        void traces_each_bond_back_to_the_molecule()
+        {
+            String svg = SvgRenderer.render(depict("C=CO"), RenderStyle.builder().metadata(true).build());
+
+            assertThatIsWellFormed(svg);
+            assertThat(svg)
+                    .contains("data-bond=\"0\"")
+                    .contains("data-order=\"double\"")
+                    .contains("data-first-atom=\"0\"")
+                    .contains("data-second-atom=\"1\"");
+            assertThat(svg).contains("data-bond=\"1\"").contains("data-order=\"single\"");
+        }
+
+        @Test
+        void leaves_out_the_source_of_a_made_up_hydrogen()
+        {
+            String svg = SvgRenderer.render(depict("C"), RenderStyle.builder().metadata(true).build());
+
+            assertThat(svg).doesNotContain("data-bond=").doesNotContain("data-second-atom=");
+            assertThat(svg).contains("data-first-atom=\"0\"");
+            assertThat(countOf(svg, "class=\"bond\"")).isEqualTo(4);
+        }
+
+        @Test
+        void numbers_each_disconnected_fragment()
+        {
+            String svg = SvgRenderer.render(depict("CC.O"), RenderStyle.builder().metadata(true).build());
+
+            assertThat(svg).contains("data-atom=\"0\" data-placement=\"0\" data-fragment=\"0\"");
+            assertThat(svg).contains("data-element=\"O\"");
+            assertThat(svg).containsPattern("data-atom=\"2\" data-placement=\"\\d+\" data-fragment=\"1\"");
+        }
+    }
+
     /**
      * @param smiles a molecule
      * @return it laid out in the default way
      */
     private static Depiction depict(String smiles)
     {
-        return MoleculeLayout.layout(new SmilesParser(smiles).parse());
+        return MoleculeLayout.layout(new SmilesParser(smiles).parse()).depiction();
     }
 
     /**

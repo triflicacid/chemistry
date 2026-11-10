@@ -33,12 +33,14 @@ public final class RenderStyle
     private final double bondGap;
     private final double wedgeWidth;
     private final double hashSpacing;
+    private final boolean metadata;
 
     /**
      * @param builder the builder holding the settings to take
      */
     private RenderStyle(Builder builder)
     {
+        this.metadata = builder.metadata;
         this.colours = Map.copyOf(builder.colours);
         this.bondLength = builder.bondLength;
         this.margin = builder.margin;
@@ -103,15 +105,15 @@ public final class RenderStyle
             .bondWidth(bondWidth)
             .bondGap(bondGap)
             .wedgeWidth(wedgeWidth)
-            .hashSpacing(hashSpacing);
+            .hashSpacing(hashSpacing)
+            .metadata(metadata);
         colours.forEach(builder::colour);
         return builder;
     }
 
     /**
      * @param element a canonical element symbol
-     * @return the colour it is drawn in: the one this style chose for it, or the one
-     *     {@link ElementColours} gives it
+     * @return the colour it is drawn in
      */
     public Colour colourOf(String element)
     {
@@ -292,6 +294,15 @@ public final class RenderStyle
     }
 
     /**
+     * @return whether each atom and bond is wrapped in a group carrying {@code data-*} attributes that trace it
+     *     back to the molecule it was drawn from, and given an invisible area to click on
+     */
+    public boolean metadata()
+    {
+        return metadata;
+    }
+
+    /**
      * Collects the settings for a {@link RenderStyle}, starting from the defaults.
      */
     public static final class Builder
@@ -318,9 +329,22 @@ public final class RenderStyle
         private double bondGap = 6;
         private double wedgeWidth = 10;
         private double hashSpacing = 4;
+        private boolean metadata = false;
 
         private Builder()
         {
+        }
+
+        /**
+         * @param metadata whether each atom and bond is wrapped in a group carrying {@code data-*}
+         *     attributes tracing it back to its molecule, with an invisible area to click on
+         * @return this builder, for chaining
+         */
+        public Builder metadata(boolean metadata)
+        {
+            this.metadata = metadata;
+            return this;
+        }        {
         }
 
         /**
