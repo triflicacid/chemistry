@@ -4,6 +4,7 @@ import com.ruben.chemistry.render.AtomShape;
 import com.ruben.chemistry.render.ChainGeometry;
 import com.ruben.chemistry.render.Colour;
 import com.ruben.chemistry.render.DepictionOptions;
+import com.ruben.chemistry.render.FragmentArrangement;
 import com.ruben.chemistry.render.HydrogenStyle;
 import com.ruben.chemistry.render.RenderStyle;
 
@@ -31,6 +32,11 @@ final class CommandOptions
                                        drawing (default text)
           --geometry=straight|zigzag   how a chain of single bonds runs (default straight, zigzag
                                        under --style=skeletal)
+          --layout=row|column|row:<n>|column:<n>
+                                       how the parts of a disconnected molecule are arranged: in
+                                       one row or column, in rows (or columns) of n parts
+                                       (default row)
+          --fragment-gap=<px>          how many pixels of empty space lie between parts (default 30)
           --hydrogens=separate|condensed|none
                                        whether hydrogens are drawn as atoms of their own, gathered
                                        into the symbol they hang off, or left out (default separate)
@@ -50,8 +56,8 @@ final class CommandOptions
 
     /** The settings this class itself understands; a command adds whatever else it takes. */
     private static final Set<String> KNOWN = Set.of(
-        "style", "geometry", "hydrogens", "isotopes", "charges", "bond-length", "margin",
-        "font-size", "background", "bond-colour", "bond-gradient", "colour", "metadata");
+        "style", "geometry", "layout", "hydrogens", "isotopes", "charges", "bond-length", "margin",
+        "font-size", "fragment-gap", "background", "bond-colour", "bond-gradient", "colour", "metadata");
 
     /** The settings which may take a Boolean value, whose presence with no value defaults to {@code true}. */
     private static final Set<String> KNOWN_BOOLEAN = Set.of("isotopes", "charges", "bond-gradient", "metadata");
@@ -263,6 +269,14 @@ final class CommandOptions
         if (values.containsKey("bond-length"))
         {
             style.bondLength(number("bond-length"));
+        }
+        if (values.containsKey("layout"))
+        {
+            style.fragmentArrangement(FragmentArrangement.parse(values.get("layout")));
+        }
+        if (values.containsKey("fragment-gap"))
+        {
+            style.fragmentGap(number("fragment-gap"));
         }
         if (values.containsKey("margin"))
         {

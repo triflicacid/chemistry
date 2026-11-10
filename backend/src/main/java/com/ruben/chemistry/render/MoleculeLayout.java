@@ -25,9 +25,6 @@ import java.util.OptionalInt;
  */
 public final class MoleculeLayout
 {
-    /** How far apart two disconnected parts of a molecule are drawn, in bond lengths. */
-    private static final double FRAGMENT_GAP = 1.5;
-
     /** The direction the first neighbour of a straight-chain layout's starting atom sits in. */
     private static final double STRAIGHT_START = 0;
 
@@ -182,8 +179,7 @@ public final class MoleculeLayout
                 placements.set(placement, placements.get(placement).inFragment(part[2]));
             }
         }
-        spreadParts();
-        return new Depiction(placements, bonds, ringPlacements);
+        return new Depiction(placements, bonds, ringPlacements, centreParts());
     }
 
     /**
@@ -1194,16 +1190,13 @@ public final class MoleculeLayout
     }
 
     /**
-     * Moves each disconnected part of the molecule clear of the last, left to right.
+     * Centres each disconnected part of the molecule on the origin, in a frame of its own.
+     *
+     * @return a frame for each part, in fragment order
      */
-    private void spreadParts()
+    private List<FragmentFrame> centreParts()
     {
-        if (parts.size() < 2)
-        {
-            return;
-        }
-
-        double offset = 0;
+        List<FragmentFrame> frames = new ArrayList<>(parts.size());
         for (int[] part : parts)
         {
             List<Point> points = new ArrayList<>(part[1] - part[0]);
@@ -1213,15 +1206,17 @@ public final class MoleculeLayout
             }
 
             Bounds bounds = Bounds.around(points);
-            double dx = offset - bounds.minX();
-            double dy = -bounds.centre().y();
+            Point middle = bounds.centre();
             for (int placement = part[0]; placement < part[1]; placement++)
             {
                 AtomPlacement atom = placements.get(placement);
-                placements.set(placement, atom.at(atom.position().translate(dx, dy)));
+                placements.set(placement, atom.at(atom.position().translate(-middle.x(), -middle.y())));
             }
-            offset += bounds.width() + FRAGMENT_GAP;
+            frames.add(new FragmentFrame(part[2], new Bounds(
+                bounds.minX() - middle.x(), bounds.minY() - middle.y(), bounds.maxX() - middle.x(), bounds.maxY() - middle.y())));
         }
+        frames.sort(Comparator.comparingInt(FragmentFrame::index));
+        return frames;
     }
 
     /**

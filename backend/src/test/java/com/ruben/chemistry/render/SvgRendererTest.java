@@ -12,6 +12,8 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -717,6 +719,76 @@ class SvgRendererTest
             assertThat(svg).contains("data-atom=\"0\" data-placement=\"0\" data-fragment=\"0\"");
             assertThat(svg).contains("data-element=\"O\"");
             assertThat(svg).containsPattern("data-atom=\"2\" data-placement=\"\\d+\" data-fragment=\"1\"");
+        }
+    }
+
+    @Nested
+    class FragmentLayout
+    {
+        private static final String FIVE_IONS = "[Na+].[Cl-].[K+].[Br-].[Li+]";
+        private static final Pattern SIZE = Pattern.compile("width=\"([\\d.]+)\" height=\"([\\d.]+)\"");
+
+        /**
+         * @param smiles the molecule to draw
+         * @param style how to draw it
+         * @return the width and height of the document
+         */
+        private double[] sizeOf(String smiles, RenderStyle style)
+        {
+            Matcher size = SIZE.matcher(SvgRenderer.render(depict(smiles), style));
+            assertThat(size.find()).isTrue();
+            return new double[] {Double.parseDouble(size.group(1)), Double.parseDouble(size.group(2))};
+        }
+
+        /**
+         * @param arrangement how the fragments are set out
+         * @return a style setting them out that way
+         */
+        private RenderStyle arranged(String arrangement)
+        {
+            return RenderStyle.builder().fragmentArrangement(FragmentArrangement.parse(arrangement)).build();
+        }
+
+        @Test
+        void row_is_wider_than_tall_and_column_the_reverse()
+        {
+            double[] row = sizeOf(FIVE_IONS, arranged("row"));
+            double[] column = sizeOf(FIVE_IONS, arranged("column"));
+
+            assertThat(row[0]).isGreaterThan(row[1]);
+            assertThat(column[1]).isGreaterThan(column[0]);
+            assertThat(row[0]).isEqualTo(column[1]);
+        }
+
+        @Test
+        void wraps_onto_a_new_row_or_column_at_the_limit()
+        {
+            double[] row = sizeOf(FIVE_IONS, arranged("row"));
+            double[] wrapped = sizeOf(FIVE_IONS, arranged("row:2"));
+            double[] columns = sizeOf(FIVE_IONS, arranged("column:2"));
+
+            assertThat(wrapped[0]).isLessThan(row[0]);
+            assertThat(wrapped[1]).isGreaterThan(row[1]);
+            assertThat(columns[0]).isEqualTo(wrapped[1]);
+            assertThat(columns[1]).isEqualTo(wrapped[0]);
+        }
+
+        @Test
+        void widens_the_drawing_by_the_gap_between_each_pair_of_fragments()
+        {
+            double[] tight = sizeOf(FIVE_IONS, RenderStyle.builder().fragmentGap(0).build());
+            double[] loose = sizeOf(FIVE_IONS, RenderStyle.builder().fragmentGap(10).build());
+
+            assertThat(loose[0] - tight[0]).isCloseTo(40, within(0.01));
+        }
+
+        @Test
+        void pushes_fragments_apart_as_atoms_are_drawn_bigger()
+        {
+            RenderStyle small = RenderStyle.builder().bondLength(5).fragmentGap(0).build();
+            RenderStyle large = RenderStyle.builder().bondLength(5).fragmentGap(0).fontSize(60).build();
+
+            assertThat(sizeOf(FIVE_IONS, large)[0]).isGreaterThan(sizeOf(FIVE_IONS, small)[0] + 100);
         }
     }
 

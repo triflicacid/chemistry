@@ -191,9 +191,11 @@ class MoleculeLayoutTest
         }
 
         @Test
-        void starts_a_single_part_molecule_at_the_origin()
+        void centres_a_single_part_molecule_on_the_origin()
         {
-            assertAt(positionOf(depict("CCO"), 0), 0, 0);
+            Point middle = depict("CCO").depiction().bounds().centre();
+
+            assertAt(middle, 0, 0);
         }
 
         @Test
@@ -313,11 +315,10 @@ class MoleculeLayoutTest
         void draws_a_chain_of_single_bonds_straight()
         {
             Layout layout = depict("CCC");
-            Depiction depiction = layout.depiction();
+            Point first = positionOf(layout, 0);
 
-            assertAt(positionOf(layout, 0), 0, 0);
-            assertAt(positionOf(layout, 1), 1, 0);
-            assertAt(positionOf(layout, 2), 2, 0);
+            assertAt(positionOf(layout, 1).minus(first), 1, 0);
+            assertAt(positionOf(layout, 2).minus(first), 2, 0);
         }
 
         @Test
@@ -325,23 +326,21 @@ class MoleculeLayoutTest
         {
             Layout layout = MoleculeLayout.layout(
                 parse("CCC"), DepictionOptions.defaults().withChainGeometry(com.ruben.chemistry.render.ChainGeometry.ZIGZAG));
-            Depiction depiction = layout.depiction();
+            Point first = positionOf(layout, 0);
 
-            assertAt(positionOf(layout, 0), 0, 0);
-            assertAt(positionOf(layout, 1), Math.sqrt(3) / 2, -0.5);
-            assertAt(positionOf(layout, 2), Math.sqrt(3), 0);
+            assertAt(positionOf(layout, 1).minus(first), Math.sqrt(3) / 2, -0.5);
+            assertAt(positionOf(layout, 2).minus(first), Math.sqrt(3), 0);
         }
 
         @Test
         void keeps_a_triple_bond_and_the_atoms_at_each_end_of_it_in_line()
         {
             Layout layout = depict("CC#CC");
-            Depiction depiction = layout.depiction();
+            Point first = positionOf(layout, 0);
 
-            assertAt(positionOf(layout, 0), 0, 0);
-            assertAt(positionOf(layout, 1), 1, 0);
-            assertAt(positionOf(layout, 2), 2, 0);
-            assertAt(positionOf(layout, 3), 3, 0);
+            assertAt(positionOf(layout, 1).minus(first), 1, 0);
+            assertAt(positionOf(layout, 2).minus(first), 2, 0);
+            assertAt(positionOf(layout, 3).minus(first), 3, 0);
         }
 
         @Test
@@ -503,14 +502,29 @@ class MoleculeLayoutTest
     class DisconnectedParts
     {
         @Test
-        void spreads_the_parts_of_a_molecule_apart()
+        void centres_each_part_of_a_molecule_on_the_origin_in_a_frame_of_its_own()
         {
             Layout layout = depict("C.C");
             Depiction depiction = layout.depiction();
 
-            // each methane is two short hydrogen bonds wide, and the two are set a gap apart
-            assertAt(positionOf(layout, 0), 0.7, 0);
-            assertAt(positionOf(layout, 1), 3.6, 0);
+            assertThat(depiction.fragments()).hasSize(2);
+            for (FragmentFrame frame : depiction.fragments())
+            {
+                assertAt(frame.bounds().centre(), 0, 0);
+            }
+            assertThat(layout.placementOfAtom(0).fragment()).isEqualTo(0);
+            assertThat(layout.placementOfAtom(1).fragment()).isEqualTo(1);
+        }
+
+        @Test
+        void places_a_lone_atom_on_the_origin_and_describes_each_part_in_a_frame()
+        {
+            Layout layout = depict("CC.[Na+]");
+
+            assertThat(layout.depiction().fragments()).extracting(FragmentFrame::index).containsExactly(0, 1);
+            assertAt(layout.depiction().fragments().getFirst().bounds().centre(), 0, 0);
+            assertAt(positionOf(layout, 2), 0, 0);
+            assertThat(layout.placementOfAtom(2).fragment()).isEqualTo(1);
         }
     }
 

@@ -34,6 +34,8 @@ public final class RenderStyle
     private final double wedgeWidth;
     private final double hashSpacing;
     private final boolean metadata;
+    private final FragmentArrangement fragmentArrangement;
+    private final double fragmentGap;
 
     /**
      * @param builder the builder holding the settings to take
@@ -62,6 +64,8 @@ public final class RenderStyle
         this.bondGap = builder.bondGap;
         this.wedgeWidth = builder.wedgeWidth;
         this.hashSpacing = builder.hashSpacing;
+        this.fragmentArrangement = builder.fragmentArrangement;
+        this.fragmentGap = builder.fragmentGap;
     }
 
     /**
@@ -106,7 +110,9 @@ public final class RenderStyle
             .bondGap(bondGap)
             .wedgeWidth(wedgeWidth)
             .hashSpacing(hashSpacing)
-            .metadata(metadata);
+            .metadata(metadata)
+            .fragmentArrangement(fragmentArrangement)
+            .fragmentGap(fragmentGap);
         colours.forEach(builder::colour);
         return builder;
     }
@@ -303,6 +309,22 @@ public final class RenderStyle
     }
 
     /**
+     * @return how the disconnected parts of a molecule are set out on the page
+     */
+    public FragmentArrangement fragmentArrangement()
+    {
+        return fragmentArrangement;
+    }
+
+    /**
+     * @return how many pixels of empty space lie between one disconnected part and the next, beyond what its atoms need
+     */
+    public double fragmentGap()
+    {
+        return fragmentGap;
+    }
+
+    /**
      * Collects the settings for a {@link RenderStyle}, starting from the defaults.
      */
     public static final class Builder
@@ -330,6 +352,8 @@ public final class RenderStyle
         private double wedgeWidth = 10;
         private double hashSpacing = 4;
         private boolean metadata = false;
+        private FragmentArrangement fragmentArrangement = FragmentArrangement.ROW;
+        private double fragmentGap = 30;
 
         private Builder()
         {
@@ -344,7 +368,26 @@ public final class RenderStyle
         {
             this.metadata = metadata;
             return this;
-        }        {
+        }
+
+        /**
+         * @param fragmentArrangement how the disconnected parts of a molecule are set out on the page
+         * @return this builder, for chaining
+         */
+        public Builder fragmentArrangement(FragmentArrangement fragmentArrangement)
+        {
+            this.fragmentArrangement = Objects.requireNonNull(fragmentArrangement, "fragmentArrangement");
+            return this;
+        }
+
+        /**
+         * @param fragmentGap how many pixels of empty space lie between one disconnected part and the next
+         * @return this builder, for chaining
+         */
+        public Builder fragmentGap(double fragmentGap)
+        {
+            this.fragmentGap = requireAtLeastZero(fragmentGap, "fragmentGap");
+            return this;
         }
 
         /**

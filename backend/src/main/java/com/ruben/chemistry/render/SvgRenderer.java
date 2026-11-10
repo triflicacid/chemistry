@@ -93,9 +93,7 @@ public final class SvgRenderer
     private SvgRenderer(Depiction depiction, RenderStyle style, UUID snapshotId)
     {
         this.snapshotId = snapshotId;
-        this.depiction = depiction;
         this.style = style;
-        this.bounds = depiction.bounds();
         this.clearances = new double[depiction.atoms().size()];
         double widest = 0;
         for (AtomPlacement atom : depiction.atoms())
@@ -105,6 +103,8 @@ public final class SvgRenderer
             widest = Math.max(widest, clearance);
         }
         this.overhang = widest;
+        this.depiction = arrange(depiction);
+        this.bounds = this.depiction.bounds();
         this.bondPaint = style.bondColour().hex();
         for (BondPlacement bond : depiction.bonds())
         {
@@ -125,6 +125,99 @@ public final class SvgRenderer
                 }
             }
         }
+    }
+
+    /**
+     * Sets the fragments of a depiction out as the style asks.
+     *
+     * @param local a depiction whose fragments are each centred on the origin
+     * @return the same depiction with the fragments moved apart
+     */
+    private Depiction arrange(Depiction local)
+    {
+        int count = local.fragments().size();
+        // nothing to set apart
+        if (count < 2)
+        {
+            return local;
+        }
+
+        FragmentArrangement arrangement = style.fragmentArrangement();
+        // pixels per depiction unit
+        double scale = style.bondLength();
+
+        // each fragment's extent as {minX, minY, maxX, maxY} in depiction space, grown by how far its atoms reach
+        double[][] extent = new double[count][];
+        for (AtomPlacement atom : local.atoms())
+        {
+            double reach = clearances[atom.placementIndex()] / scale;
+            Point at = atom.position();
+            double[] box = extent[atom.fragment()];
+            // first atom seen in this fragment
+            if (box == null)
+            {
+                extent[atom.fragment()] = new double[] {at.x() - reach, at.y() - reach, at.x() + reach, at.y() + reach};
+                continue;
+            }
+            box[0] = Math.min(box[0], at.x() - reach);
+            box[1] = Math.min(box[1], at.y() - reach);
+            box[2] = Math.max(box[2], at.x() + reach);
+            box[3] = Math.max(box[3], at.y() + reach);
+        }
+
+        // size the grid
+        int columns = 0;
+        int rows = 0;
+        for (int fragment = 0; fragment < count; fragment++)
+        {
+            columns = Math.max(columns, arrangement.columnOf(fragment) + 1);
+            rows = Math.max(rows, arrangement.rowOf(fragment) + 1);
+        }
+        // a column is as wide as its widest fragment, a row as tall as its tallest
+        double[] width = new double[columns];
+        double[] height = new double[rows];
+        for (int fragment = 0; fragment < count; fragment++)
+        {
+            double[] box = extent[fragment];
+            // a fragment with no atoms takes up no room
+            if (box == null)
+            {
+                continue;
+            }
+            int column = arrangement.columnOf(fragment);
+            int row = arrangement.rowOf(fragment);
+            width[column] = Math.max(width[column], box[2] - box[0]);
+            height[row] = Math.max(height[row], box[3] - box[1]);
+        }
+
+        double gap = style.fragmentGap() / scale;
+        // where each column starts, stacked left to right with a gap between
+        double[] left = new double[columns];
+        for (int column = 1; column < columns; column++)
+        {
+            left[column] = left[column - 1] + width[column - 1] + gap;
+        }
+        // where each row's midline is
+        double[] middle = new double[rows];
+        double top = 0;
+        for (int row = 0; row < rows; row++)
+        {
+            middle[row] = -(top + height[row] / 2); // screen y is downwards
+            top += height[row] + gap;
+        }
+
+        // move each atom by its fragment's offset, centring the fragment in its cell
+        List<AtomPlacement> moved = new ArrayList<>(local.atoms().size());
+        for (AtomPlacement atom : local.atoms())
+        {
+            double[] box = extent[atom.fragment()];
+            int column = arrangement.columnOf(atom.fragment());
+            double dx = left[column] + (width[column] - (box[2] - box[0])) / 2 - box[0];
+            double dy = middle[arrangement.rowOf(atom.fragment())] - (box[1] + box[3]) / 2;
+            moved.add(atom.at(atom.position().translate(dx, dy)));
+        }
+        // bonds and rings refer to atoms by index, which have not changed
+        return new Depiction(moved, local.bonds(), local.rings(), local.fragments());
     }
 
     /**

@@ -2,6 +2,7 @@ package com.ruben.chemistry.render;
 
 import com.ruben.chemistry.core.Molecule;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -12,8 +13,10 @@ import java.util.Objects;
  * @param atoms the atoms to draw, each holding its own {@link AtomPlacement#placementIndex()}, in index order
  * @param bonds the bonds to draw, referring to atom placements by their placement index
  * @param rings the rings the molecule has, referring to atom placements by their placement index
+ * @param fragments one frame per disconnected part of the molecule, in index order;
+ *                  each part's atoms are placed in a frame of their own.
  */
-public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, List<RingPlacement> rings)
+public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, List<RingPlacement> rings, List<FragmentFrame> fragments)
 {
     /** The distance between two bonded atoms, which is the unit depiction space is measured in. */
     public static final double BOND_LENGTH = 1.0;
@@ -33,15 +36,31 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
         Objects.requireNonNull(atoms, "atoms");
         Objects.requireNonNull(bonds, "bonds");
         Objects.requireNonNull(rings, "rings");
+        Objects.requireNonNull(fragments, "fragments");
         atoms = List.copyOf(atoms);
         bonds = List.copyOf(bonds);
         rings = List.copyOf(rings);
+        fragments = List.copyOf(fragments);
 
         for (int index = 0; index < atoms.size(); index++)
         {
             if (atoms.get(index).placementIndex() != index)
             {
                 throw new IllegalArgumentException("Atom at position " + index + " reports index " + atoms.get(index).placementIndex());
+            }
+        }
+        for (int index = 0; index < fragments.size(); index++)
+        {
+            if (fragments.get(index).index() != index)
+            {
+                throw new IllegalArgumentException("Fragment at position " + index + " reports index " + fragments.get(index).index());
+            }
+        }
+        for (AtomPlacement atom : atoms)
+        {
+            if (atom.fragment() >= fragments.size())
+            {
+                throw new IllegalArgumentException("Atom " + atom.placementIndex() + " is in fragment " + atom.fragment() + ", but there are only " + fragments.size() + " fragments");
             }
         }
         for (BondPlacement bond : bonds)
@@ -61,7 +80,18 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
     /**
      * @param atoms the atoms to draw
      * @param bonds the bonds to draw
-     * @see #Depiction(List, List, List)
+     * @param rings the rings the molecule has
+     * @see #Depiction(List, List, List, List)
+     */
+    public Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, List<RingPlacement> rings)
+    {
+        this(atoms, bonds, rings, framesOf(atoms));
+    }
+
+    /**
+     * @param atoms the atoms to draw
+     * @param bonds the bonds to draw
+     * @see #Depiction(List, List, List, List)
      */
     public Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds)
     {
@@ -73,7 +103,7 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
      */
     public static Depiction empty()
     {
-        return new Depiction(List.of(), List.of(), List.of());
+        return new Depiction(List.of(), List.of(), List.of(), List.of());
     }
 
     /**
@@ -112,7 +142,7 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
     }
 
     /**
-     * @return the smallest rectangle containing every atom, which is {@link Bounds#EMPTY} if there are none.
+     * @return the smallest rectangle containing every atom, taking each fragment as being in its own frame, which is {@link Bounds#EMPTY} if there are none.
      */
     public Bounds bounds()
     {
@@ -125,6 +155,25 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
     public boolean isEmpty()
     {
         return atoms.isEmpty();
+    }
+
+    /**
+     * @param atoms atoms in the frames they are placed in
+     * @return a frame for each fragment up to the highest one any atom is in, bounding the atoms in it
+     */
+    private static List<FragmentFrame> framesOf(List<AtomPlacement> atoms)
+    {
+        int count = atoms.stream().mapToInt(atom -> atom.fragment() + 1).max().orElse(0);
+        List<FragmentFrame> frames = new ArrayList<>(count);
+        for (int fragment = 0; fragment < count; fragment++)
+        {
+            int index = fragment;
+            frames.add(new FragmentFrame(index, Bounds.around(atoms.stream()
+                .filter(atom -> atom.fragment() == index)
+                .map(AtomPlacement::position)
+                .toList())));
+        }
+        return frames;
     }
 
     /**
