@@ -5,16 +5,19 @@ import java.util.Objects;
 /**
  * Settings for a {@link MoleculeLayout}.
  *
+ * @param style how much of the molecule is spelled out
  * @param chainGeometry how a chain of bonded atoms carries on through an atom
- * @param hydrogens how an atom's hydrogens are drawn
+ * @param hydrogens how an atom's hydrogens are drawn; a {@link DepictionStyle#SKELETAL} drawing
+ *     always gathers them into the symbol they hang off, so takes no notice of this
  */
-public record DepictionOptions(ChainGeometry chainGeometry, HydrogenStyle hydrogens)
+public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry, HydrogenStyle hydrogens)
 {
     /**
-     * @throws NullPointerException if either setting is {@code null}
+     * @throws NullPointerException if any setting is {@code null}
      */
     public DepictionOptions
     {
+        Objects.requireNonNull(style, "style");
         Objects.requireNonNull(chainGeometry, "chainGeometry");
         Objects.requireNonNull(hydrogens, "hydrogens");
     }
@@ -24,7 +27,33 @@ public record DepictionOptions(ChainGeometry chainGeometry, HydrogenStyle hydrog
      */
     public static DepictionOptions defaults()
     {
-        return new DepictionOptions(ChainGeometry.STRAIGHT, HydrogenStyle.SEPARATE);
+        return new DepictionOptions(DepictionStyle.EXPLICIT, ChainGeometry.STRAIGHT, HydrogenStyle.SEPARATE);
+    }
+
+    /**
+     * @return a line-angle layout: carbon left as a bare vertex, hydrogens gathered into whatever
+     *     symbol is written, and chains drawn as a zig-zag so that each vertex can be told apart
+     */
+    public static DepictionOptions skeletal()
+    {
+        return new DepictionOptions(DepictionStyle.SKELETAL, ChainGeometry.ZIGZAG, HydrogenStyle.CONDENSED);
+    }
+
+    /**
+     * @return how hydrogens are drawn once the style has had its say
+     */
+    public HydrogenStyle effectiveHydrogens()
+    {
+        return style == DepictionStyle.SKELETAL ? HydrogenStyle.CONDENSED : hydrogens;
+    }
+
+    /**
+     * @param style how much of the molecule is spelled out
+     * @return these options, in that style
+     */
+    public DepictionOptions withStyle(DepictionStyle style)
+    {
+        return new DepictionOptions(style, chainGeometry, hydrogens);
     }
 
     /**
@@ -33,7 +62,7 @@ public record DepictionOptions(ChainGeometry chainGeometry, HydrogenStyle hydrog
      */
     public DepictionOptions withChainGeometry(ChainGeometry chainGeometry)
     {
-        return new DepictionOptions(chainGeometry, hydrogens);
+        return new DepictionOptions(style, chainGeometry, hydrogens);
     }
 
     /**
@@ -42,6 +71,6 @@ public record DepictionOptions(ChainGeometry chainGeometry, HydrogenStyle hydrog
      */
     public DepictionOptions withHydrogens(HydrogenStyle hydrogens)
     {
-        return new DepictionOptions(chainGeometry, hydrogens);
+        return new DepictionOptions(style, chainGeometry, hydrogens);
     }
 }

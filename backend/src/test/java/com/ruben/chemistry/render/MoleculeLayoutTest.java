@@ -577,6 +577,113 @@ class MoleculeLayoutTest
     }
 
     @Nested
+    class Skeletal
+    {
+        @Test
+        void leaves_a_carbon_in_a_chain_as_a_bare_vertex()
+        {
+            Depiction depiction = skeletal("CCCC");
+
+            assertThat(depiction.atoms()).allMatch(AtomPlacement::vertex);
+        }
+
+        @Test
+        void still_writes_a_heteroatom_out()
+        {
+            Depiction depiction = skeletal("CCO");
+
+            assertThat(atomOf(depiction, "O").vertex()).isFalse();
+            assertThat(atomOf(depiction, "C").vertex()).isTrue();
+        }
+
+        @Test
+        void gathers_a_heteroatoms_hydrogens_into_its_own_label()
+        {
+            assertThat(atomOf(skeletal("CCO"), "O").hydrogens()).isEqualTo(1);
+        }
+
+        @Test
+        void draws_no_hydrogen_of_its_own()
+        {
+            assertThat(skeletal("CCO").atoms()).noneMatch(AtomPlacement::isGeneratedHydrogen);
+        }
+
+        @Test
+        void writes_a_carbon_that_has_nothing_drawn_to_it()
+        {
+            assertThat(atomOf(skeletal("C"), "C").vertex()).isFalse();
+        }
+
+        @Test
+        void writes_a_carbon_carrying_a_charge()
+        {
+            assertThat(atomOf(skeletal("CC[CH2-]"), "C").vertex()).isTrue();
+            assertThat(skeletal("CC[CH2-]").atoms()).anySatisfy(atom ->
+            {
+                assertThat(atom.charge()).isEqualTo(-1);
+                assertThat(atom.vertex()).isFalse();
+            });
+        }
+
+        @Test
+        void writes_a_carbon_carrying_a_mass_number()
+        {
+            assertThat(skeletal("CC[13CH3]").atoms()).anySatisfy(atom ->
+            {
+                assertThat(atom.isotope()).hasValue(13);
+                assertThat(atom.vertex()).isFalse();
+            });
+        }
+
+        @Test
+        void bends_a_chain_so_that_each_vertex_can_be_told_apart()
+        {
+            Depiction depiction = skeletal("CCCC");
+
+            assertThat(sideOf(depiction, 0, 1, 1, 2) * sideOf(depiction, 1, 2, 2, 3)).isNotZero();
+            assertThat(positionOf(depiction, 0).y()).isNotEqualTo(positionOf(depiction, 1).y());
+        }
+
+        @Test
+        void keeps_the_bonds_the_molecule_has_and_adds_none()
+        {
+            Molecule propanol = parse("CCO");
+
+            assertThat(skeletal("CCO").bonds()).hasSize(propanol.bonds().size());
+        }
+
+        @Test
+        void still_draws_a_stereocentre_out_of_the_plane()
+        {
+            assertThat(skeletal("N[C@@H](C)C(=O)O").bonds())
+                .filteredOn(bond -> bond.style().isStereo())
+                .hasSize(1);
+        }
+
+        /**
+         * @param smiles a molecule
+         * @return it laid out as a line-angle drawing
+         */
+        private static Depiction skeletal(String smiles)
+        {
+            return MoleculeLayout.layout(parse(smiles), DepictionOptions.skeletal());
+        }
+
+        /**
+         * @param depiction a layout
+         * @param element an element symbol
+         * @return the first atom of that element
+         */
+        private static AtomPlacement atomOf(Depiction depiction, String element)
+        {
+            return depiction.atoms().stream()
+                .filter(atom -> atom.element().equals(element))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Nothing was drawn for " + element));
+        }
+    }
+
+    @Nested
     class BoundingBox
     {
         @Test

@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The arguments a drawing command was given: whatever it is being asked to draw, and the settings
@@ -25,8 +26,12 @@ final class CommandOptions
 {
     /** How the settings are written, shown when a command's arguments make no sense. */
     static final String USAGE = """
-          --shape=text|circle          whether an atom is drawn as its symbol or as a ball (default text)
-          --geometry=straight|zigzag   how a chain of single bonds runs (default straight)
+          --style=text|circles|skeletal
+                                       whether an atom is written as its symbol, drawn as a ball,
+                                       or, for carbon, left as a bare vertex of a line-angle
+                                       drawing (default text)
+          --geometry=straight|zigzag   how a chain of single bonds runs (default straight, zigzag
+                                       under --style=skeletal)
           --hydrogens=separate|condensed|none
                                        whether hydrogens are drawn as atoms of their own, gathered
                                        into the symbol they hang off, or left out (default separate)
@@ -41,6 +46,11 @@ final class CommandOptions
                                        ends instead (default false)
           --colour=<element>:<colour>  the colour one element is drawn in, repeatable
         """;
+
+    /** The settings this class itself understands; a command adds whatever else it takes. */
+    private static final Set<String> KNOWN = Set.of(
+        "style", "geometry", "hydrogens", "isotopes", "charges", "bond-length", "margin",
+        "font-size", "background", "bond-colour", "bond-gradient", "colour");
 
     /** The arguments that name something to draw. */
     private final List<String> subjects;
@@ -98,6 +108,24 @@ final class CommandOptions
     }
 
     /**
+     * Checks that every setting given is one something understands, so that a misspelt one is
+     * complained about rather than quietly ignored.
+     *
+     * @param alsoAllowed the settings the command itself takes, besides the drawing ones
+     * @throws IllegalArgumentException if a setting is not understood
+     */
+    void validate(String... alsoAllowed)
+    {
+        for (String name : values.keySet())
+        {
+            if (!KNOWN.contains(name) && !List.of(alsoAllowed).contains(name))
+            {
+                throw new IllegalArgumentException("There is no --" + name + " setting");
+            }
+        }
+    }
+
+    /**
      * @param expected what one subject means, for the error message
      * @return the only subject given
      * @throws IllegalArgumentException if there is not exactly one
@@ -126,9 +154,62 @@ final class CommandOptions
      */
     DepictionOptions depictionOptions()
     {
+        DepictionOptions base = drawing() == Drawing.SKELETAL
+            ? DepictionOptions.skeletal()
+            : DepictionOptions.defaults();
+
         return new DepictionOptions(
-            choice("geometry", ChainGeometry.class, ChainGeometry.STRAIGHT),
-            hydrogenStyle());
+            base.style(),
+            choice("geometry", ChainGeometry.class, base.chainGeometry()),
+            values.containsKey("hydrogens") ? hydrogenStyle() : base.hydrogens());
+    }
+
+    /**
+     * Reads the one setting that says how a molecule is drawn, allowing {@code circle} as another
+     * way of saying {@code circles}.
+     *
+     * @return the choice made
+     * @throws IllegalArgumentException if the value names no choice
+     */
+    private Drawing drawing()
+    {
+        String value = values.get("style");
+        if (value == null)
+        {
+            return Drawing.TEXT;
+        }
+        if (value.equalsIgnoreCase("circle"))
+        {
+            return Drawing.CIRCLES;
+        }
+        return choice("style", Drawing.class, Drawing.TEXT);
+    }
+
+    /**
+     * How a molecule is drawn, which decides both how much of it is laid out and how an atom that
+     * was laid out is marked on the page.
+     */
+    private enum Drawing
+    {
+        /** Every atom written out as its own symbol. */
+        TEXT(AtomShape.TEXT),
+
+        /** Every atom drawn as a ball, as a molecular model has them. */
+        CIRCLES(AtomShape.CIRCLE),
+
+        /** Carbon left as a bare vertex, everything else written out. */
+        SKELETAL(AtomShape.TEXT);
+
+        /** How an atom that is drawn at all is marked. */
+        private final AtomShape shape;
+
+        /**
+         * @param shape how an atom that is drawn at all is marked
+         */
+        Drawing(AtomShape shape)
+        {
+            this.shape = shape;
+        }
     }
 
     /**
@@ -162,7 +243,7 @@ final class CommandOptions
     RenderStyle style()
     {
         RenderStyle.Builder style = RenderStyle.builder()
-            .atomShape(choice("shape", AtomShape.class, AtomShape.TEXT))
+            .atomShape(drawing().shape)
             .isotopes(flag("isotopes", true))
             .charges(flag("charges", true))
             .bondGradient(flag("bond-gradient", false));

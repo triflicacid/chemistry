@@ -16,6 +16,7 @@ import java.util.OptionalInt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.within;
 
 class SvgRendererTest
 {
@@ -496,6 +497,110 @@ class SvgRendererTest
                 values.add(text.substring(from, text.indexOf('"', from)));
             }
             return values;
+        }
+    }
+
+    @Nested
+    class Vertices
+    {
+        @Test
+        void are_not_written_out()
+        {
+            String svg = SvgRenderer.render(vertexAnd("O"));
+
+            assertThat(countOf(svg, "<text")).isEqualTo(1);
+            assertThat(svg).contains(">O<").doesNotContain(">C<");
+        }
+
+        @Test
+        void let_their_bonds_run_right_up_to_them()
+        {
+            RenderStyle style = RenderStyle.builder().bondLength(50).margin(0).build();
+
+            String svg = SvgRenderer.render(vertexAnd("C"), style);
+
+            // both ends are bare, so the line is the whole bond
+            assertThat(svg).contains("<line");
+            assertThat(lineLengthOf(svg)).isEqualTo(50);
+        }
+
+        @Test
+        void are_still_drawn_as_balls_where_the_style_asks_for_balls()
+        {
+            String svg = SvgRenderer.render(vertexAnd("C"), RenderStyle.builder().atomShape(AtomShape.CIRCLE).build());
+
+            assertThat(countOf(svg, "<circle")).isEqualTo(2);
+        }
+
+        @Test
+        void close_a_single_bond_up_against_the_double_bond_it_meets()
+        {
+            // C=C-C, with the chain bending through the middle vertex
+            Depiction chain = new Depiction(
+                List.of(
+                    atom(0, "C", Point.ORIGIN).asVertex(true),
+                    atom(1, "C", new Point(1, 0)).asVertex(true),
+                    atom(2, "C", new Point(1.5, Math.sqrt(3) / 2)).asVertex(true)),
+                List.of(
+                    new BondPlacement(0, 1, BondOrder.DOUBLE, BondStyle.PLAIN),
+                    new BondPlacement(1, 2, BondOrder.SINGLE, BondStyle.PLAIN)));
+            RenderStyle style = RenderStyle.builder().bondLength(50).margin(0).bondGap(6).build();
+
+            String svg = SvgRenderer.render(chain, style);
+
+            // the single carries on past the vertex until it has crossed both lines of the double
+            double reach = (style.bondGap() / 2) / (Math.sqrt(3) / 2);
+            assertThat(lastLineLengthOf(svg)).isCloseTo(50 + reach, within(0.01));
+        }
+
+        @Test
+        void leave_two_single_bonds_meeting_at_a_point_alone()
+        {
+            Depiction chain = new Depiction(
+                List.of(
+                    atom(0, "C", Point.ORIGIN).asVertex(true),
+                    atom(1, "C", new Point(1, 0)).asVertex(true),
+                    atom(2, "C", new Point(1.5, Math.sqrt(3) / 2)).asVertex(true)),
+                List.of(
+                    new BondPlacement(0, 1, BondOrder.SINGLE, BondStyle.PLAIN),
+                    new BondPlacement(1, 2, BondOrder.SINGLE, BondStyle.PLAIN)));
+
+            String svg = SvgRenderer.render(chain, RenderStyle.builder().bondLength(50).margin(0).build());
+
+            assertThat(lastLineLengthOf(svg)).isCloseTo(50, within(0.01));
+        }
+
+        /**
+         * @param svg a document
+         * @return how long the last line it holds is
+         */
+        private static double lastLineLengthOf(String svg)
+        {
+            String line = svg.substring(svg.lastIndexOf("<line"));
+            return new Point(attribute(line, "x1"), attribute(line, "y1"))
+                .distanceTo(new Point(attribute(line, "x2"), attribute(line, "y2")));
+        }
+
+        /**
+         * @param second the element on the right, which is written out as usual
+         * @return a bare vertex bonded to it
+         */
+        private static Depiction vertexAnd(String second)
+        {
+            return new Depiction(
+                List.of(atom(0, "C", Point.ORIGIN).asVertex(true), atom(1, second, new Point(1, 0)).asVertex(second.equals("C"))),
+                List.of(new BondPlacement(0, 1, BondOrder.SINGLE, BondStyle.PLAIN)));
+        }
+
+        /**
+         * @param svg a document
+         * @return how long the first line it holds is
+         */
+        private static double lineLengthOf(String svg)
+        {
+            String line = svg.substring(svg.indexOf("<line"));
+            return new Point(attribute(line, "x1"), attribute(line, "y1"))
+                .distanceTo(new Point(attribute(line, "x2"), attribute(line, "y2")));
         }
     }
 

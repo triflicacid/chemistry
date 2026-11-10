@@ -3,8 +3,10 @@ package com.ruben.chemistry.render;
 import com.ruben.chemistry.core.BondOrder;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -33,6 +35,12 @@ public final class SvgRenderer
     /** How far either side of a blend the middle of a gradient bond drifts. */
     private static final double GRADIENT_DRIFT = 0.08;
 
+    /** How nearly along one another two bonds have to run before neither closes up against the other. */
+    private static final double GRAZING = 0.2;
+
+    /** The most a bond carries on past a vertex, as a multiple of what it is closing up against. */
+    private static final double FURTHEST_REACH = 2;
+
     /** The depiction being drawn. */
     private final Depiction depiction;
 
@@ -41,6 +49,9 @@ public final class SvgRenderer
 
     /** How far each atom holds a bond off, in pixels, indexed as the depiction's atoms are. */
     private final double[] clearances;
+
+    /** The bonds meeting at each atom, indexed as the depiction's atoms are. */
+    private final Map<Integer, List<BondPlacement>> bondsAt = new HashMap<>();
 
     /** The depiction's extent, which decides where the origin of the drawing goes. */
     private final Bounds bounds;
@@ -79,6 +90,11 @@ public final class SvgRenderer
         }
         this.overhang = widest;
         this.bondPaint = style.bondColour().hex();
+        for (BondPlacement bond : depiction.bonds())
+        {
+            bondsAt.computeIfAbsent(bond.first(), atom -> new ArrayList<>()).add(bond);
+            bondsAt.computeIfAbsent(bond.second(), atom -> new ArrayList<>()).add(bond);
+        }
     }
 
     /**
@@ -194,8 +210,8 @@ public final class SvgRenderer
         }
 
         Point unit = along.scale(1 / length);
-        Point start = from.plus(unit.scale(clearances[bond.first()]));
-        Point end = to.minus(unit.scale(clearances[bond.second()]));
+        Point start = from.plus(unit.scale(clearances[bond.first()] - reachOf(bond, bond.first(), unit)));
+        Point end = to.minus(unit.scale(clearances[bond.second()] - reachOf(bond, bond.second(), unit.scale(-1))));
         if (end.minus(start).length() <= 0 || unit.x() * (end.x() - start.x()) + unit.y() * (end.y() - start.y()) <= 0)
         {
             // The two atoms are so close that their symbols already meet; there is no room for a line.
@@ -281,6 +297,70 @@ public final class SvgRenderer
     {
         defs.append("      <stop offset=\"").append(number(offset))
             .append("\" stop-color=\"").append(colour.hex()).append("\"/>\n");
+    }
+
+    /**
+     * Works out how far a bond carries on past a bare vertex.
+     *
+     * @param bond the bond being drawn
+     * @param atom the end of it to look at
+     * @param outwards the direction the bond runs in, away from {@code atom}, of unit length
+     * @return how many pixels past the atom the bond should carry on
+     */
+    private double reachOf(BondPlacement bond, int atom, Point outwards)
+    {
+        if (bond.style().isStereo() || clearances[atom] > 0)
+        {
+            // only a bare vertex has bonds meeting at a point; a symbol holds them apart anyway
+            return 0;
+        }
+
+        Point centre = toPage(depiction.atom(atom).position());
+        double reach = 0;
+        for (BondPlacement other : bondsAt.get(atom))
+        {
+            double half = strayOf(other);
+            if (other == bond || half <= 0)
+            {
+                continue;
+            }
+
+            int far = other.first() == atom ? other.second() : other.first();
+            Point away = toPage(depiction.atom(far).position()).minus(centre);
+            double length = away.length();
+            if (length <= 0)
+            {
+                continue;
+            }
+
+            // how much of this bond's direction lies across the other's, which is what has to be covered
+            double across = Math.abs(outwards.cross(away.scale(1 / length)));
+            if (across < GRAZING)
+            {
+                // the two run so nearly along one another that their lines are already side by side
+                continue;
+            }
+            reach = Math.max(reach, Math.min(half / across, FURTHEST_REACH * half));
+        }
+        return reach;
+    }
+
+    /**
+     * @param bond a bond
+     * @return how far its outermost line strays from its middle, in pixels, or {@code 0}
+     */
+    private double strayOf(BondPlacement bond)
+    {
+        if (bond.style().isStereo())
+        {
+            return 0;
+        }
+        return switch (bond.order())
+        {
+            case SINGLE, TRIPLE -> 0;
+            case DOUBLE, AROMATIC -> style.bondGap() / 2;
+            case QUADRUPLE -> 1.5 * style.bondGap();
+        };
     }
 
     /**
@@ -411,8 +491,9 @@ public final class SvgRenderer
         {
             drawCircle(atom);
         }
-        else
+        else if (!atom.vertex())
         {
+            // a bare vertex is the corner its bonds already draw, so there is nothing to write
             drawLabel(atom);
         }
     }
@@ -558,6 +639,11 @@ public final class SvgRenderer
         if (style.atomShape() == AtomShape.CIRCLE)
         {
             return style.radiusOf(atom.element()) + style.atomOutlineWidth() / 2;
+        }
+        if (atom.vertex())
+        {
+            // bonds have to meet at a bare vertex, since the corner they make is all that marks it
+            return 0;
         }
         return Math.max(labelWidthOf(atom) / 2, style.fontSize() / 2) + style.labelPadding();
     }

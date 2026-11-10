@@ -1,6 +1,5 @@
 package com.ruben.chemistry.render;
 
-import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Molecule;
 
 import java.util.Objects;
@@ -13,9 +12,9 @@ import java.util.OptionalInt;
  * @param element the canonical element symbol, e.g. {@code "C"}, {@code "Cl"}, or {@code "*"} for a wildcard atom
  * @param isotope the mass number to label this atom with, or empty to leave it unlabelled
  * @param charge the net formal charge, {@code 0} if uncharged
- * @param hydrogens how many hydrogens are gathered into this atom's own label, as
- *     {@link HydrogenStyle#CONDENSED} does, rather than drawn as atoms of their own
+ * @param hydrogens how many hydrogens are gathered into this atom's own label
  * @param aromatic whether this atom is aromatic
+ * @param vertex whether this atom is left as a bare corner of the drawing rather than written out (skeletal carbon)
  * @param sourceAtom the index of the {@link Molecule#atoms() molecule atom} this came from, or empty if it is a hydrogen the depiction made up
  * @param position where this atom sits, in depiction space
  */
@@ -26,6 +25,7 @@ public record AtomPlacement(
     int charge,
     int hydrogens,
     boolean aromatic,
+    boolean vertex,
     OptionalInt sourceAtom,
     Point position)
 {
@@ -68,7 +68,7 @@ public record AtomPlacement(
         OptionalInt sourceAtom,
         Point position)
     {
-        return new AtomPlacement(index, element, isotope, charge, 0, aromatic, sourceAtom, position);
+        return new AtomPlacement(index, element, isotope, charge, 0, aromatic, false, sourceAtom, position);
     }
 
     /**
@@ -80,11 +80,20 @@ public record AtomPlacement(
     }
 
     /**
+     * @param vertex whether the atom is left as a bare corner of the drawing rather than written out
+     * @return this placement, drawn that way
+     */
+    public AtomPlacement asVertex(boolean vertex)
+    {
+        return new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, vertex, sourceAtom, position);
+    }
+
+    /**
      * @param position where the atom should sit instead
      * @return this placement, moved
      */
     public AtomPlacement at(Point position)
     {
-        return new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, sourceAtom, position);
+        return new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, vertex, sourceAtom, position);
     }
 }

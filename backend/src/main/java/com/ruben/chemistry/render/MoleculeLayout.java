@@ -161,8 +161,30 @@ public final class MoleculeLayout
         }
 
         applyParities();
+        markVertices();
         spreadParts();
         return new Depiction(placements, bonds);
+    }
+
+    /**
+     * Leaves every carbon a bare corner of a skeletal drawing, barring lone or non-standard carbons.
+     */
+    private void markVertices()
+    {
+        if (options.style() != DepictionStyle.SKELETAL)
+        {
+            return;
+        }
+
+        int[] degrees = degreesOfPlacements();
+        for (int index = 0; index < placements.size(); index++)
+        {
+            AtomPlacement placement = placements.get(index);
+            boolean plainCarbon = placement.element().equals("C")
+                && placement.charge() == 0
+                && placement.isotope().isEmpty();
+            placements.set(index, placement.asVertex(plainCarbon && degrees[index] > 0));
+        }
     }
 
     /**
@@ -226,7 +248,7 @@ public final class MoleculeLayout
         Point centre = positions[index];
 
         List<Bond> children = childBondsOf(atom, walk.parent());
-        int hydrogens = options.hydrogens().isSeparate() ? molecule.totalHydrogenCount(atom) : 0;
+        int hydrogens = options.effectiveHydrogens().isSeparate() ? molecule.totalHydrogenCount(atom) : 0;
         int slots = children.size() + hydrogens;
         if (slots == 0)
         {
@@ -711,7 +733,7 @@ public final class MoleculeLayout
      */
     private void placeHydrogens(Atom atom, int index, Point centre, double[] directions, int from)
     {
-        if (!options.hydrogens().isSeparate())
+        if (!options.effectiveHydrogens().isSeparate())
         {
             return;
         }
@@ -823,7 +845,7 @@ public final class MoleculeLayout
         }
 
         List<Integer> hydrogens = hydrogensOfAtom.get(centreAtom);
-        if (hydrogens.isEmpty() && !options.hydrogens().isSeparate())
+        if (hydrogens.isEmpty() && !options.effectiveHydrogens().isSeparate())
         {
             return UNDRAWN;
         }
@@ -943,7 +965,7 @@ public final class MoleculeLayout
         int index = indexOf(atom);
         placed[index] = true;
         positions[index] = position;
-        int condensed = options.hydrogens() == HydrogenStyle.CONDENSED ? molecule.totalHydrogenCount(atom) : 0;
+        int condensed = options.effectiveHydrogens() == HydrogenStyle.CONDENSED ? molecule.totalHydrogenCount(atom) : 0;
         placementOfAtom[index] = addPlacement(
             atom.element(), atom.isotope(), atom.charge(), condensed, atom.aromatic(), OptionalInt.of(index), position);
         return placementOfAtom[index];
@@ -962,7 +984,7 @@ public final class MoleculeLayout
     private int addPlacement(String element, OptionalInt isotope, int charge, int hydrogens, boolean aromatic, OptionalInt sourceAtom, Point position)
     {
         int index = placements.size();
-        placements.add(new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, sourceAtom, position));
+        placements.add(new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, false, sourceAtom, position));
         return index;
     }
 

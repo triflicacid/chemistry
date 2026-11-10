@@ -17,7 +17,7 @@ import java.util.List;
  * Run it through Gradle, e.g.
  * <pre>{@code
  * ./gradlew :backend:depict --args="CCO --out=ethanol.svg"
- * ./gradlew :backend:depict --args="N[C@@H](C)C(=O)O --shape=circle --bond-length=70"
+ * ./gradlew :backend:depict --args="N[C@@H](C)C(=O)O --style=circles --bond-length=70"
  * }</pre>
  * Without an {@code --out} the document goes to standard output.
  */
@@ -48,7 +48,9 @@ public final class DepictSmiles
         String document;
         try
         {
-            destination = CommandOptions.of(arguments).get("out", STANDARD_OUTPUT);
+            CommandOptions options = CommandOptions.of(arguments);
+            options.validate("out");
+            destination = options.get("out", STANDARD_OUTPUT);
             document = render(arguments);
         }
         catch (IllegalArgumentException wrong)

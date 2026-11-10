@@ -19,7 +19,7 @@ import java.util.Set;
  * Run it through Gradle, e.g.
  * <pre>{@code
  * ./gradlew :backend:gallery
- * ./gradlew :backend:gallery --args="examples/molecules.csv --out-dir=out --shape=circle"
+ * ./gradlew :backend:gallery --args="examples/molecules.csv --out-dir=out --style=circles"
  * }</pre>
  */
 public final class DepictGallery
@@ -64,6 +64,7 @@ public final class DepictGallery
         try
         {
             options = CommandOptions.of(List.of(args));
+            options.validate("out-dir");
             list = Path.of(options.onlySubject("list of molecules"));
             directory = Path.of(options.get("out-dir", DEFAULT_DIRECTORY));
             entries = read(Files.readString(list, StandardCharsets.UTF_8));
