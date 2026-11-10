@@ -53,6 +53,9 @@ final class CommandOptions
         "style", "geometry", "hydrogens", "isotopes", "charges", "bond-length", "margin",
         "font-size", "background", "bond-colour", "bond-gradient", "colour", "metadata");
 
+    /** The settings which may take a Boolean value, whose presence with no value defaults to {@code true}. */
+    private static final Set<String> KNOWN_BOOLEAN = Set.of("isotopes", "charges", "bond-gradient", "metadata");
+
     /** The arguments that name something to draw. */
     private final List<String> subjects;
 
@@ -91,6 +94,13 @@ final class CommandOptions
             int split = body.indexOf('=');
             if (split < 1)
             {
+                // Boolean: defaults to true
+                if (KNOWN_BOOLEAN.contains(body))
+                {
+                    values.put(body, "true");
+                    continue;
+                }
+
                 throw new IllegalArgumentException("Option '" + argument + "' needs a value, as in --name=value");
             }
 
