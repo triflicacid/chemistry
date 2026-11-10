@@ -127,6 +127,17 @@ final class CommandOptions
     }
 
     /**
+     * @param layout an arrangement of parts, as {@code --layout} takes it
+     * @return these options, with that arrangement in place of any set already
+     */
+    CommandOptions withLayout(String layout)
+    {
+        Map<String, String> changed = new LinkedHashMap<>(values);
+        changed.put("layout", layout);
+        return new CommandOptions(subjects, changed);
+    }
+
+    /**
      * @return the arguments that name something to draw
      */
     List<String> subjects()

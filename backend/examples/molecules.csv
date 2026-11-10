@@ -1,4 +1,4 @@
-name,smiles,classes
+name,smiles,classes,layout
 
 # Classes (divided by ;): chain, branched, long, multiple, heteroatom, halogen, charged, ionic, isotope,
 # stereo, geometry (double bond configuration), fragments, organometallic, ring, aromatic, fused, spiro, bridged, substituted
@@ -357,6 +357,22 @@ ammonia-borane-pair,N.B,fragments;heteroatom
 salt-and-acid,[Na+].[Cl-].CC(=O)O,fragments;ionic;charged;multiple
 mixed-ions-trio,[K+].[NH4+].[Cl-],fragments;ionic;charged
 tripropylamine-hcl,CCCN(CCC)CCC.Cl,fragments;heteroatom;halogen;long
+
+# --- fragment layouts ---
+layout-ions-row,[Na+].[Cl-].[K+].[Br-].[Li+].[F-],fragments;ionic;charged,row
+layout-ions-column,[Na+].[Cl-].[K+].[Br-].[Li+].[F-],fragments;ionic;charged,column
+layout-ions-row-3,[Na+].[Cl-].[K+].[Br-].[Li+].[F-],fragments;ionic;charged,row:3
+layout-ions-column-2,[Na+].[Cl-].[K+].[Br-].[Li+].[F-],fragments;ionic;charged,column:2
+layout-grid-diamond,[Na+].[Cl-].[K+].[Br-],fragments;ionic;charged,grid:x xx x
+layout-grid-two-rows,[Na+].[Cl-].[K+].[Br-].[Li+].[F-],fragments;ionic;charged,grid:x x x / x xx x
+layout-grid-repeat,[Na+].[Cl-].[K+].[Br-].[Li+].[F-].[Mg+2],fragments;ionic;charged,grid:x x / x
+layout-grid-empty-corners,[Na+].[Cl-].[K+].[Br-].[Li+],fragments;ionic;charged,grid:. x . / x x x / . x .
+layout-grid-wide-top,[Na+].[Cl-].[K+].[Br-].[Li+],fragments;ionic;charged,grid:xxxx / x xx x
+layout-mixed-sizes-column,CCCCCCCC.O.[Na+].c1ccccc1,fragments;long;aromatic,column
+layout-mixed-sizes-grid,CCCCCCCC.O.[Na+].c1ccccc1,fragments;long;aromatic,grid:xx x / x x
+layout-salt-and-acid-grid,[Na+].[Cl-].CC(=O)O,fragments;ionic;charged;multiple,grid:x x / xx
+layout-three-methanes-column,C.C.C,fragments,column
+layout-four-methanes-square,C.C.C.C,fragments,row:2
 
 # --- single rings ---
 cyclopropane,C1CC1,ring

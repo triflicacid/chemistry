@@ -13,8 +13,10 @@ import java.util.Set;
 /**
  * Draws every molecule a list names.
  * <p>
- * The list is a comma separated file of {@code name,smiles,classes}, one molecule to a line.
+ * The list is a comma separated file of {@code name,smiles,classes,layout}, one molecule to a line.
  * The classes, such as {@code ring;aromatic}, are divided by semicolons and may be left out.
+ * The layout, such as {@code row:2} or {@code grid:x xx x}, arranges a disconnected molecule's parts in the
+ * way {@code --layout} does, and may be left out to use the command's own.
  * Each molecule is written to {@code <out-dir>/<name>.svg}.
  * {@code index.html} gathers them for viewing and filtering.
  * <p>
@@ -48,7 +50,8 @@ public final class DepictGallery
     static final String USAGE = """
         Usage: gallery <csv> [options]
 
-          <csv>                        a file of name,smiles,classes lines; classes are optional and divided by ;
+          <csv>                        a file of name,smiles,classes,layout lines; classes (divided by ;) and
+                                       layout are optional, and a layout overrides --layout for that molecule
           --out-dir=<path>             where the drawings go (default out)
         """ + CommandOptions.USAGE;
 
@@ -132,10 +135,10 @@ public final class DepictGallery
             }
 
             String name = trimmed.substring(0, split).trim();
-            String rest = trimmed.substring(split + 1);
-            int classSplit = rest.indexOf(SEPARATOR);
-            String smiles = (classSplit < 0 ? rest : rest.substring(0, classSplit)).trim();
-            List<String> classes = classSplit < 0 ? List.of() : classesOf(rest.substring(classSplit + 1));
+            String[] columns = trimmed.substring(split + 1).split(String.valueOf(SEPARATOR), 3);
+            String smiles = columns[0].trim();
+            List<String> classes = columns.length < 2 ? List.of() : classesOf(columns[1]);
+            String layout = columns.length < 3 ? "" : columns[2].trim();
             if (entries.isEmpty() && name.equalsIgnoreCase(HEADING))
             {
                 continue;
@@ -148,7 +151,7 @@ public final class DepictGallery
             {
                 throw new IllegalArgumentException("Line " + number + " names '" + name + "' a second time");
             }
-            entries.add(new Entry(name, smiles, classes));
+            entries.add(new Entry(name, smiles, classes, layout));
         }
         return entries;
     }
@@ -185,7 +188,8 @@ public final class DepictGallery
         {
             try
             {
-                drawings.add(new Drawing(entry, DepictSmiles.render(entry.smiles(), options), null));
+                CommandOptions own = entry.layout().isEmpty() ? options : options.withLayout(entry.layout());
+                drawings.add(new Drawing(entry, DepictSmiles.render(entry.smiles(), own), null));
             }
             catch (RuntimeException refused)
             {
@@ -370,9 +374,14 @@ public final class DepictGallery
      * @param name what it is called, which names its file too
      * @param smiles the molecule, written in SMILES
      * @param classes the classes it belongs to, such as {@code ring}, lower-cased
+     * @param layout how its parts are arranged, as {@code --layout} takes it, or empty to use the command's
      */
-    record Entry(String name, String smiles, List<String> classes)
+    record Entry(String name, String smiles, List<String> classes, String layout)
     {
+        Entry(String name, String smiles, List<String> classes)
+        {
+            this(name, smiles, classes, "");
+        }
     }
 
     /**
