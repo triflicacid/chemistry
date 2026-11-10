@@ -42,8 +42,20 @@ public final class MoleculeLayout
     /** How far a zig-zag chain turns at each atom. */
     private static final double ZIGZAG_TURN = 2 * Math.PI / 3;
 
+    /** The most neighbours an atom can have and still be drawn trigonal about a double bond. */
+    private static final int TRIGONAL_NEIGHBOURS = 3;
+
+    /** How close together, in bond lengths, two atoms have to be drawn to count as colliding. */
+    private static final double COLLISION_DISTANCE = 0.5;
+
+    /** How many directions a fan is tried in when spinning it clear of its surroundings. */
+    private static final int COLLISION_ROTATIONS = 24;
+
     /** How far off a bond a substituent has to be before it counts as being to one side of it. */
     private static final double COLLINEAR = 1e-9;
+
+    /** Where a ligand sits when the options leave it off the page altogether. */
+    private static final int UNDRAWN = -1;
 
     private final Molecule molecule;
     private final DepictionOptions options;
@@ -73,6 +85,9 @@ public final class MoleculeLayout
 
     /** The half-open range of placements belonging to each disconnected part of the molecule. */
     private final List<int[]> parts = new ArrayList<>();
+
+    /** Where the part being laid out starts in {@link #placements}. */
+    private int partStart;
 
     /**
      * @param molecule the molecule to lay out
@@ -185,6 +200,7 @@ public final class MoleculeLayout
     private void layOutPart(Atom root)
     {
         int start = placements.size();
+        partStart = start;
         place(root, Point.ORIGIN);
 
         Deque<Walk> pending = new ArrayDeque<>();
@@ -210,7 +226,7 @@ public final class MoleculeLayout
         Point centre = positions[index];
 
         List<Bond> children = childBondsOf(atom, walk.parent());
-        int hydrogens = options.explicitHydrogens() ? molecule.totalHydrogenCount(atom) : 0;
+        int hydrogens = options.hydrogens().isSeparate() ? molecule.totalHydrogenCount(atom) : 0;
         int slots = children.size() + hydrogens;
         if (slots == 0)
         {
@@ -219,6 +235,7 @@ public final class MoleculeLayout
 
         double[] directions = directionsFor(walk, slots, children);
         directions = honourConfiguration(walk, directions, children, hydrogens);
+        directions = avoidCollisions(walk, centre, directions, children);
 
         for (int child = 0; child < children.size(); child++)
         {
@@ -281,7 +298,7 @@ public final class MoleculeLayout
         int next = 0;
         if (!children.isEmpty())
         {
-            double onwards = back + continuationTurn(walk, children.getFirst().order());
+            double onwards = back + continuationTurn(walk, children.getFirst().order(), slots + 1);
             fixed.add(onwards);
             directions[next++] = onwards;
         }
@@ -296,9 +313,10 @@ public final class MoleculeLayout
     /**
      * @param walk the atom being expanded, and how the walk arrived at it
      * @param onwards the order of the bond the chain carries on along
+     * @param neighbours how many atoms are bonded to this one, the one walked in from included
      * @return the angle between the bond the walk arrived on and the bond it carries on along
      */
-    private double continuationTurn(Walk walk, BondOrder onwards)
+    private double continuationTurn(Walk walk, BondOrder onwards, int neighbours)
     {
         BondOrder arrived = walk.parentBond().order();
 
@@ -308,9 +326,16 @@ public final class MoleculeLayout
             return STRAIGHT_TURN;
         }
 
-        // an atom a single double bond ends at is trigonal, and has to be drawn so for its
-        // substituents to fall to one side of that bond or the other
-        if (isTrigonal(arrived) || isTrigonal(onwards) || options.chainGeometry() == ChainGeometry.ZIGZAG)
+        // an atom with three neighbours is trigonal, as is one a single double bond ends at, and
+        // both are drawn with their bonds fanned evenly about them; an atom with more neighbours
+        // than that is better off carrying the chain straight on and spreading the rest around it
+        if (neighbours == TRIGONAL_NEIGHBOURS
+            || (neighbours < TRIGONAL_NEIGHBOURS && (isTrigonal(arrived) || isTrigonal(onwards))))
+        {
+            return walk.zigzagSign() * ZIGZAG_TURN;
+        }
+
+        if (options.chainGeometry() == ChainGeometry.ZIGZAG)
         {
             return walk.zigzagSign() * ZIGZAG_TURN;
         }
@@ -324,6 +349,206 @@ public final class MoleculeLayout
     private static boolean isTrigonal(BondOrder order)
     {
         return order == BondOrder.DOUBLE || order == BondOrder.AROMATIC;
+    }
+
+    /**
+     * Spins an atom's free neighbours about it, where they would otherwise land on top of
+     * something already drawn.
+     * <p>
+     * Only the neighbours shared out into whatever room is left over move; the bond the walk
+     * arrived along, and the one the chain carries on down, stay where they were put. An atom
+     * whose neighbours have been placed to honour a declared configuration is left alone
+     * altogether, so that spinning them cannot undo it.
+     *
+     * @param walk the atom being expanded, and how the walk arrived at it
+     * @param centre where the atom sits
+     * @param directions the directions its neighbours would sit in
+     * @param children the bonds to the neighbours still to be placed
+     * @return the directions to use
+     */
+    private double[] avoidCollisions(Walk walk, Point centre, double[] directions, List<Bond> children)
+    {
+        int free = firstFreeSlot(walk, children);
+        if (free >= directions.length || declaresConfiguration(walk))
+        {
+            return directions;
+        }
+
+        double[] radii = new double[directions.length];
+        for (int slot = 0; slot < radii.length; slot++)
+        {
+            radii[slot] = slot < children.size() ? Depiction.BOND_LENGTH : Depiction.HYDROGEN_BOND_LENGTH;
+        }
+
+        List<Point> occupied = occupiedAround(centre, directions, radii, free);
+        List<Point[]> drawn = segmentsAround(centre, directions, radii, free);
+        double best = clearance(centre, directions, radii, free, occupied, drawn, 0);
+        if (best >= COLLISION_DISTANCE)
+        {
+            return directions;
+        }
+
+        double spin = 0;
+        for (int step = 1; step <= COLLISION_ROTATIONS / 2; step++)
+        {
+            for (int sign = 1; sign >= -1; sign -= 2)
+            {
+                double offset = sign * step * 2 * Math.PI / COLLISION_ROTATIONS;
+                double gained = clearance(centre, directions, radii, free, occupied, drawn, offset);
+                if (gained > best + COLLINEAR)
+                {
+                    best = gained;
+                    spin = offset;
+                }
+            }
+        }
+
+        if (spin == 0)
+        {
+            return directions;
+        }
+
+        double[] spun = directions.clone();
+        for (int slot = free; slot < spun.length; slot++)
+        {
+            spun[slot] = AngleFan.normalise(spun[slot] + spin);
+        }
+        return spun;
+    }
+
+    /**
+     * @param walk the atom being expanded, and how the walk arrived at it
+     * @param children the bonds to the neighbours still to be placed
+     * @return the first slot whose direction was shared out rather than fixed
+     */
+    private static int firstFreeSlot(Walk walk, List<Bond> children)
+    {
+        return walk.parent() != null && !children.isEmpty() ? 1 : 0;
+    }
+
+    /**
+     * @param walk the atom being expanded, and how the walk arrived at it
+     * @return whether the bond the walk arrived along declares a configuration
+     */
+    private boolean declaresConfiguration(Walk walk)
+    {
+        Atom parent = walk.parent();
+        return parent != null
+            && configurations.containsKey(StereoDeclaration.DoubleBond.pairKey(indexOf(parent), indexOf(walk.atom())));
+    }
+
+    /**
+     * @param centre where the atom being expanded sits
+     * @param directions the directions its neighbours would sit in
+     * @param radii how far along each of those directions its neighbours sit
+     * @param free the first slot whose direction can still move
+     * @return every atom of this part of the molecule that is already drawn, the neighbours whose
+     *     directions are fixed included, but not the atom being expanded itself
+     */
+    private List<Point> occupiedAround(Point centre, double[] directions, double[] radii, int free)
+    {
+        List<Point> occupied = new ArrayList<>();
+        for (int placement = partStart; placement < placements.size(); placement++)
+        {
+            Point position = placements.get(placement).position();
+            if (position.distanceTo(centre) > COLLINEAR)
+            {
+                occupied.add(position);
+            }
+        }
+        for (int slot = 0; slot < free; slot++)
+        {
+            occupied.add(centre.plus(Point.polar(directions[slot], radii[slot])));
+        }
+        return occupied;
+    }
+
+    /**
+     * @param centre where the atom being expanded sits
+     * @param directions the directions its neighbours would sit in
+     * @param radii how far along each of those directions its neighbours sit
+     * @param free the first slot whose direction can still move
+     * @return every bond of this part of the molecule that is already drawn, the bonds to the
+     *     neighbours whose directions are fixed included
+     */
+    private List<Point[]> segmentsAround(Point centre, double[] directions, double[] radii, int free)
+    {
+        List<Point[]> drawn = new ArrayList<>();
+        for (BondPlacement bond : bonds)
+        {
+            if (bond.first() >= partStart)
+            {
+                drawn.add(new Point[] {placements.get(bond.first()).position(), placements.get(bond.second()).position()});
+            }
+        }
+        for (int slot = 0; slot < free; slot++)
+        {
+            drawn.add(new Point[] {centre, centre.plus(Point.polar(directions[slot], radii[slot]))});
+        }
+        return drawn;
+    }
+
+    /**
+     * Measures how much room a fan would have if it were spun round.
+     * <p>
+     * A neighbour needs clear space both from the atoms already drawn and from the bonds between
+     * them, and the bond drawn out to it needs clear space from those same atoms, since a bond
+     * running under a symbol reads no better than two symbols on top of one another.
+     *
+     * @param centre where the atom being expanded sits
+     * @param directions the directions its neighbours would sit in
+     * @param radii how far along each of those directions its neighbours sit
+     * @param free the first slot whose direction can still move
+     * @param occupied the atoms already drawn
+     * @param drawn the bonds already drawn
+     * @param offset how far to spin the free directions round first
+     * @return how close the tightest of them would come to anything already drawn
+     */
+    private static double clearance(
+        Point centre,
+        double[] directions,
+        double[] radii,
+        int free,
+        List<Point> occupied,
+        List<Point[]> drawn,
+        double offset)
+    {
+        double closest = Double.MAX_VALUE;
+        for (int slot = free; slot < directions.length; slot++)
+        {
+            Point point = centre.plus(Point.polar(directions[slot] + offset, radii[slot]));
+            for (Point taken : occupied)
+            {
+                closest = Math.min(closest, point.distanceTo(taken));
+                closest = Math.min(closest, distanceToSegment(taken, centre, point));
+            }
+            for (Point[] bond : drawn)
+            {
+                closest = Math.min(closest, distanceToSegment(point, bond[0], bond[1]));
+            }
+        }
+        return closest;
+    }
+
+    /**
+     * @param point the point to measure from
+     * @param from one end of the line
+     * @param to the other end of the line
+     * @return how far {@code point} lies from the nearest point of the line between them
+     */
+    private static double distanceToSegment(Point point, Point from, Point to)
+    {
+        Point along = to.minus(from);
+        double length = along.x() * along.x() + along.y() * along.y();
+        if (length <= COLLINEAR)
+        {
+            return point.distanceTo(from);
+        }
+
+        Point offset = point.minus(from);
+        double fraction = (offset.x() * along.x() + offset.y() * along.y()) / length;
+        double clamped = Math.max(0, Math.min(1, fraction));
+        return point.distanceTo(from.plus(along.scale(clamped)));
     }
 
     /**
@@ -486,7 +711,7 @@ public final class MoleculeLayout
      */
     private void placeHydrogens(Atom atom, int index, Point centre, double[] directions, int from)
     {
-        if (!options.explicitHydrogens())
+        if (!options.hydrogens().isSeparate())
         {
             return;
         }
@@ -499,8 +724,8 @@ public final class MoleculeLayout
             OptionalInt isotope = massNumber > 1 ? OptionalInt.of(massNumber) : OptionalInt.empty();
             for (int count = 0; count < nuclide.getValue(); count++)
             {
-                Point position = centre.plus(Point.polar(directions[slot++], Depiction.BOND_LENGTH));
-                int placement = addPlacement("H", isotope, 0, false, OptionalInt.empty(), position);
+                Point position = centre.plus(Point.polar(directions[slot++], Depiction.HYDROGEN_BOND_LENGTH));
+                int placement = addPlacement("H", isotope, 0, 0, false, OptionalInt.empty(), position);
                 hydrogensOfAtom.get(index).add(placement);
                 addBond(placementOfAtom[index], placement, BondOrder.SINGLE);
             }
@@ -526,7 +751,7 @@ public final class MoleculeLayout
     /**
      * @param declaration the parity to draw
      * @param degrees how many bonds each placement has
-     * @throws IllegalArgumentException if a ligand is a hydrogen the options leave undrawn
+     * @throws IllegalArgumentException if a ligand is a hydrogen that cannot be made sense of
      * @throws IllegalStateException if no bond can be drawn out of the plane to show the parity
      */
     private void applyParity(StereoDeclaration.Tetrahedral declaration, int[] degrees)
@@ -537,16 +762,36 @@ public final class MoleculeLayout
 
         int[] ligands = new int[Parity.LIGANDS];
         List<Point> ligandPositions = new ArrayList<>(Parity.LIGANDS);
+        int undrawn = -1;
         for (int ligand = 0; ligand < Parity.LIGANDS; ligand++)
         {
             ligands[ligand] = placementOfLigand(centreAtom, declaration.ligands()[ligand]);
-            ligandPositions.add(placements.get(ligands[ligand]).position());
+            if (ligands[ligand] == UNDRAWN)
+            {
+                // an undrawn hydrogen is read as sitting behind the stereocentre itself
+                undrawn = ligand;
+                ligandPositions.add(position);
+            }
+            else
+            {
+                ligandPositions.add(placements.get(ligands[ligand]).position());
+            }
         }
 
         for (int candidate : wedgeOrder(ligands, degrees))
         {
+            if (ligands[candidate] == UNDRAWN)
+            {
+                continue;
+            }
+
             double[] depths = new double[Parity.LIGANDS];
             depths[candidate] = Parity.depthOf(BondStyle.WEDGE);
+            if (undrawn >= 0)
+            {
+                // the hydrogen nobody drew lies on the far side of the page from the bond that leaves it
+                depths[undrawn] = -depths[candidate];
+            }
 
             Optional<Chirality> drawn = Parity.read(position, ligandPositions, depths);
             // a candidate whose arrangement reads flat says nothing either way, so try the next
@@ -566,8 +811,9 @@ public final class MoleculeLayout
      * @param centreAtom the stereocentre's atom index
      * @param ligand one of its ligands, as a {@link Molecule#atoms()} index or
      *     {@link StereoDeclaration#IMPLICIT_HYDROGEN}
-     * @return the placement of that ligand
-     * @throws IllegalArgumentException if the ligand is a hydrogen that was not drawn
+     * @return the placement of that ligand, or {@link #UNDRAWN} where it is a hydrogen the options
+     *     gather into a label or leave out
+     * @throws IllegalArgumentException if the ligand is a hydrogen that cannot be made sense of
      */
     private int placementOfLigand(int centreAtom, int ligand)
     {
@@ -577,6 +823,10 @@ public final class MoleculeLayout
         }
 
         List<Integer> hydrogens = hydrogensOfAtom.get(centreAtom);
+        if (hydrogens.isEmpty() && !options.hydrogens().isSeparate())
+        {
+            return UNDRAWN;
+        }
         if (hydrogens.size() != 1)
         {
             throw new IllegalArgumentException("Atom " + centreAtom + " declares a parity about its implicit hydrogen,"
@@ -612,6 +862,11 @@ public final class MoleculeLayout
      */
     private int rankAsWedge(int placement, int[] degrees)
     {
+        if (placement == UNDRAWN)
+        {
+            // a ligand with no bond on the page cannot carry the one that leaves it
+            return Integer.MAX_VALUE;
+        }
         if (placements.get(placement).isGeneratedHydrogen())
         {
             return 0;
@@ -688,8 +943,9 @@ public final class MoleculeLayout
         int index = indexOf(atom);
         placed[index] = true;
         positions[index] = position;
+        int condensed = options.hydrogens() == HydrogenStyle.CONDENSED ? molecule.totalHydrogenCount(atom) : 0;
         placementOfAtom[index] = addPlacement(
-            atom.element(), atom.isotope(), atom.charge(), atom.aromatic(), OptionalInt.of(index), position);
+            atom.element(), atom.isotope(), atom.charge(), condensed, atom.aromatic(), OptionalInt.of(index), position);
         return placementOfAtom[index];
     }
 
@@ -697,15 +953,16 @@ public final class MoleculeLayout
      * @param element the canonical element symbol
      * @param isotope the mass number to label the atom with, or empty to leave it unlabelled
      * @param charge the net formal charge
+     * @param hydrogens how many hydrogens are gathered into the atom's own label
      * @param aromatic whether the atom is aromatic
      * @param sourceAtom the molecule atom it came from, or empty for a made-up hydrogen
      * @param position where to put it
      * @return its placement index
      */
-    private int addPlacement(String element, OptionalInt isotope, int charge, boolean aromatic, OptionalInt sourceAtom, Point position)
+    private int addPlacement(String element, OptionalInt isotope, int charge, int hydrogens, boolean aromatic, OptionalInt sourceAtom, Point position)
     {
         int index = placements.size();
-        placements.add(new AtomPlacement(index, element, isotope, charge, aromatic, sourceAtom, position));
+        placements.add(new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, sourceAtom, position));
         return index;
     }
 

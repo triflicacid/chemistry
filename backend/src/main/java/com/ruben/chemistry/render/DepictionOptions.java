@@ -6,17 +6,17 @@ import java.util.Objects;
  * Settings for a {@link MoleculeLayout}.
  *
  * @param chainGeometry how a chain of bonded atoms carries on through an atom
- * @param explicitHydrogens whether an atom's hydrogens are drawn as atoms of their own, rather
- *     than left to be written into the atom's own label
+ * @param hydrogens how an atom's hydrogens are drawn
  */
-public record DepictionOptions(ChainGeometry chainGeometry, boolean explicitHydrogens)
+public record DepictionOptions(ChainGeometry chainGeometry, HydrogenStyle hydrogens)
 {
     /**
-     * @throws NullPointerException if {@code chainGeometry} is {@code null}
+     * @throws NullPointerException if either setting is {@code null}
      */
     public DepictionOptions
     {
         Objects.requireNonNull(chainGeometry, "chainGeometry");
+        Objects.requireNonNull(hydrogens, "hydrogens");
     }
 
     /**
@@ -24,7 +24,7 @@ public record DepictionOptions(ChainGeometry chainGeometry, boolean explicitHydr
      */
     public static DepictionOptions defaults()
     {
-        return new DepictionOptions(ChainGeometry.STRAIGHT, true);
+        return new DepictionOptions(ChainGeometry.STRAIGHT, HydrogenStyle.SEPARATE);
     }
 
     /**
@@ -33,15 +33,15 @@ public record DepictionOptions(ChainGeometry chainGeometry, boolean explicitHydr
      */
     public DepictionOptions withChainGeometry(ChainGeometry chainGeometry)
     {
-        return new DepictionOptions(chainGeometry, explicitHydrogens);
+        return new DepictionOptions(chainGeometry, hydrogens);
     }
 
     /**
-     * @param explicitHydrogens whether hydrogens are drawn as atoms of their own
-     * @return these options, with that choice
+     * @param hydrogens how an atom's hydrogens are drawn
+     * @return these options, with that style
      */
-    public DepictionOptions withExplicitHydrogens(boolean explicitHydrogens)
+    public DepictionOptions withHydrogens(HydrogenStyle hydrogens)
     {
-        return new DepictionOptions(chainGeometry, explicitHydrogens);
+        return new DepictionOptions(chainGeometry, hydrogens);
     }
 }

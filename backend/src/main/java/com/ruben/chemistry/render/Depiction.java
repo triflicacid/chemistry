@@ -17,6 +17,12 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds)
     public static final double BOND_LENGTH = 1.0;
 
     /**
+     * The distance between an atom and a hydrogen hanging off it, drawn shorter than
+     * {@link #BOND_LENGTH} so that a crowded atom's hydrogens stay clear of its other bonds.
+     */
+    public static final double HYDROGEN_BOND_LENGTH = 0.7;
+
+    /**
      * @throws NullPointerException if either list is {@code null}
      * @throws IllegalArgumentException if an atom is out of index order, or a bond refers to an atom that is not there
      */

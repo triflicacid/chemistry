@@ -39,6 +39,16 @@ class MoleculeLayoutTest
     }
 
     /**
+     * @param smiles a molecule
+     * @param hydrogens how its hydrogens should be drawn
+     * @return it laid out that way
+     */
+    private static Depiction depict(String smiles, HydrogenStyle hydrogens)
+    {
+        return MoleculeLayout.layout(parse(smiles), DepictionOptions.defaults().withHydrogens(hydrogens));
+    }
+
+    /**
      * @param depiction a layout
      * @param atom the index of one of the laid-out molecule's own atoms
      * @return where that atom was placed
@@ -213,15 +223,19 @@ class MoleculeLayoutTest
         }
 
         @Test
-        void draws_every_bond_one_bond_length_long()
+        void draws_a_bond_one_bond_length_long_and_holds_a_hydrogen_closer_in()
         {
             Depiction depiction = depict("CC(C)C(=O)O");
 
             for (BondPlacement bond : depiction.bonds())
             {
-                double length = depiction.atom(bond.first()).position()
-                    .distanceTo(depiction.atom(bond.second()).position());
-                assertThat(length).isCloseTo(Depiction.BOND_LENGTH, within(TOLERANCE));
+                AtomPlacement first = depiction.atom(bond.first());
+                AtomPlacement second = depiction.atom(bond.second());
+                double expected = first.isGeneratedHydrogen() || second.isGeneratedHydrogen()
+                    ? Depiction.HYDROGEN_BOND_LENGTH
+                    : Depiction.BOND_LENGTH;
+
+                assertThat(first.position().distanceTo(second.position())).isCloseTo(expected, within(TOLERANCE));
             }
         }
 
@@ -307,7 +321,7 @@ class MoleculeLayoutTest
         void leaves_hydrogens_out_when_asked()
         {
             Depiction depiction = MoleculeLayout.layout(
-                parse("CCO"), DepictionOptions.defaults().withExplicitHydrogens(false));
+                parse("CCO"), DepictionOptions.defaults().withHydrogens(HydrogenStyle.NONE));
 
             assertThat(depiction.atoms()).hasSize(3)
                 .allMatch(placement -> placement.sourceAtom().isPresent());
@@ -393,9 +407,9 @@ class MoleculeLayoutTest
         {
             Depiction depiction = depict("C.C");
 
-            // each methane is two bond lengths wide, and the two are set a gap apart
-            assertAt(positionOf(depiction, 0), 1, 0);
-            assertAt(positionOf(depiction, 1), 4.5, 0);
+            // each methane is two short hydrogen bonds wide, and the two are set a gap apart
+            assertAt(positionOf(depiction, 0), 0.7, 0);
+            assertAt(positionOf(depiction, 1), 3.6, 0);
         }
     }
 
@@ -445,13 +459,46 @@ class MoleculeLayoutTest
         }
 
         @Test
-        void rejects_a_parity_whose_hydrogen_it_was_told_not_to_draw()
+        void draws_a_parity_whose_hydrogen_it_was_told_not_to_draw_on_another_ligand_instead()
         {
-            Molecule alanine = parse("N[C@@H](C)C(=O)O");
-            DepictionOptions options = DepictionOptions.defaults().withExplicitHydrogens(false);
+            Depiction depiction = depict("N[C@@H](C)C(=O)O", HydrogenStyle.NONE);
 
-            assertThatThrownBy(() -> MoleculeLayout.layout(alanine, options))
-                .isInstanceOf(IllegalArgumentException.class);
+            assertThat(depiction.bonds()).filteredOn(bond -> bond.style().isStereo()).hasSize(1);
+            assertThat(depiction.atoms()).noneMatch(AtomPlacement::isGeneratedHydrogen);
+        }
+
+        @Test
+        void turns_that_bond_over_when_the_parity_turns_over()
+        {
+            for (HydrogenStyle hydrogens : List.of(HydrogenStyle.NONE, HydrogenStyle.CONDENSED))
+            {
+                BondStyle clockwise = stereoStyleOf("N[C@@H](C)C(=O)O", hydrogens);
+                BondStyle anticlockwise = stereoStyleOf("N[C@H](C)C(=O)O", hydrogens);
+
+                assertThat(List.of(clockwise, anticlockwise)).containsExactlyInAnyOrder(BondStyle.WEDGE, BondStyle.HASH);
+            }
+        }
+
+        @Test
+        void draws_the_same_arrangement_whether_or_not_the_hydrogen_is_drawn()
+        {
+            Depiction shown = depict("N[C@@H](C)C(=O)O", HydrogenStyle.SEPARATE);
+            Depiction hidden = depict("N[C@@H](C)C(=O)O", HydrogenStyle.NONE);
+
+            assertThat(shown.bonds()).filteredOn(bond -> bond.style().isStereo()).hasSize(1);
+            assertThat(hidden.bonds()).filteredOn(bond -> bond.style().isStereo()).hasSize(1);
+        }
+
+        @Test
+        void turns_an_undrawn_hydrogens_stereocentre_over_when_the_parity_turns_over()
+        {
+            for (HydrogenStyle hydrogens : List.of(HydrogenStyle.NONE, HydrogenStyle.CONDENSED))
+            {
+                BondStyle clockwise = stereoStyleOf("N[C@@H](C)C(=O)O", hydrogens);
+                BondStyle anticlockwise = stereoStyleOf("N[C@H](C)C(=O)O", hydrogens);
+
+                assertThat(List.of(clockwise, anticlockwise)).containsExactlyInAnyOrder(BondStyle.WEDGE, BondStyle.HASH);
+            }
         }
 
         /**
@@ -460,7 +507,17 @@ class MoleculeLayoutTest
          */
         private static BondStyle stereoStyleOf(String smiles)
         {
-            return depict(smiles).bonds().stream()
+            return stereoStyleOf(smiles, HydrogenStyle.SEPARATE);
+        }
+
+        /**
+         * @param smiles a molecule with exactly one stereo bond
+         * @param hydrogens how its hydrogens should be drawn
+         * @return how that bond leaves the plane of the page
+         */
+        private static BondStyle stereoStyleOf(String smiles, HydrogenStyle hydrogens)
+        {
+            return depict(smiles, hydrogens).bonds().stream()
                 .map(BondPlacement::style)
                 .filter(BondStyle::isStereo)
                 .findFirst()

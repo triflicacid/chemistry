@@ -13,6 +13,8 @@ import java.util.OptionalInt;
  * @param element the canonical element symbol, e.g. {@code "C"}, {@code "Cl"}, or {@code "*"} for a wildcard atom
  * @param isotope the mass number to label this atom with, or empty to leave it unlabelled
  * @param charge the net formal charge, {@code 0} if uncharged
+ * @param hydrogens how many hydrogens are gathered into this atom's own label, as
+ *     {@link HydrogenStyle#CONDENSED} does, rather than drawn as atoms of their own
  * @param aromatic whether this atom is aromatic
  * @param sourceAtom the index of the {@link Molecule#atoms() molecule atom} this came from, or empty if it is a hydrogen the depiction made up
  * @param position where this atom sits, in depiction space
@@ -22,13 +24,14 @@ public record AtomPlacement(
     String element,
     OptionalInt isotope,
     int charge,
+    int hydrogens,
     boolean aromatic,
     OptionalInt sourceAtom,
     Point position)
 {
     /**
      * @throws NullPointerException if any reference component is {@code null}
-     * @throws IllegalArgumentException if {@code index} is negative
+     * @throws IllegalArgumentException if {@code index} or {@code hydrogens} is negative
      */
     public AtomPlacement
     {
@@ -40,6 +43,32 @@ public record AtomPlacement(
         {
             throw new IllegalArgumentException("Atom placement index cannot be negative, but was " + index);
         }
+        if (hydrogens < 0)
+        {
+            throw new IllegalArgumentException("An atom cannot carry " + hydrogens + " hydrogens");
+        }
+    }
+
+    /**
+     * @param index this placement's own index within its depiction
+     * @param element the canonical element symbol
+     * @param isotope the mass number to label this atom with, or empty to leave it unlabelled
+     * @param charge the net formal charge
+     * @param aromatic whether this atom is aromatic
+     * @param sourceAtom the molecule atom this came from, or empty for a made-up hydrogen
+     * @param position where this atom sits
+     * @return that atom, carrying no hydrogens in its own label
+     */
+    public static AtomPlacement of(
+        int index,
+        String element,
+        OptionalInt isotope,
+        int charge,
+        boolean aromatic,
+        OptionalInt sourceAtom,
+        Point position)
+    {
+        return new AtomPlacement(index, element, isotope, charge, 0, aromatic, sourceAtom, position);
     }
 
     /**
@@ -56,6 +85,6 @@ public record AtomPlacement(
      */
     public AtomPlacement at(Point position)
     {
-        return new AtomPlacement(index, element, isotope, charge, aromatic, sourceAtom, position);
+        return new AtomPlacement(index, element, isotope, charge, hydrogens, aromatic, sourceAtom, position);
     }
 }
