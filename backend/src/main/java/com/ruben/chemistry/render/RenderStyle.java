@@ -36,6 +36,8 @@ public final class RenderStyle
     private final boolean metadata;
     private final FragmentArrangement fragmentArrangement;
     private final double fragmentGap;
+    private final CellAlignment gridAlignment;
+    private final boolean debugLayout;
 
     /**
      * @param builder the builder holding the settings to take
@@ -66,6 +68,8 @@ public final class RenderStyle
         this.hashSpacing = builder.hashSpacing;
         this.fragmentArrangement = builder.fragmentArrangement;
         this.fragmentGap = builder.fragmentGap;
+        this.gridAlignment = builder.gridAlignment;
+        this.debugLayout = builder.debugLayout;
     }
 
     /**
@@ -112,7 +116,9 @@ public final class RenderStyle
             .hashSpacing(hashSpacing)
             .metadata(metadata)
             .fragmentArrangement(fragmentArrangement)
-            .fragmentGap(fragmentGap);
+            .fragmentGap(fragmentGap)
+            .gridAlignment(gridAlignment)
+            .debugLayout(debugLayout);
         colours.forEach(builder::colour);
         return builder;
     }
@@ -325,6 +331,23 @@ public final class RenderStyle
     }
 
     /**
+     * @return whether the layout of disconnected parts is outlined (each part's box and the grid cell
+     *     it sits in), for debugging
+     */
+    public boolean debugLayout()
+    {
+        return debugLayout;
+    }
+
+    /**
+     * @return where a part sits sideways within the cell, or span of cells, it is given
+     */
+    public CellAlignment gridAlignment()
+    {
+        return gridAlignment;
+    }
+
+    /**
      * Collects the settings for a {@link RenderStyle}, starting from the defaults.
      */
     public static final class Builder
@@ -354,6 +377,8 @@ public final class RenderStyle
         private boolean metadata = false;
         private FragmentArrangement fragmentArrangement = FragmentArrangement.ROW;
         private double fragmentGap = 30;
+        private CellAlignment gridAlignment = CellAlignment.CENTRE;
+        private boolean debugLayout = false;
 
         private Builder()
         {
@@ -377,6 +402,26 @@ public final class RenderStyle
         public Builder fragmentArrangement(FragmentArrangement fragmentArrangement)
         {
             this.fragmentArrangement = Objects.requireNonNull(fragmentArrangement, "fragmentArrangement");
+            return this;
+        }
+
+        /**
+         * @param gridAlignment where a part sits sideways within the cell, or span of cells, it is given
+         * @return this builder, for chaining
+         */
+        public Builder gridAlignment(CellAlignment gridAlignment)
+        {
+            this.gridAlignment = Objects.requireNonNull(gridAlignment, "gridAlignment");
+            return this;
+        }
+
+        /**
+         * @param debugLayout whether to outline each disconnected part's box and the grid cell it sits in
+         * @return this builder, for chaining
+         */
+        public Builder debugLayout(boolean debugLayout)
+        {
+            this.debugLayout = debugLayout;
             return this;
         }
 

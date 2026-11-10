@@ -2,6 +2,7 @@ package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.render.AtomShape;
 import com.ruben.chemistry.render.ChainGeometry;
+import com.ruben.chemistry.render.CellAlignment;
 import com.ruben.chemistry.render.Colour;
 import com.ruben.chemistry.render.DepictionOptions;
 import com.ruben.chemistry.render.FragmentArrangement;
@@ -32,11 +33,19 @@ final class CommandOptions
                                        drawing (default text)
           --geometry=straight|zigzag   how a chain of single bonds runs (default straight, zigzag
                                        under --style=skeletal)
-          --layout=row|column|row:<n>|column:<n>
+          --layout=row|column|row:<n>|column:<n>|grid:<template>
                                        how the parts of a disconnected molecule are arranged: in
-                                       one row or column, in rows (or columns) of n parts
-                                       (default row)
+                                       one row or column, in rows (or columns) of n parts, or in a
+                                       grid: rows split by /, cells by spaces, a run of x a
+                                       part whose width is the run's length (so "x xx x" gives
+                                       the middle part double), a run of . an empty cell, e.g.
+                                       "grid:x x x / x xx x"; the last row repeats for any
+                                       parts left over (default row)
+          --grid-align=left|centre|right
+                                       where a part sits sideways in its cell (default centre)
           --fragment-gap=<px>          how many pixels of empty space lie between parts (default 30)
+          --debug-layout=true|false    outline each part's box (red, dashed) and the grid cell it
+                                       sits in (blue), for debugging layouts
           --hydrogens=separate|condensed|none
                                        whether hydrogens are drawn as atoms of their own, gathered
                                        into the symbol they hang off, or left out (default separate)
@@ -57,10 +66,11 @@ final class CommandOptions
     /** The settings this class itself understands; a command adds whatever else it takes. */
     private static final Set<String> KNOWN = Set.of(
         "style", "geometry", "layout", "hydrogens", "isotopes", "charges", "bond-length", "margin",
-        "font-size", "fragment-gap", "background", "bond-colour", "bond-gradient", "colour", "metadata");
+        "font-size", "fragment-gap", "grid-align", "background", "bond-colour", "bond-gradient", "colour", "metadata",
+        "debug-layout");
 
     /** The settings which may take a Boolean value, whose presence with no value defaults to {@code true}. */
-    private static final Set<String> KNOWN_BOOLEAN = Set.of("isotopes", "charges", "bond-gradient", "metadata");
+    private static final Set<String> KNOWN_BOOLEAN = Set.of("isotopes", "charges", "bond-gradient", "metadata", "debug-layout");
 
     /** The arguments that name something to draw. */
     private final List<String> subjects;
@@ -264,7 +274,8 @@ final class CommandOptions
             .isotopes(flag("isotopes", true))
             .charges(flag("charges", true))
             .bondGradient(flag("bond-gradient", false))
-            .metadata(flag("metadata", false));
+            .metadata(flag("metadata", false))
+            .debugLayout(flag("debug-layout", false));
 
         if (values.containsKey("bond-length"))
         {
@@ -277,6 +288,13 @@ final class CommandOptions
         if (values.containsKey("fragment-gap"))
         {
             style.fragmentGap(number("fragment-gap"));
+        }
+        if (values.containsKey("grid-align"))
+        {
+            String align = values.get("grid-align");
+            style.gridAlignment(align.equalsIgnoreCase("center")
+                ? CellAlignment.CENTRE
+                : choice("grid-align", CellAlignment.class, CellAlignment.CENTRE));
         }
         if (values.containsKey("margin"))
         {

@@ -790,6 +790,36 @@ class SvgRendererTest
 
             assertThat(sizeOf(FIVE_IONS, large)[0]).isGreaterThan(sizeOf(FIVE_IONS, small)[0] + 100);
         }
+
+        @Test
+        void a_grid_is_as_wide_as_its_widest_row()
+        {
+            double[] row = sizeOf(FIVE_IONS, arranged("row"));
+            double[] pair = sizeOf("[Na+].[Cl-]", arranged("row"));
+            double[] grid = sizeOf(FIVE_IONS, arranged("grid:x x / x x x"));
+
+            assertThat(grid[0]).isLessThan(row[0]);
+            assertThat(grid[0]).isGreaterThan(pair[0]);
+            assertThat(grid[1]).isGreaterThan(row[1]);
+        }
+
+        @Test
+        void a_heavier_cell_makes_a_row_wider_as_its_neighbours_get_a_smaller_share()
+        {
+            double[] even = sizeOf("[Na+].[Cl-].[K+]", arranged("grid:x x x"));
+            double[] weighted = sizeOf("[Na+].[Cl-].[K+]", arranged("grid:x xx x"));
+
+            assertThat(weighted[0]).isGreaterThan(even[0]);
+        }
+
+        @Test
+        void rows_are_stretched_to_the_same_width()
+        {
+            double[] short_ = sizeOf("[Na+].[Cl-].[K+]", arranged("grid:x x / x"));
+            double[] aligned = sizeOf("[Na+].[Cl-].[K+]", arranged("grid:x x / x x"));
+
+            assertThat(short_[0]).isEqualTo(aligned[0]);
+        }
     }
 
     /**

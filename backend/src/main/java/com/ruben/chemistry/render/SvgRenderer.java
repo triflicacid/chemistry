@@ -3,6 +3,7 @@ package com.ruben.chemistry.render;
 import com.ruben.chemistry.core.BondOrder;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -10,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -85,6 +87,9 @@ public final class SvgRenderer
 
     /** How many gradients have been written, which is what keeps their names apart. */
     private int gradients;
+
+    /** The cell each part was given, as {minX, minY, maxX, maxY} in depiction space; kept for debugging. */
+    private final List<double[]> cells = new ArrayList<>();
 
     /**
      * @param depiction the depiction to draw
@@ -165,17 +170,108 @@ public final class SvgRenderer
             box[3] = Math.max(box[3], at.y() + reach);
         }
 
-        // size the grid
-        int columns = 0;
+        double gap = style.fragmentGap() / scale;
+        // how far to move each fragment, as {dx, dy}
+        double[][] offset = switch (arrangement)
+        {
+            case FragmentArrangement.WeightedGrid grid -> offsetsInRows(grid, extent, gap);
+            case FragmentArrangement.Lines lines -> offsetsInTracks(lines, extent, gap);
+        };
+
+        List<AtomPlacement> moved = new ArrayList<>(local.atoms().size());
+        for (AtomPlacement atom : local.atoms())
+        {
+            double[] by = offset[atom.fragment()];
+            moved.add(atom.at(atom.position().translate(by[0], by[1])));
+        }
+        // bonds and rings refer to atoms by index, which have not changed
+        return new Depiction(moved, local.bonds(), local.rings(), local.fragments());
+    }
+
+    /**
+     * Sets fragments out in rows, each row's width shared between its cells by weight.
+     *
+     * @param grid the arrangement
+     * @param extent each fragment's extent as {minX, minY, maxX, maxY}, or {@code null} if it has no atoms
+     * @param gap the space between neighbouring cells and rows
+     * @return how far to move each fragment, as {dx, dy}
+     */
+    private double[][] offsetsInRows(FragmentArrangement.WeightedGrid grid, double[][] extent, double gap)
+    {
+        int count = extent.length;
+        FragmentArrangement.Slot[] slot = new FragmentArrangement.Slot[count];
         int rows = 0;
         for (int fragment = 0; fragment < count; fragment++)
         {
-            columns = Math.max(columns, arrangement.columnOf(fragment) + 1);
-            rows = Math.max(rows, arrangement.rowOf(fragment) + 1);
+            // a fragment with no atoms takes up no room
+            if (extent[fragment] != null)
+            {
+                slot[fragment] = grid.slotOf(fragment);
+                rows = Math.max(rows, slot[fragment].row() + 1);
+            }
         }
-        // a column is as wide as its widest fragment, a row as tall as its tallest
-        double[] width = new double[columns];
+
+        // every row is stretched to the widest width any of them needs
+        double width = 0;
         double[] height = new double[rows];
+        for (int fragment = 0; fragment < count; fragment++)
+        {
+            if (slot[fragment] == null)
+            {
+                continue;
+            }
+            FragmentArrangement.Slot at = slot[fragment];
+            double[] box = extent[fragment];
+            double needs = (box[2] - box[0]) * at.total() / at.weight() + gap * (at.cells() - 1);
+            width = Math.max(width, needs);
+            height[at.row()] = Math.max(height[at.row()], box[3] - box[1]);
+        }
+
+        // where each row starts, stacked downwards (screen y) with a gap between
+        double[] top = new double[rows];
+        for (int row = 1; row < rows; row++)
+        {
+            top[row] = top[row - 1] + height[row - 1] + gap;
+        }
+
+        double[][] offset = new double[count][];
+        for (int fragment = 0; fragment < count; fragment++)
+        {
+            if (slot[fragment] == null)
+            {
+                offset[fragment] = new double[2];
+                continue;
+            }
+            FragmentArrangement.Slot at = slot[fragment];
+            double[] box = extent[fragment];
+            double shared = width - gap * (at.cells() - 1);
+            double cellLeft = shared * at.before() / at.total() + gap * at.index();
+            double cellWidth = shared * at.weight() / at.total();
+            double dx = cellLeft + (cellWidth - (box[2] - box[0])) * style.gridAlignment().fraction() - box[0];
+            double midY = -(top[at.row()] + height[at.row()] / 2); // screen y is downwards
+            cells.add(new double[] {cellLeft, -(top[at.row()] + height[at.row()]), cellLeft + cellWidth, -top[at.row()]});
+            offset[fragment] = new double[] {dx, midY - (box[1] + box[3]) / 2};
+        }
+        return offset;
+    }
+
+    /**
+     * Sets fragments out on shared rows and columns, each as big as its widest or tallest fragment.
+     *
+     * @param arrangement the arrangement
+     * @param extent each fragment's extent as {minX, minY, maxX, maxY}, or {@code null} if it has no atoms
+     * @param gap the space between neighbouring rows and columns
+     * @return how far to move each fragment, as {dx, dy}
+     */
+    private double[][] offsetsInTracks(FragmentArrangement.Lines arrangement, double[][] extent, double gap)
+    {
+        int count = extent.length;
+        // where each fragment sits in the grid, and how much of it the fragment needs
+        FragmentArrangement.Cell[] cell = new FragmentArrangement.Cell[count];
+        int columns = 0;
+        int rows = 0;
+        List<double[]> wide = new ArrayList<>();
+        List<double[]> tall = new ArrayList<>();
         for (int fragment = 0; fragment < count; fragment++)
         {
             double[] box = extent[fragment];
@@ -184,40 +280,82 @@ public final class SvgRenderer
             {
                 continue;
             }
-            int column = arrangement.columnOf(fragment);
-            int row = arrangement.rowOf(fragment);
-            width[column] = Math.max(width[column], box[2] - box[0]);
-            height[row] = Math.max(height[row], box[3] - box[1]);
+            FragmentArrangement.Cell at = arrangement.cellOf(fragment);
+            cell[fragment] = at;
+            columns = Math.max(columns, at.column() + at.columnSpan());
+            rows = Math.max(rows, at.row() + at.rowSpan());
+            wide.add(new double[] {at.column(), at.columnSpan(), box[2] - box[0]});
+            tall.add(new double[] {at.row(), at.rowSpan(), box[3] - box[1]});
         }
+        double[] width = sizeTracks(columns, gap, wide);
+        double[] height = sizeTracks(rows, gap, tall);
 
-        double gap = style.fragmentGap() / scale;
         // where each column starts, stacked left to right with a gap between
-        double[] left = new double[columns];
-        for (int column = 1; column < columns; column++)
+        double[] left = new double[columns + 1];
+        for (int column = 0; column < columns; column++)
         {
-            left[column] = left[column - 1] + width[column - 1] + gap;
+            left[column + 1] = left[column] + width[column] + gap;
         }
-        // where each row's midline is
-        double[] middle = new double[rows];
-        double top = 0;
+        // where each row starts, stacked downwards (screen y) with a gap between
+        double[] top = new double[rows + 1];
         for (int row = 0; row < rows; row++)
         {
-            middle[row] = -(top + height[row] / 2); // screen y is downwards
-            top += height[row] + gap;
+            top[row + 1] = top[row] + height[row] + gap;
         }
 
-        // move each atom by its fragment's offset, centring the fragment in its cell
-        List<AtomPlacement> moved = new ArrayList<>(local.atoms().size());
-        for (AtomPlacement atom : local.atoms())
+        double[][] offset = new double[count][];
+        for (int fragment = 0; fragment < count; fragment++)
         {
-            double[] box = extent[atom.fragment()];
-            int column = arrangement.columnOf(atom.fragment());
-            double dx = left[column] + (width[column] - (box[2] - box[0])) / 2 - box[0];
-            double dy = middle[arrangement.rowOf(atom.fragment())] - (box[1] + box[3]) / 2;
-            moved.add(atom.at(atom.position().translate(dx, dy)));
+            FragmentArrangement.Cell at = cell[fragment];
+            if (at == null)
+            {
+                offset[fragment] = new double[2];
+                continue;
+            }
+            double[] box = extent[fragment];
+            // the cells' span, without the gap trailing the last one
+            double regionWidth = left[at.column() + at.columnSpan()] - gap - left[at.column()];
+            double regionHeight = top[at.row() + at.rowSpan()] - gap - top[at.row()];
+            double dx = left[at.column()] + (regionWidth - (box[2] - box[0])) * style.gridAlignment().fraction() - box[0];
+            double midY = -(top[at.row()] + regionHeight / 2); // screen y is downwards
+            cells.add(new double[] {left[at.column()], -(top[at.row()] + regionHeight), left[at.column()] + regionWidth, -top[at.row()]});
+            offset[fragment] = new double[] {dx, midY - (box[1] + box[3]) / 2};
         }
-        // bonds and rings refer to atoms by index, which have not changed
-        return new Depiction(moved, local.bonds(), local.rings(), local.fragments());
+        return offset;
+    }
+
+    /**
+     * Sizes a row or column of tracks so each fragment fits the tracks it covers.
+     *
+     * @param tracks how many tracks there are
+     * @param gap the space between neighbouring tracks
+     * @param items each fragment as {first track, how many it covers, size it needs}
+     * @return how big each track is
+     */
+    private static double[] sizeTracks(int tracks, double gap, List<double[]> items)
+    {
+        double[] size = new double[tracks];
+        // narrow items first, so that a spanning one only claims what the others leave short
+        items.sort(Comparator.comparingDouble(item -> item[1]));
+        for (double[] item : items)
+        {
+            int first = (int) item[0];
+            int span = (int) item[1];
+            double have = gap * (span - 1);
+            for (int track = first; track < first + span; track++)
+            {
+                have += size[track];
+            }
+            if (item[2] > have)
+            {
+                double extra = (item[2] - have) / span;
+                for (int track = first; track < first + span; track++)
+                {
+                    size[track] += extra;
+                }
+            }
+        }
+        return size;
     }
 
     /**
@@ -297,6 +435,10 @@ public final class SvgRenderer
         double width = width();
         double height = height();
 
+        if (style.debugLayout())
+        {
+            drawDebugLayout();
+        }
         for (BondPlacement bond : depiction.bonds())
         {
             drawBond(bond);
@@ -339,6 +481,57 @@ public final class SvgRenderer
                 .append("\" fill=\"").append(colour.hex()).append("\"/>\n"));
 
         return document.append(svg).append("</svg>\n").toString();
+    }
+
+    private void drawDebugLayout()
+    {
+        double scale = style.bondLength();
+        // solid blue around every cell
+        for (double[] cell : cells)
+        {
+            outline(cell, "#1c7ed6", null);
+        }
+
+        // as {minX, minY, maxX, maxY} in depiction space, by fragment
+        Map<Integer, double[]> boxes = new TreeMap<>();
+        for (AtomPlacement atom : depiction.atoms())
+        {
+            double reach = clearances[atom.placementIndex()] / scale;
+            Point at = atom.position();
+            double[] box = boxes.computeIfAbsent(atom.fragment(),
+                fragment -> new double[] {Double.MAX_VALUE, Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE});
+            box[0] = Math.min(box[0], at.x() - reach);
+            box[1] = Math.min(box[1], at.y() - reach);
+            box[2] = Math.max(box[2], at.x() + reach);
+            box[3] = Math.max(box[3], at.y() + reach);
+        }
+
+        // dashed red around every fragment
+        for (double[] box : boxes.values())
+        {
+            outline(box, "#e03131", "4 3");
+        }
+    }
+
+    /**
+     * @param box the rectangle to outline, as {minX, minY, maxX, maxY} in depiction space
+     * @param colour the line's colour
+     * @param dashes the line's dash pattern, or {@code null} for a solid line
+     */
+    private void outline(double[] box, String colour, String dashes)
+    {
+        double scale = style.bondLength();
+        Point corner = toPage(new Point(box[0], box[3]));
+        svg.append("  <rect x=\"").append(number(corner.x()))
+            .append("\" y=\"").append(number(corner.y()))
+            .append("\" width=\"").append(number((box[2] - box[0]) * scale))
+            .append("\" height=\"").append(number((box[3] - box[1]) * scale))
+            .append("\" fill=\"none\" stroke=\"").append(colour).append("\" stroke-width=\"1\"");
+        if (dashes != null)
+        {
+            svg.append(" stroke-dasharray=\"").append(dashes).append('"');
+        }
+        svg.append("/>\n");
     }
 
     /**
