@@ -389,13 +389,130 @@ class MoleculeLayoutTest
     class Rings
     {
         @Test
-        void rejects_a_molecule_with_a_ring()
+        void lays_a_ring_out_as_a_regular_polygon()
         {
-            Molecule cyclopropane = parse("C1CC1");
+            Depiction depiction = depict("C1CCCCC1", HydrogenStyle.CONDENSED);
 
-            assertThatThrownBy(() -> MoleculeLayout.layout(cyclopropane))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("ring");
+            assertThat(depiction.atoms()).hasSize(6);
+            assertThat(depiction.rings()).hasSize(1);
+            for (BondPlacement bond : depiction.bonds())
+            {
+                assertThat(depiction.atom(bond.first()).position().distanceTo(depiction.atom(bond.second()).position()))
+                    .isCloseTo(Depiction.BOND_LENGTH, within(TOLERANCE));
+            }
+        }
+
+        @Test
+        void fuses_rings_along_a_shared_bond()
+        {
+            Depiction depiction = depict("c1ccc2ccccc2c1", HydrogenStyle.CONDENSED);
+
+            assertThat(depiction.atoms()).hasSize(10);
+            assertThat(depiction.rings()).hasSize(2);
+            for (BondPlacement bond : depiction.bonds())
+            {
+                assertThat(depiction.atom(bond.first()).position().distanceTo(depiction.atom(bond.second()).position()))
+                    .isCloseTo(Depiction.BOND_LENGTH, within(TOLERANCE));
+            }
+        }
+
+        @Test
+        void fuses_three_and_four_rings_with_regular_bonds()
+        {
+            for (String smiles : List.of("c1ccc2cc3ccccc3cc2c1", "c1ccc2c(c1)ccc3ccccc23", "c1cc2ccc3cccc4ccc(c1)c2c34"))
+            {
+                Depiction depiction = depict(smiles, HydrogenStyle.CONDENSED);
+                for (BondPlacement bond : depiction.bonds())
+                {
+                    assertThat(depiction.atom(bond.first()).position().distanceTo(depiction.atom(bond.second()).position()))
+                        .as(smiles)
+                        .isCloseTo(Depiction.BOND_LENGTH, within(1e-6));
+                }
+            }
+        }
+
+        @Test
+        void draws_the_hydrogens_of_a_ring_atom_outside_the_ring()
+        {
+            for (String smiles : List.of("C1CC1", "C1CCCCC1", "C1CCCCCCCCCCC1"))
+            {
+                Depiction depiction = depict(smiles);
+                double x = depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().x()).average().orElseThrow();
+                double y = depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().y()).average().orElseThrow();
+                Point middle = new Point(x, y);
+                for (BondPlacement bond : depiction.bonds())
+                {
+                    AtomPlacement hydrogen = depiction.atom(bond.second());
+                    if (hydrogen.element().equals("H"))
+                    {
+                        assertThat(hydrogen.position().distanceTo(middle))
+                            .as(smiles)
+                            .isGreaterThan(depiction.atom(bond.first()).position().distanceTo(middle));
+                    }
+                }
+            }
+        }
+
+        @Test
+        void lays_out_a_spiro_atom_shared_by_several_rings()
+        {
+            Depiction depiction = depict("C12(CCC1)CCC2", HydrogenStyle.CONDENSED);
+
+            assertThat(depiction.rings()).hasSize(2);
+            for (int first = 0; first < depiction.atoms().size(); first++)
+            {
+                for (int second = first + 1; second < depiction.atoms().size(); second++)
+                {
+                    assertThat(depiction.atom(first).position().distanceTo(depiction.atom(second).position())).isGreaterThan(0.3);
+                }
+            }
+        }
+
+        @Test
+        void lays_out_spiro_and_bridged_systems_without_overlapping_atoms()
+        {
+            for (String smiles : List.of("C1CCC2(CC1)CCCC2", "C1CC2CCC1C2", "C1CC1", "OC1CCCCC1CC2CC2"))
+            {
+                Depiction depiction = depict(smiles, HydrogenStyle.CONDENSED);
+                for (int first = 0; first < depiction.atoms().size(); first++)
+                {
+                    for (int second = first + 1; second < depiction.atoms().size(); second++)
+                    {
+                        assertThat(depiction.atom(first).position().distanceTo(depiction.atom(second).position()))
+                            .as(smiles + " atoms " + first + " and " + second)
+                            .isGreaterThan(0.3);
+                    }
+                }
+            }
+        }
+
+        @Test
+        void circles_an_aromatic_ring_only_when_skeletal()
+        {
+            Molecule benzene = parse("c1ccccc1");
+
+            assertThat(MoleculeLayout.layout(benzene, DepictionOptions.skeletal()).rings())
+                .singleElement().extracting(RingPlacement::circle).isEqualTo(true);
+            assertThat(MoleculeLayout.layout(benzene).rings())
+                .singleElement().extracting(RingPlacement::circle).isEqualTo(false);
+        }
+
+        @Test
+        void does_not_circle_a_ring_that_is_not_aromatic()
+        {
+            assertThat(MoleculeLayout.layout(parse("C1CCCCC1"), DepictionOptions.skeletal()).rings())
+                .singleElement().extracting(RingPlacement::circle).isEqualTo(false);
+        }
+
+        @Test
+        void keeps_substituents_outside_the_ring()
+        {
+            Depiction depiction = MoleculeLayout.layout(parse("Cc1ccccc1"), DepictionOptions.skeletal());
+            Point middle = new Point(
+                depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().x()).average().orElseThrow(),
+                depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().y()).average().orElseThrow());
+
+            assertThat(positionOf(depiction, 0).distanceTo(middle)).isCloseTo(1.0 + 1.0, within(TOLERANCE));
         }
     }
 

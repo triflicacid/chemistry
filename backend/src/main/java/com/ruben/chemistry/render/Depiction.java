@@ -10,8 +10,9 @@ import java.util.Objects;
  *
  * @param atoms the atoms to draw, each holding its own {@link AtomPlacement#index()}, in index order
  * @param bonds the bonds to draw, referring to atoms by index
+ * @param rings the rings the molecule has, referring to atoms by index
  */
-public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds)
+public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, List<RingPlacement> rings)
 {
     /** The distance between two bonded atoms, which is the unit depiction space is measured in. */
     public static final double BOND_LENGTH = 1.0;
@@ -30,8 +31,10 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds)
     {
         Objects.requireNonNull(atoms, "atoms");
         Objects.requireNonNull(bonds, "bonds");
+        Objects.requireNonNull(rings, "rings");
         atoms = List.copyOf(atoms);
         bonds = List.copyOf(bonds);
+        rings = List.copyOf(rings);
 
         for (int index = 0; index < atoms.size(); index++)
         {
@@ -45,6 +48,23 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds)
             requireAtom(atoms, bond.first());
             requireAtom(atoms, bond.second());
         }
+        for (RingPlacement ring : rings)
+        {
+            for (int member : ring.atoms())
+            {
+                requireAtom(atoms, member);
+            }
+        }
+    }
+
+    /**
+     * @param atoms the atoms to draw
+     * @param bonds the bonds to draw
+     * @see #Depiction(List, List, List)
+     */
+    public Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds)
+    {
+        this(atoms, bonds, List.of());
     }
 
     /**
@@ -52,7 +72,7 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds)
      */
     public static Depiction empty()
     {
-        return new Depiction(List.of(), List.of());
+        return new Depiction(List.of(), List.of(), List.of());
     }
 
     /**

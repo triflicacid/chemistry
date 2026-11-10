@@ -22,8 +22,6 @@ import java.util.OptionalInt;
 
 /**
  * Lays a {@link Molecule} out into a {@link Depiction}.
- * <p>
- * TODO Only acyclic molecules are laid out so far; a molecule with a ring is rejected.
  */
 public final class MoleculeLayout
 {
@@ -54,6 +52,9 @@ public final class MoleculeLayout
     /** How far off a bond a substituent has to be before it counts as being to one side of it. */
     private static final double COLLINEAR = 1e-9;
 
+    /** Where a ring-atom's gap is probed to tell whether it faces into a ring, in bond lengths from the atom. */
+    private static final double RING_PROBE = 0.1;
+
     /** Where a ligand sits when the options leave it off the page altogether. */
     private static final int UNDRAWN = -1;
 
@@ -76,6 +77,12 @@ public final class MoleculeLayout
 
     private final List<AtomPlacement> placements = new ArrayList<>();
     private final List<BondPlacement> bonds = new ArrayList<>();
+
+    /** The rings drawn so far. */
+    private final List<RingPlacement> ringPlacements = new ArrayList<>();
+
+    /** Every ring of the molecule, each as its atoms in the order they are joined around it, or {@code null} until needed. */
+    private List<List<Atom>> ringOrders;
 
     /** Where each bond sits in {@link #bonds}, by the placement pair it joins. */
     private final Map<Long, Integer> bondsByPair = new HashMap<>();
@@ -116,7 +123,6 @@ public final class MoleculeLayout
      * @param molecule the molecule to lay out
      * @return where every atom and bond goes
      * @throws NullPointerException if {@code molecule} is {@code null}
-     * @throws IllegalArgumentException if {@code molecule} has a ring, which is not supported yet
      */
     public static Depiction layout(Molecule molecule)
     {
@@ -130,8 +136,7 @@ public final class MoleculeLayout
      * @param options the choices to lay it out by
      * @return where every atom and bond goes
      * @throws NullPointerException if either argument is {@code null}
-     * @throws IllegalArgumentException if {@code molecule} has a ring, which is not supported yet,
-     *     or declares a parity at an atom whose hydrogen the options leave undrawn
+     * @throws IllegalArgumentException if {@code molecule} declares a parity at an atom whose hydrogen the options leave undrawn
      */
     public static Depiction layout(Molecule molecule, DepictionOptions options)
     {
@@ -149,7 +154,6 @@ public final class MoleculeLayout
         {
             return Depiction.empty();
         }
-        requireAcyclic();
         readConfigurations();
 
         for (Atom atom : atoms)
@@ -163,7 +167,7 @@ public final class MoleculeLayout
         applyParities();
         markVertices();
         spreadParts();
-        return new Depiction(placements, bonds);
+        return new Depiction(placements, bonds, ringPlacements);
     }
 
     /**
@@ -184,18 +188,6 @@ public final class MoleculeLayout
                 && placement.charge() == 0
                 && placement.isotope().isEmpty();
             placements.set(index, placement.asVertex(plainCarbon && degrees[index] > 0));
-        }
-    }
-
-    /**
-     * @throws IllegalArgumentException if the molecule has a ring
-     */
-    private void requireAcyclic()
-    {
-        if (!molecule.ringBonds().isEmpty())
-        {
-            throw new IllegalArgumentException("Only acyclic molecules can be laid out so far, but this one has "
-                + molecule.ringBonds().size() + " ring bonds");
         }
     }
 
@@ -223,16 +215,163 @@ public final class MoleculeLayout
     {
         int start = placements.size();
         partStart = start;
-        place(root, Point.ORIGIN);
-
         Deque<Walk> pending = new ArrayDeque<>();
-        pending.push(new Walk(root, null, null, Double.NaN, 1));
+        if (isRingAtom(root))
+        {
+            placeRingSystem(root, Point.ORIGIN, Double.NaN, pending);
+        }
+        else
+        {
+            place(root, Point.ORIGIN);
+            pending.push(new Walk(root, null, null, Double.NaN, 1));
+        }
         while (!pending.isEmpty())
         {
             expand(pending.pop(), pending);
         }
 
         parts.add(new int[] {start, placements.size()});
+    }
+
+    /**
+     * @param atom one of the molecule's own atoms
+     * @return whether it is on a ring
+     */
+    private boolean isRingAtom(Atom atom)
+    {
+        return molecule.ringCount(atom) > 0;
+    }
+
+    /**
+     * Places a whole ring system.
+     *
+     * @param entry the system's atom the walk has reached
+     * @param position where {@code entry} goes
+     * @param backAngle the direction the atom the walk came from lies in, or {@link Double#NaN} if there was none
+     * @param pending the walk still to be done, which this adds every atom of the system to
+     * @return {@code entry}'s placement index
+     */
+    private int placeRingSystem(Atom entry, Point position, double backAngle, Deque<Walk> pending)
+    {
+        // the system is every atom reachable from the entry along ring bonds
+        List<Atom> system = new ArrayList<>();
+        Map<Atom, Boolean> seen = new IdentityHashMap<>();
+        Deque<Atom> queue = new ArrayDeque<>();
+        queue.add(entry);
+        seen.put(entry, true);
+        while (!queue.isEmpty())
+        {
+            Atom atom = queue.poll();
+            system.add(atom);
+            for (Bond bond : molecule.bondsOf(atom))
+            {
+                Atom other = bond.getOther(atom);
+                if (molecule.ringBonds().contains(bond) && seen.put(other, true) == null)
+                {
+                    queue.add(other);
+                }
+            }
+        }
+
+        List<List<Atom>> systemRings = new ArrayList<>();
+        for (List<Atom> ring : ringsOfMolecule())
+        {
+            if (seen.containsKey(ring.getFirst()))
+            {
+                systemRings.add(ring);
+            }
+        }
+
+        Map<Atom, Point> local = RingSystemLayout.layOut(systemRings);
+        Point origin = local.get(entry);
+
+        // turn the system so that the entry atom's way out points back at the atom the walk came from
+        double turn = 0;
+        if (!Double.isNaN(backAngle))
+        {
+            Point inwards = Point.ORIGIN;
+            for (Bond bond : molecule.bondsOf(entry))
+            {
+                Point neighbour = local.get(bond.getOther(entry));
+                if (neighbour != null && molecule.ringBonds().contains(bond))
+                {
+                    Point towards = neighbour.minus(origin);
+                    inwards = inwards.plus(towards.scale(1 / towards.length()));
+                }
+            }
+            turn = backAngle - (inwards.length() > 1e-9 ? inwards.scale(-1).angle() : 0);
+        }
+
+        for (Atom atom : system)
+        {
+            Point offset = local.get(atom).minus(origin);
+            Point at = position.plus(Point.polar(offset.angle() + turn, offset.length()));
+            place(atom, at);
+        }
+
+        for (Bond bond : molecule.bonds())
+        {
+            if (molecule.ringBonds().contains(bond) && seen.containsKey(bond.first()))
+            {
+                addBond(placementOfAtom[indexOf(bond.first())], placementOfAtom[indexOf(bond.second())], bond.order());
+            }
+        }
+
+        for (List<Atom> ring : systemRings)
+        {
+            List<Integer> members = new ArrayList<>();
+            boolean aromatic = true;
+            for (int atom = 0; atom < ring.size(); atom++)
+            {
+                members.add(placementOfAtom[indexOf(ring.get(atom))]);
+                Bond bond = molecule.bondBetween(ring.get(atom), ring.get((atom + 1) % ring.size())).orElseThrow();
+                aromatic &= bond.order() == BondOrder.AROMATIC;
+            }
+            ringPlacements.add(new RingPlacement(members, aromatic && options.style() == DepictionStyle.SKELETAL));
+        }
+
+        for (Atom atom : system)
+        {
+            pending.push(new Walk(atom, null, null, Double.NaN, 1));
+        }
+        return placementOfAtom[indexOf(entry)];
+    }
+
+    /**
+     * @return every ring of the molecule, each as its atoms in the order they are joined around it
+     */
+    private List<List<Atom>> ringsOfMolecule()
+    {
+        if (ringOrders == null)
+        {
+            ringOrders = new ArrayList<>();
+            for (Molecule ring : molecule.rings())
+            {
+                List<Atom> order = new ArrayList<>();
+                Atom first = ring.atoms().getFirst();
+                Atom previous = null;
+                Atom current = first;
+                do
+                {
+                    order.add(current);
+                    Atom next = null;
+                    for (Bond bond : ring.bondsOf(current))
+                    {
+                        Atom other = bond.getOther(current);
+                        if (other != previous)
+                        {
+                            next = other;
+                            break;
+                        }
+                    }
+                    previous = current;
+                    current = next;
+                }
+                while (current != first && current != null);
+                ringOrders.add(order);
+            }
+        }
+        return ringOrders;
     }
 
     /**
@@ -255,15 +394,31 @@ public final class MoleculeLayout
             return;
         }
 
-        double[] directions = directionsFor(walk, slots, children);
-        directions = honourConfiguration(walk, directions, children, hydrogens);
-        directions = avoidCollisions(walk, centre, directions, children);
+        double[] directions;
+        boolean ring = isRingAtom(atom);
+        if (ring)
+        {
+            directions = ringDirections(atom, centre, slots);
+        }
+        else
+        {
+            directions = directionsFor(walk, slots, children);
+            directions = honourConfiguration(walk, directions, children, hydrogens);
+            directions = avoidCollisions(walk, centre, directions, children);
+        }
 
         for (int child = 0; child < children.size(); child++)
         {
             Bond bond = children.get(child);
             Atom neighbour = bond.getOther(atom);
-            int placement = place(neighbour, centre.plus(Point.polar(directions[child], Depiction.BOND_LENGTH)));
+            Point position = centre.plus(Point.polar(directions[child], Depiction.BOND_LENGTH));
+            if (isRingAtom(neighbour))
+            {
+                int placement = placeRingSystem(neighbour, position, directions[child] + Math.PI, pending);
+                addBond(placementOfAtom[index], placement, bond.order());
+                continue;
+            }
+            int placement = place(neighbour, position);
             addBond(placementOfAtom[index], placement, bond.order());
             pending.push(new Walk(neighbour, atom, bond, directions[child] + Math.PI, -walk.zigzagSign()));
         }
@@ -272,10 +427,113 @@ public final class MoleculeLayout
     }
 
     /**
+     * Shares out the directions the substituents of a ring atom sit in, in whatever room the ring's own bonds leave.
+     *
+     * @param atom the ring atom
+     * @param centre where it sits
+     * @param slots how many neighbours there are to place
+     * @return one direction per neighbour
+     */
+    private double[] ringDirections(Atom atom, Point centre, int slots)
+    {
+        List<Double> fixed = new ArrayList<>();
+        for (Bond bond : molecule.bondsOf(atom))
+        {
+            Atom other = bond.getOther(atom);
+            if (placed[indexOf(other)])
+            {
+                fixed.add(positions[indexOf(other)].minus(centre).angle());
+            }
+        }
+        if (fixed.isEmpty())
+        {
+            return AngleFan.evenlyAround(0, slots);
+        }
+
+        // only the gaps between bonds that face away from the rings are open to substituents
+        double[] edges = fixed.stream().mapToDouble(AngleFan::normalise).sorted().toArray();
+        List<double[]> open = new ArrayList<>();
+        for (int edge = 0; edge < edges.length; edge++)
+        {
+            double end = edge + 1 < edges.length ? edges[edge + 1] : edges[0] + AngleFan.TURN;
+            double span = end - edges[edge];
+            Point probe = centre.plus(Point.polar(edges[edge] + span / 2, RING_PROBE));
+            if (!insideRingOf(atom, probe))
+            {
+                open.add(new double[] {edges[edge], span});
+            }
+        }
+        if (open.isEmpty())
+        {
+            return AngleFan.fillGaps(fixed, slots).stream().mapToDouble(Double::doubleValue).toArray();
+        }
+
+        // hand each substituent to whichever open gap is left roomiest by taking it
+        int[] taken = new int[open.size()];
+        int[] chosen = new int[slots];
+        for (int slot = 0; slot < slots; slot++)
+        {
+            int roomiest = 0;
+            for (int gap = 1; gap < open.size(); gap++)
+            {
+                if (open.get(gap)[1] / (taken[gap] + 2) > open.get(roomiest)[1] / (taken[roomiest] + 2) + COLLINEAR)
+                {
+                    roomiest = gap;
+                }
+            }
+            taken[roomiest]++;
+            chosen[slot] = roomiest;
+        }
+
+        int[] used = new int[open.size()];
+        double[] directions = new double[slots];
+        for (int slot = 0; slot < slots; slot++)
+        {
+            int gap = chosen[slot];
+            used[gap]++;
+            directions[slot] = open.get(gap)[0] + open.get(gap)[1] * used[gap] / (taken[gap] + 1.0);
+        }
+        return directions;
+    }
+
+    /**
+     * @param atom a ring atom
+     * @param point a point near it
+     * @return whether the point lies inside any ring the atom is in
+     */
+    private boolean insideRingOf(Atom atom, Point point)
+    {
+        int placement = placementOfAtom[indexOf(atom)];
+        for (RingPlacement ring : ringPlacements)
+        {
+            if (!ring.atoms().contains(placement))
+            {
+                continue;
+            }
+            boolean inside = false;
+            List<Integer> members = ring.atoms();
+            for (int member = 0, previous = members.size() - 1; member < members.size(); previous = member++)
+            {
+                Point a = placements.get(members.get(member)).position();
+                Point b = placements.get(members.get(previous)).position();
+                if ((a.y() > point.y()) != (b.y() > point.y())
+                    && point.x() < (b.x() - a.x()) * (point.y() - a.y()) / (b.y() - a.y()) + a.x())
+                {
+                    inside = !inside;
+                }
+            }
+            if (inside)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @param atom the atom being expanded
      * @param parent the atom the walk arrived from, or {@code null} if it started here
      * @return the bonds leading to atoms still to be placed
-     * @throws IllegalArgumentException if a bond leads back to an atom already placed (so a ring)
      */
     private List<Bond> childBondsOf(Atom atom, Atom parent)
     {
@@ -283,15 +541,10 @@ public final class MoleculeLayout
         for (Bond bond : molecule.bondsOf(atom))
         {
             Atom other = bond.getOther(atom);
-            if (other == parent)
+            if (other != parent && !placed[indexOf(other)])
             {
-                continue;
+                children.add(bond);
             }
-            if (placed[indexOf(other)])
-            {
-                throw new IllegalArgumentException("Only acyclic molecules can be laid out so far, but a bond closes a ring at " + other);
-            }
-            children.add(bond);
         }
         return children;
     }

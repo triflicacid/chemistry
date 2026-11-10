@@ -4,10 +4,12 @@ import com.ruben.chemistry.core.BondOrder;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Draws a {@link Depiction} as an SVG document.
@@ -28,6 +30,9 @@ public final class SvgRenderer
 
     /** How long each dash of an aromatic bond's inner line is, in pixels. */
     private static final double AROMATIC_DASH = 5;
+
+    /** How big the circle inside an aromatic ring is, as a fraction of the distance from its middle to its bonds. */
+    private static final double RING_CIRCLE_SIZE = 0.6;
 
     /** How far along a gradient bond its own atom's colour has given way to the blend. */
     private static final double GRADIENT_SHOULDER = 0.25;
@@ -58,6 +63,12 @@ public final class SvgRenderer
 
     /** How far past the outermost atom the drawing reaches, in pixels. */
     private final double overhang;
+
+    /** The middle of a ring each bond is in, in depiction space, keyed by the pair of atoms it joins. */
+    private final Map<Long, Point> ringCentres = new HashMap<>();
+
+    /** The bonds, keyed by the pair of atoms they join, of rings drawn with a circle inside, which are drawn as single bonds. */
+    private final Set<Long> circled = new HashSet<>();
 
     /** The body of the document being built up. */
     private final StringBuilder svg = new StringBuilder();
@@ -95,6 +106,46 @@ public final class SvgRenderer
             bondsAt.computeIfAbsent(bond.first(), atom -> new ArrayList<>()).add(bond);
             bondsAt.computeIfAbsent(bond.second(), atom -> new ArrayList<>()).add(bond);
         }
+        for (RingPlacement ring : depiction.rings())
+        {
+            Point middle = centreOf(ring);
+            List<Integer> members = ring.atoms();
+            for (int member = 0; member < members.size(); member++)
+            {
+                long pair = pairOf(members.get(member), members.get((member + 1) % members.size()));
+                ringCentres.putIfAbsent(pair, middle);
+                if (ring.circle())
+                {
+                    circled.add(pair);
+                }
+            }
+        }
+    }
+
+    /**
+     * @param first one atom's index
+     * @param second another atom's index
+     * @return a key for the pair, whichever way round they are given
+     */
+    private static long pairOf(int first, int second)
+    {
+        return ((long) Math.min(first, second) << Integer.SIZE) | Math.max(first, second);
+    }
+
+    /**
+     * @param ring a ring
+     * @return the middle of its atoms, in depiction space
+     */
+    private Point centreOf(RingPlacement ring)
+    {
+        double x = 0;
+        double y = 0;
+        for (int member : ring.atoms())
+        {
+            x += depiction.atom(member).position().x();
+            y += depiction.atom(member).position().y();
+        }
+        return new Point(x / ring.atoms().size(), y / ring.atoms().size());
     }
 
     /**
@@ -135,6 +186,13 @@ public final class SvgRenderer
         for (BondPlacement bond : depiction.bonds())
         {
             drawBond(bond);
+        }
+        for (RingPlacement ring : depiction.rings())
+        {
+            if (ring.circle())
+            {
+                drawRingCircle(ring);
+            }
         }
         for (AtomPlacement atom : depiction.atoms())
         {
@@ -224,8 +282,49 @@ public final class SvgRenderer
         {
             case WEDGE -> drawWedge(start, end, unit);
             case HASH -> drawHash(start, end, unit);
-            case PLAIN -> drawPlain(start, end, unit, bond.order());
+            case PLAIN -> drawPlain(start, end, unit, bond);
         }
+    }
+
+    /**
+     * Draws the circle inside an aromatic ring.
+     *
+     * @param ring the ring
+     */
+    private void drawRingCircle(RingPlacement ring)
+    {
+        Point middle = toPage(centreOf(ring));
+        List<Integer> members = ring.atoms();
+        double apothem = 0;
+        for (int member = 0; member < members.size(); member++)
+        {
+            Point from = toPage(depiction.atom(members.get(member)).position());
+            Point to = toPage(depiction.atom(members.get((member + 1) % members.size())).position());
+            apothem += middle.distanceTo(from.plus(to.minus(from).scale(0.5)));
+        }
+        apothem /= members.size();
+
+        svg.append("  <circle cx=\"").append(number(middle.x()))
+            .append("\" cy=\"").append(number(middle.y()))
+            .append("\" r=\"").append(number(apothem * RING_CIRCLE_SIZE))
+            .append("\" fill=\"none\" stroke=\"").append(style.bondColour().hex())
+            .append("\" stroke-width=\"").append(number(style.bondWidth()))
+            .append("\"/>\n");
+    }
+
+    /**
+     * @param bond a bond
+     * @return the order to draw it with, which is single where a circle inside its ring stands for the aromaticity,
+     * or where the bond lies outside every ring (as between the rings of biphenyl) and so cannot be delocalised
+     */
+    private BondOrder orderOf(BondPlacement bond)
+    {
+        if (bond.order() != BondOrder.AROMATIC)
+        {
+            return bond.order();
+        }
+        long pair = pairOf(bond.first(), bond.second());
+        return circled.contains(pair) || !ringCentres.containsKey(pair) ? BondOrder.SINGLE : BondOrder.AROMATIC;
     }
 
     /**
@@ -355,7 +454,7 @@ public final class SvgRenderer
         {
             return 0;
         }
-        return switch (bond.order())
+        return switch (orderOf(bond))
         {
             case SINGLE, TRIPLE -> 0;
             case DOUBLE, AROMATIC -> style.bondGap() / 2;
@@ -369,14 +468,14 @@ public final class SvgRenderer
      * @param start where the line begins, in pixels
      * @param end where the line ends, in pixels
      * @param unit the direction it runs in, of unit length
-     * @param order how many times the atoms are bonded
+     * @param bond the bond being drawn
      */
-    private void drawPlain(Point start, Point end, Point unit, BondOrder order)
+    private void drawPlain(Point start, Point end, Point unit, BondPlacement bond)
     {
         Point across = new Point(-unit.y(), unit.x());
         double gap = style.bondGap();
 
-        switch (order)
+        switch (orderOf(bond))
         {
             case SINGLE -> line(start, end, false);
             case DOUBLE -> parallels(start, end, across, gap / 2, -gap / 2);
@@ -384,8 +483,19 @@ public final class SvgRenderer
             case QUADRUPLE -> parallels(start, end, across, 1.5 * gap, gap / 2, -gap / 2, -1.5 * gap);
             case AROMATIC ->
             {
-                line(start.plus(across.scale(gap / 2)), end.plus(across.scale(gap / 2)), false);
-                line(start.minus(across.scale(gap / 2)), end.minus(across.scale(gap / 2)), true);
+                // the dashed line goes inside the ring, where there is one
+                Point inside = across.scale(-1);
+                Point ringCentre = ringCentres.get(pairOf(bond.first(), bond.second()));
+                if (ringCentre != null)
+                {
+                    Point towards = toPage(ringCentre).minus(start);
+                    if (towards.x() * across.x() + towards.y() * across.y() > 0)
+                    {
+                        inside = across;
+                    }
+                }
+                line(start.minus(inside.scale(gap / 2)), end.minus(inside.scale(gap / 2)), false);
+                line(start.plus(inside.scale(gap / 2)), end.plus(inside.scale(gap / 2)), true);
             }
         }
     }

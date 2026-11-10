@@ -15,8 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The arguments a drawing command was given: whatever it is being asked to draw, and the settings
- * to draw it by.
+ * The arguments a drawing command was given.
  * <p>
  * An argument beginning {@code --} is a setting, written {@code --name=value}; anything else is
  * something to draw. A setting given more than once keeps every value, behind commas, so that

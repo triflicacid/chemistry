@@ -11,10 +11,12 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Draws every molecule a list names, so that a whole shelf of drawings can be looked over at once.
+ * Draws every molecule a list names.
  * <p>
- * The list is a comma separated file of {@code name,smiles}, one molecule to a line.
- * Each molecule is written to {@code <out-dir>/<name>.svg}, and a contact sheet gathering them all is written beside them.
+ * The list is a comma separated file of {@code name,smiles,classes}, one molecule to a line.
+ * The classes, such as {@code ring;aromatic}, are divided by semicolons and may be left out.
+ * Each molecule is written to {@code <out-dir>/<name>.svg}.
+ * {@code index.html} gathers them for viewing and filtering.
  * <p>
  * Run it through Gradle, e.g.
  * <pre>{@code
@@ -36,14 +38,17 @@ public final class DepictGallery
     /** What marks a line as a remark rather than a molecule. */
     private static final char REMARK = '#';
 
-    /** What separates a name from its molecule. */
+    /** What separates a name from its molecule, and a molecule from its classes. */
     private static final char SEPARATOR = ',';
+
+    /** What separates one class from the next within the classes column. */
+    private static final String CLASS_SEPARATOR = ";";
 
     /** How to use the command, shown when its arguments make no sense. */
     static final String USAGE = """
         Usage: gallery <csv> [options]
 
-          <csv>                        a file of name,smiles lines
+          <csv>                        a file of name,smiles,classes lines; classes are optional and divided by ;
           --out-dir=<path>             where the drawings go (default out)
         """ + CommandOptions.USAGE;
 
@@ -127,7 +132,10 @@ public final class DepictGallery
             }
 
             String name = trimmed.substring(0, split).trim();
-            String smiles = trimmed.substring(split + 1).trim();
+            String rest = trimmed.substring(split + 1);
+            int classSplit = rest.indexOf(SEPARATOR);
+            String smiles = (classSplit < 0 ? rest : rest.substring(0, classSplit)).trim();
+            List<String> classes = classSplit < 0 ? List.of() : classesOf(rest.substring(classSplit + 1));
             if (entries.isEmpty() && name.equalsIgnoreCase(HEADING))
             {
                 continue;
@@ -140,9 +148,27 @@ public final class DepictGallery
             {
                 throw new IllegalArgumentException("Line " + number + " names '" + name + "' a second time");
             }
-            entries.add(new Entry(name, smiles));
+            entries.add(new Entry(name, smiles, classes));
         }
         return entries;
+    }
+
+    /**
+     * @param text the classes column of a line, with classes divided by {@value #CLASS_SEPARATOR}
+     * @return the distinct classes it names, lower-cased, in the order given
+     */
+    private static List<String> classesOf(String text)
+    {
+        Set<String> classes = new LinkedHashSet<>();
+        for (String piece : text.split(CLASS_SEPARATOR))
+        {
+            String tag = piece.trim().toLowerCase(Locale.ROOT);
+            if (!tag.isEmpty())
+            {
+                classes.add(tag);
+            }
+        }
+        return List.copyOf(classes);
     }
 
     /**
@@ -231,18 +257,43 @@ public final class DepictGallery
             figure { margin: .75rem 0 0; overflow: auto; }
             .failed { border-color: #c00; }
             .failed p { color: #c00; font-size: .85rem; margin: .75rem 0 0; }
+            .tags { margin: .5rem 0 0; display: flex; flex-wrap: wrap; gap: .25rem; }
+            .tag { background: #e3edf9; color: #1d4f91; border-radius: 1rem; padding: .1rem .55rem; font-size: .75rem; }
+            #filter { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+            #chosen { display: contents; }
+            #chosen .tag { cursor: pointer; background: #1d4f91; color: #fff; font-size: .85rem; }
+            #chosen .tag::after { content: " \\00d7"; }
+            #count { color: #555; font-size: .85rem; }
+            li.hidden { display: none; }
             </style>
             </head>
             <body>
             <h1>Molecule gallery</h1>
+            <div id="filter">
+            <input id="search" type="search" placeholder="Search by name…">
+            <select id="picker"></select>
+            <span id="chosen"></span>
+            <span id="count"></span>
+            </div>
             <ul>
             """);
 
         for (Drawing drawing : drawings)
         {
-            page.append(drawing.failed() ? "<li class=\"failed\">\n" : "<li>\n");
+            String classes = String.join(" ", drawing.entry().classes());
+            page.append(drawing.failed() ? "<li class=\"failed\"" : "<li");
+            page.append(" data-classes=\"").append(escape(classes)).append("\">\n");
             page.append("<h2>").append(escape(drawing.entry().name())).append("</h2>\n");
             page.append("<code>").append(escape(drawing.entry().smiles())).append("</code>\n");
+            if (!drawing.entry().classes().isEmpty())
+            {
+                page.append("<div class=\"tags\">");
+                for (String tag : drawing.entry().classes())
+                {
+                    page.append("<span class=\"tag\">").append(escape(tag)).append("</span>");
+                }
+                page.append("</div>\n");
+            }
             if (drawing.failed())
             {
                 page.append("<p>").append(escape(drawing.complaint())).append("</p>\n");
@@ -254,7 +305,54 @@ public final class DepictGallery
             page.append("</li>\n");
         }
 
-        return page.append("</ul>\n</body>\n</html>\n").toString();
+        // searching script
+        return page.append("""
+            </ul>
+            <script>
+            const items = [...document.querySelectorAll("li[data-classes]")];
+            const picker = document.getElementById("picker");
+            const chosenBox = document.getElementById("chosen");
+            const count = document.getElementById("count");
+            const all = [...new Set(items.flatMap(li => li.dataset.classes.split(" ").filter(Boolean)))].sort();
+            const search = document.getElementById("search");
+            const chosen = [];
+            let query = "";
+
+            function refresh() {
+              picker.innerHTML = "";
+              picker.add(new Option("Filter by class…", ""));
+              for (const tag of all.filter(tag => !chosen.includes(tag))) {
+                picker.add(new Option(tag + " (" + items.filter(li => li.dataset.classes.split(" ").includes(tag)).length + ")", tag));
+              }
+
+              chosenBox.innerHTML = "";
+              for (const tag of chosen) {
+                const label = document.createElement("span");
+                label.className = "tag";
+                label.title = "Remove this filter";
+                label.textContent = tag;
+                label.onclick = () => { chosen.splice(chosen.indexOf(tag), 1); refresh(); };
+                chosenBox.append(label);
+              }
+
+              let shown = 0;
+              for (const li of items) {
+                const own = li.dataset.classes.split(" ");
+                const name = li.querySelector("h2").textContent.toLowerCase();
+                const match = chosen.every(tag => own.includes(tag)) && name.includes(query);
+                li.classList.toggle("hidden", !match);
+                if (match) shown++;
+              }
+              count.textContent = "Showing " + shown + " of " + items.length;
+            }
+
+            picker.onchange = () => { if (picker.value) { chosen.push(picker.value); refresh(); } };
+            search.oninput = () => { query = search.value.trim().toLowerCase(); refresh(); };
+            refresh();
+            </script>
+            </body>
+            </html>
+            """).toString();
     }
 
     /**
@@ -271,8 +369,9 @@ public final class DepictGallery
      *
      * @param name what it is called, which names its file too
      * @param smiles the molecule, written in SMILES
+     * @param classes the classes it belongs to, such as {@code ring}, lower-cased
      */
-    record Entry(String name, String smiles)
+    record Entry(String name, String smiles, List<String> classes)
     {
     }
 
