@@ -4,9 +4,12 @@ import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentitySet;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -54,6 +57,7 @@ public final class Molecule
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
     private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
+    private final CachedValue<Set<Bond>> bridges = new CachedValue<>(this::computeBridges);
     private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
     private final CachedValue<List<Molecule>> fragments = new CachedValue<>(() -> MoleculeFragmenter.fragment(this));
@@ -363,6 +367,84 @@ public final class Molecule
     public Set<Bond> ringBonds()
     {
         return ringBonds.get();
+    }
+
+    /**
+     * Finds every bridge: a bond whose removal disconnects its fragment, i.e., one which doesn't lie on a ring.
+     * Unlike {@link #ringBonds()} this needs no cycle enumeration, only one linear pass, so use this where possible.
+     *
+     * @return this molecule's bridges
+     */
+    public Set<Bond> bridges()
+    {
+        return bridges.get();
+    }
+
+    /** One atom on the depth-first search stack of {@link #computeBridges}, with the bond it was reached by and its bonds still to try. */
+    private record SearchFrame(Atom atom, Bond via, Iterator<Bond> remaining)
+    {
+    }
+
+    /**
+     * Finds the bridges with Tarjan's low-link algorithm.
+     *
+     * @return the bridges, by reference identity
+     */
+    private Set<Bond> computeBridges()
+    {
+        Map<Atom, Integer> discovery = new IdentityHashMap<>();
+        Map<Atom, Integer> low = new IdentityHashMap<>();
+        Set<Bond> found = IdentitySet.of();
+        Deque<SearchFrame> stack = new ArrayDeque<>();
+
+        for (Atom root : atoms)
+        {
+            if (discovery.containsKey(root))
+            {
+                continue;
+            }
+            discovery.put(root, discovery.size());
+            low.put(root, discovery.get(root));
+            stack.push(new SearchFrame(root, null, bondsOf(root).iterator()));
+
+            while (!stack.isEmpty())
+            {
+                SearchFrame frame = stack.peek();
+                if (frame.remaining().hasNext())
+                {
+                    Bond bond = frame.remaining().next();
+                    if (bond == frame.via())
+                    {
+                        continue;
+                    }
+                    Atom next = bond.first() == frame.atom() ? bond.second() : bond.first();
+                    if (discovery.containsKey(next))
+                    {
+                        low.merge(frame.atom(), discovery.get(next), Math::min);
+                    }
+                    else
+                    {
+                        discovery.put(next, discovery.size());
+                        low.put(next, discovery.get(next));
+                        stack.push(new SearchFrame(next, bond, bondsOf(next).iterator()));
+                    }
+                }
+                else
+                {
+                    stack.pop();
+                    if (!stack.isEmpty())
+                    {
+                        Atom parent = stack.peek().atom();
+                        low.merge(parent, low.get(frame.atom()), Math::min);
+                        if (low.get(frame.atom()) > discovery.get(parent))
+                        {
+                            found.add(frame.via());
+                        }
+                    }
+                }
+            }
+        }
+        return found;
     }
 
     /**
@@ -889,6 +971,31 @@ public final class Molecule
             }
             Bond removed = bonds.remove(index);
             doubleBondStereo.remove(removed);
+            return this;
+        }
+
+        /**
+         * Changes the order of an existing bond.
+         *
+         * @param first one endpoint atom
+         * @param second the other endpoint atom
+         * @param order the new bond order
+         * @return this builder, for chaining
+         * @throws IllegalArgumentException if no bond exists between the atoms, or the bond has declared double bond stereo
+         */
+        public Builder setBondOrder(Atom first, Atom second, BondOrder order)
+        {
+            int index = indexOfBond(first, second);
+            if (index == -1)
+            {
+                throw new IllegalArgumentException("No bond exists between the given atoms");
+            }
+            Bond old = bonds.get(index);
+            if (doubleBondStereo.containsKey(old))
+            {
+                throw new IllegalArgumentException("Bond has declared double bond stereo");
+            }
+            bonds.set(index, new Bond(old.first(), old.second(), order));
             return this;
         }
 
