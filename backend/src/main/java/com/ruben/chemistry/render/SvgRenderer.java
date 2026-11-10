@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Draws a {@link Depiction} as an SVG document.
@@ -52,6 +53,9 @@ public final class SvgRenderer
     /** How it should be drawn. */
     private final RenderStyle style;
 
+    /** The snapshot the depiction's indices refer to, or {@code null} if not known. */
+    private final UUID snapshotId;
+
     /** How far each atom holds a bond off, in pixels, indexed as the depiction's atoms are. */
     private final double[] clearances;
 
@@ -86,8 +90,9 @@ public final class SvgRenderer
      * @param depiction the depiction to draw
      * @param style how it should be drawn
      */
-    private SvgRenderer(Depiction depiction, RenderStyle style)
+    private SvgRenderer(Depiction depiction, RenderStyle style, UUID snapshotId)
     {
+        this.snapshotId = snapshotId;
         this.depiction = depiction;
         this.style = style;
         this.bounds = depiction.bounds();
@@ -162,6 +167,7 @@ public final class SvgRenderer
 
     /**
      * Draws a depiction.
+     * <strong>Note</strong> this does not record a UUID.
      *
      * @param depiction the depiction to draw
      * @param style how it should be drawn
@@ -172,7 +178,22 @@ public final class SvgRenderer
     {
         Objects.requireNonNull(depiction, "depiction");
         Objects.requireNonNull(style, "style");
-        return new SvgRenderer(depiction, style).draw();
+        return new SvgRenderer(depiction, style, null).draw();
+    }
+
+    /**
+     * Draws a layout's depiction.
+     *
+     * @param layout the layout to draw
+     * @param style how it should be drawn
+     * @return a standalone SVG document
+     * @throws NullPointerException if either argument is {@code null}
+     */
+    public static String render(Layout layout, RenderStyle style)
+    {
+        Objects.requireNonNull(layout, "layout");
+        Objects.requireNonNull(style, "style");
+        return new SvgRenderer(layout.depiction(), style, layout.snapshot().getId()).draw();
     }
 
     /**
@@ -203,7 +224,16 @@ public final class SvgRenderer
         document.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"").append(number(width))
             .append("\" height=\"").append(number(height))
             .append("\" viewBox=\"0 0 ").append(number(width)).append(' ').append(number(height))
-            .append("\">\n");
+            .append('"');
+        if (style.metadata())
+        {
+            document.append(" data-metedata=\"true\"");
+            if (snapshotId != null)
+            {
+                document.append(" data-snapshot=\"").append(snapshotId).append('"');
+            }
+        }
+        document.append(">\n");
 
         if (!defs.isEmpty())
         {

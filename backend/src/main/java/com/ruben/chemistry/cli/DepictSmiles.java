@@ -99,6 +99,6 @@ public final class DepictSmiles
     static String render(String smiles, CommandOptions options)
     {
         Layout layout = MoleculeLayout.layout(new SmilesParser(smiles).parse(), options.depictionOptions());
-        return SvgRenderer.render(layout.depiction(), options.style());
+        return SvgRenderer.render(layout, options.style());
     }
 }
