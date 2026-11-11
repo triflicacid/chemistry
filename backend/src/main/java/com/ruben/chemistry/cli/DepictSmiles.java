@@ -1,6 +1,5 @@
 package com.ruben.chemistry.cli;
 
-import com.ruben.chemistry.render.Depiction;
 import com.ruben.chemistry.render.Layout;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.SvgRenderer;
@@ -11,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Draws a molecule written in SMILES as an SVG document.
@@ -22,17 +22,24 @@ import java.util.List;
  * }</pre>
  * Without an {@code --out} the document goes to standard output.
  */
-public final class DepictSmiles
+final class DepictSmiles
 {
     /** What to give {@code --out} to write to standard output rather than to a file. */
     private static final String STANDARD_OUTPUT = "-";
 
-    /** How to use the command, shown when its arguments make no sense. */
-    static final String USAGE = """
-        Usage: depict <smiles> [options]
+    /** The output destination option specific to this command. */
+    private static final CliOption<String> OUT = CliOption.string(
+            "out",
+            "path",
+            "where to write the document, or - for standard output",
+            STANDARD_OUTPUT
+    );
 
-          --out=<path>                 where to write the document, or - for standard output (default -)
-        """ + CommandOptions.USAGE;
+    static final List<CliOption<?>> OPTIONS = Stream.concat(Stream.of(OUT), CommandOptions.DRAWING_OPTIONS.stream()).toList();
+
+    private static final String USAGE = CliParser.usage(
+            "Usage: depict <smiles> [options]",
+            OPTIONS);
 
     private DepictSmiles()
     {
@@ -47,12 +54,12 @@ public final class DepictSmiles
         List<String> arguments = List.of(args);
         String destination;
         String document;
+
         try
         {
-            CommandOptions options = CommandOptions.of(arguments);
-            options.validate("out");
-            destination = options.get("out", STANDARD_OUTPUT);
-            document = render(arguments);
+            CliOptions options = CommandOptions.of(arguments, OUT);
+            destination = options.get(OUT);
+            document = render(options.onlySubject(), options);
         }
         catch (IllegalArgumentException wrong)
         {
@@ -84,8 +91,8 @@ public final class DepictSmiles
      */
     public static String render(List<String> arguments)
     {
-        CommandOptions options = CommandOptions.of(arguments);
-        return render(options.onlySubject("SMILES string"), options);
+        CliOptions options = CommandOptions.of(arguments, OUT);
+        return render(options.onlySubject(), options);
     }
 
     /**
@@ -96,9 +103,12 @@ public final class DepictSmiles
      * @return the SVG document
      * @throws IllegalArgumentException if the molecule cannot be read or laid out
      */
-    static String render(String smiles, CommandOptions options)
+    static String render(String smiles, CliOptions options)
     {
-        Layout layout = MoleculeLayout.layout(new SmilesParser(smiles).parse(), options.depictionOptions());
-        return SvgRenderer.render(layout, options.style());
+        Layout layout = MoleculeLayout.layout(
+                new SmilesParser(smiles).parse(),
+                CommandOptions.depictionOptions(options));
+
+        return SvgRenderer.render(layout, CommandOptions.style(options));
     }
 }

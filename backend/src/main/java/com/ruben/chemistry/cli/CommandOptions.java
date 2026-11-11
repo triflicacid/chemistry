@@ -1,8 +1,9 @@
+
 package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.render.AtomShape;
-import com.ruben.chemistry.render.ChainGeometry;
 import com.ruben.chemistry.render.CellAlignment;
+import com.ruben.chemistry.render.ChainGeometry;
 import com.ruben.chemistry.render.Colour;
 import com.ruben.chemistry.render.DepictionOptions;
 import com.ruben.chemistry.render.FragmentArrangement;
@@ -12,394 +13,364 @@ import com.ruben.chemistry.render.RenderStyle;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The arguments a drawing command was given.
- * <p>
- * An argument beginning {@code --} is a setting, written {@code --name=value}; anything else is
- * something to draw. A setting given more than once keeps every value, behind commas, so that
- * {@code --colour} can be given once per element.
  */
 final class CommandOptions
 {
-    /** How the settings are written, shown when a command's arguments make no sense. */
-    static final String USAGE = """
-          --style=text|circles|skeletal
-                                       whether an atom is written as its symbol, drawn as a ball,
-                                       or, for carbon, left as a bare vertex of a line-angle
-                                       drawing (default text)
-          --geometry=straight|zigzag   how a chain of single bonds runs (default straight, zigzag
-                                       under --style=skeletal)
-          --layout=row|column|row:<n>|column:<n>|grid:<template>
-                                       how the parts of a disconnected molecule are arranged: in
-                                       one row or column, in rows (or columns) of n parts, or in a
-                                       grid: rows split by /, cells by spaces, a run of x a
-                                       part whose width is the run's length (so "x xx x" gives
-                                       the middle part double), a run of . an empty cell, e.g.
-                                       "grid:x x x / x xx x"; the last row repeats for any
-                                       parts left over (default row)
-          --grid-align=left|centre|right
-                                       where a part sits sideways in its cell (default centre)
-          --fragment-gap=<px>          how many pixels of empty space lie between parts (default 30)
-          --debug-layout=true|false    outline each part's box (red, dashed) and the grid cell it
-                                       sits in (blue), for debugging layouts
-          --hydrogens=separate|condensed|none
-                                       whether hydrogens are drawn as atoms of their own, gathered
-                                       into the symbol they hang off, or left out (default separate)
-          --isotopes=true|false        whether a mass number is written beside a symbol (default true)
-          --charges=true|false         whether a charge is written beside a symbol (default true)
-          --bond-length=<px>           how many pixels long one bond is (default 50)
-          --margin=<px>                how many pixels of empty space surround the drawing (default 12)
-          --font-size=<px>             how many pixels tall a symbol is written (default 18)
-          --background=<colour>        the colour behind the drawing, or none (default #ffffff)
-          --bond-colour=<colour>       the colour a bond is drawn in
-          --bond-gradient=true|false   whether a bond runs between the colours of the atoms at its
-                                       ends instead (default false)
-          --metadata=true|false        whether each atom and bond carries data-* attributes tracing
-                                       it back to the molecule (default false)
-          --colour=<element>:<colour>  the colour one element is drawn in, repeatable
-        """;
-
-    /** The settings this class itself understands; a command adds whatever else it takes. */
-    private static final Set<String> KNOWN = Set.of(
-        "style", "geometry", "layout", "hydrogens", "isotopes", "charges", "bond-length", "margin",
-        "font-size", "fragment-gap", "grid-align", "background", "bond-colour", "bond-gradient", "colour", "metadata",
-        "debug-layout");
-
-    /** The settings which may take a Boolean value, whose presence with no value defaults to {@code true}. */
-    private static final Set<String> KNOWN_BOOLEAN = Set.of("isotopes", "charges", "bond-gradient", "metadata", "debug-layout");
-
-    /** The arguments that name something to draw. */
-    private final List<String> subjects;
-
-    /** Each setting against its value. */
-    private final Map<String, String> values;
-
     /**
-     * @param subjects the arguments that name something to draw
-     * @param values each setting against its value
-     */
-    private CommandOptions(List<String> subjects, Map<String, String> values)
-    {
-        this.subjects = List.copyOf(subjects);
-        this.values = Map.copyOf(values);
-    }
-
-    /**
-     * @param arguments the arguments given
-     * @return what they ask for
-     * @throws IllegalArgumentException if a setting has no value
-     */
-    static CommandOptions of(List<String> arguments)
-    {
-        List<String> subjects = new ArrayList<>();
-        Map<String, String> values = new LinkedHashMap<>();
-
-        for (String argument : arguments)
-        {
-            if (!argument.startsWith("--"))
-            {
-                subjects.add(argument);
-                continue;
-            }
-
-            String body = argument.substring(2);
-            int split = body.indexOf('=');
-            if (split < 1)
-            {
-                // Boolean: defaults to true
-                if (KNOWN_BOOLEAN.contains(body))
-                {
-                    values.put(body, "true");
-                    continue;
-                }
-
-                throw new IllegalArgumentException("Option '" + argument + "' needs a value, as in --name=value");
-            }
-
-            // Every element keeps its own colour, so a repeated setting piles up rather than replacing.
-            values.merge(body.substring(0, split), body.substring(split + 1), (held, added) -> held + "," + added);
-        }
-        return new CommandOptions(subjects, values);
-    }
-
-    /**
-     * @param layout an arrangement of parts, as {@code --layout} takes it
-     * @return these options, with that arrangement in place of any set already
-     */
-    CommandOptions withLayout(String layout)
-    {
-        Map<String, String> changed = new LinkedHashMap<>(values);
-        changed.put("layout", layout);
-        return new CommandOptions(subjects, changed);
-    }
-
-    /**
-     * @return the arguments that name something to draw
-     */
-    List<String> subjects()
-    {
-        return subjects;
-    }
-
-    /**
-     * Checks that every setting given is one something understands, so that a misspelt one is
-     * complained about rather than quietly ignored.
-     *
-     * @param alsoAllowed the settings the command itself takes, besides the drawing ones
-     * @throws IllegalArgumentException if a setting is not understood
-     */
-    void validate(String... alsoAllowed)
-    {
-        for (String name : values.keySet())
-        {
-            if (!KNOWN.contains(name) && !List.of(alsoAllowed).contains(name))
-            {
-                throw new IllegalArgumentException("There is no --" + name + " setting");
-            }
-        }
-    }
-
-    /**
-     * @param expected what one subject means, for the error message
-     * @return the only subject given
-     * @throws IllegalArgumentException if there is not exactly one
-     */
-    String onlySubject(String expected)
-    {
-        if (subjects.size() != 1)
-        {
-            throw new IllegalArgumentException("Expected exactly one " + expected + ", but was given " + subjects.size());
-        }
-        return subjects.getFirst();
-    }
-
-    /**
-     * @param name the setting to read
-     * @param fallback what to use where it was not given
-     * @return its value
-     */
-    String get(String name, String fallback)
-    {
-        return values.getOrDefault(name, fallback);
-    }
-
-    /**
-     * @return what the settings say about how to lay a molecule out
-     */
-    DepictionOptions depictionOptions()
-    {
-        DepictionOptions base = drawing() == Drawing.SKELETAL
-            ? DepictionOptions.skeletal()
-            : DepictionOptions.defaults();
-
-        return new DepictionOptions(
-            base.style(),
-            choice("geometry", ChainGeometry.class, base.chainGeometry()),
-            values.containsKey("hydrogens") ? hydrogenStyle() : base.hydrogens());
-    }
-
-    /**
-     * Reads the one setting that says how a molecule is drawn, allowing {@code circle} as another
-     * way of saying {@code circles}.
-     *
-     * @return the choice made
-     * @throws IllegalArgumentException if the value names no choice
-     */
-    private Drawing drawing()
-    {
-        String value = values.get("style");
-        if (value == null)
-        {
-            return Drawing.TEXT;
-        }
-        if (value.equalsIgnoreCase("circle"))
-        {
-            return Drawing.CIRCLES;
-        }
-        return choice("style", Drawing.class, Drawing.TEXT);
-    }
-
-    /**
-     * How a molecule is drawn, which decides both how much of it is laid out and how an atom that
-     * was laid out is marked on the page.
+     * How a molecule is drawn.
      */
     private enum Drawing
     {
         /** Every atom written out as its own symbol. */
         TEXT(AtomShape.TEXT),
 
-        /** Every atom drawn as a ball, as a molecular model has them. */
+        /** Every atom drawn as a ball. */
         CIRCLES(AtomShape.CIRCLE),
 
         /** Carbon left as a bare vertex, everything else written out. */
         SKELETAL(AtomShape.TEXT);
 
-        /** How an atom that is drawn at all is marked. */
         private final AtomShape shape;
 
-        /**
-         * @param shape how an atom that is drawn at all is marked
-         */
         Drawing(AtomShape shape)
         {
             this.shape = shape;
         }
     }
 
+    static final CliOption<Drawing> STYLE = CliOption.choice(
+            "style",
+            "whether an atom is written as its symbol, drawn as a ball, or, "
+                    + "for carbon, left as a bare vertex of a line-angle drawing",
+            Map.of(
+                    "text", Drawing.TEXT,
+                    "circles", Drawing.CIRCLES,
+                    "skeletal", Drawing.SKELETAL
+            ),
+            () -> Drawing.TEXT
+    );
+
+    static final CliOption<ChainGeometry> GEOMETRY = CliOption.choice(
+            "geometry",
+            "how a chain of single bonds runs",
+            Map.of(
+                    "straight", ChainGeometry.STRAIGHT,
+                    "zigzag", ChainGeometry.ZIGZAG
+            ),
+            () -> ChainGeometry.STRAIGHT
+    );
+
+    static final CliOption<FragmentArrangement> LAYOUT = CliOption.parsed(
+            "layout",
+            "row|column|row:<n>|column:<n>|grid:<template>",
+            "how the parts of a disconnected molecule are arranged",
+            FragmentArrangement::parse,
+            null
+    );
+
+    static final CliOption<CellAlignment> GRID_ALIGN = CliOption.choice(
+            "grid-align",
+            "where a part sits sideways in its cell",
+            Map.of(
+                    "left", CellAlignment.LEFT,
+                    "centre", CellAlignment.CENTRE,
+                    "center", CellAlignment.CENTRE,
+                    "right", CellAlignment.RIGHT
+            ),
+            () -> CellAlignment.CENTRE
+    );
+
+    static final CliOption<HydrogenStyle> HYDROGENS = CliOption.choice(
+            "hydrogens",
+            "whether hydrogens are drawn as atoms of their own, gathered into "
+                    + "the symbol they hang off, or left out",
+            Map.of(
+                    "separate", HydrogenStyle.SEPARATE,
+                    "condensed", HydrogenStyle.CONDENSED,
+                    "none", HydrogenStyle.NONE
+            ),
+            () -> HydrogenStyle.SEPARATE
+    );
+
+    static final CliOption<Double> FRAGMENT_GAP = CliOption.number(
+            "fragment-gap",
+            "px",
+            "how many pixels of empty space lie between parts",
+            30
+    );
+
+    static final CliOption<Boolean> DEBUG_LAYOUT = CliOption.flag(
+            "debug-layout",
+            "outline each part's box and the grid cell it sits in for debugging layouts",
+            false
+    );
+
+    static final CliOption<Boolean> ISOTOPES = CliOption.flag(
+            "isotopes",
+            "whether a mass number is written beside a symbol",
+            true
+    );
+
+    static final CliOption<Boolean> CHARGES = CliOption.flag(
+            "charges",
+            "whether a charge is written beside a symbol",
+            true
+    );
+
+    static final CliOption<Double> BOND_LENGTH = CliOption.number(
+            "bond-length",
+            "px",
+            "how many pixels long one bond is",
+            50
+    );
+
+    static final CliOption<Double> MARGIN = CliOption.number(
+            "margin",
+            "px",
+            "how many pixels of empty space surround the drawing",
+            12
+    );
+
+    static final CliOption<Double> FONT_SIZE = CliOption.number(
+            "font-size",
+            "px",
+            "how many pixels tall a symbol is written",
+            18
+    );
+
+    static final CliOption<Colour> BACKGROUND = CliOption.parsed(
+            "background",
+            "colour",
+            "the colour behind the drawing, or none",
+            value -> value.equalsIgnoreCase("none") ? null : Colour.of(value),
+            null
+    );
+
+    static final CliOption<String> BOND_COLOUR = CliOption.string(
+            "bond-colour",
+            "colour",
+            "the colour a bond is drawn in",
+            null
+    );
+
+    static final CliOption<Boolean> BOND_GRADIENT = CliOption.flag(
+            "bond-gradient",
+            "whether a bond runs between the colours of the atoms at its ends instead",
+            false
+    );
+
+    static final CliOption<Boolean> METADATA = CliOption.flag(
+            "metadata",
+            "whether each atom and bond carries data-* attributes tracing it back to the molecule",
+            false
+    );
+
+    static final CliOption<String> COLOUR = CliOption.repeatedString(
+            "colour",
+            "<element>:<colour>",
+            "the colour one element is drawn in; repeatable"
+    );
+
+    static final List<CliOption<?>> DRAWING_OPTIONS = List.of(
+            STYLE,
+            GEOMETRY,
+            LAYOUT,
+            GRID_ALIGN,
+            HYDROGENS,
+            FRAGMENT_GAP,
+            DEBUG_LAYOUT,
+            ISOTOPES,
+            CHARGES,
+            BOND_LENGTH,
+            MARGIN,
+            FONT_SIZE,
+            BACKGROUND,
+            BOND_COLOUR,
+            BOND_GRADIENT,
+            METADATA,
+            COLOUR
+    );
+
+    static final String USAGE = CliParser.usage("Drawing options:", DRAWING_OPTIONS);
+
+    private CommandOptions()
+    {
+    }
+
     /**
-     * Reads how hydrogens should be drawn, allowing the {@code true} and {@code false} this setting
-     * once took as other ways of saying separate and none.
+     * Returns the shared drawing option definitions.
+     */
+    static List<CliOption<?>> definitions()
+    {
+        return DRAWING_OPTIONS;
+    }
+
+    /**
+     * Combines the shared drawing options with command-specific options.
      *
-     * @return the choice made
-     * @throws IllegalArgumentException if the value names no choice
+     * @param commandOptions the additional options
+     * @return all option definitions
      */
-    private HydrogenStyle hydrogenStyle()
+    static List<CliOption<?>> definitions(CliOption<?>... commandOptions)
     {
-        String value = values.get("hydrogens");
-        if (value == null)
-        {
-            return HydrogenStyle.SEPARATE;
-        }
-        if (value.equalsIgnoreCase("true"))
-        {
-            return HydrogenStyle.SEPARATE;
-        }
-        if (value.equalsIgnoreCase("false"))
-        {
-            return HydrogenStyle.NONE;
-        }
-        return choice("hydrogens", HydrogenStyle.class, HydrogenStyle.SEPARATE);
+        return Stream.concat(DRAWING_OPTIONS.stream(), Stream.of(commandOptions)).collect(
+                Collectors.collectingAndThen(
+                        Collectors.toMap(
+                                CliOption::name,
+                                option -> option,
+                                (first, second) -> {
+                                    throw new IllegalArgumentException("Duplicate option definition: --" + second.name());
+                                },
+                                LinkedHashMap::new
+                        ),
+                        map -> List.copyOf(map.values())
+                )
+        );
     }
 
     /**
-     * @return what the settings say about how to draw a depiction
+     * Parses arguments using the shared and command-specific options.
+     *
+     * @param arguments the arguments given
+     * @param commandOptions the additional options understood by this command
+     * @return the parsed options
      */
-    RenderStyle style()
+    static CliOptions of(List<String> arguments, CliOption<?>... commandOptions) {
+        return CliParser.parse(arguments, definitions(commandOptions));
+    }
+
+    /**
+     * Generates usage text for a command.
+     *
+     * @param synopsis the command's usage synopsis
+     * @param commandOptions the additional options understood by this command
+     * @return the complete usage text
+     */
+    static String usage(String synopsis, CliOption<?>... commandOptions)
     {
+        return CliParser.usage(synopsis, definitions(commandOptions));
+    }
+
+    /**
+     * Returns these options, with the supplied layout replacing any existing one.
+     */
+    static CliOptions withLayout(CliOptions options, String layout)
+    {
+        Map<String, List<Object>> changed = new LinkedHashMap<>(options.values());
+        changed.put(
+                LAYOUT.name(),
+                List.of(LAYOUT.parse(layout))
+        );
+
+        return new CliOptions(
+                options.definitions(),
+                changed,
+                options.subjects()
+        );
+    }
+
+    /**
+     * Returns how the settings say a molecule should be drawn.
+     */
+    static DepictionOptions depictionOptions(CliOptions options)
+    {
+        Drawing drawing = options.get(STYLE);
+
+        DepictionOptions base = drawing == Drawing.SKELETAL
+                ? DepictionOptions.skeletal()
+                : DepictionOptions.defaults();
+
+        ChainGeometry geometry = options.has(GEOMETRY.name())
+                ? options.get(GEOMETRY)
+                : base.chainGeometry();
+
+        HydrogenStyle hydrogens = options.has(HYDROGENS.name())
+                ? options.get(HYDROGENS)
+                : base.hydrogens();
+
+        return new DepictionOptions(
+                base.style(),
+                geometry,
+                hydrogens
+        );
+    }
+
+    /**
+     * Returns what the settings say about how to draw a depiction.
+     */
+    static RenderStyle style(CliOptions options)
+    {
+        Drawing drawing = options.get(STYLE);
+
         RenderStyle.Builder style = RenderStyle.builder()
-            .atomShape(drawing().shape)
-            .isotopes(flag("isotopes", true))
-            .charges(flag("charges", true))
-            .bondGradient(flag("bond-gradient", false))
-            .metadata(flag("metadata", false))
-            .debugLayout(flag("debug-layout", false));
+                .atomShape(drawing.shape)
+                .isotopes(options.get(ISOTOPES))
+                .charges(options.get(CHARGES))
+                .bondGradient(options.get(BOND_GRADIENT))
+                .metadata(options.get(METADATA))
+                .debugLayout(options.get(DEBUG_LAYOUT));
 
-        if (values.containsKey("bond-length"))
+        if (options.has(BOND_LENGTH.name()))
         {
-            style.bondLength(number("bond-length"));
+            style.bondLength(options.get(BOND_LENGTH));
         }
-        if (values.containsKey("layout"))
+
+        if (options.has(LAYOUT.name()))
         {
-            style.fragmentArrangement(FragmentArrangement.parse(values.get("layout")));
+            style.fragmentArrangement(options.get(LAYOUT));
         }
-        if (values.containsKey("fragment-gap"))
+
+        if (options.has(FRAGMENT_GAP.name()))
         {
-            style.fragmentGap(number("fragment-gap"));
+            style.fragmentGap(options.get(FRAGMENT_GAP));
         }
-        if (values.containsKey("grid-align"))
+
+        if (options.has(GRID_ALIGN.name()))
         {
-            String align = values.get("grid-align");
-            style.gridAlignment(align.equalsIgnoreCase("center")
-                ? CellAlignment.CENTRE
-                : choice("grid-align", CellAlignment.class, CellAlignment.CENTRE));
+            style.gridAlignment(options.get(GRID_ALIGN));
         }
-        if (values.containsKey("margin"))
+
+        if (options.has(MARGIN.name()))
         {
-            style.margin(number("margin"));
+            style.margin(options.get(MARGIN));
         }
-        if (values.containsKey("font-size"))
+
+        if (options.has(FONT_SIZE.name()))
         {
-            style.fontSize(number("font-size"));
+            style.fontSize(options.get(FONT_SIZE));
         }
-        if (values.containsKey("background"))
+
+        if (options.has(BACKGROUND.name()))
         {
-            String background = values.get("background");
-            style.background(background.equalsIgnoreCase("none") ? null : Colour.of(background));
+            style.background(options.get(BACKGROUND));
         }
-        if (values.containsKey("bond-colour"))
+
+        if (options.has(BOND_COLOUR.name()))
         {
-            style.bondColour(Colour.of(values.get("bond-colour")));
+            style.bondColour(Colour.of(options.get(BOND_COLOUR)));
         }
-        if (values.containsKey("colour"))
+
+        for (String chosen : options.getAll(COLOUR))
         {
-            for (String chosen : values.get("colour").split(","))
+            int split = chosen.indexOf(':');
+
+            if (split < 1)
             {
-                int split = chosen.indexOf(':');
-                if (split < 1)
-                {
-                    throw new IllegalArgumentException("Expected --colour=<element>:<colour>, but was given '" + chosen + "'");
-                }
-                style.colour(chosen.substring(0, split), Colour.of(chosen.substring(split + 1)));
+                throw new IllegalArgumentException("Expected --colour=<element>:<colour>, but was given '" + chosen + "'");
             }
+
+            style.colour(
+                    chosen.substring(0, split),
+                    Colour.of(chosen.substring(split + 1))
+            );
         }
+
         return style.build();
-    }
-
-    /**
-     * @param name the setting to read
-     * @param type the choices it allows
-     * @param fallback what to use where it was not given
-     * @param <T> the choices it allows
-     * @return the choice made
-     * @throws IllegalArgumentException if the value names no choice
-     */
-    private <T extends Enum<T>> T choice(String name, Class<T> type, T fallback)
-    {
-        String value = values.get(name);
-        if (value == null)
-        {
-            return fallback;
-        }
-
-        try
-        {
-            return Enum.valueOf(type, value.toUpperCase(Locale.ROOT));
-        }
-        catch (IllegalArgumentException unknown)
-        {
-            throw new IllegalArgumentException("'" + value + "' is not one of the choices --" + name + " allows");
-        }
-    }
-
-    /**
-     * @param name the setting to read
-     * @param fallback what to use where it was not given
-     * @return whether it is on
-     * @throws IllegalArgumentException if the value is neither true nor false
-     */
-    private boolean flag(String name, boolean fallback)
-    {
-        String value = values.get(name);
-        if (value == null)
-        {
-            return fallback;
-        }
-        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false"))
-        {
-            return Boolean.parseBoolean(value);
-        }
-        throw new IllegalArgumentException("--" + name + " must be true or false, but was '" + value + "'");
-    }
-
-    /**
-     * @param name the setting to read
-     * @return the measurement it gives
-     * @throws IllegalArgumentException if the value is not a number
-     */
-    private double number(String name)
-    {
-        String value = values.get(name);
-        try
-        {
-            return Double.parseDouble(value);
-        }
-        catch (NumberFormatException notANumber)
-        {
-            throw new IllegalArgumentException("--" + name + " must be a number, but was '" + value + "'");
-        }
     }
 }

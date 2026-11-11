@@ -1,3 +1,4 @@
+
 package com.ruben.chemistry.cli;
 
 import java.io.IOException;
@@ -9,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Draws every molecule a list names.
@@ -26,7 +28,7 @@ import java.util.Set;
  * ./gradlew :backend:gallery --args="examples/molecules.csv --out-dir=out --style=circles"
  * }</pre>
  */
-public final class DepictGallery
+final class DepictGallery
 {
     /** Where the drawings go unless told otherwise. */
     private static final String DEFAULT_DIRECTORY = "out";
@@ -46,14 +48,18 @@ public final class DepictGallery
     /** What separates one class from the next within the classes column. */
     private static final String CLASS_SEPARATOR = ";";
 
-    /** How to use the command, shown when its arguments make no sense. */
-    static final String USAGE = """
-        Usage: gallery <csv> [options]
+    /** The output directory option specific to this command. */
+    private static final CliOption<String> OUT_DIR = CliOption.string(
+            "out-dir",
+            "path",
+            "where the drawings go",
+            DEFAULT_DIRECTORY);
 
-          <csv>                        a file of name,smiles,classes,layout lines; classes (divided by ;) and
-                                       layout are optional, and a layout overrides --layout for that molecule
-          --out-dir=<path>             where the drawings go (default out)
-        """ + CommandOptions.USAGE;
+    private static final List<CliOption<?>> OPTIONS = Stream.concat(Stream.of(OUT_DIR), CommandOptions.DRAWING_OPTIONS.stream()).toList();
+
+    static final String USAGE = CliParser.usage(
+            "Usage: gallery <csv> [options]",
+            OPTIONS);
 
     private DepictGallery()
     {
@@ -65,17 +71,32 @@ public final class DepictGallery
      */
     public static void main(String[] args) throws IOException
     {
-        CommandOptions options;
-        Path list;
-        Path directory;
-        List<Entry> entries;
         try
         {
-            options = CommandOptions.of(List.of(args));
-            options.validate("out-dir");
-            list = Path.of(options.onlySubject("list of molecules"));
-            directory = Path.of(options.get("out-dir", DEFAULT_DIRECTORY));
-            entries = read(Files.readString(list, StandardCharsets.UTF_8));
+            CliOptions options = CommandOptions.of(List.of(args), OUT_DIR);
+            Path list = Path.of(options.onlySubject());
+            Path directory = Path.of(options.get(OUT_DIR));
+            List<Entry> entries = read(Files.readString(list, StandardCharsets.UTF_8));
+
+            List<Drawing> drawings = draw(entries, options);
+            write(drawings, directory);
+
+            long failed = drawings.stream().filter(Drawing::failed).count();
+            System.out.println("Drew " + (drawings.size() - failed) + " of " + drawings.size() + " molecules into " + directory.toAbsolutePath());
+            System.out.println("Wrote HTML file to " + directory.resolve(CONTACT_SHEET).toAbsolutePath());
+
+            for (Drawing drawing : drawings)
+            {
+                if (drawing.failed())
+                {
+                    System.out.println("  could not draw " + drawing.entry().name() + " (" + drawing.entry().smiles() + "): " + drawing.complaint());
+                }
+            }
+
+            if (failed > 0)
+            {
+                System.exit(1);
+            }
         }
         catch (IllegalArgumentException wrong)
         {
@@ -83,26 +104,6 @@ public final class DepictGallery
             System.err.println();
             System.err.println(USAGE);
             System.exit(2);
-            return;
-        }
-
-        List<Drawing> drawings = draw(entries, options);
-        write(drawings, directory);
-
-        long failed = drawings.stream().filter(Drawing::failed).count();
-        System.out.println("Drew " + (drawings.size() - failed) + " of " + drawings.size()
-            + " molecules into " + directory.toAbsolutePath());
-        for (Drawing drawing : drawings)
-        {
-            if (drawing.failed())
-            {
-                System.out.println("  could not draw " + drawing.entry().name() + " (" + drawing.entry().smiles()
-                    + "): " + drawing.complaint());
-            }
-        }
-        if (failed > 0)
-        {
-            System.exit(1);
         }
     }
 
@@ -139,20 +140,25 @@ public final class DepictGallery
             String smiles = columns[0].trim();
             List<String> classes = columns.length < 2 ? List.of() : classesOf(columns[1]);
             String layout = columns.length < 3 ? "" : columns[2].trim();
+
             if (entries.isEmpty() && name.equalsIgnoreCase(HEADING))
             {
                 continue;
             }
+
             if (name.isEmpty() || smiles.isEmpty())
             {
                 throw new IllegalArgumentException("Line " + number + " is not name" + SEPARATOR + "smiles: " + trimmed);
             }
+
             if (!seen.add(name.toLowerCase(Locale.ROOT)))
             {
                 throw new IllegalArgumentException("Line " + number + " names '" + name + "' a second time");
             }
+
             entries.add(new Entry(name, smiles, classes, layout));
         }
+
         return entries;
     }
 
@@ -181,14 +187,17 @@ public final class DepictGallery
      * @param options how to draw them
      * @return what became of each, in the order given
      */
-    static List<Drawing> draw(List<Entry> entries, CommandOptions options)
+    static List<Drawing> draw(List<Entry> entries, CliOptions options)
     {
         List<Drawing> drawings = new ArrayList<>();
         for (Entry entry : entries)
         {
             try
             {
-                CommandOptions own = entry.layout().isEmpty() ? options : options.withLayout(entry.layout());
+                CliOptions own = entry.layout().isEmpty()
+                        ? options
+                        : CommandOptions.withLayout(options, entry.layout());
+
                 drawings.add(new Drawing(entry, DepictSmiles.render(entry.smiles(), own), null));
             }
             catch (RuntimeException refused)
@@ -215,7 +224,7 @@ public final class DepictGallery
             if (!drawing.failed())
             {
                 Files.writeString(directory.resolve(fileNameOf(drawing.entry().name())), drawing.document(),
-                    StandardCharsets.UTF_8);
+                        StandardCharsets.UTF_8);
             }
         }
         Files.writeString(directory.resolve(CONTACT_SHEET), contactSheet(drawings), StandardCharsets.UTF_8);
@@ -232,8 +241,8 @@ public final class DepictGallery
         {
             // Anything that might mean something to a shell or a file system becomes a dash.
             safe.append(Character.isLetterOrDigit(letter) || letter == '-' || letter == '_' || letter == '.'
-                ? letter
-                : '-');
+                    ? letter
+                    : '-');
         }
         return safe + ".svg";
     }
@@ -246,41 +255,41 @@ public final class DepictGallery
     {
         StringBuilder page = new StringBuilder();
         page.append("""
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-            <meta charset="utf-8">
-            <title>Molecule gallery</title>
-            <style>
-            body { font-family: system-ui, sans-serif; margin: 2rem; background: #f4f4f4; }
-            ul { list-style: none; padding: 0; display: grid; gap: 1rem;
-                 grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
-            li { background: #fff; border: 1px solid #ddd; border-radius: .5rem; padding: 1rem; }
-            h2 { font-size: 1rem; margin: 0 0 .25rem; }
-            code { color: #555; font-size: .85rem; word-break: break-all; }
-            figure { margin: .75rem 0 0; overflow: auto; }
-            .failed { border-color: #c00; }
-            .failed p { color: #c00; font-size: .85rem; margin: .75rem 0 0; }
-            .tags { margin: .5rem 0 0; display: flex; flex-wrap: wrap; gap: .25rem; }
-            .tag { background: #e3edf9; color: #1d4f91; border-radius: 1rem; padding: .1rem .55rem; font-size: .75rem; }
-            #filter { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
-            #chosen { display: contents; }
-            #chosen .tag { cursor: pointer; background: #1d4f91; color: #fff; font-size: .85rem; }
-            #chosen .tag::after { content: " \\00d7"; }
-            #count { color: #555; font-size: .85rem; }
-            li.hidden { display: none; }
-            </style>
-            </head>
-            <body>
-            <h1>Molecule gallery</h1>
-            <div id="filter">
-            <input id="search" type="search" placeholder="Search by name…">
-            <select id="picker"></select>
-            <span id="chosen"></span>
-            <span id="count"></span>
-            </div>
-            <ul>
-            """);
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                <meta charset="utf-8">
+                <title>Molecule gallery</title>
+                <style>
+                body { font-family: system-ui, sans-serif; margin: 2rem; background: #f4f4f4; }
+                ul { list-style: none; padding: 0; display: grid; gap: 1rem;
+                     grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
+                li { background: #fff; border: 1px solid #ddd; border-radius: .5rem; padding: 1rem; }
+                h2 { font-size: 1rem; margin: 0 0 .25rem; }
+                code { color: #555; font-size: .85rem; word-break: break-all; }
+                figure { margin: .75rem 0 0; overflow: auto; }
+                .failed { border-color: #c00; }
+                .failed p { color: #c00; font-size: .85rem; margin: .75rem 0 0; }
+                .tags { margin: .5rem 0 0; display: flex; flex-wrap: wrap; gap: .25rem; }
+                .tag { background: #e3edf9; color: #1d4f91; border-radius: 1rem; padding: .1rem .55rem; font-size: .75rem; }
+                #filter { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: 1rem; }
+                #chosen { display: contents; }
+                #chosen .tag { cursor: pointer; background: #1d4f91; color: #fff; font-size: .85rem; }
+                #chosen .tag::after { content: " \\00d7"; }
+                #count { color: #555; font-size: .85rem; }
+                li.hidden { display: none; }
+                </style>
+                </head>
+                <body>
+                <h1>Molecule gallery</h1>
+                <div id="filter">
+                <input id="search" type="search" placeholder="Search by name…">
+                <select id="picker"></select>
+                <span id="chosen"></span>
+                <span id="count"></span>
+                </div>
+                <ul>
+                """);
 
         for (Drawing drawing : drawings)
         {
@@ -289,6 +298,7 @@ public final class DepictGallery
             page.append(" data-classes=\"").append(escape(classes)).append("\">\n");
             page.append("<h2>").append(escape(drawing.entry().name())).append("</h2>\n");
             page.append("<code>").append(escape(drawing.entry().smiles())).append("</code>\n");
+
             if (!drawing.entry().classes().isEmpty())
             {
                 page.append("<div class=\"tags\">");
@@ -298,6 +308,7 @@ public final class DepictGallery
                 }
                 page.append("</div>\n");
             }
+
             if (drawing.failed())
             {
                 page.append("<p>").append(escape(drawing.complaint())).append("</p>\n");
@@ -311,52 +322,52 @@ public final class DepictGallery
 
         // searching script
         return page.append("""
-            </ul>
-            <script>
-            const items = [...document.querySelectorAll("li[data-classes]")];
-            const picker = document.getElementById("picker");
-            const chosenBox = document.getElementById("chosen");
-            const count = document.getElementById("count");
-            const all = [...new Set(items.flatMap(li => li.dataset.classes.split(" ").filter(Boolean)))].sort();
-            const search = document.getElementById("search");
-            const chosen = [];
-            let query = "";
+                </ul>
+                <script>
+                const items = [...document.querySelectorAll("li[data-classes]")];
+                const picker = document.getElementById("picker");
+                const chosenBox = document.getElementById("chosen");
+                const count = document.getElementById("count");
+                const all = [...new Set(items.flatMap(li => li.dataset.classes.split(" ").filter(Boolean)))].sort();
+                const search = document.getElementById("search");
+                const chosen = [];
+                let query = "";
 
-            function refresh() {
-              picker.innerHTML = "";
-              picker.add(new Option("Filter by class…", ""));
-              for (const tag of all.filter(tag => !chosen.includes(tag))) {
-                picker.add(new Option(tag + " (" + items.filter(li => li.dataset.classes.split(" ").includes(tag)).length + ")", tag));
-              }
+                function refresh() {
+                  picker.innerHTML = "";
+                  picker.add(new Option("Filter by class…", ""));
+                  for (const tag of all.filter(tag => !chosen.includes(tag))) {
+                    picker.add(new Option(tag + " (" + items.filter(li => li.dataset.classes.split(" ").includes(tag)).length + ")", tag));
+                  }
 
-              chosenBox.innerHTML = "";
-              for (const tag of chosen) {
-                const label = document.createElement("span");
-                label.className = "tag";
-                label.title = "Remove this filter";
-                label.textContent = tag;
-                label.onclick = () => { chosen.splice(chosen.indexOf(tag), 1); refresh(); };
-                chosenBox.append(label);
-              }
+                  chosenBox.innerHTML = "";
+                  for (const tag of chosen) {
+                    const label = document.createElement("span");
+                    label.className = "tag";
+                    label.title = "Remove this filter";
+                    label.textContent = tag;
+                    label.onclick = () => { chosen.splice(chosen.indexOf(tag), 1); refresh(); };
+                    chosenBox.append(label);
+                  }
 
-              let shown = 0;
-              for (const li of items) {
-                const own = li.dataset.classes.split(" ");
-                const name = li.querySelector("h2").textContent.toLowerCase();
-                const match = chosen.every(tag => own.includes(tag)) && name.includes(query);
-                li.classList.toggle("hidden", !match);
-                if (match) shown++;
-              }
-              count.textContent = "Showing " + shown + " of " + items.length;
-            }
+                  let shown = 0;
+                  for (const li of items) {
+                    const own = li.dataset.classes.split(" ");
+                    const name = li.querySelector("h2").textContent.toLowerCase();
+                    const match = chosen.every(tag => own.includes(tag)) && name.includes(query);
+                    li.classList.toggle("hidden", !match);
+                    if (match) shown++;
+                  }
+                  count.textContent = "Showing " + shown + " of " + items.length;
+                }
 
-            picker.onchange = () => { if (picker.value) { chosen.push(picker.value); refresh(); } };
-            search.oninput = () => { query = search.value.trim().toLowerCase(); refresh(); };
-            refresh();
-            </script>
-            </body>
-            </html>
-            """).toString();
+                picker.onchange = () => { if (picker.value) { chosen.push(picker.value); refresh(); } };
+                search.oninput = () => { query = search.value.trim().toLowerCase(); refresh(); };
+                refresh();
+                </script>
+                </body>
+                </html>
+                """).toString();
     }
 
     /**
@@ -378,10 +389,6 @@ public final class DepictGallery
      */
     record Entry(String name, String smiles, List<String> classes, String layout)
     {
-        Entry(String name, String smiles, List<String> classes)
-        {
-            this(name, smiles, classes, "");
-        }
     }
 
     /**
