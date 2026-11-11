@@ -499,6 +499,104 @@ class MoleculeLayoutTest
     }
 
     @Nested
+    class SubstituentsOfBridgedRings
+    {
+        private static Depiction skeletalDepiction(String smiles)
+        {
+            return MoleculeLayout.layout(parse(smiles), DepictionOptions.skeletal()).depiction();
+        }
+
+        private static int crossingsOf(Depiction depiction)
+        {
+            Point[] points = depiction.atoms().stream().map(AtomPlacement::position).toArray(Point[]::new);
+            int[][] bonds = depiction.bonds().stream().map(bond -> new int[] {bond.first(), bond.second()}).toArray(int[][]::new);
+            return LayoutQuality.crossings(points, bonds);
+        }
+
+        @Test
+        void keeps_the_methyl_of_tropane_from_crossing_the_ring()
+        {
+            assertThat(crossingsOf(skeletalDepiction("CN1C2CCC1CCC2"))).isZero();
+        }
+
+        @Test
+        void keeps_the_methyl_of_tropane_clear_of_the_ring_atoms()
+        {
+            Depiction depiction = skeletalDepiction("CN1C2CCC1CCC2");
+            Point[] points = depiction.atoms().stream().map(AtomPlacement::position).toArray(Point[]::new);
+            int[][] bonds = depiction.bonds().stream().map(bond -> new int[] {bond.first(), bond.second()}).toArray(int[][]::new);
+
+            assertThat(LayoutQuality.minimumAtomDistance(points, bonds)).isGreaterThan(0.5);
+        }
+    }
+
+    @Nested
+    class CagedRingSystems
+    {
+        private static final String CUBANE = "C12C3C4C1C5C2C3C45";
+
+        /**
+         * @param smiles a ring system of carbons only
+         * @return its ring atoms, as drawn skeletally
+         */
+        private static Depiction skeletalDepiction(String smiles)
+        {
+            return MoleculeLayout.layout(parse(smiles), DepictionOptions.skeletal()).depiction();
+        }
+
+        private static Point[] pointsOf(Depiction depiction)
+        {
+            return depiction.atoms().stream().map(AtomPlacement::position).toArray(Point[]::new);
+        }
+
+        private static int[][] bondsOf(Depiction depiction)
+        {
+            return depiction.bonds().stream().map(bond -> new int[] {bond.first(), bond.second()}).toArray(int[][]::new);
+        }
+
+        @Test
+        void draws_every_bond_of_cubane_one_bond_length_long()
+        {
+            Depiction depiction = skeletalDepiction(CUBANE);
+
+            assertThat(depiction.atoms()).hasSize(8);
+            assertThat(LayoutQuality.lengthError(pointsOf(depiction), bondsOf(depiction), 1)).isLessThan(1e-6);
+        }
+
+        @Test
+        void never_draws_two_atoms_of_a_system_that_cannot_have_unit_bonds_on_top_of_each_other()
+        {
+            Depiction depiction = skeletalDepiction("C1C2CC1C2");
+
+            assertThat(depiction.atoms()).hasSize(5);
+            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(depiction), bondsOf(depiction))).isGreaterThan(0.4);
+        }
+
+        @Test
+        void never_draws_two_cubane_atoms_on_top_of_each_other()
+        {
+            Depiction depiction = skeletalDepiction(CUBANE);
+
+            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(depiction), bondsOf(depiction))).isGreaterThan(0.4);
+        }
+
+        @Test
+        void draws_cubane_with_the_crossings_a_cube_has()
+        {
+            Depiction depiction = skeletalDepiction(CUBANE);
+
+            // a flat cube with equal edges has to show two of its four rear edges crossing front ones
+            assertThat(LayoutQuality.crossings(pointsOf(depiction), bondsOf(depiction))).isLessThanOrEqualTo(8);
+        }
+
+        @Test
+        void draws_the_same_cage_the_same_way_every_time()
+        {
+            assertThat(pointsOf(skeletalDepiction(CUBANE))).containsExactly(pointsOf(skeletalDepiction(CUBANE)));
+        }
+    }
+
+    @Nested
     class DisconnectedParts
     {
         @Test

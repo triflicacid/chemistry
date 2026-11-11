@@ -13,8 +13,9 @@ import java.util.Map;
  * The first ring is drawn as a regular polygon, and each ring after it is built on the atoms it shares with what is
  * already drawn, bulging away from the ring it was built on.
  * <p>
- * TODO this is a GREEDY algorithm. For non-fused ring systems, such as C12C3C4C1C5C2C3C45, this fails
- *     spectacularly.
+ * That greedy drawing is exact for simple fused systems, but it can fold bridged and caged ones, such as
+ * {@code C12C3C4C1C5C2C3C45}, over themselves. When it does, {@link RingSystemSolver} redraws the system with every bond
+ * still one bond length long.
  */
 final class RingSystemLayout
 {
@@ -45,7 +46,7 @@ final class RingSystemLayout
     {
         RingSystemLayout layout = new RingSystemLayout(rings);
         layout.build();
-        return layout.positions;
+        return RingSystemSolver.improve(rings, layout.positions);
     }
 
     /**

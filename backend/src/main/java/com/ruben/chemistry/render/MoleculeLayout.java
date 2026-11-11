@@ -46,6 +46,15 @@ public final class MoleculeLayout
     /** How many directions a fan is tried in when spinning it clear of its surroundings. */
     private static final int COLLISION_ROTATIONS = 24;
 
+    /** How much worse a drawing is for a substituent bond crossing a bond or lying across a ring, in bond lengths of clearance. */
+    private static final double CROSSING_PENALTY = 10;
+
+    /** How many times the whole drawing of a part is looked over for a branch to swing clear of a collision. */
+    private static final int REPAIR_ROUNDS = 8;
+
+    /** How close, in radians, a swung branch may come to another bond of the atom it swings about. */
+    private static final double MIN_BRANCH_ANGLE = Math.PI / 4.5;
+
     /** How far off a bond a substituent has to be before it counts as being to one side of it. */
     private static final double COLLINEAR = 1e-9;
 
@@ -238,6 +247,7 @@ public final class MoleculeLayout
         {
             expand(pending.pop(), pending);
         }
+        repairBranches();
 
         parts.add(new int[] {start, placements.size(), snapshot.getFragmentIndexOf(indexOf(root))});
     }
@@ -408,12 +418,13 @@ public final class MoleculeLayout
         if (ring)
         {
             directions = ringDirections(atom, centre, slots);
+            directions = avoidCollisions(walk, centre, directions, children, true);
         }
         else
         {
             directions = directionsFor(walk, slots, children);
             directions = honourConfiguration(walk, directions, children, hydrogens);
-            directions = avoidCollisions(walk, centre, directions, children);
+            directions = avoidCollisions(walk, centre, directions, children, false);
         }
 
         for (int child = 0; child < children.size(); child++)
@@ -635,18 +646,22 @@ public final class MoleculeLayout
     }
 
     /**
-     * Spins an atom's free neighbours about it if they collide with something already placed.
+     * Moves an atom's free neighbours if they would collide with something already placed.
+     * <p>
+     * Every alternative is judged by the same measure as the first choice: bonds crossing bonds, and atoms and bonds
+     * crowding one another, count against it. Alternatives that would break a declared double bond configuration are not considered.
      *
      * @param walk the atom being expanded, and how the walk arrived at it
      * @param centre where the atom sits
      * @param directions the directions its neighbours would sit in
      * @param children the bonds to the neighbours still to be placed
+     * @param ring whether the atom is on a ring, which means its neighbours choose among the gaps between its ring bonds
      * @return the directions to use
      */
-    private double[] avoidCollisions(Walk walk, Point centre, double[] directions, List<Bond> children)
+    private double[] avoidCollisions(Walk walk, Point centre, double[] directions, List<Bond> children, boolean ring)
     {
         int free = firstFreeSlot(walk, children);
-        if (free >= directions.length || declaresConfiguration(walk))
+        if (free >= directions.length)
         {
             return directions;
         }
@@ -659,38 +674,135 @@ public final class MoleculeLayout
 
         List<Point> occupied = occupiedAround(centre, directions, radii, free);
         List<Point[]> drawn = segmentsAround(centre, directions, radii, free);
-        double best = clearance(centre, directions, radii, free, occupied, drawn, 0);
+        double best = quality(walk.atom(), centre, directions, radii, free, occupied, drawn, ring);
         if (best >= COLLISION_DISTANCE)
         {
             return directions;
         }
 
-        double spin = 0;
+        int hydrogens = directions.length - children.size();
+        double[] chosen = directions;
+        List<double[]> alternatives = ring
+            ? gapsFor(centre, walk.atom(), directions.length)
+            : spinsOf(directions, free);
+        for (double[] candidate : alternatives)
+        {
+            if (!configurationHolds(walk, candidate, children, hydrogens))
+            {
+                continue;
+            }
+            double gained = quality(walk.atom(), centre, candidate, radii, free, occupied, drawn, ring);
+            if (gained > best + COLLINEAR)
+            {
+                best = gained;
+                chosen = candidate;
+            }
+        }
+        return chosen;
+    }
+
+    /**
+     * @param directions the directions neighbours would sit in
+     * @param free the first direction that can move
+     * @return those directions with the free ones turned together, every way {@link #COLLISION_ROTATIONS} allows, smallest turns first
+     */
+    private static List<double[]> spinsOf(double[] directions, int free)
+    {
+        List<double[]> spins = new ArrayList<>();
         for (int step = 1; step <= COLLISION_ROTATIONS / 2; step++)
         {
             for (int sign = 1; sign >= -1; sign -= 2)
             {
                 double offset = sign * step * 2 * Math.PI / COLLISION_ROTATIONS;
-                double gained = clearance(centre, directions, radii, free, occupied, drawn, offset);
-                if (gained > best + COLLINEAR)
+                double[] spun = directions.clone();
+                for (int slot = free; slot < spun.length; slot++)
                 {
-                    best = gained;
-                    spin = offset;
+                    spun[slot] = AngleFan.normalise(spun[slot] + offset);
                 }
+                spins.add(spun);
             }
         }
+        return spins;
+    }
 
-        if (spin == 0)
+    /**
+     * @param centre where a ring atom sits
+     * @param atom the ring atom
+     * @param slots how many neighbours there are to place
+     * @return each way of putting all of them evenly into one of the gaps between the atom's placed bonds
+     */
+    private List<double[]> gapsFor(Point centre, Atom atom, int slots)
+    {
+        List<Double> fixed = new ArrayList<>();
+        for (Bond bond : molecule.bondsOf(atom))
         {
-            return directions;
+            Atom other = bond.getOther(atom);
+            if (placed[indexOf(other)])
+            {
+                fixed.add(positions[indexOf(other)].minus(centre).angle());
+            }
         }
+        List<double[]> gaps = new ArrayList<>();
+        if (fixed.size() < 2)
+        {
+            return gaps;
+        }
+        double[] edges = fixed.stream().mapToDouble(AngleFan::normalise).sorted().toArray();
+        for (int edge = 0; edge < edges.length; edge++)
+        {
+            double end = edge + 1 < edges.length ? edges[edge + 1] : edges[0] + AngleFan.TURN;
+            double[] directions = new double[slots];
+            for (int slot = 0; slot < slots; slot++)
+            {
+                directions[slot] = AngleFan.normalise(edges[edge] + (end - edges[edge]) * (slot + 1) / (slots + 1.0));
+            }
+            gaps.add(directions);
+        }
+        return gaps;
+    }
 
-        double[] spun = directions.clone();
-        for (int slot = free; slot < spun.length; slot++)
+    /**
+     * Scores a proposed fan of neighbours, higher being better: the clearance it keeps from what is drawn, less a heavy
+     * penalty for each bond that crosses another or runs through the inside of a ring.
+     *
+     * @param atom the atom being expanded
+     * @param centre where it sits
+     * @param directions the directions of its neighbours
+     * @param radii how far along each of those directions its neighbours sit
+     * @param free the first direction that can still move
+     * @param occupied the atoms already drawn
+     * @param drawn the bonds already drawn
+     * @param ring whether the atom is on a ring
+     * @return the score
+     */
+    private double quality(
+        Atom atom,
+        Point centre,
+        double[] directions,
+        double[] radii,
+        int free,
+        List<Point> occupied,
+        List<Point[]> drawn,
+        boolean ring)
+    {
+        double quality = clearance(centre, directions, radii, free, occupied, drawn, 0);
+        for (int slot = free; slot < directions.length; slot++)
         {
-            spun[slot] = AngleFan.normalise(spun[slot] + spin);
+            Point point = centre.plus(Point.polar(directions[slot], radii[slot]));
+            for (Point[] bond : drawn)
+            {
+                boolean touching = bond[0].distanceTo(centre) <= COLLINEAR || bond[1].distanceTo(centre) <= COLLINEAR;
+                if (!touching && LayoutQuality.segmentsCross(centre, point, bond[0], bond[1]))
+                {
+                    quality -= CROSSING_PENALTY;
+                }
+            }
+            if (ring && insideRingOf(atom, centre.plus(Point.polar(directions[slot], 3 * RING_PROBE))))
+            {
+                quality -= CROSSING_PENALTY;
+            }
         }
-        return spun;
+        return quality;
     }
 
     /**
@@ -701,17 +813,6 @@ public final class MoleculeLayout
     private static int firstFreeSlot(Walk walk, List<Bond> children)
     {
         return walk.parent() != null && !children.isEmpty() ? 1 : 0;
-    }
-
-    /**
-     * @param walk the atom being expanded, and how the walk arrived at it
-     * @return whether the bond the walk arrived along declares a configuration
-     */
-    private boolean declaresConfiguration(Walk walk)
-    {
-        Atom parent = walk.parent();
-        return parent != null
-            && configurations.containsKey(StereoDeclaration.DoubleBond.pairKey(indexOf(parent), indexOf(walk.atom())));
     }
 
     /**
@@ -841,11 +942,36 @@ public final class MoleculeLayout
      */
     private double[] honourConfiguration(Walk walk, double[] directions, List<Bond> children, int hydrogens)
     {
+        if (configurationHolds(walk, directions, children, hydrogens))
+        {
+            return directions;
+        }
+
+        // otherwise we must mirror the directions
+        double mirror = positions[indexOf(walk.atom())].minus(positions[indexOf(walk.parent())]).angle();
+        double[] mirrored = new double[directions.length];
+        for (int slot = 0; slot < directions.length; slot++)
+        {
+            mirrored[slot] = AngleFan.mirror(directions[slot], mirror);
+        }
+        return mirrored;
+    }
+
+    /**
+     * @param walk the atom being expanded and how the walk arrived at it
+     * @param directions the proposed directions of its neighbours
+     * @param children the bonds to neighbours still to be placed
+     * @param hydrogens the number of hydrogens being drawn for this atom
+     * @return whether those directions draw the declared configuration of the double bond the walk arrived along,
+     *     which they do where there is no such declaration or where nothing sits beside the bond to show it
+     */
+    private boolean configurationHolds(Walk walk, double[] directions, List<Bond> children, int hydrogens)
+    {
         Atom atom = walk.atom();
         Atom parent = walk.parent();
         if (parent == null)
         {
-            return directions;
+            return true;
         }
 
         int atomIndex = indexOf(atom);
@@ -853,7 +979,7 @@ public final class MoleculeLayout
         StereoDeclaration.DoubleBond declaration = configurations.get(StereoDeclaration.DoubleBond.pairKey(parentIndex, atomIndex));
         if (declaration == null)
         {
-            return directions;
+            return true;
         }
 
         Point axis = positions[atomIndex].minus(positions[parentIndex]);
@@ -862,7 +988,7 @@ public final class MoleculeLayout
         // with nothing to either side of one of its ends, the bond shows no configuration at all
         if (near.isEmpty() || far.isEmpty())
         {
-            return directions;
+            return true;
         }
 
         boolean parentIsFirst = declaration.firstAtom() == parentIndex;
@@ -871,19 +997,7 @@ public final class MoleculeLayout
             : declaration.configurationAgainst(far.get().atom(), near.get().atom());
 
         boolean sameSide = near.get().side() == far.get().side();
-        if (sameSide == (wanted == DoubleBondStereo.SAME_SIDE))
-        {
-            return directions;
-        }
-
-        // otherwise we must mirror the directions
-        double mirror = axis.angle();
-        double[] mirrored = new double[directions.length];
-        for (int slot = 0; slot < directions.length; slot++)
-        {
-            mirrored[slot] = AngleFan.mirror(directions[slot], mirror);
-        }
-        return mirrored;
+        return sameSide == (wanted == DoubleBondStereo.SAME_SIDE);
     }
 
     /**
@@ -1003,6 +1117,316 @@ public final class MoleculeLayout
                 addBond(placementOfAtom[index], placement, BondOrder.SINGLE);
             }
         }
+    }
+
+    /**
+     * Swings whole branches about the atom they hang from, or flips them over, while that clears collisions in the part
+     * being laid out. A branch is everything beyond a non-ring bond, however much has been placed on it already.
+     * <p>
+     * A move is kept only if it lowers the part's collision cost without breaking a declared double bond configuration.
+     */
+    private void repairBranches()
+    {
+        for (int round = 0; round < REPAIR_ROUNDS; round++)
+        {
+            boolean improved = false;
+            for (Bond bond : molecule.bonds())
+            {
+                if (!molecule.ringBonds().contains(bond) && placedInThisPart(bond.first()) && placedInThisPart(bond.second()))
+                {
+                    improved |= repairBranch(bond);
+                    if (collisionCost() <= 0)
+                    {
+                        return;
+                    }
+                }
+            }
+            if (!improved)
+            {
+                return;
+            }
+        }
+    }
+
+    /**
+     * @param atom one of the molecule's own atoms
+     * @return whether it has been placed as part of the part currently being laid out
+     */
+    private boolean placedInThisPart(Atom atom)
+    {
+        return placed[indexOf(atom)] && placementOfAtom[indexOf(atom)] >= partStart;
+    }
+
+    /**
+     * Tries every way of moving the smaller side of a non-ring bond and keeps the best, if it is a gain.
+     *
+     * @param bond a non-ring bond
+     * @return whether anything moved
+     */
+    private boolean repairBranch(Bond bond)
+    {
+        List<Atom> far = sideBeyond(bond.second(), bond.first());
+        List<Atom> near = sideBeyond(bond.first(), bond.second());
+        Atom pivot = far.size() <= near.size() ? bond.first() : bond.second();
+        Atom root = pivot == bond.first() ? bond.second() : bond.first();
+        List<Atom> branch = far.size() <= near.size() ? far : near;
+        if (isLinearAbout(pivot, bond))
+        {
+            return false;
+        }
+
+        List<Integer> moved = new ArrayList<>();
+        for (Atom atom : branch)
+        {
+            moved.add(placementOfAtom[indexOf(atom)]);
+            moved.addAll(hydrogensOfAtom.get(indexOf(atom)));
+        }
+        Point[] original = new Point[moved.size()];
+        for (int at = 0; at < original.length; at++)
+        {
+            original[at] = placements.get(moved.get(at)).position();
+        }
+
+        Point about = positions[indexOf(pivot)];
+        double axis = positions[indexOf(root)].minus(about).angle();
+        int violations = violatedConfigurations();
+        double best = collisionCost();
+        if (best <= 0)
+        {
+            return false;
+        }
+
+        Point[] chosen = null;
+        for (int move = 0; move <= COLLISION_ROTATIONS; move++)
+        {
+            Point[] candidate = new Point[original.length];
+            boolean turned = move > 0 && move < COLLISION_ROTATIONS;
+            for (int at = 0; at < candidate.length; at++)
+            {
+                Point offset = original[at].minus(about);
+                if (move == 0)
+                {
+                    candidate[at] = about.plus(Point.polar(2 * axis - offset.angle(), offset.length()));
+                }
+                else
+                {
+                    int step = (move + 1) / 2;
+                    int sign = move % 2 == 1 ? 1 : -1;
+                    double turn = sign * step * 2 * Math.PI / COLLISION_ROTATIONS;
+                    candidate[at] = turned ? about.plus(Point.polar(offset.angle() + turn, offset.length())) : original[at];
+                }
+            }
+            if (move > 0 && !turned || (move > 0 && !branchKeepsRoom(pivot, root, moved, candidate)))
+            {
+                continue;
+            }
+
+            moveTo(moved, candidate);
+            double cost = collisionCost();
+            boolean fine = violatedConfigurations() <= violations;
+            moveTo(moved, original);
+            if (fine && cost < best - COLLINEAR)
+            {
+                best = cost;
+                chosen = candidate;
+            }
+        }
+
+        if (chosen == null)
+        {
+            return false;
+        }
+        moveTo(moved, chosen);
+        return true;
+    }
+
+    /**
+     * @param start the atom the side starts at
+     * @param across the atom at the other end of the bond that bounds the side, which the side does not include
+     * @return every atom reachable from {@code start} without passing {@code across}
+     */
+    private List<Atom> sideBeyond(Atom start, Atom across)
+    {
+        List<Atom> side = new ArrayList<>();
+        Map<Atom, Boolean> seen = new IdentityHashMap<>();
+        seen.put(across, true);
+        seen.put(start, true);
+        Deque<Atom> queue = new ArrayDeque<>();
+        queue.add(start);
+        while (!queue.isEmpty())
+        {
+            Atom atom = queue.poll();
+            side.add(atom);
+            for (Bond bond : molecule.bondsOf(atom))
+            {
+                Atom other = bond.getOther(atom);
+                if (seen.put(other, true) == null)
+                {
+                    queue.add(other);
+                }
+            }
+        }
+        return side;
+    }
+
+    /**
+     * @param pivot the atom a branch swings about
+     * @param bond the bond the branch hangs from
+     * @return whether the atom has to keep its bonds in a line, so cannot have one swung away from it
+     */
+    private boolean isLinearAbout(Atom pivot, Bond bond)
+    {
+        int doubles = 0;
+        for (Bond other : molecule.bondsOf(pivot))
+        {
+            if (other.order() == BondOrder.TRIPLE)
+            {
+                return true;
+            }
+            if (other.order() == BondOrder.DOUBLE)
+            {
+                doubles++;
+            }
+        }
+        return doubles > 1 && bond.order() == BondOrder.DOUBLE;
+    }
+
+    /**
+     * @param pivot the atom the branch swings about
+     * @param root the atom the branch hangs from
+     * @param moved the placements that move
+     * @param candidate where each of them would go
+     * @return whether the bond to the branch would still keep clear of the pivot's other bonds, and out of its rings
+     */
+    private boolean branchKeepsRoom(Atom pivot, Atom root, List<Integer> moved, Point[] candidate)
+    {
+        Point about = positions[indexOf(pivot)];
+        Point leaving = null;
+        for (int at = 0; at < candidate.length; at++)
+        {
+            if (moved.get(at) == placementOfAtom[indexOf(root)])
+            {
+                leaving = candidate[at].minus(about);
+            }
+        }
+        if (leaving == null)
+        {
+            return false;
+        }
+
+        List<Point> others = new ArrayList<>();
+        for (Bond bond : molecule.bondsOf(pivot))
+        {
+            Atom other = bond.getOther(pivot);
+            if (other != root && placedInThisPart(other))
+            {
+                others.add(positions[indexOf(other)].minus(about));
+            }
+        }
+        for (int hydrogen : hydrogensOfAtom.get(indexOf(pivot)))
+        {
+            others.add(placements.get(hydrogen).position().minus(about));
+        }
+        for (Point other : others)
+        {
+            double angle = Math.abs(AngleFan.normalise(leaving.angle() - other.angle() + Math.PI) - Math.PI);
+            if (angle < MIN_BRANCH_ANGLE)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Puts placements at new positions.
+     *
+     * @param moved the placements to move
+     * @param points where each goes
+     */
+    private void moveTo(List<Integer> moved, Point[] points)
+    {
+        for (int at = 0; at < points.length; at++)
+        {
+            AtomPlacement placement = placements.get(moved.get(at));
+            placements.set(moved.get(at), placement.at(points[at]));
+            if (placement.sourceAtom().isPresent())
+            {
+                positions[placement.sourceAtom().getAsInt()] = points[at];
+            }
+        }
+    }
+
+    /**
+     * @return how many placed double bonds do not show the configuration declared for them
+     */
+    private int violatedConfigurations()
+    {
+        int violated = 0;
+        for (StereoDeclaration.DoubleBond declaration : configurations.values())
+        {
+            int first = declaration.firstAtom();
+            int second = declaration.secondAtom();
+            if (!placed[first] || !placed[second])
+            {
+                continue;
+            }
+            Point axis = positions[second].minus(positions[first]);
+            Optional<Reference> near = referenceBeside(atoms.get(first), atoms.get(second), axis);
+            Optional<Reference> far = referenceBeside(atoms.get(second), atoms.get(first), axis);
+            if (near.isEmpty() || far.isEmpty())
+            {
+                continue;
+            }
+            boolean sameSide = near.get().side() == far.get().side();
+            DoubleBondStereo wanted = declaration.configurationAgainst(near.get().atom(), far.get().atom());
+            if (sameSide != (wanted == DoubleBondStereo.SAME_SIDE))
+            {
+                violated++;
+            }
+        }
+        return violated;
+    }
+
+    /**
+     * @return how badly the part being laid out collides with itself: heavily for each pair of bonds that cross,
+     *     and by how much for each pair of atoms that are not bonded but sit too close
+     */
+    private double collisionCost()
+    {
+        int size = placements.size() - partStart;
+        Point[] points = new Point[size];
+        for (int at = 0; at < size; at++)
+        {
+            points[at] = placements.get(partStart + at).position();
+        }
+        List<int[]> pairs = new ArrayList<>();
+        boolean[][] joined = new boolean[size][size];
+        for (BondPlacement bond : bonds)
+        {
+            if (bond.first() >= partStart)
+            {
+                int first = bond.first() - partStart;
+                int second = bond.second() - partStart;
+                pairs.add(new int[] {first, second});
+                joined[first][second] = true;
+                joined[second][first] = true;
+            }
+        }
+
+        double cost = CROSSING_PENALTY * LayoutQuality.crossings(points, pairs.toArray(new int[0][]));
+        for (int first = 0; first < size; first++)
+        {
+            for (int second = first + 1; second < size; second++)
+            {
+                double distance = points[first].distanceTo(points[second]);
+                if (!joined[first][second] && distance < COLLISION_DISTANCE)
+                {
+                    cost += 1 + COLLISION_DISTANCE - distance;
+                }
+            }
+        }
+        return cost;
     }
 
     /**
