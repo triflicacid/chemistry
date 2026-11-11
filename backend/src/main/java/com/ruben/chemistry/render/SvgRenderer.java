@@ -1,6 +1,8 @@
 package com.ruben.chemistry.render;
 
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.render.svg.Element;
+import com.ruben.chemistry.render.svg.SvgWriter;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -9,7 +11,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -19,6 +20,12 @@ import java.util.UUID;
  */
 public final class SvgRenderer
 {
+    /** The colour of the debug outline around each cell. */
+    private static final Colour CELL_OUTLINE = Colour.of("#1c7ed6");
+
+    /** The colour of the debug outline around each fragment. */
+    private static final Colour FRAGMENT_OUTLINE = Colour.of("#e03131");
+
     /** How wide one character of a symbol is, as a fraction of the font size. */
     private static final double CHARACTER_WIDTH = 0.62;
 
@@ -27,9 +34,6 @@ public final class SvgRenderer
 
     /** How far down a subscript is dropped, as a fraction of the font size. */
     private static final double SUBSCRIPT_DROP = 0.2;
-
-    /** How many decimal places a coordinate is written to, which is finer than any screen. */
-    private static final int PLACES = 3;
 
     /** How long each dash of an aromatic bond's inner line is, in pixels. */
     private static final double AROMATIC_DASH = 5;
@@ -76,17 +80,11 @@ public final class SvgRenderer
     /** The bonds, keyed by the pair of atoms they join, of rings drawn with a circle inside, which are drawn as single bonds. */
     private final Set<Long> circled = new HashSet<>();
 
-    /** The body of the document being built up. */
-    private final StringBuilder svg = new StringBuilder();
-
-    /** The gradients the bonds drawn so far have asked for. */
-    private final StringBuilder defs = new StringBuilder();
+    /** The document being built up. */
+    private final SvgWriter svg;
 
     /** What the bond being drawn is painted with: a plain colour, or one of the gradients. */
     private String bondPaint;
-
-    /** How many gradients have been written, which is what keeps their names apart. */
-    private int gradients;
 
     /** The cell each part was given, as {minX, minY, maxX, maxY} in depiction space; kept for debugging. */
     private final List<double[]> cells = new ArrayList<>();
@@ -111,6 +109,7 @@ public final class SvgRenderer
         this.depiction = arrange(depiction);
         this.bounds = this.depiction.bounds();
         this.bondPaint = style.bondColour().hex();
+        this.svg = new SvgWriter(width(), height());
         for (BondPlacement bond : depiction.bonds())
         {
             bondsAt.computeIfAbsent(bond.first(), atom -> new ArrayList<>()).add(bond);
@@ -403,12 +402,9 @@ public final class SvgRenderer
      * @param depiction the depiction to draw
      * @param style how it should be drawn
      * @return a standalone SVG document
-     * @throws NullPointerException if either argument is {@code null}
      */
     public static String render(Depiction depiction, RenderStyle style)
     {
-        Objects.requireNonNull(depiction, "depiction");
-        Objects.requireNonNull(style, "style");
         return new SvgRenderer(depiction, style, null).draw();
     }
 
@@ -418,12 +414,9 @@ public final class SvgRenderer
      * @param layout the layout to draw
      * @param style how it should be drawn
      * @return a standalone SVG document
-     * @throws NullPointerException if either argument is {@code null}
      */
     public static String render(Layout layout, RenderStyle style)
     {
-        Objects.requireNonNull(layout, "layout");
-        Objects.requireNonNull(style, "style");
         return new SvgRenderer(layout.depiction(), style, layout.snapshot().getId()).draw();
     }
 
@@ -432,8 +425,12 @@ public final class SvgRenderer
      */
     private String draw()
     {
-        double width = width();
-        double height = height();
+        style.background().ifPresent(svg::background);
+        if (style.metadata())
+        {
+            svg.attribute("data-metedata", "true");
+            svg.attribute("data-snapshot", snapshotId == null ? null : snapshotId.toString());
+        }
 
         if (style.debugLayout())
         {
@@ -454,33 +451,7 @@ public final class SvgRenderer
         {
             drawAtom(atom);
         }
-
-        StringBuilder document = new StringBuilder();
-        document.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"").append(number(width))
-            .append("\" height=\"").append(number(height))
-            .append("\" viewBox=\"0 0 ").append(number(width)).append(' ').append(number(height))
-            .append('"');
-        if (style.metadata())
-        {
-            document.append(" data-metedata=\"true\"");
-            if (snapshotId != null)
-            {
-                document.append(" data-snapshot=\"").append(snapshotId).append('"');
-            }
-        }
-        document.append(">\n");
-
-        if (!defs.isEmpty())
-        {
-            document.append("  <defs>\n").append(defs).append("  </defs>\n");
-        }
-
-        style.background().ifPresent(colour ->
-            document.append("  <rect x=\"0\" y=\"0\" width=\"").append(number(width))
-                .append("\" height=\"").append(number(height))
-                .append("\" fill=\"").append(colour.hex()).append("\"/>\n"));
-
-        return document.append(svg).append("</svg>\n").toString();
+        return svg.render();
     }
 
     private void drawDebugLayout()
@@ -489,7 +460,7 @@ public final class SvgRenderer
         // solid blue around every cell
         for (double[] cell : cells)
         {
-            outline(cell, "#1c7ed6", null);
+            outline(cell, CELL_OUTLINE);
         }
 
         // as {minX, minY, maxX, maxY} in depiction space, by fragment
@@ -509,29 +480,25 @@ public final class SvgRenderer
         // dashed red around every fragment
         for (double[] box : boxes.values())
         {
-            outline(box, "#e03131", "4 3");
+            outline(box, FRAGMENT_OUTLINE, 4, 3);
         }
     }
 
     /**
      * @param box the rectangle to outline, as {minX, minY, maxX, maxY} in depiction space
      * @param colour the line's colour
-     * @param dashes the line's dash pattern, or {@code null} for a solid line
+     * @param dashes how long its dashes and the gaps between them are, or nothing for a solid line
      */
-    private void outline(double[] box, String colour, String dashes)
+    private void outline(double[] box, Colour colour, double... dashes)
     {
         double scale = style.bondLength();
         Point corner = toPage(new Point(box[0], box[3]));
-        svg.append("  <rect x=\"").append(number(corner.x()))
-            .append("\" y=\"").append(number(corner.y()))
-            .append("\" width=\"").append(number((box[2] - box[0]) * scale))
-            .append("\" height=\"").append(number((box[3] - box[1]) * scale))
-            .append("\" fill=\"none\" stroke=\"").append(colour).append("\" stroke-width=\"1\"");
-        if (dashes != null)
+        Element outline = svg.rect(corner, (box[2] - box[0]) * scale, (box[3] - box[1]) * scale)
+            .fill("none").stroke(colour).strokeWidth(1);
+        if (dashes.length > 0)
         {
-            svg.append(" stroke-dasharray=\"").append(dashes).append('"');
+            outline.dash(dashes);
         }
-        svg.append("/>\n");
     }
 
     /**
@@ -608,7 +575,7 @@ public final class SvgRenderer
 
         if (style.metadata())
         {
-            svg.append("  </g>\n");
+            svg.close();
         }
     }
 
@@ -625,38 +592,19 @@ public final class SvgRenderer
         AtomPlacement first = depiction.atom(bond.first());
         AtomPlacement second = depiction.atom(bond.second());
 
-        svg.append("  <g class=\"bond\"");
-        attribute("data-bond", bond.sourceBond().isPresent() ? String.valueOf(bond.sourceBond().getAsInt()) : null);
-        attribute("data-order", bond.order().name().toLowerCase(Locale.ROOT));
-        attribute("data-style", bond.style().name().toLowerCase(Locale.ROOT));
-        attribute("data-first", String.valueOf(bond.first()));
-        attribute("data-second", String.valueOf(bond.second()));
-        attribute("data-first-atom", first.sourceAtom().isPresent() ? String.valueOf(first.sourceAtom().getAsInt()) : null);
-        attribute("data-second-atom", second.sourceAtom().isPresent() ? String.valueOf(second.sourceAtom().getAsInt()) : null);
-        attribute("data-fragment", String.valueOf(first.fragment()));
-        svg.append(">\n");
+        svg.group().cssClass("bond")
+            .attribute("data-bond", bond.sourceBond().isPresent() ? String.valueOf(bond.sourceBond().getAsInt()) : null)
+            .attribute("data-order", bond.order().name().toLowerCase(Locale.ROOT))
+            .attribute("data-style", bond.style().name().toLowerCase(Locale.ROOT))
+            .attribute("data-first", String.valueOf(bond.first()))
+            .attribute("data-second", String.valueOf(bond.second()))
+            .attribute("data-first-atom", first.sourceAtom().isPresent() ? String.valueOf(first.sourceAtom().getAsInt()) : null)
+            .attribute("data-second-atom", second.sourceAtom().isPresent() ? String.valueOf(second.sourceAtom().getAsInt()) : null)
+            .attribute("data-fragment", String.valueOf(first.fragment()));
 
-        svg.append("  <line x1=\"").append(number(start.x()))
-            .append("\" y1=\"").append(number(start.y()))
-            .append("\" x2=\"").append(number(end.x()))
-            .append("\" y2=\"").append(number(end.y()))
-            .append("\" stroke=\"transparent\" stroke-width=\"")
-            .append(number(Math.max(style.wedgeWidth(), 3 * style.bondGap())))
-            .append("\" stroke-linecap=\"round\"/>\n");
-    }
-
-    /**
-     * Writes one {@code data-*} attribute, as the tail of a tag being written.
-     *
-     * @param name the attribute's name
-     * @param value its value, or {@code null} to leave the attribute out
-     */
-    private void attribute(String name, String value)
-    {
-        if (value != null)
-        {
-            svg.append(' ').append(name).append("=\"").append(escape(value)).append('"');
-        }
+        svg.line(start, end).stroke("transparent")
+            .strokeWidth(Math.max(style.wedgeWidth(), 3 * style.bondGap()))
+            .roundCaps();
     }
 
     /**
@@ -677,12 +625,8 @@ public final class SvgRenderer
         }
         apothem /= members.size();
 
-        svg.append("  <circle cx=\"").append(number(middle.x()))
-            .append("\" cy=\"").append(number(middle.y()))
-            .append("\" r=\"").append(number(apothem * RING_CIRCLE_SIZE))
-            .append("\" fill=\"none\" stroke=\"").append(style.bondColour().hex())
-            .append("\" stroke-width=\"").append(number(style.bondWidth()))
-            .append("\"/>\n");
+        svg.circle(middle, apothem * RING_CIRCLE_SIZE)
+            .fill("none").stroke(style.bondColour()).strokeWidth(style.bondWidth());
     }
 
     /**
@@ -743,32 +687,11 @@ public final class SvgRenderer
      */
     private String gradient(Colour from, Colour to, Point start, Point end)
     {
-        String id = "bond" + gradients++;
-
-        defs.append("    <linearGradient id=\"").append(id)
-            .append("\" gradientUnits=\"userSpaceOnUse\" x1=\"").append(number(start.x()))
-            .append("\" y1=\"").append(number(start.y()))
-            .append("\" x2=\"").append(number(end.x()))
-            .append("\" y2=\"").append(number(end.y())).append("\">\n");
-        stop(0, from);
-        stop(GRADIENT_SHOULDER, from.mix(to, 0.5 - GRADIENT_DRIFT));
-        stop(1 - GRADIENT_SHOULDER, from.mix(to, 0.5 + GRADIENT_DRIFT));
-        stop(1, to);
-        defs.append("    </linearGradient>\n");
-
-        return "url(#" + id + ")";
-    }
-
-    /**
-     * Writes one stop of the gradient being built up.
-     *
-     * @param offset how far along the gradient it sits, from 0 to 1
-     * @param colour the colour it holds
-     */
-    private void stop(double offset, Colour colour)
-    {
-        defs.append("      <stop offset=\"").append(number(offset))
-            .append("\" stop-color=\"").append(colour.hex()).append("\"/>\n");
+        return svg.linearGradient("bond", start, end, List.of(
+            new SvgWriter.Stop(0, from),
+            new SvgWriter.Stop(GRADIENT_SHOULDER, from.mix(to, 0.5 - GRADIENT_DRIFT)),
+            new SvgWriter.Stop(1 - GRADIENT_SHOULDER, from.mix(to, 0.5 + GRADIENT_DRIFT)),
+            new SvgWriter.Stop(1, to)));
     }
 
     /**
@@ -903,14 +826,8 @@ public final class SvgRenderer
         Point left = end.plus(across);
         Point right = end.minus(across);
 
-        svg.append("  <polygon points=\"")
-            .append(number(start.x())).append(',').append(number(start.y())).append(' ')
-            .append(number(left.x())).append(',').append(number(left.y())).append(' ')
-            .append(number(right.x())).append(',').append(number(right.y()))
-            .append("\" fill=\"").append(bondPaint)
-            .append("\" stroke=\"").append(bondPaint)
-            .append("\" stroke-width=\"").append(number(style.bondWidth() / 2))
-            .append("\" stroke-linejoin=\"round\"/>\n");
+        svg.polygon(List.of(start, left, right))
+            .fill(bondPaint).stroke(bondPaint).strokeWidth(style.bondWidth() / 2).roundJoins();
     }
 
     /**
@@ -949,18 +866,11 @@ public final class SvgRenderer
      */
     private void line(Point from, Point to, boolean dashed)
     {
-        svg.append("  <line x1=\"").append(number(from.x()))
-            .append("\" y1=\"").append(number(from.y()))
-            .append("\" x2=\"").append(number(to.x()))
-            .append("\" y2=\"").append(number(to.y()))
-            .append("\" stroke=\"").append(bondPaint)
-            .append("\" stroke-width=\"").append(number(style.bondWidth()))
-            .append("\" stroke-linecap=\"round\"");
+        Element line = svg.line(from, to).stroke(bondPaint).strokeWidth(style.bondWidth()).roundCaps();
         if (dashed)
         {
-            svg.append(" stroke-dasharray=\"").append(number(AROMATIC_DASH)).append(' ').append(number(AROMATIC_DASH)).append('"');
+            line.dash(AROMATIC_DASH, AROMATIC_DASH);
         }
-        svg.append("/>\n");
     }
 
     /**
@@ -987,7 +897,7 @@ public final class SvgRenderer
 
         if (style.metadata())
         {
-            svg.append("  </g>\n");
+            svg.close();
         }
     }
 
@@ -1001,22 +911,18 @@ public final class SvgRenderer
     {
         Point centre = toPage(atom.position());
 
-        svg.append("  <g class=\"atom\"");
-        attribute("data-atom", atom.sourceAtom().isPresent() ? String.valueOf(atom.sourceAtom().getAsInt()) : null);
-        attribute("data-placement", String.valueOf(atom.placementIndex()));
-        attribute("data-fragment", String.valueOf(atom.fragment()));
-        attribute("data-element", atom.element());
-        attribute("data-isotope", atom.isotope().isPresent() ? String.valueOf(atom.isotope().getAsInt()) : null);
-        attribute("data-charge", String.valueOf(atom.charge()));
-        attribute("data-hydrogens", String.valueOf(atom.hydrogens()));
-        attribute("data-aromatic", String.valueOf(atom.aromatic()));
-        attribute("data-implicit", String.valueOf(atom.isGeneratedHydrogen()));
-        svg.append(">\n");
+        svg.group().cssClass("atom")
+            .attribute("data-atom", atom.sourceAtom().isPresent() ? String.valueOf(atom.sourceAtom().getAsInt()) : null)
+            .attribute("data-placement", String.valueOf(atom.placementIndex()))
+            .attribute("data-fragment", String.valueOf(atom.fragment()))
+            .attribute("data-element", atom.element())
+            .attribute("data-isotope", atom.isotope().isPresent() ? String.valueOf(atom.isotope().getAsInt()) : null)
+            .attribute("data-charge", String.valueOf(atom.charge()))
+            .attribute("data-hydrogens", String.valueOf(atom.hydrogens()))
+            .attribute("data-aromatic", String.valueOf(atom.aromatic()))
+            .attribute("data-implicit", String.valueOf(atom.isGeneratedHydrogen()));
 
-        svg.append("  <circle cx=\"").append(number(centre.x()))
-            .append("\" cy=\"").append(number(centre.y()))
-            .append("\" r=\"").append(number(Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()))))
-            .append("\" fill=\"transparent\"/>\n");
+        svg.circle(centre, Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()))).fill("transparent");
     }
 
     /**
@@ -1026,14 +932,8 @@ public final class SvgRenderer
      */
     private void drawCircle(AtomPlacement atom)
     {
-        Point centre = toPage(atom.position());
-        svg.append("  <circle cx=\"").append(number(centre.x()))
-            .append("\" cy=\"").append(number(centre.y()))
-            .append("\" r=\"").append(number(style.radiusOf(atom.element())))
-            .append("\" fill=\"").append(style.colourOf(atom.element()).hex())
-            .append("\" stroke=\"").append(style.atomOutline().hex())
-            .append("\" stroke-width=\"").append(number(style.atomOutlineWidth()))
-            .append("\"/>\n");
+        svg.circle(toPage(atom.position()), style.radiusOf(atom.element()))
+            .fill(style.colourOf(atom.element())).stroke(style.atomOutline()).strokeWidth(style.atomOutlineWidth());
     }
 
     /**
@@ -1049,35 +949,33 @@ public final class SvgRenderer
     {
         Point centre = toPage(atom.position());
 
-        svg.append("  <text x=\"").append(number(centre.x()))
-            .append("\" y=\"").append(number(centre.y()))
-            .append("\" font-family=\"").append(escape(style.fontFamily()))
-            .append("\" font-size=\"").append(number(style.fontSize()))
-            .append("\" fill=\"").append(style.colourOf(atom.element()).hex())
-            .append("\" stroke=\"").append(style.atomOutline().hex())
-            .append("\" stroke-width=\"").append(number(style.atomOutlineWidth()))
-            .append("\" paint-order=\"stroke\" text-anchor=\"middle\" dominant-baseline=\"central\">");
+        Element label = svg.text(centre)
+            .attribute("font-family", style.fontFamily())
+            .attribute("font-size", style.fontSize())
+            .fill(style.colourOf(atom.element()))
+            .stroke(style.atomOutline())
+            .strokeWidth(style.atomOutlineWidth())
+            .attribute("paint-order", "stroke")
+            .attribute("text-anchor", "middle")
+            .attribute("dominant-baseline", "central");
 
         List<Run> runs = runsOf(atom);
         if (runs.size() == 1)
         {
             // one plain run needs no mark-up of its own, which keeps a simple label simple
-            svg.append(escape(runs.getFirst().text()));
+            label.content(runs.getFirst().text());
         }
         else
         {
             double baseline = 0;
             for (Run run : runs)
             {
-                svg.append("<tspan font-size=\"").append(number(style.fontSize() * run.scale()))
-                    .append("\" dy=\"").append(number(run.rise() - baseline)).append("\">")
-                    .append(escape(run.text()))
-                    .append("</tspan>");
+                label.span(run.text(),
+                    "font-size", SvgWriter.number(style.fontSize() * run.scale()),
+                    "dy", SvgWriter.number(run.rise() - baseline));
                 baseline = run.rise();
             }
         }
-
-        svg.append("</text>\n");
     }
 
     /**
@@ -1167,60 +1065,5 @@ public final class SvgRenderer
             return 0;
         }
         return Math.max(labelWidthOf(atom) / 2, style.fontSize() / 2) + style.labelPadding();
-    }
-
-    /**
-     * @param value a measurement in pixels
-     * @return it written out plainly, without a locale's grouping or an exponent
-     */
-    private static String number(double value)
-    {
-        double rounded = Math.round(value * Math.pow(10, PLACES)) / Math.pow(10, PLACES);
-        if (rounded == Math.rint(rounded) && Math.abs(rounded) < Long.MAX_VALUE)
-        {
-            return Long.toString((long) rounded);
-        }
-        return stripZeroes(String.format(Locale.ROOT, "%." + PLACES + "f", rounded));
-    }
-
-    /**
-     * @param text a decimal number
-     * @return it without any trailing zeroes after its point
-     */
-    private static String stripZeroes(String text)
-    {
-        int end = text.length();
-        while (end > 0 && text.charAt(end - 1) == '0')
-        {
-            end--;
-        }
-        if (end > 0 && text.charAt(end - 1) == '.')
-        {
-            end--;
-        }
-        return text.substring(0, end);
-    }
-
-    /**
-     * @param text some text to put into the document
-     * @return it with every character XML gives a meaning to replaced by its entity
-     */
-    private static String escape(String text)
-    {
-        StringBuilder escaped = new StringBuilder(text.length());
-        for (int at = 0; at < text.length(); at++)
-        {
-            char character = text.charAt(at);
-            switch (character)
-            {
-                case '&' -> escaped.append("&amp;");
-                case '<' -> escaped.append("&lt;");
-                case '>' -> escaped.append("&gt;");
-                case '"' -> escaped.append("&quot;");
-                case '\'' -> escaped.append("&apos;");
-                default -> escaped.append(character);
-            }
-        }
-        return escaped.toString();
     }
 }

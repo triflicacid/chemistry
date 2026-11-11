@@ -20,9 +20,6 @@ public record BondPlacement(int first, int second, BondOrder order, BondStyle st
 {
     public BondPlacement
     {
-        Objects.requireNonNull(order, "order");
-        Objects.requireNonNull(style, "style");
-        Objects.requireNonNull(sourceBond, "sourceBond");
         if (first < 0 || second < 0)
         {
             throw new IllegalArgumentException("Bond placement indices cannot be negative, but were " + first + " and " + second);
