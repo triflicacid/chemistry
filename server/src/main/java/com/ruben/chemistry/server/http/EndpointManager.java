@@ -180,7 +180,7 @@ final class EndpointManager implements EndpointRegistry
         {
             if (allowed.isEmpty())
             {
-                context.error(404, "NOT_FOUND", "No such path");
+                context.error(404, "NOT_FOUND", "No such path: " + exchange.getRequestURI().getRawPath());
                 return;
             }
 

@@ -1,8 +1,7 @@
 package com.ruben.chemistry.server.http;
 
 /**
- * A group of related routes. Needs a public no-argument constructor; it is added to the
- * {@link Server} by class, e.g. {@code server.add(HealthEndpoint.class)}.
+ * A group of related routes.
  */
 public abstract class Endpoint
 {
