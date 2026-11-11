@@ -142,7 +142,7 @@ final class DepictSmiles
      */
     static String render(String smiles, CliOptions options)
     {
-        Molecule molecule = new SmilesParser(smiles).parse();
+        Molecule molecule = Molecule.fromSmiles(smiles);
         int alternatives = options.get(ALTERNATIVES);
         DepictionOptions depiction = CommandOptions.depictionOptions(options, alternatives);
 

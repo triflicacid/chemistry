@@ -11,8 +11,6 @@ import com.ruben.chemistry.render.RenderStyle;
 import com.ruben.chemistry.render.SvgRenderer;
 import com.ruben.chemistry.render.match.MatchAnnotator;
 import com.ruben.chemistry.render.match.MatchStyle;
-import com.ruben.chemistry.smarts.SmartsParser;
-import com.ruben.chemistry.smiles.SmilesParser;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -195,8 +193,8 @@ final class DepictMatch
             throw new IllegalArgumentException("Expected a SMILES string and a SMARTS pattern, but got " + subjects.size() + " arguments");
         }
 
-        Molecule molecule = new SmilesParser(subjects.get(0)).parse();
-        Query query = new SmartsParser(subjects.get(1)).parseQuery();
+        Molecule molecule = Molecule.fromSmiles(subjects.get(0));
+        Query query = Query.fromSmarts(subjects.get(1));
 
         SubstructureMatcher matcher = new SubstructureMatcher(molecule);
         List<Match> found = options.get(ALL_MATCHES) ? matcher.findMatches(query) : matcher.findDistinctMatches(query);
