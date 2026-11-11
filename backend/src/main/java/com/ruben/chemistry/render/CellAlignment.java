@@ -1,7 +1,7 @@
 package com.ruben.chemistry.render;
 
 /**
- * Where a part sits sideways within the cell, or span of cells, it is given.
+ * Where a part sits horizontally within the cell.
  */
 public enum CellAlignment
 {

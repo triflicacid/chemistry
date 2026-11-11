@@ -1,27 +1,14 @@
 package com.ruben.chemistry.render;
 
-import java.util.Objects;
-
 /**
  * Settings for a {@link MoleculeLayout}.
  *
  * @param style how much of the molecule is spelled out
  * @param chainGeometry how a chain of bonded atoms carries on through an atom
- * @param hydrogens how an atom's hydrogens are drawn; a {@link DepictionStyle#SKELETAL} drawing
- *     always gathers them into the symbol they hang off, so takes no notice of this
+ * @param hydrogens how an atom's hydrogens are drawn; a {@link DepictionStyle#SKELETAL} ignores this
  */
 public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry, HydrogenStyle hydrogens)
 {
-    /**
-     * @throws NullPointerException if any setting is {@code null}
-     */
-    public DepictionOptions
-    {
-        Objects.requireNonNull(style, "style");
-        Objects.requireNonNull(chainGeometry, "chainGeometry");
-        Objects.requireNonNull(hydrogens, "hydrogens");
-    }
-
     /**
      * @return a straight-chain layout drawing every hydrogen, i.e. an ordinary structural diagram
      */
@@ -31,8 +18,7 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
     }
 
     /**
-     * @return a line-angle layout: carbon left as a bare vertex, hydrogens gathered into whatever
-     *     symbol is written, and chains drawn as a zig-zag so that each vertex can be told apart
+     * @return a skeletal layout where carbons are vertices
      */
     public static DepictionOptions skeletal()
     {

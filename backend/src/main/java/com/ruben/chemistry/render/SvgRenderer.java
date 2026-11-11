@@ -174,8 +174,8 @@ public final class SvgRenderer
         // how far to move each fragment, as {dx, dy}
         double[][] offset = switch (arrangement)
         {
-            case FragmentArrangement.WeightedGrid grid -> offsetsInRows(grid, extent, gap);
-            case FragmentArrangement.Lines lines -> offsetsInTracks(lines, extent, gap);
+            case FragmentArrangement.Grid grid -> offsetsInRows(grid, extent, gap);
+            case FragmentArrangement.Linear lines -> offsetsInTracks(lines, extent, gap);
         };
 
         List<AtomPlacement> moved = new ArrayList<>(local.atoms().size());
@@ -196,10 +196,10 @@ public final class SvgRenderer
      * @param gap the space between neighbouring cells and rows
      * @return how far to move each fragment, as {dx, dy}
      */
-    private double[][] offsetsInRows(FragmentArrangement.WeightedGrid grid, double[][] extent, double gap)
+    private double[][] offsetsInRows(FragmentArrangement.Grid grid, double[][] extent, double gap)
     {
         int count = extent.length;
-        FragmentArrangement.Slot[] slot = new FragmentArrangement.Slot[count];
+        FragmentArrangement.GridSlot[] slot = new FragmentArrangement.GridSlot[count];
         int rows = 0;
         for (int fragment = 0; fragment < count; fragment++)
         {
@@ -220,9 +220,9 @@ public final class SvgRenderer
             {
                 continue;
             }
-            FragmentArrangement.Slot at = slot[fragment];
+            FragmentArrangement.GridSlot at = slot[fragment];
             double[] box = extent[fragment];
-            double needs = (box[2] - box[0]) * at.total() / at.weight() + gap * (at.cells() - 1);
+            double needs = (box[2] - box[0]) * at.total() / at.width() + gap * (at.columnSpan() - 1);
             width = Math.max(width, needs);
             height[at.row()] = Math.max(height[at.row()], box[3] - box[1]);
         }
@@ -242,11 +242,11 @@ public final class SvgRenderer
                 offset[fragment] = new double[2];
                 continue;
             }
-            FragmentArrangement.Slot at = slot[fragment];
+            FragmentArrangement.GridSlot at = slot[fragment];
             double[] box = extent[fragment];
-            double shared = width - gap * (at.cells() - 1);
-            double cellLeft = shared * at.before() / at.total() + gap * at.index();
-            double cellWidth = shared * at.weight() / at.total();
+            double shared = width - gap * (at.columnSpan() - 1);
+            double cellLeft = shared * at.before() / at.total() + gap * at.column();
+            double cellWidth = shared * at.width() / at.total();
             double dx = cellLeft + (cellWidth - (box[2] - box[0])) * style.gridAlignment().fraction() - box[0];
             double midY = -(top[at.row()] + height[at.row()] / 2); // screen y is downwards
             cells.add(new double[] {cellLeft, -(top[at.row()] + height[at.row()]), cellLeft + cellWidth, -top[at.row()]});
@@ -263,11 +263,11 @@ public final class SvgRenderer
      * @param gap the space between neighbouring rows and columns
      * @return how far to move each fragment, as {dx, dy}
      */
-    private double[][] offsetsInTracks(FragmentArrangement.Lines arrangement, double[][] extent, double gap)
+    private double[][] offsetsInTracks(FragmentArrangement.Linear arrangement, double[][] extent, double gap)
     {
         int count = extent.length;
         // where each fragment sits in the grid, and how much of it the fragment needs
-        FragmentArrangement.Cell[] cell = new FragmentArrangement.Cell[count];
+        FragmentArrangement.Position[] cell = new FragmentArrangement.Position[count];
         int columns = 0;
         int rows = 0;
         List<double[]> wide = new ArrayList<>();
@@ -280,7 +280,7 @@ public final class SvgRenderer
             {
                 continue;
             }
-            FragmentArrangement.Cell at = arrangement.cellOf(fragment);
+            FragmentArrangement.Position at = arrangement.positionOf(fragment);
             cell[fragment] = at;
             columns = Math.max(columns, at.column() + at.columnSpan());
             rows = Math.max(rows, at.row() + at.rowSpan());
@@ -306,7 +306,7 @@ public final class SvgRenderer
         double[][] offset = new double[count][];
         for (int fragment = 0; fragment < count; fragment++)
         {
-            FragmentArrangement.Cell at = cell[fragment];
+            FragmentArrangement.Position at = cell[fragment];
             if (at == null)
             {
                 offset[fragment] = new double[2];

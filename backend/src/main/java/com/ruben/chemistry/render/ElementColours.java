@@ -20,33 +20,13 @@ public final class ElementColours
 
     /**
      * @param element a canonical element symbol, e.g. {@code "C"} or {@code "Cl"}
-     * @return the colour that element is drawn in, or {@link #DEFAULT} if it has none of its own
+     * @return the colour that element is drawn in
      */
     public static Colour of(String element)
     {
         return BY_ELEMENT.getOrDefault(element, DEFAULT);
     }
 
-    /**
-     * @param element a canonical element symbol
-     * @return whether that element has a colour of its own
-     */
-    public static boolean isColoured(String element)
-    {
-        return BY_ELEMENT.containsKey(element);
-    }
-
-    /**
-     * @return every element that has a colour of its own, against that colour, unmodifiable
-     */
-    public static Map<String, Colour> all()
-    {
-        return BY_ELEMENT;
-    }
-
-    /**
-     * @return the colouring, by element symbol
-     */
     private static Map<String, Colour> buildColours()
     {
         Map<String, Colour> colours = new LinkedHashMap<>();

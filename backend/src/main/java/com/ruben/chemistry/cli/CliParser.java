@@ -7,8 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 public final class CliParser
 {
@@ -30,7 +28,6 @@ public final class CliParser
      * Repeatable options may be supplied multiple times:
      *   --colour red --colour blue
      */
-
     public static CliOptions parse(List<String> arguments, Collection<? extends CliOption<?>> definitions)
     {
         Objects.requireNonNull(arguments, "arguments");
@@ -59,7 +56,6 @@ public final class CliParser
             }
 
             CliOption<?> option = options.get(name);
-
             if (option == null)
             {
                 throw new IllegalArgumentException("Unknown option: --" + name);
@@ -86,11 +82,9 @@ public final class CliParser
             }
             else
             {
-                if (i + 1 >= arguments.size()
-                        || arguments.get(i + 1).startsWith("--"))
+                if (i + 1 >= arguments.size() || arguments.get(i + 1).startsWith("--"))
                 {
-                    throw new IllegalArgumentException(
-                            "Missing value for option: --" + name);
+                    throw new IllegalArgumentException("Missing value for option: --" + name);
                 }
 
                 rawValue = arguments.get(++i);
@@ -129,7 +123,6 @@ public final class CliParser
             {
                 throw new IllegalArgumentException("Option name cannot be blank");
             }
-
             if (options.putIfAbsent(name, option) != null)
             {
                 throw new IllegalArgumentException("Duplicate option definition: --" + name);

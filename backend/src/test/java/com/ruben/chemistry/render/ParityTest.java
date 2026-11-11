@@ -12,16 +12,34 @@ import static org.assertj.core.api.Assertions.within;
 
 class ParityTest
 {
-    /** Four ligands a quarter turn apart, the first of which carries the stereo bond. */
+    private static final int LIGANDS = Parity.LIGANDS;
+    private static final double BOND_LENGTH = 1;
+    private static final double QUARTER_TURN = Math.PI / 2;
+    private static final double THIRD_TURN = 2 * Math.PI / 3;
+    private static final double TETRAHEDRON_DEPTH = -1.0 / 3;
+    private static final double EXPECTED_VOLUME = -Math.sqrt(12);
+    private static final double TOLERANCE = 1e-9;
+
+    /** Four ligands a quarter turn apart, with the first carrying the stereo bond */
     private static final List<Point> CROSS = List.of(
-        Point.polar(0, 1),
-        Point.polar(Math.PI / 2, 1),
-        Point.polar(Math.PI, 1),
-        Point.polar(3 * Math.PI / 2, 1));
+            Point.polar(0, BOND_LENGTH),
+            Point.polar(QUARTER_TURN, BOND_LENGTH),
+            Point.polar(2 * QUARTER_TURN, BOND_LENGTH),
+            Point.polar(3 * QUARTER_TURN, BOND_LENGTH));
+
+    /** A tetrahedron viewed from its first ligand, with the other three below the page */
+    private static final List<Point> TETRAHEDRON = List.of(
+            Point.ORIGIN,
+            Point.polar(0, BOND_LENGTH),
+            Point.polar(THIRD_TURN, BOND_LENGTH),
+            Point.polar(2 * THIRD_TURN, BOND_LENGTH));
+
+    private static final double[] TETRAHEDRON_DEPTHS = {
+            BOND_LENGTH, TETRAHEDRON_DEPTH, TETRAHEDRON_DEPTH, TETRAHEDRON_DEPTH};
 
     /**
-     * @param style how the bond to the first ligand leaves the plane of the page
-     * @return the depth of each of the four ligands of {@link #CROSS}
+     * @param style how the bond to the first ligand leaves the page
+     * @return the depths of the four ligands in {@link #CROSS}
      */
     private static double[] depthsOf(BondStyle style)
     {
@@ -51,26 +69,18 @@ class ParityTest
         @Test
         void rejects_an_arrangement_that_is_not_tetrahedral()
         {
-            List<Point> three = CROSS.subList(0, 3);
+            List<Point> three = CROSS.subList(0, LIGANDS - 1);
 
-            assertThatThrownBy(() -> Parity.signedVolume(Point.ORIGIN, three, new double[3]))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("needs 4 ligands");
+            assertThatThrownBy(() -> Parity.signedVolume(Point.ORIGIN, three, new double[LIGANDS - 1]))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("needs " + LIGANDS + " ligands");
         }
 
         @Test
         void measures_a_proper_tetrahedron_from_its_first_ligand()
         {
-            // the first ligand points straight out of the page, so sits on top of the centre, and
-            // the other three run anticlockwise around the plane a third of the way below it
-            List<Point> ligands = List.of(
-                Point.ORIGIN,
-                Point.polar(0, 1),
-                Point.polar(Math.toRadians(120), 1),
-                Point.polar(Math.toRadians(240), 1));
-            double[] depths = {1, -1 / 3.0, -1 / 3.0, -1 / 3.0};
-
-            assertThat(Parity.signedVolume(Point.ORIGIN, ligands, depths)).isCloseTo(-Math.sqrt(12), within(1e-9));
+            assertThat(Parity.signedVolume(Point.ORIGIN, TETRAHEDRON, TETRAHEDRON_DEPTHS))
+                    .isCloseTo(EXPECTED_VOLUME, within(TOLERANCE));
         }
 
         @Test
@@ -92,26 +102,22 @@ class ParityTest
         @Test
         void reads_a_tetrahedron_wound_anticlockwise_from_its_first_ligand()
         {
-            List<Point> ligands = List.of(
-                Point.ORIGIN,
-                Point.polar(0, 1),
-                Point.polar(Math.toRadians(120), 1),
-                Point.polar(Math.toRadians(240), 1));
-            double[] depths = {1, -1 / 3.0, -1 / 3.0, -1 / 3.0};
-
-            assertThat(Parity.read(Point.ORIGIN, ligands, depths)).contains(Chirality.ANTICLOCKWISE);
+            assertThat(Parity.read(Point.ORIGIN, TETRAHEDRON, TETRAHEDRON_DEPTHS))
+                    .contains(Chirality.ANTICLOCKWISE);
         }
 
         @Test
         void reads_a_wedge_to_the_first_of_four_quartered_ligands_as_anticlockwise()
         {
-            assertThat(Parity.read(Point.ORIGIN, CROSS, depthsOf(BondStyle.WEDGE))).contains(Chirality.ANTICLOCKWISE);
+            assertThat(Parity.read(Point.ORIGIN, CROSS, depthsOf(BondStyle.WEDGE)))
+                    .contains(Chirality.ANTICLOCKWISE);
         }
 
         @Test
         void reads_the_same_arrangement_hashed_as_the_opposite_parity()
         {
-            assertThat(Parity.read(Point.ORIGIN, CROSS, depthsOf(BondStyle.HASH))).contains(Chirality.CLOCKWISE);
+            assertThat(Parity.read(Point.ORIGIN, CROSS, depthsOf(BondStyle.HASH)))
+                    .contains(Chirality.CLOCKWISE);
         }
 
         @Test
@@ -119,8 +125,10 @@ class ParityTest
         {
             List<Point> swapped = List.of(CROSS.get(0), CROSS.get(2), CROSS.get(1), CROSS.get(3));
 
-            assertThat(Parity.read(Point.ORIGIN, CROSS, depthsOf(BondStyle.WEDGE))).contains(Chirality.ANTICLOCKWISE);
-            assertThat(Parity.read(Point.ORIGIN, swapped, depthsOf(BondStyle.WEDGE))).contains(Chirality.CLOCKWISE);
+            assertThat(Parity.read(Point.ORIGIN, CROSS, depthsOf(BondStyle.WEDGE)))
+                    .contains(Chirality.ANTICLOCKWISE);
+            assertThat(Parity.read(Point.ORIGIN, swapped, depthsOf(BondStyle.WEDGE)))
+                    .contains(Chirality.CLOCKWISE);
         }
     }
 }

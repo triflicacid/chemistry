@@ -5,13 +5,9 @@ package com.ruben.chemistry.render;
  */
 public enum DepictionStyle
 {
-    /**
-     * Every atom is written out as its own symbol.
-     */
+    /** Every atom is written out as its own symbol. */
     EXPLICIT,
 
-    /**
-     * Carbon is left as a bare vertex and its hydrogens go unwritten.
-     */
+    /** Carbon is left as a bare vertex and its hydrogens go unwritten. */
     SKELETAL
 }

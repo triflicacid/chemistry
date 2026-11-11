@@ -18,10 +18,6 @@ import java.util.OptionalInt;
  */
 public record BondPlacement(int first, int second, BondOrder order, BondStyle style, OptionalInt sourceBond)
 {
-    /**
-     * @throws NullPointerException if {@code order}, {@code style} or {@code sourceBond} is {@code null}
-     * @throws IllegalArgumentException if either index is negative, or the two are the same
-     */
     public BondPlacement
     {
         Objects.requireNonNull(order, "order");

@@ -371,7 +371,7 @@ public final class Molecule
 
     /**
      * Finds every bridge: a bond whose removal disconnects its fragment, i.e., one which doesn't lie on a ring.
-     * Unlike {@link #ringBonds()} this needs no cycle enumeration, only one linear pass, so use this where possible.
+     * This is more efficient than {@link #ringBonds()} if it is to be used for ring membership checks.
      *
      * @return this molecule's bridges
      */
@@ -386,40 +386,58 @@ public final class Molecule
     }
 
     /**
-     * Finds the bridges with Tarjan's low-link algorithm.
+     * Finds all bridges using Tarjan's low-link algorithm.
+     * A bridge is a bond whose removal disconnects its endpoints.
      *
-     * @return the bridges, by reference identity
+     * @return the bridges, using reference identity
      */
     private Set<Bond> computeBridges()
     {
+        // Discovery time (DFS visitation order) of each atom
         Map<Atom, Integer> discovery = new IdentityHashMap<>();
+
+        // Lowest discovery time reachable from each atom's DFS subtree (including the atom itself)
         Map<Atom, Integer> low = new IdentityHashMap<>();
+
         Set<Bond> found = IdentitySet.of();
         Deque<SearchFrame> stack = new ArrayDeque<>();
 
+        // Start a DFS from every unvisited atom.
         for (Atom root : atoms)
         {
             if (discovery.containsKey(root))
             {
                 continue;
             }
+
+            // Assign the root its discovery time.
             discovery.put(root, discovery.size());
+
+            // Initially, the root can reach only itself.
             low.put(root, discovery.get(root));
+
             stack.push(new SearchFrame(root, null, bondsOf(root).iterator()));
 
+            // Continue until this connected component has been explored.
             while (!stack.isEmpty())
             {
                 SearchFrame frame = stack.peek();
                 if (frame.remaining().hasNext())
                 {
+                    // Take the next unexplored bond of this atom.
                     Bond bond = frame.remaining().next();
+
+                    // Ignore the bond used to enter this atom.
                     if (bond == frame.via())
                     {
                         continue;
                     }
-                    Atom next = bond.first() == frame.atom() ? bond.second() : bond.first();
+
+                    Atom next = bond.getOther(frame.atom);
                     if (discovery.containsKey(next))
                     {
+                        // The neighbouring atom has already been visited, so this is a back edge and
+                        // provides an alternative route.
                         low.merge(frame.atom(), discovery.get(next), Math::min);
                     }
                     else
@@ -431,11 +449,18 @@ public final class Molecule
                 }
                 else
                 {
+                    // No unexplored bonds remain.
                     stack.pop();
+
+                    // If this was not the root, propagate its low-link value to its parent.
                     if (!stack.isEmpty())
                     {
                         Atom parent = stack.peek().atom();
+
+                        // The parent can reach everything its child can reach, so incorporate the child's low value.
                         low.merge(parent, low.get(frame.atom()), Math::min);
+
+                        // If the child's subtree cannot reach the parent (or any ancestor), the tree edge connecting them is a bridge.
                         if (low.get(frame.atom()) > discovery.get(parent))
                         {
                             found.add(frame.via());
@@ -444,8 +469,10 @@ public final class Molecule
                 }
             }
         }
+
         return found;
     }
+
 
     /**
      * @return the union of the relevant cycles' bonds: every non-bridge bond lies on some cycle, and relevant cycles span all cycles

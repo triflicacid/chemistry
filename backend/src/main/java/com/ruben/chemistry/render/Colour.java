@@ -15,15 +15,12 @@ public record Colour(int red, int green, int blue)
     /** How many characters a hex colour has, not counting its leading hash. */
     private static final int HEX_DIGITS = 6;
 
-    /** Black, which is what an element with no colour of its own is drawn in. */
+    /** Black. */
     public static final Colour BLACK = new Colour(0, 0, 0);
 
     /** White. */
     public static final Colour WHITE = new Colour(FULL, FULL, FULL);
 
-    /**
-     * @throws IllegalArgumentException if any channel falls outside 0 to 255
-     */
     public Colour
     {
         requireChannel(red, "red");

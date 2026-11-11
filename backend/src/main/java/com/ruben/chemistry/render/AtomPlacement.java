@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.OptionalInt;
 
 /**
- * One atom of a {@link Depiction}, together with where it sits.
+ * One atom of a {@link Depiction}.
  *
  * @param placementIndex this placement's own index within its depiction's atoms, which a {@link BondPlacement} refers to
  * @param element the canonical element symbol, e.g. {@code "C"}, {@code "Cl"}, or {@code "*"} for a wildcard atom
@@ -32,10 +32,6 @@ public record AtomPlacement(
     int fragment,
     Point position)
 {
-    /**
-     * @throws NullPointerException if any reference component is {@code null}
-     * @throws IllegalArgumentException if {@code placementIndex} or {@code hydrogens} is negative
-     */
     public AtomPlacement
     {
         Objects.requireNonNull(element, "element");

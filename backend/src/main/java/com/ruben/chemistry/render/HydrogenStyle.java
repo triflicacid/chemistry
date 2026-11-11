@@ -5,21 +5,13 @@ package com.ruben.chemistry.render;
  */
 public enum HydrogenStyle
 {
-    /**
-     * Each hydrogen is an atom of its own, bonded to the atom it belongs to. This is the ordinary
-     * structural diagram, and the only style that can show a parity about an implicit hydrogen.
-     */
+    /** Each hydrogen is an atom of its own, bonded to the atom it belongs to. */
     SEPARATE,
 
-    /**
-     * Hydrogens are gathered into the label of the atom they belong to, so that a methyl group is
-     * written {@code CH3} rather than drawn as four atoms. This keeps a crowded molecule readable.
-     */
+    /** Hydrogens are gathered into the label of the atom they belong to, e.g., methyl becomes {@code CH3}. */
     CONDENSED,
 
-    /**
-     * Hydrogens are left out altogether.
-     */
+    /** Hydrogens are omitted. */
     NONE;
 
     /**

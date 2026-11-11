@@ -12,6 +12,9 @@ import java.util.Map;
  * <p>
  * The first ring is drawn as a regular polygon, and each ring after it is built on the atoms it shares with what is
  * already drawn, bulging away from the ring it was built on.
+ * <p>
+ * TODO this is a GREEDY algorithm. For non-fused ring systems, such as C12C3C4C1C5C2C3C45, this fails
+ *     spectacularly.
  */
 final class RingSystemLayout
 {

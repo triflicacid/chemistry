@@ -1,4 +1,3 @@
-
 package com.ruben.chemistry.cli;
 
 import java.io.IOException;

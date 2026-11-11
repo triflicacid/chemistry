@@ -5,13 +5,9 @@ package com.ruben.chemistry.render;
  */
 public enum AtomShape
 {
-    /**
-     * As its element symbol, written in the element's own colour.
-     */
+    /** As its element symbol. */
     TEXT,
 
-    /**
-     * As a filled circle in the element's own colour.
-     */
+    /** As a filled circle. */
     CIRCLE
 }

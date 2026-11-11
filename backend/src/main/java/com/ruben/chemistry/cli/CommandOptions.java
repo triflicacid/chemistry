@@ -1,4 +1,3 @@
-
 package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.render.AtomShape;
@@ -10,7 +9,6 @@ import com.ruben.chemistry.render.FragmentArrangement;
 import com.ruben.chemistry.render.HydrogenStyle;
 import com.ruben.chemistry.render.RenderStyle;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -227,11 +225,8 @@ final class CommandOptions
                                 (first, second) -> {
                                     throw new IllegalArgumentException("Duplicate option definition: --" + second.name());
                                 },
-                                LinkedHashMap::new
-                        ),
-                        map -> List.copyOf(map.values())
-                )
-        );
+                                LinkedHashMap::new),
+                        map -> List.copyOf(map.values())));
     }
 
     /**
@@ -241,20 +236,9 @@ final class CommandOptions
      * @param commandOptions the additional options understood by this command
      * @return the parsed options
      */
-    static CliOptions of(List<String> arguments, CliOption<?>... commandOptions) {
-        return CliParser.parse(arguments, definitions(commandOptions));
-    }
-
-    /**
-     * Generates usage text for a command.
-     *
-     * @param synopsis the command's usage synopsis
-     * @param commandOptions the additional options understood by this command
-     * @return the complete usage text
-     */
-    static String usage(String synopsis, CliOption<?>... commandOptions)
+    static CliOptions of(List<String> arguments, CliOption<?>... commandOptions)
     {
-        return CliParser.usage(synopsis, definitions(commandOptions));
+        return CliParser.parse(arguments, definitions(commandOptions));
     }
 
     /**

@@ -21,7 +21,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
- * Lays a {@link Molecule} out into a {@link Depiction}.
+ * Lays a {@link Molecule} out into a {@link Layout}.
  */
 public final class MoleculeLayout
 {
@@ -151,9 +151,6 @@ public final class MoleculeLayout
         return new Layout(layout.build(), layout.snapshot);
     }
 
-    /**
-     * @return the laid-out molecule
-     */
     private Depiction build()
     {
         if (atoms.isEmpty())
@@ -598,30 +595,29 @@ public final class MoleculeLayout
     }
 
     /**
-     * @param walk the atom being expanded, and how the walk arrived at it
-     * @param onwards the order of the bond the chain carries on along
-     * @param neighbours how many atoms are bonded to this one, the one walked in from included
-     * @return the angle between the bond the walk arrived on and the bond it carries on along
+     * @param walk the atom being expanded and how the walk arrived at it
+     * @param onwards the order of the outgoing bond
+     * @param neighbours the number of bonded atoms, including the one arrived from
+     * @return the turn from the incoming bond to the outgoing bond
      */
     private double continuationTurn(Walk walk, BondOrder onwards, int neighbours)
     {
         BondOrder arrived = walk.parentBond().order();
 
-        // an atom a triple bond ends at is linear, and so is one two double bonds pass through
+        // triple bonds or two consecutive trigonal bonds require a straight continuation
         if (arrived == BondOrder.TRIPLE || onwards == BondOrder.TRIPLE || (isTrigonal(arrived) && isTrigonal(onwards)))
         {
             return STRAIGHT_TURN;
         }
 
-        // an atom with three neighbours is trigonal, as is one a single double bond ends at, and
-        // both are drawn with their bonds fanned evenly about them; an atom with more neighbours
-        // than that is better off carrying the chain straight on and spreading the rest around it
+        // three neighbours, or fewer with a trigonal bond, call for a zigzag
         if (neighbours == TRIGONAL_NEIGHBOURS
-            || (neighbours < TRIGONAL_NEIGHBOURS && (isTrigonal(arrived) || isTrigonal(onwards))))
+                || (neighbours < TRIGONAL_NEIGHBOURS && (isTrigonal(arrived) || isTrigonal(onwards))))
         {
             return walk.zigzagSign() * ZIGZAG_TURN;
         }
 
+        // otherwise follow the configured chain geometry
         if (options.chainGeometry() == ChainGeometry.ZIGZAG)
         {
             return walk.zigzagSign() * ZIGZAG_TURN;
@@ -639,13 +635,7 @@ public final class MoleculeLayout
     }
 
     /**
-     * Spins an atom's free neighbours about it, where they would otherwise land on top of
-     * something already drawn.
-     * <p>
-     * Only the neighbours shared out into whatever room is left over move; the bond the walk
-     * arrived along, and the one the chain carries on down, stay where they were put. An atom
-     * whose neighbours have been placed to honour a declared configuration is left alone
-     * altogether, so that spinning them cannot undo it.
+     * Spins an atom's free neighbours about it if they collide with something already placed.
      *
      * @param walk the atom being expanded, and how the walk arrived at it
      * @param centre where the atom sits
@@ -755,8 +745,7 @@ public final class MoleculeLayout
      * @param directions the directions its neighbours would sit in
      * @param radii how far along each of those directions its neighbours sit
      * @param free the first slot whose direction can still move
-     * @return every bond of this part of the molecule that is already drawn, the bonds to the
-     *     neighbours whose directions are fixed included
+     * @return every bond of this part of the molecule that is already drawn
      */
     private List<Point[]> segmentsAround(Point centre, double[] directions, double[] radii, int free)
     {
@@ -776,20 +765,17 @@ public final class MoleculeLayout
     }
 
     /**
-     * Measures how much room a fan would have if it were spun round.
-     * <p>
-     * A neighbour needs clear space both from the atoms already drawn and from the bonds between
-     * them, and the bond drawn out to it needs clear space from those same atoms, since a bond
-     * running under a symbol reads no better than two symbols on top of one another.
+     * Measures the minimum clearance of a proposed fan of neighbours from the geometry already drawn.
+     * A neighbour and its connecting bond must both avoid existing atoms and bonds
      *
-     * @param centre where the atom being expanded sits
-     * @param directions the directions its neighbours would sit in
-     * @param radii how far along each of those directions its neighbours sit
-     * @param free the first slot whose direction can still move
+     * @param centre the atom being expanded
+     * @param directions the directions of its neighbours
+     * @param radii the distances to its neighbours
+     * @param free the first direction that can still move
      * @param occupied the atoms already drawn
      * @param drawn the bonds already drawn
-     * @param offset how far to spin the free directions round first
-     * @return how close the tightest of them would come to anything already drawn
+     * @param offset the rotation applied to the free directions
+     * @return the minimum clearance from existing geometry
      */
     private static double clearance(
         Point centre,
@@ -806,11 +792,15 @@ public final class MoleculeLayout
             Point point = centre.plus(Point.polar(directions[slot] + offset, radii[slot]));
             for (Point taken : occupied)
             {
+                // keep the neighbour clear of existing atoms
                 closest = Math.min(closest, point.distanceTo(taken));
+
+                // keep its bond clear of existing atoms
                 closest = Math.min(closest, distanceToSegment(taken, centre, point));
             }
             for (Point[] bond : drawn)
             {
+                // keep the neighbour clear of existing bonds
                 closest = Math.min(closest, distanceToSegment(point, bond[0], bond[1]));
             }
         }
@@ -834,22 +824,20 @@ public final class MoleculeLayout
 
         Point offset = point.minus(from);
         double fraction = (offset.x() * along.x() + offset.y() * along.y()) / length;
-        double clamped = Math.max(0, Math.min(1, fraction));
+        double clamped = Math.clamp(fraction, 0, 1);
         return point.distanceTo(from.plus(along.scale(clamped)));
     }
 
     /**
-     * Mirrors an atom's neighbours across the bond the walk arrived along, where that bond
-     * declares a configuration its substituents would otherwise contradict.
-     * <p>
-     * Mirroring leaves the bond itself, and the direction a chain carries on in, where they are,
-     * so it only swaps over which side of the double bond everything else comes out on.
+     * Mirrors the unplaced neighbours of an atom when needed to honour a declared double-bond configuration.
+     * The incoming bond and chain continuation remain unchanged; only the side on which the other neighbours
+     * are placed is reversed
      *
-     * @param walk the atom being expanded, and how the walk arrived at it
-     * @param directions the directions its neighbours would sit in
-     * @param children the bonds to the neighbours still to be placed
-     * @param hydrogens how many hydrogens are being drawn for this atom
-     * @return the directions to use
+     * @param walk the atom being expanded and how the walk arrived at it
+     * @param directions the proposed directions of its neighbours
+     * @param children the bonds to neighbours still to be placed
+     * @param hydrogens the number of hydrogens being drawn for this atom
+     * @return the original or mirrored directions
      */
     private double[] honourConfiguration(Walk walk, double[] directions, List<Bond> children, int hydrogens)
     {
@@ -888,6 +876,7 @@ public final class MoleculeLayout
             return directions;
         }
 
+        // otherwise we must mirror the directions
         double mirror = axis.angle();
         double[] mirrored = new double[directions.length];
         for (int slot = 0; slot < directions.length; slot++)
@@ -898,8 +887,7 @@ public final class MoleculeLayout
     }
 
     /**
-     * Picks a substituent of an already-placed end of a double bond to measure its configuration
-     * from, skipping any that lies along the bond and so sits to neither side of it.
+     * Picks a substituent of an already-placed end of a double bond to measure its configuration from
      *
      * @param atom the end of the double bond to measure at
      * @param across the other end of the double bond
@@ -939,8 +927,7 @@ public final class MoleculeLayout
     }
 
     /**
-     * Picks a substituent of the end of a double bond about to be expanded, from the directions
-     * its neighbours are going to sit in.
+     * Picks a substituent of the end of a double bond about to be expanded, from the directions its neighbours are going to sit in.
      *
      * @param atom the end of the double bond to measure at
      * @param children the bonds to the neighbours still to be placed
@@ -973,8 +960,7 @@ public final class MoleculeLayout
     /**
      * @param axis the direction of the bond to measure against
      * @param offset where the substituent sits, relative to its own end of the bond
-     * @return {@code 1} or {@code -1} for the side the substituent is on, or {@code 0} if it lies
-     *     along the bond and so is on neither
+     * @return {@code 1} or {@code -1} for the side the substituent is on, or {@code 0} if it lies  along the bond and so is on neither
      */
     private static int sideOf(Point axis, Point offset)
     {
@@ -987,14 +973,14 @@ public final class MoleculeLayout
     }
 
     /**
-     * Draws in the hydrogens an atom's own label would otherwise have carried, each labelled with
-     * its own nuclide.
+     * Places an atom's hydrogens separately, with isotope labels where needed, instead of including
+     * them in the atom's own label
      *
-     * @param atom the atom they hang off
-     * @param index {@code atom}'s index
-     * @param centre where {@code atom} sits
-     * @param directions the directions {@code atom}'s neighbours sit in
-     * @param from the first direction not already taken by a bonded neighbour
+     * @param atom the atom the hydrogens belong to
+     * @param index the atom's index
+     * @param centre the atom's position
+     * @param directions the directions available for its hydrogens
+     * @param from the first direction not occupied by a bonded neighbour
      */
     private void placeHydrogens(Atom atom, int index, Point centre, double[] directions, int from)
     {
@@ -1020,8 +1006,7 @@ public final class MoleculeLayout
     }
 
     /**
-     * Gives every stereocentre a bond leaving the plane of the page, picked so that the
-     * arrangement drawn reads as the parity the molecule declares.
+     * Gives every stereocentre a bond leaving the plane of the page
      */
     private void applyParities()
     {
@@ -1096,10 +1081,8 @@ public final class MoleculeLayout
 
     /**
      * @param centreAtom the stereocentre's atom index
-     * @param ligand one of its ligands, as a {@link Molecule#atoms()} index or
-     *     {@link StereoDeclaration#IMPLICIT_HYDROGEN}
-     * @return the placement of that ligand, or {@link #UNDRAWN} where it is a hydrogen the options
-     *     gather into a label or leave out
+     * @param ligand one of its ligands, as a {@link Molecule#atoms()} index or {@link StereoDeclaration#IMPLICIT_HYDROGEN}
+     * @return the placement of that ligand, or {@link #UNDRAWN} where it is a hydrogen the options gather into a label or leave out
      * @throws IllegalArgumentException if the ligand is a hydrogen that cannot be made sense of
      */
     private int placementOfLigand(int centreAtom, int ligand)
@@ -1123,13 +1106,12 @@ public final class MoleculeLayout
     }
 
     /**
-     * Orders a stereocentre's ligands by how willingly each takes the bond that leaves the plane:
-     * a hydrogen first, as the convention is to wedge the hydrogen, then anything else with
-     * nothing further hanging off it, and only then an atom carrying the rest of the structure.
+     * Orders ligands by preference for the wedge bond: hydrogen first, then terminal atoms,
+     * then atoms carrying the rest of the structure
      *
-     * @param ligands the ligands' placements, in declared order
-     * @param degrees how many bonds each placement has
-     * @return the ligands' positions within {@code ligands}, best candidate first
+     * @param ligands the ligand placements, in declared order
+     * @param degrees the number of bonds at each placement
+     * @return indices into {@code ligands}, best wedge candidate first
      */
     private List<Integer> wedgeOrder(int[] ligands, int[] degrees)
     {
@@ -1319,8 +1301,7 @@ public final class MoleculeLayout
     /**
      * A substituent one end of a double bond has its configuration measured from.
      *
-     * @param atom the substituent's atom index, or {@link StereoDeclaration#IMPLICIT_HYDROGEN} for
-     *     an atom's own hydrogen
+     * @param atom the substituent's atom index, or {@link StereoDeclaration#IMPLICIT_HYDROGEN} for an atom's own hydrogen
      * @param side which side of the double bond it sits on, as {@code 1} or {@code -1}
      */
     private record Reference(int atom, int side)

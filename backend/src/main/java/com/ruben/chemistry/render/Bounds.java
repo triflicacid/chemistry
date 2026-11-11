@@ -3,7 +3,7 @@ package com.ruben.chemistry.render;
 import java.util.Collection;
 
 /**
- * An axis-aligned rectangle in depiction space, as described by {@link Point}.
+ * An axis-aligned rectangle in depiction space.
  *
  * @param minX the smallest {@code x} coordinate
  * @param minY the smallest {@code y} coordinate
@@ -12,12 +12,9 @@ import java.util.Collection;
  */
 public record Bounds(double minX, double minY, double maxX, double maxY)
 {
-    /** The rectangle of zero size at the origin, which is what a depiction of nothing occupies. */
+    /** The rectangle of zero size at the origin. */
     public static final Bounds EMPTY = new Bounds(0, 0, 0, 0);
 
-    /**
-     * @throws IllegalArgumentException if either maximum is below its matching minimum
-     */
     public Bounds
     {
         if (maxX < minX || maxY < minY)
@@ -73,14 +70,5 @@ public record Bounds(double minX, double minY, double maxX, double maxY)
     public Point centre()
     {
         return new Point((minX + maxX) / 2, (minY + maxY) / 2);
-    }
-
-    /**
-     * @param margin how far to grow this rectangle on every side
-     * @return this rectangle, grown
-     */
-    public Bounds pad(double margin)
-    {
-        return new Bounds(minX - margin, minY - margin, maxX + margin, maxY + margin);
     }
 }

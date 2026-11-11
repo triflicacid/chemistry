@@ -3,8 +3,7 @@ package com.ruben.chemistry.render;
 /**
  * How a {@link BondPlacement} leaves the plane of the page.
  * <p>
- * A bond that leaves the plane is drawn from a stereocentre outwards, so its narrow end always
- * sits on the placement's {@link BondPlacement#first() first} atom.
+ * A bond that leaves the plane is drawn from a stereocentre outwards.
  */
 public enum BondStyle
 {

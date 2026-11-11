@@ -6,27 +6,21 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Reads the tetrahedral parity so a layout can check it against the parity the molecule declares.
+ * Reads the tetrahedral parity shown by a stereocentre's drawn ligands.
  * <p>
- * A drawn stereocentre is a three-dimensional arrangement: its four ligands sit where the page
- * puts them, lifted out of the plane by whatever {@link BondStyle} each bond carries. Considering the
- * page as the {@code xy} plane of a right-handed frame, with {@code z} pointing out of the page
- * towards the viewer, the parity is the sign of the volume the four ligands span.
- * <p>
- * {@link Chirality#ANTICLOCKWISE} means that, viewed from the first ligand, the other three run
- * anticlockwise. Taking the first ligand straight out of the page and the other three evenly
- * around the plane below it in anticlockwise order gives a negative signed volume, so a negative
- * volume is what an anticlockwise parity looks like.
+ * Uses signed volume in a right-handed coordinate system, with the page as the {@code xy} plane
+ * and {@code z} pointing towards the viewer.
+ * {@link Chirality#ANTICLOCKWISE} corresponds to negative volume when viewed from the first ligand
  */
 final class Parity
 {
-    /** How far out of the plane a bond leaving it carries its ligand, as a fraction of a bond length. */
+    /** The out-of-plane distance of a wedge or hash, as a fraction of bond length */
     static final double STEREO_DEPTH = 0.5;
 
-    /** How many ligands a tetrahedral parity describes the arrangement of. */
+    /** The number of ligands in a tetrahedral parity */
     static final int LIGANDS = 4;
 
-    /** The volume below which an arrangement is too nearly flat to read a parity from. */
+    /** The minimum volume needed to determine a parity */
     private static final double FLAT = 1e-9;
 
     private Parity()
@@ -34,8 +28,8 @@ final class Parity
     }
 
     /**
-     * @param style how a bond leaves the plane of the page
-     * @return how far out of the plane that bond carries its ligand
+     * @param style how the bond leaves the page
+     * @return the ligand's signed distance from the page
      */
     static double depthOf(BondStyle style)
     {
@@ -48,11 +42,13 @@ final class Parity
     }
 
     /**
-     * @param centre where the stereocentre sits
-     * @param ligands where its four ligands sit, in the order the parity is declared against
-     * @param depths how far out of the plane each ligand is carried, in the same order
-     * @return the parity the arrangement shows, or empty if it is too nearly flat to read
-     * @throws IllegalArgumentException if there are not exactly {@link #LIGANDS} ligands and depths
+     * Reads the parity shown by four ligand placements
+     *
+     * @param centre the stereocentre's position
+     * @param ligands the ligand positions, in declared parity order
+     * @param depths their signed distances from the page, in the same order
+     * @return the shown parity, or empty if the arrangement is too nearly flat
+     * @throws IllegalArgumentException if there are not exactly four ligands and depths
      */
     static Optional<Chirality> read(Point centre, List<Point> ligands, double[] depths)
     {
@@ -65,18 +61,20 @@ final class Parity
     }
 
     /**
-     * @param centre where the stereocentre sits
-     * @param ligands where its four ligands sit, in the order the parity is declared against
-     * @param depths how far out of the plane each ligand is carried, in the same order
-     * @return the signed volume the four ligands span, measured from the first
-     * @throws IllegalArgumentException if there are not exactly {@link #LIGANDS} ligands and depths
+     * Calculates the signed volume spanned by four ligands, measured from the first
+     *
+     * @param centre the stereocentre's position
+     * @param ligands the ligand positions, in declared parity order
+     * @param depths their signed distances from the page, in the same order
+     * @return the signed volume, whose sign determines the parity
+     * @throws IllegalArgumentException if there are not exactly four ligands and depths
      */
     static double signedVolume(Point centre, List<Point> ligands, double[] depths)
     {
         if (ligands.size() != LIGANDS || depths.length != LIGANDS)
         {
             throw new IllegalArgumentException("A tetrahedral parity needs " + LIGANDS
-                + " ligands, but was given " + ligands.size() + " positions and " + depths.length + " depths");
+                    + " ligands, but was given " + ligands.size() + " positions and " + depths.length + " depths");
         }
 
         double[][] offsets = new double[LIGANDS][];
@@ -86,7 +84,7 @@ final class Parity
             offsets[ligand] = new double[] {position.x() - centre.x(), position.y() - centre.y(), depths[ligand]};
         }
 
-        // the volume is measured from the first ligand, which is the one the parity is viewed from
+        // measure the volume from the first ligand
         double[] first = difference(offsets[1], offsets[0]);
         double[] second = difference(offsets[2], offsets[0]);
         double[] third = difference(offsets[3], offsets[0]);
@@ -96,7 +94,7 @@ final class Parity
     /**
      * @param from the vector to subtract from
      * @param subtrahend the vector to subtract
-     * @return their component-wise difference
+     * @return the component-wise difference
      */
     private static double[] difference(double[] from, double[] subtrahend)
     {
@@ -111,9 +109,9 @@ final class Parity
     private static double[] cross(double[] first, double[] second)
     {
         return new double[] {
-            first[1] * second[2] - first[2] * second[1],
-            first[2] * second[0] - first[0] * second[2],
-            first[0] * second[1] - first[1] * second[0]};
+                first[1] * second[2] - first[2] * second[1],
+                first[2] * second[0] - first[0] * second[2],
+                first[0] * second[1] - first[1] * second[0]};
     }
 
     /**

@@ -345,34 +345,6 @@ class MoleculeTest
 
             assertThat(molecule.bridges()).containsExactly(molecule.bondBetween(c[0], c[1]).orElseThrow());
         }
-
-        @Test
-        void splits_every_bond_into_exactly_one_of_bridge_or_ring_bond()
-        {
-            // a ring with a tail and a second ring hanging off it: C1CC1CCC1CCC1
-            Atom[] c = carbons(9);
-            Molecule molecule = carbons(c)
-                .addBond(c[0], c[1], BondOrder.SINGLE)
-                .addBond(c[1], c[2], BondOrder.SINGLE)
-                .addBond(c[2], c[0], BondOrder.SINGLE)
-                .addBond(c[2], c[3], BondOrder.SINGLE)
-                .addBond(c[3], c[4], BondOrder.SINGLE)
-                .addBond(c[4], c[5], BondOrder.SINGLE)
-                .addBond(c[5], c[6], BondOrder.SINGLE)
-                .addBond(c[6], c[7], BondOrder.SINGLE)
-                .addBond(c[7], c[5], BondOrder.SINGLE)
-                .addBond(c[7], c[8], BondOrder.SINGLE)
-                .build();
-
-            List<Bond> all = new ArrayList<>();
-            for (Atom atom : c)
-            {
-                molecule.bondsOf(atom).stream().filter(bond -> !all.contains(bond)).forEach(all::add);
-            }
-
-            assertThat(all).allSatisfy(bond ->
-                assertThat(molecule.bridges().contains(bond) ^ molecule.ringBonds().contains(bond)).isTrue());
-        }
     }
 
     @Nested

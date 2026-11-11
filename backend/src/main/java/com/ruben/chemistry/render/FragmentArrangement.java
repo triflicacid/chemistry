@@ -1,3 +1,4 @@
+
 package com.ruben.chemistry.render;
 
 import java.util.ArrayList;
@@ -7,70 +8,77 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * How the disconnected parts of a molecule are set out on the page.
+ * How disconnected molecular fragments are arranged on the page
  */
 public sealed interface FragmentArrangement
 {
-    /** Every part on one row. */
-    Lines ROW = new Lines(false, 0);
+    /** Every fragment on one row */
+    Linear ROW = new Linear(false, 0);
 
     /**
-     * Reads {@code row}, {@code column}, {@code row:<n>} (a new row after every n parts),
-     * {@code column:<n>} (a new column after every n parts), or {@code grid:<template>}.
+     * Reads {@code row}, {@code column}, {@code row:<n>}, {@code column:<n>} or {@code grid:<template>}
      *
      * @param text the arrangement
      * @return what it describes
      * @throws IllegalArgumentException if the text is not understood
-     * @see #parseGrid(String)
      */
     static FragmentArrangement parse(String text)
     {
         String value = text.strip();
+
         if (value.regionMatches(true, 0, "grid:", 0, 5))
         {
             return parseGrid(value.substring(5).toLowerCase(Locale.ROOT));
         }
-        return parseLines(value);
+
+        return parseLinear(value);
     }
 
     /**
+     * Reads a row or column arrangement
+     *
      * @param text the arrangement
      * @return what it describes
      * @throws IllegalArgumentException if the text is not understood
      */
-    static Lines parseLines(String text)
+    static Linear parseLinear(String text)
     {
-        Matcher line = Pattern.compile("(row|column)(?::(\\d+))?").matcher(text.strip().toLowerCase(Locale.ROOT));
+        Matcher line = Pattern.compile("(row|column)(?::(\\d+))?")
+                .matcher(text.strip().toLowerCase(Locale.ROOT));
+
         if (!line.matches())
         {
             throw new IllegalArgumentException("'" + text + "' is not row, column, row:<n>, column:<n> or grid:<template>");
         }
 
-        int count = 0;
+        int perLine = 0;
         if (line.group(2) != null)
         {
-            count = Integer.parseInt(line.group(2));
-            if (count < 1)
+            perLine = Integer.parseInt(line.group(2));
+            if (perLine < 1)
             {
-                throw new IllegalArgumentException("'" + text + "' must allow at least one part per line");
+                throw new IllegalArgumentException("'" + text + "' must allow at least one fragment per line");
             }
         }
-        return new Lines(line.group(1).equals("column"), count);
+
+        return new Linear(line.group(1).equals("column"), perLine);
     }
 
     /**
-     * Reads a grid template. Rows are separated by {@code /}, and the cells of a row by spaces. A cell is
-     * a run of {@code x}, which takes the next part in order, or a run of {@code .}, which is left empty.
-     * The length of the run is the cell's share of the row, so {@code x xx x} is one row where the middle
-     * part gets twice the width of each of the others. Every row is stretched to the same width.
+     * Reads a grid template.
+     * <p>
+     * Rows are separated by {@code /}, and cells by spaces.
+     * A run of {@code x} holds a fragment, while a run of {@code .} reserves empty
+     * space. The length of each run determines its share of the row's width.
      *
      * @param template the template, without its {@code grid:} prefix
      * @return what it describes
      * @throws IllegalArgumentException if the template is not understood
      */
-    private static WeightedGrid parseGrid(String template)
+    private static Grid parseGrid(String template)
     {
-        List<List<WeightedCell>> rows = new ArrayList<>();
+        List<List<GridPosition>> rows = new ArrayList<>();
+
         for (String row : template.split("/", -1))
         {
             if (row.isBlank())
@@ -78,149 +86,188 @@ public sealed interface FragmentArrangement
                 throw new IllegalArgumentException("A grid cannot have an empty row: '" + template + "'");
             }
 
-            List<WeightedCell> cells = new ArrayList<>();
+            List<GridPosition> positions = new ArrayList<>();
             for (String token : row.strip().split("\\s+"))
             {
                 if (!token.matches("x+|\\.+"))
                 {
                     throw new IllegalArgumentException("'" + token + "' is not a run of x or . in a grid");
                 }
-                cells.add(new WeightedCell(token.length(), token.charAt(0) == 'x'));
+
+                positions.add(new GridPosition(
+                        token.length(),
+                        token.charAt(0) == 'x'));
             }
-            rows.add(cells);
+
+            rows.add(positions);
         }
 
-        if (rows.getLast().stream().noneMatch(WeightedCell::filled))
+        // the final row must accept fragments left over from the template
+        if (rows.getLast().stream().noneMatch(GridPosition::occupied))
         {
-            throw new IllegalArgumentException("The last row of a grid must hold an x, since it repeats for any parts left over");
+            throw new IllegalArgumentException("The last row of a grid must hold an x, since it repeats for any fragments left over");
         }
-        return new WeightedGrid(rows);
+
+        return new Grid(rows);
     }
 
     /**
-     * Where a part sits in the grid of parts.
+     * A fragment's position and size in a regular grid
      *
-     * @param row the first row it covers
-     * @param column the first column it covers
-     * @param rowSpan how many rows it covers
-     * @param columnSpan how many columns it covers
+     * @param row the first row it occupies
+     * @param column the first column it occupies
+     * @param rowSpan how many rows it occupies
+     * @param columnSpan how many columns it occupies
      */
-    record Cell(int row, int column, int rowSpan, int columnSpan)
+    record Position(int row, int column, int rowSpan, int columnSpan)
     {
     }
 
     /**
-     * Parts in order along a row or a column.
+     * Fragments arranged along rows or columns
      *
-     * @param columnMajor whether parts run down a column and then start a new column, rather than
-     *     along a row and then starting a new row
-     * @param perLine how many parts a line holds before the next is begun, or {@code 0} for no limit
+     * @param vertical whether fragments run down each column before starting the next column, rather than across each row
+     * @param perLine how many fragments a row or column holds, or {@code 0} for no limit
      */
-    record Lines(boolean columnMajor, int perLine) implements FragmentArrangement
+    record Linear(boolean vertical, int perLine) implements FragmentArrangement
     {
-        public Lines
+        public Linear
         {
             if (perLine < 0)
             {
-                throw new IllegalArgumentException("A line cannot hold " + perLine + " parts");
+                throw new IllegalArgumentException("A line cannot hold " + perLine + " fragments");
             }
         }
 
         /**
-         * @param index a part's position in order
-         * @return where in the grid that part sits
+         * Finds a fragment's position in the arrangement
+         *
+         * @param index the fragment's position in order
+         * @return where the fragment sits
          */
-        public Cell cellOf(int index)
+        public Position positionOf(int index)
         {
             int along = perLine == 0 ? index : index % perLine;
             int across = perLine == 0 ? 0 : index / perLine;
-            return columnMajor ? new Cell(along, across, 1, 1) : new Cell(across, along, 1, 1);
+
+            return vertical
+                    ? new Position(along, across, 1, 1)
+                    : new Position(across, along, 1, 1);
         }
     }
 
     /**
-     * A cell of a {@link WeightedGrid}'s template.
+     * A position in a grid template
      *
-     * @param weight the cell's share of its row
-     * @param filled whether a part goes in it, rather than it being left empty
+     * @param width the position's share of its row
+     * @param occupied whether a fragment is placed here
      */
-    record WeightedCell(int weight, boolean filled)
+    record GridPosition(int width, boolean occupied)
     {
     }
 
     /**
-     * Where a part sits in a {@link WeightedGrid}.
+     * A fragment's allocated space in a grid
      *
-     * @param row the row it is in
-     * @param index how many cells, empty ones included, come before it in its row
-     * @param cells how many cells its row has
-     * @param before the weight of the cells before it in its row
-     * @param weight its own weight
-     * @param total the weight of its whole row
+     * @param row the row it occupies
+     * @param column the position it occupies within the row
+     * @param columnSpan how many positions the row contains
+     * @param before the combined width of the preceding positions
+     * @param width the fragment's share of the row
+     * @param total the combined width of the whole row
      */
-    record Slot(int row, int index, int cells, int before, int weight, int total)
+    record GridSlot(int row, int column, int columnSpan, int before, int width, int total)
     {
     }
 
     /**
-     * A grid whose parts fill the template's {@code x} cells in order. Each row's width is shared out
-     * by weight, and rows are stretched to match each other rather than lining up in columns.
+     * Fragments arranged in rows of variable-width positions. Each row shares
+     * its width according to its positions, and rows are stretched to match.
+     * The final row repeats for any fragments left over.
      *
-     * @param rows the template's rows
+     * @param rows the grid template
      */
-    record WeightedGrid(List<List<WeightedCell>> rows) implements FragmentArrangement
+    record Grid(List<List<GridPosition>> rows) implements FragmentArrangement
     {
-        public WeightedGrid
+        public Grid
         {
             rows = rows.stream().map(List::copyOf).toList();
         }
 
         /**
-         * @param index a part's position in order
-         * @return where it sits; parts past the template repeat its last row below
+         * Finds the space allocated to a fragment
+         *
+         * @param index the fragment's position in order
+         * @return its grid position
          */
-        public Slot slotOf(int index)
+        public GridSlot slotOf(int index)
         {
             int remaining = index;
+
+            // find the template row containing this fragment
             for (int row = 0; row < rows.size(); row++)
             {
-                int filled = (int) rows.get(row).stream().filter(WeightedCell::filled).count();
-                if (remaining < filled)
+                int occupied = (int) rows.get(row).stream()
+                        .filter(GridPosition::occupied)
+                        .count();
+
+                if (remaining < occupied)
                 {
                     return slotIn(row, remaining);
                 }
-                remaining -= filled;
+
+                remaining -= occupied;
             }
 
-            int perRow = (int) rows.getLast().stream().filter(WeightedCell::filled).count();
-            return slotIn(rows.size() - 1, remaining % perRow, rows.size() + remaining / perRow);
+            // repeat the final row until every fragment has a position
+            int perRow = (int) rows.getLast().stream()
+                    .filter(GridPosition::occupied)
+                    .count();
+
+            return slotIn(
+                    rows.size() - 1,
+                    remaining % perRow,
+                    rows.size() + remaining / perRow);
         }
 
-        private Slot slotIn(int template, int nth)
+        private GridSlot slotIn(int template, int nth)
         {
             return slotIn(template, nth, template);
         }
 
         /**
-         * @param template the template row to follow
-         * @param nth which of its filled cells, from 0
-         * @param row the row to place the part in
+         * Finds an occupied position within a template row
+         *
+         * @param template the row defining the layout
+         * @param nth which occupied position to use, starting at zero
+         * @param row the actual row occupied by the fragment
          */
-        private Slot slotIn(int template, int nth, int row)
+        private GridSlot slotIn(int template, int nth, int row)
         {
-            List<WeightedCell> cells = rows.get(template);
-            int total = cells.stream().mapToInt(WeightedCell::weight).sum();
+            List<GridPosition> positions = rows.get(template);
+            int total = positions.stream().mapToInt(GridPosition::width).sum();
             int before = 0;
-            for (int index = 0; index < cells.size(); index++)
+
+            for (int column = 0; column < positions.size(); column++)
             {
-                WeightedCell cell = cells.get(index);
-                if (cell.filled() && nth-- == 0)
+                GridPosition position = positions.get(column);
+
+                if (position.occupied() && nth-- == 0)
                 {
-                    return new Slot(row, index, cells.size(), before, cell.weight(), total);
+                    return new GridSlot(
+                            row,
+                            column,
+                            positions.size(),
+                            before,
+                            position.width(),
+                            total);
                 }
-                before += cell.weight();
+
+                // empty positions also contribute to the layout width
+                before += position.width();
             }
-            throw new IllegalStateException("No filled cell " + nth + " in row " + template);
+
+            throw new IllegalStateException("No occupied position " + nth + " in template row " + template);
         }
     }
 }

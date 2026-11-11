@@ -1,4 +1,3 @@
-
 package com.ruben.chemistry.cli;
 
 import java.util.ArrayList;
@@ -24,7 +23,6 @@ public final class CliOptions
             Map<String, List<Object>> values,
             List<String> subjects)
     {
-
         this.definitions = Collections.unmodifiableMap(new LinkedHashMap<>(definitions));
 
         Map<String, List<Object>> copiedValues = new LinkedHashMap<>();
@@ -71,7 +69,6 @@ public final class CliOptions
     public String get(String name, String fallback)
     {
         List<Object> entries = values.get(name);
-
         if (entries == null || entries.isEmpty())
         {
             return fallback;
@@ -85,10 +82,7 @@ public final class CliOptions
      */
     public <T> T get(CliOption<T> option)
     {
-        Objects.requireNonNull(option, "option");
-
         List<Object> entries = values.get(option.name());
-
         if (entries == null || entries.isEmpty())
         {
             return option.defaultValue();
@@ -103,8 +97,6 @@ public final class CliOptions
      */
     public <T> List<T> getAll(CliOption<T> option)
     {
-        Objects.requireNonNull(option, "option");
-
         List<Object> entries = values.get(option.name());
         if (entries == null)
         {
@@ -134,14 +126,14 @@ public final class CliOptions
     public boolean flag(String name, boolean fallback)
     {
         List<Object> entries = values.get(name);
-
-        if (entries == null || entries.isEmpty()) {
+        if (entries == null || entries.isEmpty())
+        {
             return fallback;
         }
 
-        Object value = entries.get(entries.size() - 1);
-
-        if (value instanceof Boolean bool) {
+        Object value = entries.getLast();
+        if (value instanceof Boolean bool)
+        {
             return bool;
         }
 
@@ -154,7 +146,6 @@ public final class CliOptions
     public double number(String name, double fallback)
     {
         String value = get(name, null);
-
         return value == null
                 ? fallback
                 : Double.parseDouble(value);

@@ -8,35 +8,26 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
- * A laid-out {@link Molecule}: every atom to draw, where it sits, and every bond between them.
+ * A laid-out {@link Molecule}.
  *
  * @param atoms the atoms to draw, each holding its own {@link AtomPlacement#placementIndex()}, in index order
  * @param bonds the bonds to draw, referring to atom placements by their placement index
  * @param rings the rings the molecule has, referring to atom placements by their placement index
- * @param fragments one frame per disconnected part of the molecule, in index order;
- *                  each part's atoms are placed in a frame of their own.
+ * @param fragments one frame per disconnected part of the molecule, in index order
  */
 public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, List<RingPlacement> rings, List<FragmentFrame> fragments)
 {
     /** The distance between two bonded atoms, which is the unit depiction space is measured in. */
     public static final double BOND_LENGTH = 1.0;
 
-    /**
-     * The distance between an atom and a hydrogen hanging off it, drawn shorter than
-     * {@link #BOND_LENGTH} so that a crowded atom's hydrogens stay clear of its other bonds.
-     */
+    /** The distance between an atom and a hydrogen hanging off it. */
     public static final double HYDROGEN_BOND_LENGTH = 0.7;
 
     /**
-     * @throws NullPointerException if either list is {@code null}
      * @throws IllegalArgumentException if an atom is out of index order, or a bond refers to an atom that is not there
      */
     public Depiction
     {
-        Objects.requireNonNull(atoms, "atoms");
-        Objects.requireNonNull(bonds, "bonds");
-        Objects.requireNonNull(rings, "rings");
-        Objects.requireNonNull(fragments, "fragments");
         atoms = List.copyOf(atoms);
         bonds = List.copyOf(bonds);
         rings = List.copyOf(rings);

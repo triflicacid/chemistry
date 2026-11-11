@@ -9,33 +9,33 @@ class FragmentArrangementTest
 {
     private static int rowOf(FragmentArrangement arrangement, int index)
     {
-        return ((FragmentArrangement.Lines) arrangement).cellOf(index).row();
+        return ((FragmentArrangement.Linear) arrangement).positionOf(index).row();
     }
 
     private static int columnOf(FragmentArrangement arrangement, int index)
     {
-        return ((FragmentArrangement.Lines) arrangement).cellOf(index).column();
+        return ((FragmentArrangement.Linear) arrangement).positionOf(index).column();
     }
 
-    private static FragmentArrangement.Slot slot(String grid, int index)
+    private static FragmentArrangement.GridSlot slot(String grid, int index)
     {
-        return ((FragmentArrangement.WeightedGrid) FragmentArrangement.parse(grid)).slotOf(index);
+        return ((FragmentArrangement.Grid) FragmentArrangement.parse(grid)).slotOf(index);
     }
 
     @Test
     void grid_cells_are_runs_of_x_whose_length_is_their_share_of_the_row()
     {
-        // one row of three cells, weighing 1, 2 and 1
-        assertThat(slot("grid:x xx x", 0)).isEqualTo(new FragmentArrangement.Slot(0, 0, 3, 0, 1, 4));
-        assertThat(slot("grid:x xx x", 1)).isEqualTo(new FragmentArrangement.Slot(0, 1, 3, 1, 2, 4));
-        assertThat(slot("grid:x xx x", 2)).isEqualTo(new FragmentArrangement.Slot(0, 2, 3, 3, 1, 4));
+        // one row of three cells, with relative widths 1, 2 and 1
+        assertThat(slot("grid:x xx x", 0)).isEqualTo(new FragmentArrangement.GridSlot(0, 0, 3, 0, 1, 4));
+        assertThat(slot("grid:x xx x", 1)).isEqualTo(new FragmentArrangement.GridSlot(0, 1, 3, 1, 2, 4));
+        assertThat(slot("grid:x xx x", 2)).isEqualTo(new FragmentArrangement.GridSlot(0, 2, 3, 3, 1, 4));
     }
 
     @Test
     void grid_rows_are_separated_by_a_slash_and_each_has_its_own_total()
     {
-        assertThat(slot("grid:x x x / x xx x", 3)).isEqualTo(new FragmentArrangement.Slot(1, 0, 3, 0, 1, 4));
-        assertThat(slot("grid:x x x / x xx x", 4)).isEqualTo(new FragmentArrangement.Slot(1, 1, 3, 1, 2, 4));
+        assertThat(slot("grid:x x x / x xx x", 3)).isEqualTo(new FragmentArrangement.GridSlot(1, 0, 3, 0, 1, 4));
+        assertThat(slot("grid:x x x / x xx x", 4)).isEqualTo(new FragmentArrangement.GridSlot(1, 1, 3, 1, 2, 4));
         assertThat(slot("grid:x x x / x xx x", 0).total()).isEqualTo(3);
     }
 
@@ -45,14 +45,14 @@ class FragmentArrangementTest
         assertThat(slot("grid:x x / x", 2).row()).isEqualTo(1);
         assertThat(slot("grid:x x / x", 3).row()).isEqualTo(2);
         assertThat(slot("grid:x x / x", 100).row()).isEqualTo(99);
-        assertThat(slot("grid:x x / x x", 5)).isEqualTo(new FragmentArrangement.Slot(2, 1, 2, 1, 1, 2));
+        assertThat(slot("grid:x x / x x", 5)).isEqualTo(new FragmentArrangement.GridSlot(2, 1, 2, 1, 1, 2));
     }
 
     @Test
     void grid_skips_empty_cells_but_keeps_their_room()
     {
-        assertThat(slot("GRID:. x / x x", 0)).isEqualTo(new FragmentArrangement.Slot(0, 1, 2, 1, 1, 2));
-        assertThat(slot("grid:.. x", 0)).isEqualTo(new FragmentArrangement.Slot(0, 1, 2, 2, 1, 3));
+        assertThat(slot("GRID:. x / x x", 0)).isEqualTo(new FragmentArrangement.GridSlot(0, 1, 2, 1, 1, 2));
+        assertThat(slot("grid:.. x", 0)).isEqualTo(new FragmentArrangement.GridSlot(0, 1, 2, 2, 1, 3));
     }
 
     @Test
@@ -124,7 +124,8 @@ class FragmentArrangementTest
     @Test
     void ignores_case_and_surrounding_space()
     {
-        assertThat(FragmentArrangement.parse("  Column:4 ")).isEqualTo(new FragmentArrangement.Lines(true, 4));
+        assertThat(FragmentArrangement.parse("  Column:4 "))
+                .isEqualTo(new FragmentArrangement.Linear(true, 4));
     }
 
     @Test
@@ -139,6 +140,6 @@ class FragmentArrangementTest
         assertThatThrownBy(() -> FragmentArrangement.parse("diagonal")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> FragmentArrangement.parse("3x2")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> FragmentArrangement.parse("row:0")).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new FragmentArrangement.Lines(false, -1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new FragmentArrangement.Linear(false, -1)).isInstanceOf(IllegalArgumentException.class);
     }
 }

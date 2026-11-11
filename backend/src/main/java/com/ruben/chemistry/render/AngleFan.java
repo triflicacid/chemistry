@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Shares the directions leaving an atom out between the neighbours that have to go in them.
+ * Shares the directions leaving an atom out between the neighbours that have to go into it.
  */
 final class AngleFan
 {
@@ -19,8 +19,7 @@ final class AngleFan
     }
 
     /**
-     * Spreads directions evenly over the whole circle, which is what an atom with nothing fixed
-     * around it, i.e. the one a layout starts from, wants.
+     * Spreads directions evenly over the whole circle.
      *
      * @param start the direction of the first neighbour, in radians
      * @param slots how many neighbours have to be placed
