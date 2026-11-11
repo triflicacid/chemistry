@@ -126,38 +126,10 @@ final class CommandOptions
             "ring-refinement",
             "none|standard|thorough|<n>",
             "how hard ring systems, and branches that hang off them, are worked on to avoid collisions; "
-                    + "a number is how many times the usual effort, and is raised to --ring-alternatives if that is higher",
+                    + "a number is how many times the usual effort",
             RingRefinement::parse,
             () -> RingRefinement.STANDARD
     ).withDefaultText("standard");
-
-    static final CliOption<Integer> ALTERNATIVES = CliOption.parsed(
-            "ring-alternatives",
-            "n",
-            "how many different drawings of the ring systems to show side by side; 1 shows only the best",
-            input -> {
-                try
-                {
-                    int count = Integer.parseInt(input);
-                    if (count < 1)
-                    {
-                        throw new IllegalArgumentException("--ring-alternatives must be at least 1, but was " + count);
-                    }
-                    return count;
-                }
-                catch (NumberFormatException invalid)
-                {
-                    throw new IllegalArgumentException("--ring-alternatives must be a whole number, but was '" + input + "'");
-                }
-            },
-            () -> 1
-    ).withRequirement(
-            options -> options.get(CommandOptions.ALTERNATIVES) <= 1 || options.get(PROJECT_CAGES),
-            "--ring-alternatives above 1 needs --project-cages, since other drawings are other views of the 3D structure"
-    ).withRequirement(
-            options -> options.get(CommandOptions.ALTERNATIVES) <= 1 || options.get(RING_REFINEMENT).isEnabled(),
-            "--ring-alternatives above 1 cannot be had with --ring-refinement=none"
-    );
 
     static final CliOption<Boolean> DEBUG_LAYOUT = CliOption.flag(
             "debug-layout",
@@ -241,7 +213,6 @@ final class CommandOptions
             FRAGMENT_GAP,
             DEBUG_LAYOUT,
             RING_REFINEMENT,
-            ALTERNATIVES,
             PROJECT_CAGES,
             ISOTOPES,
             CHARGES,
@@ -324,6 +295,16 @@ final class CommandOptions
      */
     static DepictionOptions depictionOptions(CliOptions options)
     {
+        return depictionOptions(options, 1);
+    }
+
+    /**
+     * Returns how the settings say a molecule should be drawn, when that many drawings of its rings are wanted.
+     *
+     * @param alternatives how many drawings of the ring systems are wanted; ring refinement is raised to at least this
+     */
+    static DepictionOptions depictionOptions(CliOptions options, int alternatives)
+    {
         Drawing drawing = options.get(STYLE);
 
         DepictionOptions base = drawing == Drawing.SKELETAL
@@ -343,7 +324,7 @@ final class CommandOptions
                 geometry,
                 hydrogens,
                 options.get(PROJECT_CAGES),
-                options.get(RING_REFINEMENT).atLeast(options.get(ALTERNATIVES) > 1 ? options.get(ALTERNATIVES) : 0),
+                options.get(RING_REFINEMENT).atLeast(alternatives > 1 ? alternatives : 0),
                 0
         );
     }

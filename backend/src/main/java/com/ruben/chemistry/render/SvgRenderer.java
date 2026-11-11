@@ -556,7 +556,20 @@ public final class SvgRenderer
      */
     private double haloRadiusOf(AtomPlacement atom)
     {
+        if (atom.vertex())
+        {
+            // a bare vertex has no symbol to surround, so its halo only needs to stand just proud of the bonds' halos
+            return bondHaloWidth() * 0.6;
+        }
         return Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()));
+    }
+
+    /**
+     * @return how thick a bond's halo is before it is scaled, in pixels
+     */
+    private double bondHaloWidth()
+    {
+        return Math.max(style.wedgeWidth(), 3 * style.bondGap());
     }
 
     /**
@@ -571,7 +584,7 @@ public final class SvgRenderer
             {
                 Point from = toPage(depiction.atom(bond.first()).position());
                 Point to = toPage(depiction.atom(bond.second()).position());
-                annotationLayer.bondHalo(from, to, Math.max(style.wedgeWidth(), 3 * style.bondGap()), look.halo().get());
+                annotationLayer.bondHalo(from, to, bondHaloWidth(), look.halo().get());
             }
         }
         for (AtomPlacement atom : depiction.atoms())
@@ -585,8 +598,8 @@ public final class SvgRenderer
     }
 
     /**
-     * Draws the badges of the annotations, which go on top of everything else: a bond's at its middle, and an atom's
-     * up and to the right of it.
+     * Draws the badges of the annotations, which go on top of everything else: a bond's at its middle, an atom's
+     * up and to the right of it, and a bare vertex's directly over it.
      */
     private void drawBadges()
     {
@@ -605,8 +618,14 @@ public final class SvgRenderer
             AtomLook look = lookOf(atom);
             if (look.badge().isPresent())
             {
+                Point centre = toPage(atom.position());
+                if (atom.vertex())
+                {
+                    annotationLayer.badge(centre, look.badge().get());
+                    continue;
+                }
                 double offset = haloRadiusOf(atom) * 0.75 + annotations.style().badgeFontSize() / 2;
-                annotationLayer.badge(toPage(atom.position()).plus(new Point(offset, -offset)), look.badge().get());
+                annotationLayer.badge(centre.plus(new Point(offset, -offset)), look.badge().get());
             }
         }
     }
@@ -1095,7 +1114,7 @@ public final class SvgRenderer
             .attribute("data-implicit", String.valueOf(atom.isGeneratedHydrogen()));
         Looks.apply(group, look);
 
-        svg.circle(centre, haloRadiusOf(atom)).fill("transparent");
+        svg.circle(centre, Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()))).fill("transparent");
     }
 
     /**

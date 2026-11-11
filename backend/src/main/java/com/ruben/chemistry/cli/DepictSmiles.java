@@ -37,7 +37,36 @@ final class DepictSmiles
             STANDARD_OUTPUT
     );
 
-    static final List<CliOption<?>> OPTIONS = Stream.concat(Stream.of(OUT), CommandOptions.DRAWING_OPTIONS.stream()).toList();
+    private static final CliOption<Integer> ALTERNATIVES = CliOption.parsed(
+            "ring-alternatives",
+            "n",
+            "how many different drawings of the ring systems to show side by side; 1 shows only the best. "
+                    + "Raises --ring-refinement to at least this",
+            input -> {
+                try
+                {
+                    int count = Integer.parseInt(input);
+                    if (count < 1)
+                    {
+                        throw new IllegalArgumentException("--ring-alternatives must be at least 1, but was " + count);
+                    }
+                    return count;
+                }
+                catch (NumberFormatException invalid)
+                {
+                    throw new IllegalArgumentException("--ring-alternatives must be a whole number, but was '" + input + "'");
+                }
+            },
+            () -> 1
+    ).withRequirement(
+            options -> options.get(DepictSmiles.ALTERNATIVES) <= 1 || options.get(CommandOptions.PROJECT_CAGES),
+            "--ring-alternatives above 1 needs --project-cages, since other drawings are other views of the 3D structure"
+    ).withRequirement(
+            options -> options.get(DepictSmiles.ALTERNATIVES) <= 1 || options.get(CommandOptions.RING_REFINEMENT).isEnabled(),
+            "--ring-alternatives above 1 cannot be had with --ring-refinement=none"
+    );
+
+    static final List<CliOption<?>> OPTIONS = Stream.concat(Stream.of(OUT, ALTERNATIVES), CommandOptions.DRAWING_OPTIONS.stream()).toList();
 
     private static final String USAGE = CliParser.usage(
             "Usage: depict <smiles> [options]",
@@ -59,7 +88,7 @@ final class DepictSmiles
 
         try
         {
-            CliOptions options = CommandOptions.of(arguments, OUT);
+            CliOptions options =             CommandOptions.of(arguments, OUT, ALTERNATIVES);
             if (options.get(CommandOptions.HELP))
             {
                 System.out.println(USAGE);
@@ -99,7 +128,7 @@ final class DepictSmiles
      */
     public static String render(List<String> arguments)
     {
-        CliOptions options = CommandOptions.of(arguments, OUT);
+        CliOptions options = CommandOptions.of(arguments, OUT, ALTERNATIVES);
         return render(options.onlySubject(), options);
     }
 
@@ -114,9 +143,10 @@ final class DepictSmiles
     static String render(String smiles, CliOptions options)
     {
         Molecule molecule = new SmilesParser(smiles).parse();
-        DepictionOptions depiction = CommandOptions.depictionOptions(options);
+        int alternatives = options.get(ALTERNATIVES);
+        DepictionOptions depiction = CommandOptions.depictionOptions(options, alternatives);
 
-        List<Layout> layouts = MoleculeLayout.layouts(molecule, depiction, options.get(CommandOptions.ALTERNATIVES));
+        List<Layout> layouts = MoleculeLayout.layouts(molecule, depiction, alternatives);
 
         return SvgRenderer.render(Layout.sideBySide(layouts), CommandOptions.style(options));
     }
