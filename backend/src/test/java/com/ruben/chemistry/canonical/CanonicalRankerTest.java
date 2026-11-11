@@ -7,7 +7,6 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
-import com.ruben.chemistry.smiles.SmilesParser;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -121,7 +120,7 @@ class CanonicalRankerTest
     void distinguishes_atoms_by_total_hydrogen_count()
     {
         // Both atoms are disconnected carbon atoms with degree zero and only vary on hydrogen count (4 vs 3)
-        Molecule molecule = new SmilesParser("C.[CH3]").parse();
+        Molecule molecule = Molecule.fromSmiles("C.[CH3]");
 
         Atom methane = molecule.atoms().stream()
                 .filter(atom -> molecule.totalHydrogenCount(atom) == 4)
@@ -146,7 +145,7 @@ class CanonicalRankerTest
     void distinguishes_atoms_by_isotope()
     {
         // Same; only the isotope differs.
-        Molecule molecule = new SmilesParser("[13CH4].C").parse();
+        Molecule molecule = Molecule.fromSmiles("[13CH4].C");
 
         Atom isotope = molecule.atoms().stream()
                 .filter(atom -> atom.isotope().orElse(-1) == 13)
@@ -187,8 +186,8 @@ class CanonicalRankerTest
     @Test
     void distinguishes_different_bond_orders()
     {
-        Molecule single = new SmilesParser("CC").parse();
-        Molecule doubleBond = new SmilesParser("C=C").parse();
+        Molecule single =         Molecule.fromSmiles("CC");
+                Molecule doubleBond = Molecule.fromSmiles("C=C");
 
         assertThat(rankFingerprint(single))
                 .isNotEqualTo(rankFingerprint(doubleBond));
@@ -197,7 +196,7 @@ class CanonicalRankerTest
     @Test
     void preserves_aromaticity_in_canonical_rankings()
     {
-        Molecule benzene = new SmilesParser("c1ccccc1").parse();
+        Molecule benzene = Molecule.fromSmiles("c1ccccc1");
 
         assertThat(benzene.atoms())
                 .allMatch(Atom::aromatic);
@@ -211,7 +210,7 @@ class CanonicalRankerTest
     {
         // Cyclopropanol: the carbon bonded to oxygen is unique.
         // The remaining two carbons are symmetry-equivalent.
-        Molecule molecule = new SmilesParser("OC1CC1").parse();
+        Molecule molecule = Molecule.fromSmiles("OC1CC1");
 
         assertDenseUniqueRanks(molecule);
 
@@ -240,7 +239,7 @@ class CanonicalRankerTest
     @Test
     void distinguishes_atoms_across_different_ring_environments()
     {
-        Molecule molecule = new SmilesParser("c1ccc2ccccc2c1").parse();
+        Molecule molecule = Molecule.fromSmiles("c1ccc2ccccc2c1");
 
         assertDenseUniqueRanks(molecule);
 
@@ -253,7 +252,7 @@ class CanonicalRankerTest
     @Test
     void ranks_are_independent_of_atom_and_bond_insertion_order()
     {
-        Molecule molecule = new SmilesParser("ClCCO").parse();
+        Molecule molecule = Molecule.fromSmiles("ClCCO");
         String expected = rankFingerprint(molecule);
 
         Random random = new Random(42);
@@ -272,11 +271,11 @@ class CanonicalRankerTest
     void ranks_are_independent_of_build_order_when_ties_must_be_broken()
     {
         // Cl-C-C-C-C-Cl: symmetric, requiring tie-breaking.
-        Molecule molecule = new SmilesParser("ClCCCCCCl").parse();
+        Molecule molecule = Molecule.fromSmiles("ClCCCCCCl");
 
         String expected = rankFingerprint(molecule);
 
-        Molecule reversed = new SmilesParser("ClCCCCCCl").parse();
+        Molecule reversed = Molecule.fromSmiles("ClCCCCCCl");
 
         List<Atom> reversedAtoms = new ArrayList<>(reversed.atoms());
         List<Bond> reversedBonds = new ArrayList<>(reversed.bonds());
@@ -310,7 +309,7 @@ class CanonicalRankerTest
                 "c1ccc2c(c1)ccc1ccccc12"    // Phenanthrene
         ))
         {
-            Molecule molecule = new SmilesParser(smiles).parse();
+            Molecule molecule = Molecule.fromSmiles(smiles);
             String expected = rankFingerprint(molecule);
 
             Random random = new Random(smiles.hashCode());
@@ -329,7 +328,7 @@ class CanonicalRankerTest
     @Test
     void produces_the_same_ranking_when_called_repeatedly()
     {
-        Molecule molecule = new SmilesParser("C1CC2CCC1CC2").parse();
+        Molecule molecule = Molecule.fromSmiles("C1CC2CCC1CC2");
 
         CanonicalRanker ranker = new CanonicalRanker();
 
@@ -347,8 +346,8 @@ class CanonicalRankerTest
     {
         // mirror images share every structural role, so no ranking separates them; what tells them
         // apart is the parity read off a ranking, not the ranking itself
-        Molecule anticlockwise = new SmilesParser("N[C@](F)(Cl)Br").parse();
-        Molecule clockwise = new SmilesParser("N[C@@](F)(Cl)Br").parse();
+        Molecule anticlockwise =         Molecule.fromSmiles("N[C@](F)(Cl)Br");
+                Molecule clockwise = Molecule.fromSmiles("N[C@@](F)(Cl)Br");
 
         assertThat(rankFingerprint(anticlockwise))
                 .isEqualTo(rankFingerprint(clockwise));
@@ -357,8 +356,8 @@ class CanonicalRankerTest
     @Test
     void distinguishes_diastereomers_a_symmetric_constitution_ties_together()
     {
-        Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
-        Molecule chiral = new SmilesParser("C[C@H](Br)[C@@H](Br)C").parse();
+        Molecule meso = Molecule.fromSmiles("C[C@H](Br)[C@H](Br)C");
+        Molecule chiral = Molecule.fromSmiles("C[C@H](Br)[C@@H](Br)C");
 
         assertThat(stereoFingerprint(meso))
                 .isNotEqualTo(stereoFingerprint(chiral));
@@ -380,7 +379,7 @@ class CanonicalRankerTest
                 "C/C=C/CC/C=C\\C"                   // (2E,6Z)-octa-2,6-diene
         ))
         {
-            Molecule molecule = new SmilesParser(smiles).parse();
+            Molecule molecule = Molecule.fromSmiles(smiles);
             String expected = stereoFingerprint(molecule);
 
             Random random = new Random(smiles.hashCode());
@@ -401,7 +400,7 @@ class CanonicalRankerTest
     {
         assertThat(new CanonicalRanker().isIgnoreStereochemistry()).isFalse();
 
-        Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
+        Molecule meso = Molecule.fromSmiles("C[C@H](Br)[C@H](Br)C");
         CanonicalRanker ranker = new CanonicalRanker();
 
         String honoured = rankFingerprint(ranker.rank(meso), meso);
@@ -413,9 +412,9 @@ class CanonicalRankerTest
     @Test
     void ranks_stereoisomers_alike_when_ignoring_stereochemistry()
     {
-        Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
-        Molecule chiral = new SmilesParser("C[C@H](Br)[C@@H](Br)C").parse();
-        Molecule undeclared = new SmilesParser("CC(Br)C(Br)C").parse();
+        Molecule meso = Molecule.fromSmiles("C[C@H](Br)[C@H](Br)C");
+        Molecule chiral = Molecule.fromSmiles("C[C@H](Br)[C@@H](Br)C");
+        Molecule undeclared = Molecule.fromSmiles("CC(Br)C(Br)C");
 
         Ranker ranker = new CanonicalRanker().setIgnoreStereochemistry(true);
 

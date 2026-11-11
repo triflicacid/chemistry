@@ -1,8 +1,6 @@
 package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smarts.SmartsParser;
-import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -12,12 +10,12 @@ class QuerySymmetryTest
 {
     private static Query query(String smarts)
     {
-        return new SmartsParser(smarts).parseQuery();
+        return Query.fromSmarts(smarts);
     }
 
     private static Molecule molecule(String smiles)
     {
-        return new SmilesParser(smiles).parse();
+        return Molecule.fromSmiles(smiles);
     }
 
     @Nested

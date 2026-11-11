@@ -5,8 +5,6 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smarts.SmartsParser;
-import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -25,7 +23,7 @@ class SubstructureMatcherTest
     {
         // propan-1-ol (CCCO): the C-C pattern should match both adjacent carbon pairs,
         // once for each of the two ways to assign "first"/"second" to the pair's two atoms
-        Molecule molecule = new SmilesParser("CCCO").parse();
+        Molecule molecule = Molecule.fromSmiles("CCCO");
 
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
@@ -42,7 +40,7 @@ class SubstructureMatcherTest
     @Test
     void the_wildcard_atom_matches_every_atom()
     {
-        Molecule molecule = new SmilesParser("CO").parse();
+        Molecule molecule = Molecule.fromSmiles("CO");
 
         Query query = new Query.Builder().addAtom(new QueryAtom(AtomPredicates.any())).build();
 
@@ -54,7 +52,7 @@ class SubstructureMatcherTest
     @Test
     void does_not_match_when_no_atom_satisfies_the_predicate()
     {
-        Molecule molecule = new SmilesParser("CC").parse();
+        Molecule molecule = Molecule.fromSmiles("CC");
 
         Query query = new Query.Builder().addAtom(new QueryAtom(AtomPredicates.element("N"))).build();
 
@@ -66,7 +64,7 @@ class SubstructureMatcherTest
     {
         // OCCO: both oxygens satisfy the atom predicate, but they're not bonded to each
         // other (each is bonded to a carbon instead), so the O-O pattern finds no match
-        Molecule molecule = new SmilesParser("OCCO").parse();
+        Molecule molecule = Molecule.fromSmiles("OCCO");
 
         QueryAtom first = new QueryAtom(AtomPredicates.element("O"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("O"));
@@ -81,8 +79,8 @@ class SubstructureMatcherTest
     @Test
     void the_ring_membership_atom_predicate_matches_only_ring_atoms()
     {
-        Molecule ring = new SmilesParser("C1CC1").parse();
-        Molecule chain = new SmilesParser("CCC").parse();
+        Molecule ring = Molecule.fromSmiles("C1CC1");
+        Molecule chain = Molecule.fromSmiles("CCC");
         Query query = new Query.Builder().addAtom(new QueryAtom(AtomPredicates.inRing())).build();
 
         assertThat(new SubstructureMatcher(ring).findMatches(query)).hasSize(3);
@@ -94,7 +92,7 @@ class SubstructureMatcherTest
     {
         // bicyclopropyl: two 3-membered rings (6 ring bonds) joined by one bond that is
         // itself not part of either ring
-        Molecule molecule = new SmilesParser("C1CC1C1CC1").parse();
+        Molecule molecule = Molecule.fromSmiles("C1CC1C1CC1");
         SubstructureMatcher matcher = new SubstructureMatcher(molecule);
 
         QueryAtom a = new QueryAtom(AtomPredicates.any());
@@ -120,7 +118,7 @@ class SubstructureMatcherTest
     {
         // N[C@](Br)(Cl)F: fully substituted (no implicit hydrogen), stored chirality is
         // ANTICLOCKWISE relative to the real bond order [N, Br, Cl, F]
-        Molecule molecule = new SmilesParser("N[C@](Br)(Cl)F").parse();
+        Molecule molecule = Molecule.fromSmiles("N[C@](Br)(Cl)F");
 
         QueryAtom qBr = new QueryAtom(AtomPredicates.element("Br"));
         QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
@@ -156,7 +154,7 @@ class SubstructureMatcherTest
     {
         // Cl/C(Br)=C/F: stored configuration is OPPOSITE_SIDE relative to the real default
         // references [Cl, F] (Cl is Ca's first-added substituent)
-        Molecule molecule = new SmilesParser("Cl/C(Br)=C/F").parse();
+        Molecule molecule = Molecule.fromSmiles("Cl/C(Br)=C/F");
 
         QueryAtom qCl = new QueryAtom(AtomPredicates.element("Cl"));
         QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
@@ -192,7 +190,7 @@ class SubstructureMatcherTest
     {
         // c1ccccc1: a 6-fold symmetric benzene query maps onto the one real ring 12 ways
         // (6 rotations, each in 2 directions), all of them covering the same 6 real atoms
-        Molecule molecule = new SmilesParser("c1ccccc1").parse();
+                Molecule molecule = Molecule.fromSmiles("c1ccccc1");
 
         QueryAtom[] ring = new QueryAtom[6];
         for (int i = 0; i < ring.length; i++)
@@ -220,7 +218,7 @@ class SubstructureMatcherTest
     void findDistinctMatches_keeps_matches_that_cover_different_atoms()
     {
         // propan-1-ol (CCCO): the two C-C matches are symmetric in ORDER but cover different atoms
-        Molecule molecule = new SmilesParser("CCCO").parse();
+                Molecule molecule = Molecule.fromSmiles("CCCO");
 
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
@@ -239,7 +237,7 @@ class SubstructureMatcherTest
     void anchored_findMatches_only_considers_matches_with_queryAtom_bound_to_the_given_atom()
     {
         // acetone: CC(=O)C
-        Molecule molecule = new SmilesParser("CC(=O)C").parse();
+        Molecule molecule = Molecule.fromSmiles("CC(=O)C");
         Atom carbonylCarbon = nthAtom(molecule, 1);
         Atom methylCarbon = nthAtom(molecule, 0);
 
@@ -259,7 +257,7 @@ class SubstructureMatcherTest
     @Test
     void anchored_findMatches_rejects_an_anchor_that_fails_queryAtoms_own_predicate()
     {
-        Molecule molecule = new SmilesParser("CC(=O)C").parse();
+            Molecule molecule = Molecule.fromSmiles("CC(=O)C");
         Atom carbon = nthAtom(molecule, 0);
 
         QueryAtom qo = new QueryAtom(AtomPredicates.element("O"));
@@ -275,7 +273,7 @@ class SubstructureMatcherTest
     @Test
     void anchored_findMatches_throws_when_queryAtom_is_not_part_of_query()
     {
-        Molecule molecule = new SmilesParser("C").parse();
+        Molecule molecule = Molecule.fromSmiles("C");
         Atom carbon = nthAtom(molecule, 0);
 
         QueryAtom inQuery = new QueryAtom(AtomPredicates.any());
@@ -289,7 +287,7 @@ class SubstructureMatcherTest
     @Test
     void substructure_is_a_standalone_molecule_over_the_matched_atoms_and_bonds()
     {
-        Molecule molecule = new SmilesParser("CCO").parse();
+        Molecule molecule = Molecule.fromSmiles("CCO");
 
         QueryAtom first = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom second = new QueryAtom(AtomPredicates.element("C"));
@@ -310,7 +308,7 @@ class SubstructureMatcherTest
     {
         // cyclopropane: all three atoms are pairwise bonded, but the query only chains
         // first-second-third, leaving the first-third ring bond undeclared
-        Molecule cyclopropane = new SmilesParser("C1CC1").parse();
+        Molecule cyclopropane = Molecule.fromSmiles("C1CC1");
 
         QueryAtom first = new QueryAtom(AtomPredicates.any());
         QueryAtom second = new QueryAtom(AtomPredicates.any());
@@ -333,7 +331,7 @@ class SubstructureMatcherTest
     {
         // two adjacent fully substituted stereocentres, each stored ANTICLOCKWISE relative to
         // its own real bond order: [N, Br, Cl, Cb] for Ca and [Ca, F, I, O] for Cb
-        Molecule molecule = new SmilesParser("N[C@](Br)(Cl)[C@](F)(I)O").parse();
+        Molecule molecule = Molecule.fromSmiles("N[C@](Br)(Cl)[C@](F)(I)O");
 
         QueryAtom qN = new QueryAtom(AtomPredicates.element("N"));
         QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
@@ -376,7 +374,7 @@ class SubstructureMatcherTest
     @Test
     void a_double_bond_stereo_requirement_is_unsatisfied_when_an_endpoint_has_no_reference_substituent()
     {
-        Molecule molecule = new SmilesParser("C/C=C/C").parse();
+        Molecule molecule = Molecule.fromSmiles("C/C=C/C");
 
         QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom qCa = new QueryAtom(AtomPredicates.element("C"));
@@ -398,7 +396,7 @@ class SubstructureMatcherTest
     void matches_stops_at_the_first_match_while_findMatches_enumerates_them_all()
     {
         // benzene: symmetric, so finds 12 matches
-        Molecule benzene = new SmilesParser("c1ccccc1").parse();
+        Molecule benzene = Molecule.fromSmiles("c1ccccc1");
 
         AtomicInteger predicateCalls = new AtomicInteger();
         AtomPredicate countedAromaticCarbon = (molecule, atom) ->
@@ -455,10 +453,10 @@ class SubstructureMatcherTest
 
         for (String smiles : molecules)
         {
-            Molecule molecule = new SmilesParser(smiles).parse();
+            Molecule molecule = Molecule.fromSmiles(smiles);
             for (String smarts : patterns)
             {
-                Query query = new SmartsParser(smarts).parseQuery();
+                Query query = Query.fromSmarts(smarts);
                 SubstructureMatcher matcher = new SubstructureMatcher(molecule);
                 List<Match> distinct = matcher.findDistinctMatches(query);
                 Set<Set<Atom>> pruned = atomSets(distinct);
@@ -474,7 +472,7 @@ class SubstructureMatcherTest
     void findDistinctMatches_does_not_prune_a_match_only_a_permuted_mapping_satisfies()
     {
         // does not prune stereochemistry
-        Molecule molecule = new SmilesParser("N[C@](Br)(Cl)F").parse();
+        Molecule molecule = Molecule.fromSmiles("N[C@](Br)(Cl)F");
 
         QueryAtom qC = new QueryAtom(AtomPredicates.element("C"));
         QueryAtom qAny1 = new QueryAtom(AtomPredicates.any());
@@ -500,7 +498,7 @@ class SubstructureMatcherTest
     void an_unsatisfiable_chirality_is_rejected_before_the_positions_it_does_not_read_are_tried()
     {
         // CN[C@](Br)(Cl)F: stored ANTICLOCKWISE relative to the real bond order [N, Br, Cl, F]
-        Molecule molecule = new SmilesParser("CN[C@](Br)(Cl)F").parse();
+        Molecule molecule = Molecule.fromSmiles("CN[C@](Br)(Cl)F");
 
         AtomicInteger trailingCalls = new AtomicInteger();
         AtomPredicate countedCarbon = (counted, atom) ->

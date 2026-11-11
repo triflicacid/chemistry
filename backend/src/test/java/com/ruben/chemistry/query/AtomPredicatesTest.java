@@ -3,7 +3,6 @@ package com.ruben.chemistry.query;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +17,7 @@ class AtomPredicatesTest
         @Test
         void matches_every_atom_regardless_of_element()
         {
-            Molecule molecule = new SmilesParser("CO").parse();
+            Molecule molecule = Molecule.fromSmiles("CO");
             Atom carbon = firstAtom(molecule);
             Atom oxygen = secondAtom(molecule);
 
@@ -33,7 +32,7 @@ class AtomPredicatesTest
         @Test
         void matches_atoms_of_exactly_that_element()
         {
-            Molecule molecule = new SmilesParser("CO").parse();
+            Molecule molecule = Molecule.fromSmiles("CO");
             Atom carbon = firstAtom(molecule);
             Atom oxygen = secondAtom(molecule);
 
@@ -48,7 +47,7 @@ class AtomPredicatesTest
         @Test
         void matches_the_element_with_that_atomic_number()
         {
-            Molecule molecule = new SmilesParser("C").parse();
+            Molecule molecule = Molecule.fromSmiles("C");
             Atom carbon = firstAtom(molecule);
 
             assertThat(AtomPredicates.atomicNumber(6).matches(molecule, carbon)).isTrue();
@@ -69,7 +68,7 @@ class AtomPredicatesTest
         @Test
         void matches_an_aromatic_atom_of_exactly_that_element()
         {
-            Molecule benzene = new SmilesParser("c1ccccc1").parse();
+            Molecule benzene = Molecule.fromSmiles("c1ccccc1");
             Atom aromaticCarbon = firstAtom(benzene);
 
             assertThat(AtomPredicates.aromatic("C").matches(benzene, aromaticCarbon)).isTrue();
@@ -78,7 +77,7 @@ class AtomPredicatesTest
         @Test
         void does_not_match_a_non_aromatic_atom_of_the_same_element()
         {
-            Molecule molecule = new SmilesParser("C").parse();
+            Molecule molecule = Molecule.fromSmiles("C");
             Atom aliphaticCarbon = firstAtom(molecule);
 
             assertThat(AtomPredicates.aromatic("C").matches(molecule, aliphaticCarbon)).isFalse();
@@ -160,7 +159,7 @@ class AtomPredicatesTest
         @Test
         void matches_an_atom_with_a_ring_bond()
         {
-            Molecule molecule = new SmilesParser("C1CC1").parse();
+            Molecule molecule = Molecule.fromSmiles("C1CC1");
             Atom ringAtom = firstAtom(molecule);
 
             assertThat(AtomPredicates.inRing().matches(molecule, ringAtom)).isTrue();
@@ -169,7 +168,7 @@ class AtomPredicatesTest
         @Test
         void does_not_match_an_acyclic_atom()
         {
-            Molecule molecule = new SmilesParser("CCC").parse();
+            Molecule molecule = Molecule.fromSmiles("CCC");
             Atom chainAtom = firstAtom(molecule);
 
             assertThat(AtomPredicates.inRing().matches(molecule, chainAtom)).isFalse();
@@ -182,7 +181,7 @@ class AtomPredicatesTest
         @Test
         void matches_an_acyclic_atom()
         {
-            Molecule molecule = new SmilesParser("CCC").parse();
+            Molecule molecule = Molecule.fromSmiles("CCC");
             Atom chainAtom = firstAtom(molecule);
 
             assertThat(AtomPredicates.notInRing().matches(molecule, chainAtom)).isTrue();
@@ -191,7 +190,7 @@ class AtomPredicatesTest
         @Test
         void does_not_match_an_atom_with_a_ring_bond()
         {
-            Molecule molecule = new SmilesParser("C1CC1").parse();
+            Molecule molecule = Molecule.fromSmiles("C1CC1");
             Atom ringAtom = firstAtom(molecule);
 
             assertThat(AtomPredicates.notInRing().matches(molecule, ringAtom)).isFalse();
@@ -205,7 +204,7 @@ class AtomPredicatesTest
         void matches_an_atom_with_exactly_that_many_bonds()
         {
             // acetone: CC(=O)C
-            Molecule molecule = new SmilesParser("CC(=O)C").parse();
+            Molecule molecule = Molecule.fromSmiles("CC(=O)C");
             Atom carbonylCarbon = secondAtom(molecule);
 
             assertThat(AtomPredicates.degree(3).matches(molecule, carbonylCarbon)).isTrue();
@@ -216,7 +215,7 @@ class AtomPredicatesTest
         void counts_each_bond_once_regardless_of_its_order()
         {
             // the carbonyl oxygen has a single double bond
-            Molecule molecule = new SmilesParser("CC(=O)C").parse();
+            Molecule molecule = Molecule.fromSmiles("CC(=O)C");
             Atom oxygen = thirdAtom(molecule);
 
             assertThat(AtomPredicates.degree(1).matches(molecule, oxygen)).isTrue();
@@ -225,7 +224,7 @@ class AtomPredicatesTest
         @Test
         void matches_zero_for_an_unbonded_atom()
         {
-            Molecule molecule = new SmilesParser("C").parse();
+            Molecule molecule = Molecule.fromSmiles("C");
             Atom methane = firstAtom(molecule);
 
             assertThat(AtomPredicates.degree(0).matches(molecule, methane)).isTrue();
@@ -238,7 +237,7 @@ class AtomPredicatesTest
         @Test
         void matches_an_organic_subset_atoms_inferred_count()
         {
-            Molecule molecule = new SmilesParser("CC").parse(); // ethane: each carbon has 3 implicit H
+            Molecule molecule = Molecule.fromSmiles("CC"); // ethane: each carbon has 3 implicit H
             Atom carbon = firstAtom(molecule);
 
             assertThat(AtomPredicates.hydrogenCount(3).matches(molecule, carbon)).isTrue();
@@ -248,7 +247,7 @@ class AtomPredicatesTest
         @Test
         void matches_a_bracket_atoms_explicit_count()
         {
-            Molecule molecule = new SmilesParser("[CH2]=O").parse();
+            Molecule molecule = Molecule.fromSmiles("[CH2]=O");
             Atom explicit = firstAtom(molecule);
 
             assertThat(AtomPredicates.hydrogenCount(2).matches(molecule, explicit)).isTrue();
@@ -258,7 +257,7 @@ class AtomPredicatesTest
         void distinguishes_a_carboxylic_acids_hydroxyl_oxygen_from_its_carbonyl_oxygen()
         {
             // tell an -OH apart from a =O with nothing but element and bond order
-            Molecule aceticAcid = new SmilesParser("CC(=O)O").parse();
+            Molecule aceticAcid = Molecule.fromSmiles("CC(=O)O");
             Atom carbonylOxygen = thirdAtom(aceticAcid);
             Atom hydroxylOxygen = fourthAtom(aceticAcid);
 
@@ -270,7 +269,7 @@ class AtomPredicatesTest
         void matches_zero_for_a_fused_aromatic_heteroatom_rather_than_the_naive_aromatic_weighting()
         {
             // thiophene: a 2-connected aromatic sulfur has no hydrogen, naive summing would say 1.5
-            Molecule thiophene = new SmilesParser("c1ccsc1").parse();
+            Molecule thiophene = Molecule.fromSmiles("c1ccsc1");
             Atom sulfur = fourthAtom(thiophene);
 
             assertThat(AtomPredicates.hydrogenCount(0).matches(thiophene, sulfur)).isTrue();
@@ -283,7 +282,7 @@ class AtomPredicatesTest
         @Test
         void matches_an_organic_subset_atoms_inferred_count()
         {
-            Molecule molecule = new SmilesParser("CC").parse(); // ethane: each carbon has 3 implicit H
+            Molecule molecule = Molecule.fromSmiles("CC"); // ethane: each carbon has 3 implicit H
             Atom carbon = firstAtom(molecule);
 
             assertThat(AtomPredicates.implicitHydrogenCount(3).matches(molecule, carbon)).isTrue();
@@ -292,7 +291,7 @@ class AtomPredicatesTest
         @Test
         void matches_zero_for_a_bracket_atom_even_with_an_explicit_hydrogen_count()
         {
-            Molecule molecule = new SmilesParser("[CH4]").parse();
+            Molecule molecule = Molecule.fromSmiles("[CH4]");
             Atom explicit = firstAtom(molecule);
 
             assertThat(AtomPredicates.implicitHydrogenCount(0).matches(molecule, explicit)).isTrue();
@@ -305,7 +304,7 @@ class AtomPredicatesTest
         @Test
         void matches_an_atoms_total_valence()
         {
-            Molecule molecule = new SmilesParser("CC").parse(); // ethane: 1 bond + 3 implicit H
+            Molecule molecule = Molecule.fromSmiles("CC"); // ethane: 1 bond + 3 implicit H
             Atom carbon = firstAtom(molecule);
 
             assertThat(AtomPredicates.valence(4).matches(molecule, carbon)).isTrue();
@@ -317,7 +316,7 @@ class AtomPredicatesTest
         {
             // thiophene: c1ccsc1 - sulfur's two aromatic bonds alone already exceed its
             // only default valence, so its valence (3) is higher than that default (2)
-            Molecule thiophene = new SmilesParser("c1ccsc1").parse();
+            Molecule thiophene = Molecule.fromSmiles("c1ccsc1");
             Atom sulfur = fourthAtom(thiophene);
 
             assertThat(AtomPredicates.valence(3).matches(thiophene, sulfur)).isTrue();
@@ -331,7 +330,7 @@ class AtomPredicatesTest
         void counts_bonds_and_hydrogens_together()
         {
             // acetone's carbonyl carbon: 3 bonds (2 C, 1 O), 0 hydrogens
-            Molecule molecule = new SmilesParser("CC(=O)C").parse();
+            Molecule molecule = Molecule.fromSmiles("CC(=O)C");
             Atom carbonylCarbon = secondAtom(molecule);
 
             assertThat(AtomPredicates.connectivity(3).matches(molecule, carbonylCarbon)).isTrue();
@@ -340,8 +339,7 @@ class AtomPredicatesTest
         @Test
         void distinguishes_connectivity_from_degree_when_hydrogens_are_present()
         {
-            Molecule molecule = new SmilesParser("CC").parse(); // ethane: 1 bond + 3 implicit H
-
+            Molecule molecule = Molecule.fromSmiles("CC"); // ethane: 1 bond + 3 implicit H
             Atom carbon = firstAtom(molecule);
 
             assertThat(AtomPredicates.degree(1).matches(molecule, carbon)).isTrue();
@@ -462,7 +460,7 @@ class AtomPredicatesTest
 
             AtomPredicate isCarbonylCarbon = AtomPredicates.recursive(subPattern);
 
-            Molecule molecule = new SmilesParser("CC(=O)C").parse();
+            Molecule molecule = Molecule.fromSmiles("CC(=O)C");
             Atom carbonylCarbon = secondAtom(molecule);
             Atom methylCarbon = firstAtom(molecule);
             Atom oxygen = thirdAtom(molecule);

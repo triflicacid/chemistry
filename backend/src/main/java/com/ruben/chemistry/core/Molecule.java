@@ -1,6 +1,7 @@
 package com.ruben.chemistry.core;
 
 import com.ruben.chemistry.util.CachedFunction;
+import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentitySet;
 
@@ -30,6 +31,18 @@ public final class Molecule
      * Stands in for an atom's implicit hydrogen where a {@link NeighbourReference} is expected.
      */
     public static final NeighbourReference IMPLICIT_HYDROGEN = ImplicitHydrogen.INSTANCE;
+
+    /**
+     * Reads a molecule written in SMILES.
+     *
+     * @param smiles the SMILES string
+     * @return the molecule it describes
+     * @throws com.ruben.chemistry.notation.InvalidNotationException if the string is not valid SMILES
+     */
+    public static Molecule fromSmiles(String smiles)
+    {
+        return new SmilesParser(smiles).parse();
+    }
 
     /**
      * The default valences of the SMILES organic subset elements.

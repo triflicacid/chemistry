@@ -1,7 +1,12 @@
 package com.ruben.chemistry.render;
 
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.render.annotate.Annotations;
+import com.ruben.chemistry.render.annotate.AtomLook;
+import com.ruben.chemistry.render.annotate.BondLook;
+import com.ruben.chemistry.render.svg.AnnotationLayer;
 import com.ruben.chemistry.render.svg.Element;
+import com.ruben.chemistry.render.svg.Looks;
 import com.ruben.chemistry.render.svg.SvgWriter;
 
 import java.util.ArrayList;
@@ -11,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -60,7 +66,19 @@ public final class SvgRenderer
     private final RenderStyle style;
 
     /** The snapshot the depiction's indices refer to, or {@code null} if not known. */
+    private final MoleculeSnapshot snapshot;
+
+    /** The snapshot's ID, or {@code null} if there is no snapshot. */
     private final UUID snapshotId;
+
+    /** How individual atoms and bonds are restyled; only ever has a look for something when there is a snapshot. */
+    private final Annotations annotations;
+
+    /** Draws the halos and badges of the annotations. */
+    private final AnnotationLayer annotationLayer;
+
+    /** How thick the bond being drawn is, in pixels. */
+    private double bondWidth;
 
     /** How far each atom holds a bond off, in pixels, indexed as the depiction's atoms are. */
     private final double[] clearances;
@@ -92,10 +110,15 @@ public final class SvgRenderer
     /**
      * @param depiction the depiction to draw
      * @param style how it should be drawn
+     * @param snapshot the snapshot the depiction's indices refer to, or {@code null} if not known
+     * @param annotations how individual atoms and bonds are restyled
      */
-    private SvgRenderer(Depiction depiction, RenderStyle style, UUID snapshotId)
+    private SvgRenderer(Depiction depiction, RenderStyle style, MoleculeSnapshot snapshot, Annotations annotations)
     {
-        this.snapshotId = snapshotId;
+        this.snapshot = snapshot;
+        this.snapshotId = snapshot == null ? null : snapshot.getId();
+        this.annotations = annotations;
+        this.bondWidth = style.bondWidth();
         this.style = style;
         this.clearances = new double[depiction.atoms().size()];
         double widest = 0;
@@ -110,6 +133,7 @@ public final class SvgRenderer
         this.bounds = this.depiction.bounds();
         this.bondPaint = style.bondColour().hex();
         this.svg = new SvgWriter(width(), height());
+        this.annotationLayer = new AnnotationLayer(svg, annotations.style());
         for (BondPlacement bond : depiction.bonds())
         {
             bondsAt.computeIfAbsent(bond.first(), atom -> new ArrayList<>()).add(bond);
@@ -405,7 +429,7 @@ public final class SvgRenderer
      */
     public static String render(Depiction depiction, RenderStyle style)
     {
-        return new SvgRenderer(depiction, style, null).draw();
+        return new SvgRenderer(depiction, style, null, Annotations.none()).draw();
     }
 
     /**
@@ -417,7 +441,23 @@ public final class SvgRenderer
      */
     public static String render(Layout layout, RenderStyle style)
     {
-        return new SvgRenderer(layout.depiction(), style, layout.snapshot().getId()).draw();
+        return render(layout, style, Annotations.none());
+    }
+
+    /**
+     * Draws a layout's depiction, restyling individual atoms and bonds.
+     * <p>
+     * Halos are drawn behind the structure and badges on top of it. A hydrogen the depiction made up takes the look of
+     * the atom it is attached to, apart from its badge. With no annotations the document is the same as without.
+     *
+     * @param layout the layout to draw
+     * @param style how it should be drawn
+     * @param annotations how to restyle the layout's atoms and bonds, which belong to its snapshot's molecule
+     * @return a standalone SVG document
+     */
+    public static String render(Layout layout, RenderStyle style, Annotations annotations)
+    {
+        return new SvgRenderer(layout.depiction(), style, layout.snapshot(), annotations).draw();
     }
 
     /**
@@ -436,6 +476,7 @@ public final class SvgRenderer
         {
             drawDebugLayout();
         }
+        drawHalos();
         for (BondPlacement bond : depiction.bonds())
         {
             drawBond(bond);
@@ -451,7 +492,142 @@ public final class SvgRenderer
         {
             drawAtom(atom);
         }
+        drawBadges();
         return svg.render();
+    }
+
+    /**
+     * @param atom an atom of the depiction
+     * @return how it is restyled; a hydrogen the depiction made up takes the look of the atom it is on, but not its badge
+     */
+    private AtomLook lookOf(AtomPlacement atom)
+    {
+        if (snapshot == null)
+        {
+            return AtomLook.NONE;
+        }
+        if (atom.sourceAtom().isPresent())
+        {
+            return annotations.lookOf(snapshot.getAtom(atom.sourceAtom().getAsInt()));
+        }
+
+        for (BondPlacement bond : bondsAt.getOrDefault(atom.placementIndex(), List.of()))
+        {
+            AtomPlacement parent = depiction.atom(bond.first() == atom.placementIndex() ? bond.second() : bond.first());
+            if (parent.sourceAtom().isPresent())
+            {
+                AtomLook look = annotations.lookOf(snapshot.getAtom(parent.sourceAtom().getAsInt()));
+                return new AtomLook(look.fill(), look.outline(), look.opacity(), look.saturation(), look.halo(), Optional.empty());
+            }
+        }
+        return AtomLook.NONE;
+    }
+
+    /**
+     * @param bond a bond of the depiction
+     * @return how it is restyled; a bond to a hydrogen the depiction made up only takes on its atom's opacity
+     */
+    private BondLook lookOf(BondPlacement bond)
+    {
+        if (snapshot == null)
+        {
+            return BondLook.NONE;
+        }
+        if (bond.sourceBond().isPresent())
+        {
+            return annotations.lookOf(snapshot.getBond(bond.sourceBond().getAsInt()));
+        }
+
+        BondLook look = BondLook.NONE;
+        for (int end : new int[] {bond.first(), bond.second()})
+        {
+            AtomPlacement atom = depiction.atom(end);
+            if (atom.isGeneratedHydrogen() && lookOf(atom).opacity().isPresent())
+            {
+                look = look.withOpacity(lookOf(atom).opacity().getAsDouble());
+            }
+        }
+        return look;
+    }
+
+    /**
+     * @param atom an atom of the depiction
+     * @return how far a halo around it reaches before it is scaled, in pixels
+     */
+    private double haloRadiusOf(AtomPlacement atom)
+    {
+        if (atom.vertex())
+        {
+            // a bare vertex has no symbol to surround, so its halo only needs to stand just proud of the bonds' halos
+            return bondHaloWidth() * 0.6;
+        }
+        return Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()));
+    }
+
+    /**
+     * @return how thick a bond's halo is before it is scaled, in pixels
+     */
+    private double bondHaloWidth()
+    {
+        return Math.max(style.wedgeWidth(), 3 * style.bondGap());
+    }
+
+    /**
+     * Draws the halos of the annotations, which go behind everything else.
+     */
+    private void drawHalos()
+    {
+        for (BondPlacement bond : depiction.bonds())
+        {
+            BondLook look = lookOf(bond);
+            if (look.halo().isPresent())
+            {
+                Point from = toPage(depiction.atom(bond.first()).position());
+                Point to = toPage(depiction.atom(bond.second()).position());
+                annotationLayer.bondHalo(from, to, bondHaloWidth(), look.halo().get());
+            }
+        }
+        for (AtomPlacement atom : depiction.atoms())
+        {
+            AtomLook look = lookOf(atom);
+            if (look.halo().isPresent())
+            {
+                annotationLayer.atomHalo(toPage(atom.position()), haloRadiusOf(atom), look.halo().get());
+            }
+        }
+    }
+
+    /**
+     * Draws the badges of the annotations, which go on top of everything else: a bond's at its middle, an atom's
+     * up and to the right of it, and a bare vertex's directly over it.
+     */
+    private void drawBadges()
+    {
+        for (BondPlacement bond : depiction.bonds())
+        {
+            BondLook look = lookOf(bond);
+            if (look.badge().isPresent())
+            {
+                Point from = toPage(depiction.atom(bond.first()).position());
+                Point to = toPage(depiction.atom(bond.second()).position());
+                annotationLayer.badge(from.plus(to.minus(from).scale(0.5)), look.badge().get());
+            }
+        }
+        for (AtomPlacement atom : depiction.atoms())
+        {
+            AtomLook look = lookOf(atom);
+            if (look.badge().isPresent())
+            {
+                Point centre = toPage(atom.position());
+                if (atom.vertex())
+                {
+                    annotationLayer.badge(centre, look.badge().get());
+                    continue;
+                }
+                double offset = haloRadiusOf(atom) * 0.75 + annotations.style().badgeFontSize() / 2;
+                annotationLayer.badge(centre.plus(new Point(offset, -offset)), look.badge().get());
+            }
+        }
     }
 
     private void drawDebugLayout()
@@ -542,7 +718,7 @@ public final class SvgRenderer
         AtomPlacement secondAtom = depiction.atom(bond.second());
         Point from = toPage(firstAtom.position());
         Point to = toPage(secondAtom.position());
-
+        BondLook look = lookOf(bond);
         Point along = to.minus(from);
         double length = along.length();
         if (length <= 0)
@@ -559,11 +735,17 @@ public final class SvgRenderer
             return;
         }
 
-        bondPaint = paintFor(firstAtom, secondAtom, start, end);
+        bondPaint = look.colour().map(colour -> colour.hex()).orElseGet(() -> paintFor(firstAtom, secondAtom, start, end));
+        bondWidth = style.bondWidth() * look.widthScale().orElse(1);
 
+        boolean grouped = style.metadata() || look.opacity().isPresent();
         if (style.metadata())
         {
-            openBond(bond, start, end);
+            openBond(bond, start, end, look);
+        }
+        else if (grouped)
+        {
+            Looks.apply(svg.group(), look);
         }
 
         switch (bond.style())
@@ -573,7 +755,7 @@ public final class SvgRenderer
             case PLAIN -> drawPlain(start, end, unit, bond);
         }
 
-        if (style.metadata())
+        if (grouped)
         {
             svg.close();
         }
@@ -586,13 +768,14 @@ public final class SvgRenderer
      * @param bond the bond being drawn
      * @param start where the line begins, in pixels
      * @param end where the line ends, in pixels
+     * @param look how the bond is restyled
      */
-    private void openBond(BondPlacement bond, Point start, Point end)
+    private void openBond(BondPlacement bond, Point start, Point end, BondLook look)
     {
         AtomPlacement first = depiction.atom(bond.first());
         AtomPlacement second = depiction.atom(bond.second());
 
-        svg.group().cssClass("bond")
+        Element group = svg.group().cssClass("bond")
             .attribute("data-bond", bond.sourceBond().isPresent() ? String.valueOf(bond.sourceBond().getAsInt()) : null)
             .attribute("data-order", bond.order().name().toLowerCase(Locale.ROOT))
             .attribute("data-style", bond.style().name().toLowerCase(Locale.ROOT))
@@ -601,6 +784,7 @@ public final class SvgRenderer
             .attribute("data-first-atom", first.sourceAtom().isPresent() ? String.valueOf(first.sourceAtom().getAsInt()) : null)
             .attribute("data-second-atom", second.sourceAtom().isPresent() ? String.valueOf(second.sourceAtom().getAsInt()) : null)
             .attribute("data-fragment", String.valueOf(first.fragment()));
+        Looks.apply(group, look);
 
         svg.line(start, end).stroke("transparent")
             .strokeWidth(Math.max(style.wedgeWidth(), 3 * style.bondGap()))
@@ -827,7 +1011,7 @@ public final class SvgRenderer
         Point right = end.minus(across);
 
         svg.polygon(List.of(start, left, right))
-            .fill(bondPaint).stroke(bondPaint).strokeWidth(style.bondWidth() / 2).roundJoins();
+            .fill(bondPaint).stroke(bondPaint).strokeWidth(bondWidth / 2).roundJoins();
     }
 
     /**
@@ -866,7 +1050,7 @@ public final class SvgRenderer
      */
     private void line(Point from, Point to, boolean dashed)
     {
-        Element line = svg.line(from, to).stroke(bondPaint).strokeWidth(style.bondWidth()).roundCaps();
+        Element line = svg.line(from, to).stroke(bondPaint).strokeWidth(bondWidth).roundCaps();
         if (dashed)
         {
             line.dash(AROMATIC_DASH, AROMATIC_DASH);
@@ -880,22 +1064,28 @@ public final class SvgRenderer
      */
     private void drawAtom(AtomPlacement atom)
     {
+        AtomLook look = lookOf(atom);
+        boolean grouped = style.metadata() || look.opacity().isPresent();
         if (style.metadata())
         {
-            openAtom(atom);
+            openAtom(atom, look);
+        }
+        else if (grouped)
+        {
+            Looks.apply(svg.group(), look);
         }
 
         if (style.atomShape() == AtomShape.CIRCLE)
         {
-            drawCircle(atom);
+            drawCircle(atom, look);
         }
         else if (!atom.vertex())
         {
             // a bare vertex is the corner its bonds already draw, so there is nothing to write
-            drawLabel(atom);
+            drawLabel(atom, look);
         }
 
-        if (style.metadata())
+        if (grouped)
         {
             svg.close();
         }
@@ -906,12 +1096,13 @@ public final class SvgRenderer
      * invisible disc over it so that it is easy to click, even where it is a bare vertex.
      *
      * @param atom the atom being drawn
+     * @param look how the atom is restyled
      */
-    private void openAtom(AtomPlacement atom)
+    private void openAtom(AtomPlacement atom, AtomLook look)
     {
         Point centre = toPage(atom.position());
 
-        svg.group().cssClass("atom")
+        Element group = svg.group().cssClass("atom")
             .attribute("data-atom", atom.sourceAtom().isPresent() ? String.valueOf(atom.sourceAtom().getAsInt()) : null)
             .attribute("data-placement", String.valueOf(atom.placementIndex()))
             .attribute("data-fragment", String.valueOf(atom.fragment()))
@@ -921,6 +1112,7 @@ public final class SvgRenderer
             .attribute("data-hydrogens", String.valueOf(atom.hydrogens()))
             .attribute("data-aromatic", String.valueOf(atom.aromatic()))
             .attribute("data-implicit", String.valueOf(atom.isGeneratedHydrogen()));
+        Looks.apply(group, look);
 
         svg.circle(centre, Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()))).fill("transparent");
     }
@@ -929,11 +1121,14 @@ public final class SvgRenderer
      * Draws an atom as a ball in its own colour, outlined so that a white hydrogen still shows up.
      *
      * @param atom the atom to draw
+     * @param look how the atom is restyled
      */
-    private void drawCircle(AtomPlacement atom)
+    private void drawCircle(AtomPlacement atom, AtomLook look)
     {
         svg.circle(toPage(atom.position()), style.radiusOf(atom.element()))
-            .fill(style.colourOf(atom.element())).stroke(style.atomOutline()).strokeWidth(style.atomOutlineWidth());
+            .fill(Looks.fill(look, style.colourOf(atom.element())))
+            .stroke(Looks.outline(look, style.atomOutline()))
+            .strokeWidth(style.atomOutlineWidth());
     }
 
     /**
@@ -944,16 +1139,17 @@ public final class SvgRenderer
      * readable on a white page.
      *
      * @param atom the atom to draw
+     * @param look how the atom is restyled
      */
-    private void drawLabel(AtomPlacement atom)
+    private void drawLabel(AtomPlacement atom, AtomLook look)
     {
         Point centre = toPage(atom.position());
 
         Element label = svg.text(centre)
             .attribute("font-family", style.fontFamily())
             .attribute("font-size", style.fontSize())
-            .fill(style.colourOf(atom.element()))
-            .stroke(style.atomOutline())
+            .fill(Looks.fill(look, style.colourOf(atom.element())))
+            .stroke(Looks.outline(look, style.atomOutline()))
             .strokeWidth(style.atomOutlineWidth())
             .attribute("paint-order", "stroke")
             .attribute("text-anchor", "middle")

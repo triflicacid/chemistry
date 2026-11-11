@@ -3,6 +3,7 @@ package com.ruben.chemistry.query;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.smarts.SmartsParser;
 import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentityMap;
@@ -32,6 +33,18 @@ public final class Query implements MatchingQuery
     private final Map<QueryAtom, DeclaredChirality> chiralityByAtom;
     private final Map<QueryBond, DoubleBondStereo> doubleBondStereoByBond;
     private final Supplier<QueryStereo> stereo = new CachedValue<>(() -> QueryStereo.of(this));
+
+    /**
+     * Reads a query written in SMARTS.
+     *
+     * @param smarts the SMARTS pattern
+     * @return the query it describes
+     * @throws com.ruben.chemistry.notation.InvalidNotationException if the pattern is not valid SMARTS
+     */
+    public static Query fromSmarts(String smarts)
+    {
+        return new SmartsParser(smarts).parseQuery();
+    }
 
     /**
      * Creates a query from already-built atom and bond lists.

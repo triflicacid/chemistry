@@ -22,12 +22,12 @@ class SmartsParserTest
 {
     private static Query parse(String smarts)
     {
-        return new SmartsParser(smarts).parseQuery();
+        return Query.fromSmarts(smarts);
     }
 
     private static Molecule molecule(String smiles)
     {
-        return new SmilesParser(smiles).parse();
+        return Molecule.fromSmiles(smiles);
     }
 
     @Nested
