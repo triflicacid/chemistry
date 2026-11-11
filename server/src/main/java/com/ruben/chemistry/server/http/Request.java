@@ -1,13 +1,15 @@
 package com.ruben.chemistry.server.http;
 
-import com.ruben.chemistry.server.json.RecordConverter;
 import com.ruben.chemistry.server.json.JsonException;
+import com.ruben.chemistry.server.json.JsonNames;
+import com.ruben.chemistry.server.json.RecordConverter;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Function;
 
 /**
  * What a client asked for.
@@ -148,7 +150,7 @@ public final class Request
     {
         try
         {
-            return RecordConverter.bind(requireBody(), type);
+            return RecordConverter.bind(requireBody(), type, JsonNames::of);
         }
         catch (JsonException invalid)
         {

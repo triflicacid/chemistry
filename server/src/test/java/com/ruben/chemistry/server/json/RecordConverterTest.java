@@ -132,6 +132,17 @@ class RecordConverterTest
     }
 
     @Test
+    void should_read_keys_through_a_custom_function()
+    {
+        Named named = RecordConverter.bind(
+                Map.of("my_value", "a", "http_code", 7L, "smiles_url", "u"), Named.class, JsonNames::of);
+
+        assertThat(named).isEqualTo(new Named("a", 7, "u", null));
+        assertThatThrownBy(() -> RecordConverter.bind(Map.of("my_value", "a"), Named.class, key -> key))
+                .hasMessage("my_value: unknown property");
+    }
+
+    @Test
     void should_reject_types_that_are_not_records()
     {
         assertThatThrownBy(() -> RecordConverter.bind(Map.of(), (Class) String.class))

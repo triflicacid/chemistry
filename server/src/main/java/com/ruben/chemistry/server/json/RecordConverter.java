@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Binds values in a {@link Map} to a record.
@@ -29,7 +30,21 @@ public final class RecordConverter
      */
     public static <T extends Record> T bind(Map<String, Object> object, Class<T> type)
     {
-        return type.cast(bindRecord(object, type, ""));
+        return bind(object, type, JsonNames::of);
+    }
+
+    /**
+     * @param object keys and values
+     * @param type the record to build
+     * @param keys turns a component name into the key to read it from, e.g. {@code myValue} into {@code my_value}
+     * @param <T> the record type
+     * @return the record
+     * @throws JsonException if the JSON does not fit the record
+     * @throws IllegalArgumentException if {@code type} is not a record or uses an unsupported component type
+     */
+    public static <T extends Record> T bind(Map<String, Object> object, Class<T> type, Function<String, String> keys)
+    {
+        return type.cast(bindRecord(object, type, "", keys));
     }
 
     /**
@@ -46,7 +61,7 @@ public final class RecordConverter
         return bind(JsonParser.parse(json), type);
     }
 
-    private static Object bindRecord(Object value, Class<?> type, String path)
+    private static Object bindRecord(Object value, Class<?> type, String path, Function<String, String> keys)
     {
         if (!type.isRecord())
         {
@@ -64,7 +79,7 @@ public final class RecordConverter
             boolean known = false;
             for (RecordComponent component : components)
             {
-                known |= JsonNames.of(component.getName()).equals(key);
+                known |= keys.apply(component.getName()).equals(key);
             }
             if (!known)
             {
@@ -77,7 +92,7 @@ public final class RecordConverter
         for (int i = 0; i < components.length; i++)
         {
             RecordComponent component = components[i];
-            String key = JsonNames.of(component.getName());
+            String key = keys.apply(component.getName());
             String childPath = join(path, key);
             types[i] = component.getType();
 
@@ -92,7 +107,7 @@ public final class RecordConverter
             }
             else
             {
-                arguments[i] = convert(raw, component.getGenericType(), childPath);
+                arguments[i] = convert(raw, component.getGenericType(), childPath, keys);
             }
         }
 
@@ -118,11 +133,11 @@ public final class RecordConverter
         }
     }
 
-    private static Object convert(Object value, Type type, String path)
+    private static Object convert(Object value, Type type, String path, Function<String, String> keys)
     {
         if (type instanceof ParameterizedType parameterized)
         {
-            return convertGeneric(value, parameterized, path);
+            return convertGeneric(value, parameterized, path, keys);
         }
         if (!(type instanceof Class<?> cls))
         {
@@ -179,13 +194,13 @@ public final class RecordConverter
         }
         if (cls.isRecord())
         {
-            return bindRecord(value, cls, path);
+            return bindRecord(value, cls, path, keys);
         }
 
         throw new IllegalArgumentException("Unsupported type " + cls.getName() + " at " + path);
     }
 
-    private static Object convertGeneric(Object value, ParameterizedType type, String path)
+    private static Object convertGeneric(Object value, ParameterizedType type, String path, Function<String, String> keys)
     {
         Class<?> raw = (Class<?>) type.getRawType();
         Type[] arguments = type.getActualTypeArguments();
@@ -199,7 +214,7 @@ public final class RecordConverter
             List<Object> converted = new ArrayList<>(list.size());
             for (int i = 0; i < list.size(); i++)
             {
-                converted.add(list.get(i) == null ? null : convert(list.get(i), arguments[0], path + "[" + i + "]"));
+                converted.add(list.get(i) == null ? null : convert(list.get(i), arguments[0], path + "[" + i + "]", keys));
             }
             return Collections.unmodifiableList(converted);
         }
@@ -214,7 +229,7 @@ public final class RecordConverter
             for (Map.Entry<?, ?> entry : map.entrySet())
             {
                 String key = (String) entry.getKey();
-                converted.put(key, entry.getValue() == null ? null : convert(entry.getValue(), arguments[1], join(path, key)));
+                converted.put(key, entry.getValue() == null ? null : convert(entry.getValue(), arguments[1], join(path, key), keys));
             }
             return Collections.unmodifiableMap(converted);
         }

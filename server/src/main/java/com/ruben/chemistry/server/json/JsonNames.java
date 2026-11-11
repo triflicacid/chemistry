@@ -1,6 +1,6 @@
 package com.ruben.chemistry.server.json;
 
-final class JsonNames
+public final class JsonNames
 {
     private JsonNames()
     {
@@ -10,7 +10,7 @@ final class JsonNames
      * @param name a camelCase Java name, e.g. {@code myValue} or {@code smilesURL}
      * @return it in snake_case, e.g. {@code my_value} or {@code smiles_url}
      */
-    static String of(String name)
+    public static String of(String name)
     {
         StringBuilder out = new StringBuilder(name.length() + 4);
 
