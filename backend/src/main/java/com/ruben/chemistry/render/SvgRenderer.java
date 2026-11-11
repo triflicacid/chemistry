@@ -428,7 +428,7 @@ public final class SvgRenderer
         style.background().ifPresent(svg::background);
         if (style.metadata())
         {
-            svg.attribute("data-metedata", "true");
+            svg.attribute("data-metadata", "true");
             svg.attribute("data-snapshot", snapshotId == null ? null : snapshotId.toString());
         }
 
