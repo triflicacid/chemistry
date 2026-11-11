@@ -5,9 +5,9 @@ import java.util.OptionalDouble;
 /**
  * Helpers shared by {@link AtomLook} and {@link BondLook}.
  */
-final class Looks
+final class Utils
 {
-    private Looks()
+    private Utils()
     {
     }
 

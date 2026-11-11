@@ -28,8 +28,8 @@ public record AtomLook(
 
     public AtomLook
     {
-        Looks.requireFraction(opacity, "opacity");
-        Looks.requireFraction(saturation, "saturation");
+        Utils.requireFraction(opacity, "opacity");
+        Utils.requireFraction(saturation, "saturation");
     }
 
     /**
@@ -95,8 +95,8 @@ public record AtomLook(
         return new AtomLook(
             fill.or(() -> base.fill),
             outline.or(() -> base.outline),
-            Looks.firstPresent(opacity, base.opacity),
-            Looks.firstPresent(saturation, base.saturation),
+            Utils.firstPresent(opacity, base.opacity),
+            Utils.firstPresent(saturation, base.saturation),
             halo.or(() -> base.halo),
             badge.or(() -> base.badge));
     }

@@ -26,7 +26,7 @@ public record BondLook(
 
     public BondLook
     {
-        Looks.requireFraction(opacity, "opacity");
+        Utils.requireFraction(opacity, "opacity");
         if (widthScale.isPresent() && !(widthScale.getAsDouble() > 0))
         {
             throw new IllegalArgumentException("A bond's width scale must be positive, but was " + widthScale.getAsDouble());
@@ -86,8 +86,8 @@ public record BondLook(
     {
         return new BondLook(
             colour.or(() -> base.colour),
-            Looks.firstPresent(opacity, base.opacity),
-            Looks.firstPresent(widthScale, base.widthScale),
+            Utils.firstPresent(opacity, base.opacity),
+            Utils.firstPresent(widthScale, base.widthScale),
             halo.or(() -> base.halo),
             badge.or(() -> base.badge));
     }
