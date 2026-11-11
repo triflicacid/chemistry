@@ -6,7 +6,6 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.StereoDeclaration;
 import com.ruben.chemistry.render.rings.LayoutQuality;
 import com.ruben.chemistry.render.rings.RingRefinement;
-import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -23,21 +22,12 @@ class MoleculeLayoutTest
     private static final double TOLERANCE = 1e-9;
 
     /**
-     * @param smiles the molecule to read
-     * @return the molecule it describes
-     */
-    private static Molecule parse(String smiles)
-    {
-        return new SmilesParser(smiles).parse();
-    }
-
-    /**
      * @param smiles the molecule to lay out
      * @return its layout, drawn with every hydrogen and with straight chains
      */
     private static Layout depict(String smiles)
     {
-        return MoleculeLayout.layout(parse(smiles));
+        return MoleculeLayout.layout(Molecule.fromSmiles(smiles));
     }
 
     /**
@@ -47,7 +37,7 @@ class MoleculeLayoutTest
      */
     private static Layout depict(String smiles, HydrogenStyle hydrogens)
     {
-        return MoleculeLayout.layout(parse(smiles), DepictionOptions.defaults().withHydrogens(hydrogens));
+        return MoleculeLayout.layout(Molecule.fromSmiles(smiles), DepictionOptions.defaults().withHydrogens(hydrogens));
     }
 
     /**
@@ -134,7 +124,7 @@ class MoleculeLayoutTest
      */
     private static void assertParitiesAreDrawn(String smiles)
     {
-        Molecule molecule = parse(smiles);
+        Molecule molecule = Molecule.fromSmiles(smiles);
         Layout layout = MoleculeLayout.layout(molecule);
         Depiction depiction = layout.depiction();
         List<StereoDeclaration.Tetrahedral> declarations = molecule.stereochemistry().declarations().stream()
@@ -187,7 +177,7 @@ class MoleculeLayoutTest
         @Test
         void rejects_options_that_are_not_there()
         {
-            Molecule methane = parse("C");
+            Molecule methane = Molecule.fromSmiles("C");
 
             assertThatThrownBy(() -> MoleculeLayout.layout(methane, null)).isInstanceOf(NullPointerException.class);
         }
@@ -220,7 +210,7 @@ class MoleculeLayoutTest
         @Test
         void draws_one_bond_for_every_bond_the_molecule_has_and_every_hydrogen_it_implies()
         {
-            Molecule propanol = parse("CCO");
+            Molecule propanol = Molecule.fromSmiles("CCO");
             Depiction depiction = MoleculeLayout.layout(propanol).depiction();
 
             int hydrogens = propanol.atoms().stream().mapToInt(propanol::totalHydrogenCount).sum();
@@ -302,7 +292,7 @@ class MoleculeLayoutTest
         void leaves_hydrogens_out_when_asked()
         {
             Depiction depiction = MoleculeLayout.layout(
-                parse("CCO"), DepictionOptions.defaults().withHydrogens(HydrogenStyle.NONE)).depiction();
+                    Molecule.fromSmiles("CCO"), DepictionOptions.defaults().withHydrogens(HydrogenStyle.NONE)).depiction();
 
             assertThat(depiction.atoms()).hasSize(3)
                 .allMatch(placement -> placement.sourceAtom().isPresent());
@@ -327,7 +317,7 @@ class MoleculeLayoutTest
         void zig_zags_a_chain_when_asked()
         {
             Layout layout = MoleculeLayout.layout(
-                parse("CCC"), DepictionOptions.defaults().withChainGeometry(com.ruben.chemistry.render.ChainGeometry.ZIGZAG));
+                    Molecule.fromSmiles("CCC"), DepictionOptions.defaults().withChainGeometry(com.ruben.chemistry.render.ChainGeometry.ZIGZAG));
             Point first = positionOf(layout, 0);
 
             assertAt(positionOf(layout, 1).minus(first), Math.sqrt(3) / 2, -0.5);
@@ -472,7 +462,7 @@ class MoleculeLayoutTest
         @Test
         void circles_an_aromatic_ring_only_when_skeletal()
         {
-            Molecule benzene = parse("c1ccccc1");
+            Molecule benzene = Molecule.fromSmiles("c1ccccc1");
 
             assertThat(MoleculeLayout.layout(benzene, DepictionOptions.skeletal()).depiction().rings())
                 .singleElement().extracting(RingPlacement::circle).isEqualTo(true);
@@ -483,14 +473,14 @@ class MoleculeLayoutTest
         @Test
         void does_not_circle_a_ring_that_is_not_aromatic()
         {
-            assertThat(MoleculeLayout.layout(parse("C1CCCCC1"), DepictionOptions.skeletal()).depiction().rings())
+            assertThat(MoleculeLayout.layout(Molecule.fromSmiles("C1CCCCC1"), DepictionOptions.skeletal()).depiction().rings())
                 .singleElement().extracting(RingPlacement::circle).isEqualTo(false);
         }
 
         @Test
         void keeps_substituents_outside_the_ring()
         {
-            Layout layout = MoleculeLayout.layout(parse("Cc1ccccc1"), DepictionOptions.skeletal());
+            Layout layout = MoleculeLayout.layout(Molecule.fromSmiles("Cc1ccccc1"), DepictionOptions.skeletal());
             Depiction depiction = layout.depiction();
             Point middle = new Point(
                 depiction.rings().getFirst().atoms().stream().mapToDouble(atom -> depiction.atom(atom).position().x()).average().orElseThrow(),
@@ -505,7 +495,7 @@ class MoleculeLayoutTest
     {
         private static Depiction skeletalDepiction(String smiles)
         {
-            return MoleculeLayout.layout(parse(smiles), DepictionOptions.skeletal()).depiction();
+            return MoleculeLayout.layout(Molecule.fromSmiles(smiles), DepictionOptions.skeletal()).depiction();
         }
 
         private static int crossingsOf(Depiction depiction)
@@ -543,7 +533,7 @@ class MoleculeLayoutTest
          */
         private static Depiction skeletalDepiction(String smiles)
         {
-            return MoleculeLayout.layout(parse(smiles), DepictionOptions.skeletal()).depiction();
+            return MoleculeLayout.layout(Molecule.fromSmiles(smiles), DepictionOptions.skeletal()).depiction();
         }
 
         private static Point[] pointsOf(Depiction depiction)
@@ -577,7 +567,7 @@ class MoleculeLayoutTest
         @Test
         void draws_a_different_view_of_a_cage_for_each_ring_ranking_that_has_one()
         {
-            Molecule molecule = parse("C1CC2CCC1CC2");
+            Molecule molecule = Molecule.fromSmiles("C1CC2CCC1CC2");
             Depiction best = MoleculeLayout.layout(molecule, DepictionOptions.skeletal()).depiction();
             List<Layout> layouts = MoleculeLayout.layouts(molecule, DepictionOptions.skeletal(), 3);
             Depiction second = layouts.get(1).depiction();
@@ -592,15 +582,15 @@ class MoleculeLayoutTest
         @Test
         void asks_for_at_least_one_layout()
         {
-            assertThatThrownBy(() -> MoleculeLayout.layouts(parse("CC"), DepictionOptions.skeletal(), 0))
+            assertThatThrownBy(() -> MoleculeLayout.layouts(Molecule.fromSmiles("CC"), DepictionOptions.skeletal(), 0))
                 .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
         void gathers_alternative_layouts_into_one_with_a_fragment_each()
         {
-            Layout first = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal());
-            Layout second = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal().withRingRanking(1));
+            Layout first = MoleculeLayout.layout(Molecule.fromSmiles(CUBANE), DepictionOptions.skeletal());
+            Layout second = MoleculeLayout.layout(Molecule.fromSmiles(CUBANE), DepictionOptions.skeletal().withRingRanking(1));
             Depiction combined = Layout.sideBySide(List.of(first, second)).depiction();
 
             assertThat(combined.atoms()).hasSize(first.depiction().atoms().size() * 2);
@@ -617,8 +607,8 @@ class MoleculeLayoutTest
         @Test
         void leaves_a_cage_as_first_laid_out_when_ring_refinement_is_none()
         {
-            Depiction refined = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal()).depiction();
-            Depiction raw = MoleculeLayout.layout(parse(CUBANE),
+            Depiction refined = MoleculeLayout.layout(Molecule.fromSmiles(CUBANE), DepictionOptions.skeletal()).depiction();
+            Depiction raw = MoleculeLayout.layout(Molecule.fromSmiles(CUBANE),
                 DepictionOptions.skeletal().withRingRefinement(RingRefinement.NONE)).depiction();
 
             assertThat(LayoutQuality.minimumAtomDistance(pointsOf(refined), bondsOf(refined)))
@@ -628,7 +618,7 @@ class MoleculeLayoutTest
         @Test
         void keeps_cage_bonds_exactly_one_bond_length_when_projection_is_off()
         {
-            Depiction depiction = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal().withProjectCages(false)).depiction();
+            Depiction depiction = MoleculeLayout.layout(Molecule.fromSmiles(CUBANE), DepictionOptions.skeletal().withProjectCages(false)).depiction();
 
             assertThat(LayoutQuality.lengthError(pointsOf(depiction), bondsOf(depiction), 1)).isLessThan(1e-6);
         }
@@ -927,7 +917,7 @@ class MoleculeLayoutTest
         @Test
         void keeps_the_bonds_the_molecule_has_and_adds_none()
         {
-            Molecule propanol = parse("CCO");
+            Molecule propanol = Molecule.fromSmiles("CCO");
 
             assertThat(skeletal("CCO").depiction().bonds()).hasSize(propanol.bonds().size());
         }
@@ -946,7 +936,7 @@ class MoleculeLayoutTest
          */
         private static Layout skeletal(String smiles)
         {
-            return MoleculeLayout.layout(parse(smiles), DepictionOptions.skeletal());
+            return MoleculeLayout.layout(Molecule.fromSmiles(smiles), DepictionOptions.skeletal());
         }
 
         /**

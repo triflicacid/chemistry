@@ -4,7 +4,6 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.query.Query;
-import com.ruben.chemistry.smarts.SmartsParser;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,7 +41,7 @@ class FormulaUnitTest
      */
     private static Query query(String smarts)
     {
-        return new SmartsParser(smarts).parseQuery();
+        return Query.fromSmarts(smarts);
     }
 
     /**

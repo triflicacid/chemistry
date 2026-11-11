@@ -1,7 +1,6 @@
 package com.ruben.chemistry.query;
 
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -11,8 +10,8 @@ class QueriesTest
     @Test
     void a_molecule_converted_to_a_query_matches_as_a_substructure_of_a_larger_one()
     {
-        Molecule fragment = new SmilesParser("CCO").parse(); // ethanol
-        Molecule target = new SmilesParser("CCCO").parse(); // propan-1-ol
+        Molecule fragment = Molecule.fromSmiles("CCO"); // ethanol
+        Molecule target = Molecule.fromSmiles("CCCO"); // propan-1-ol
 
         Query query = Queries.fromMolecule(fragment);
 
@@ -22,8 +21,8 @@ class QueriesTest
     @Test
     void a_molecule_converted_to_a_query_does_not_match_a_molecule_without_that_substructure()
     {
-        Molecule fragment = new SmilesParser("CCO").parse(); // ethanol: has an oxygen
-        Molecule target = new SmilesParser("CCC").parse(); // propane: no oxygen at all
+        Molecule fragment = Molecule.fromSmiles("CCO"); // ethanol: has an oxygen
+        Molecule target = Molecule.fromSmiles("CCC"); // propane: no oxygen at all
 
         Query query = Queries.fromMolecule(fragment);
 
@@ -34,8 +33,8 @@ class QueriesTest
     void a_molecule_converted_to_a_query_distinguishes_the_double_bond_stereo_it_was_declared_with()
     {
         // same constitution, opposite configuration
-        Molecule trans = new SmilesParser("F/C=C/F").parse();
-        Molecule cis = new SmilesParser("F/C=C\\F").parse();
+        Molecule trans = Molecule.fromSmiles("F/C=C/F");
+        Molecule cis = Molecule.fromSmiles("F/C=C\\F");
 
         Query transQuery = Queries.fromMolecule(trans);
 
@@ -48,8 +47,8 @@ class QueriesTest
     @Test
     void a_molecule_converted_to_a_query_does_not_match_a_different_isotope()
     {
-        Molecule plain = new SmilesParser("C").parse();
-        Molecule labelled = new SmilesParser("[13CH4]").parse();
+        Molecule plain = Molecule.fromSmiles("C");
+        Molecule labelled = Molecule.fromSmiles("[13CH4]");
 
         Query plainQuery = Queries.fromMolecule(plain);
         Query labelledQuery = Queries.fromMolecule(labelled);
@@ -64,8 +63,8 @@ class QueriesTest
     void a_molecule_converted_to_a_query_matches_a_stereocentre_bearing_an_implicit_hydrogen()
     {
         // same constitution, opposite configuration, with the hydrogen as a fourth neighbour
-        Molecule anticlockwise = new SmilesParser("N[C@H](F)Cl").parse();
-        Molecule clockwise = new SmilesParser("N[C@@H](F)Cl").parse();
+        Molecule anticlockwise = Molecule.fromSmiles("N[C@H](F)Cl");
+        Molecule clockwise = Molecule.fromSmiles("N[C@@H](F)Cl");
 
         Query anticlockwiseQuery = Queries.fromMolecule(anticlockwise);
 

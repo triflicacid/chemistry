@@ -9,7 +9,6 @@ import com.ruben.chemistry.query.AtomPredicates;
 import com.ruben.chemistry.query.BondPredicates;
 import com.ruben.chemistry.query.Query;
 import com.ruben.chemistry.query.QueryAtom;
-import com.ruben.chemistry.smiles.SmilesParser;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -116,7 +115,7 @@ class AtomExpressionParserTest
         @Test
         void wildcard_matches_any_atom()
         {
-            Molecule molecule = new SmilesParser("O").parse();
+            Molecule molecule = Molecule.fromSmiles("O");
 
             assertThat(parse(element("*")).matches(molecule, firstAtom(molecule))).isTrue();
         }
@@ -124,7 +123,7 @@ class AtomExpressionParserTest
         @Test
         void element_matches_exactly_that_element()
         {
-            Molecule molecule = new SmilesParser("CO").parse();
+            Molecule molecule = Molecule.fromSmiles("CO");
 
             assertThat(parse(element("C")).matches(molecule, firstAtom(molecule))).isTrue();
             assertThat(parse(element("C")).matches(molecule, secondAtom(molecule))).isFalse();
@@ -133,8 +132,8 @@ class AtomExpressionParserTest
         @Test
         void lowercase_element_matches_an_aromatic_atom_of_that_element()
         {
-            Molecule benzene = new SmilesParser("c1ccccc1").parse();
-            Molecule aliphatic = new SmilesParser("C").parse();
+            Molecule benzene = Molecule.fromSmiles("c1ccccc1");
+            Molecule aliphatic = Molecule.fromSmiles("C");
 
             assertThat(parse(element("c")).matches(benzene, firstAtom(benzene))).isTrue();
             assertThat(parse(element("c")).matches(aliphatic, firstAtom(aliphatic))).isFalse();
@@ -143,7 +142,7 @@ class AtomExpressionParserTest
         @Test
         void hash_and_number_matches_that_atomic_number()
         {
-            Molecule molecule = new SmilesParser("C").parse();
+            Molecule molecule = Molecule.fromSmiles("C");
 
             assertThat(parse(HASH, number(6)).matches(molecule, firstAtom(molecule))).isTrue();
             assertThat(parse(HASH, number(7)).matches(molecule, firstAtom(molecule))).isFalse();
@@ -199,8 +198,8 @@ class AtomExpressionParserTest
         @Test
         void bare_r_matches_any_ring_atom()
         {
-            Molecule ring = new SmilesParser("C1CC1").parse();
-            Molecule chain = new SmilesParser("CCC").parse();
+            Molecule ring = Molecule.fromSmiles("C1CC1");
+            Molecule chain = Molecule.fromSmiles("CCC");
 
             assertThat(parse(structural("R")).matches(ring, firstAtom(ring))).isTrue();
             assertThat(parse(structural("R")).matches(chain, firstAtom(chain))).isFalse();
@@ -209,7 +208,7 @@ class AtomExpressionParserTest
         @Test
         void r_with_a_number_matches_that_ring_count()
         {
-            Molecule ring = new SmilesParser("C1CC1").parse();
+            Molecule ring = Molecule.fromSmiles("C1CC1");
 
             assertThat(parse(structural("R"), number(1)).matches(ring, firstAtom(ring))).isTrue();
             assertThat(parse(structural("R"), number(2)).matches(ring, firstAtom(ring))).isFalse();
@@ -218,7 +217,7 @@ class AtomExpressionParserTest
         @Test
         void r_lowercase_matches_that_ring_size()
         {
-            Molecule ring = new SmilesParser("C1CC1").parse();
+            Molecule ring = Molecule.fromSmiles("C1CC1");
 
             assertThat(parse(structural("r"), number(3)).matches(ring, firstAtom(ring))).isTrue();
             assertThat(parse(structural("r"), number(4)).matches(ring, firstAtom(ring))).isFalse();
@@ -227,7 +226,7 @@ class AtomExpressionParserTest
         @Test
         void d_matches_that_degree()
         {
-            Molecule molecule = new SmilesParser("CC(=O)C").parse(); // acetone
+            Molecule molecule = Molecule.fromSmiles("CC(=O)C"); // acetone
             Atom carbonylCarbon = secondAtom(molecule);
 
             assertThat(parse(structural("D"), number(3)).matches(molecule, carbonylCarbon)).isTrue();
@@ -237,7 +236,7 @@ class AtomExpressionParserTest
         @Test
         void v_matches_that_valence()
         {
-            Molecule ethane = new SmilesParser("CC").parse();
+            Molecule ethane = Molecule.fromSmiles("CC");
 
             assertThat(parse(structural("v"), number(4)).matches(ethane, firstAtom(ethane))).isTrue();
         }
@@ -245,7 +244,7 @@ class AtomExpressionParserTest
         @Test
         void x_matches_that_connectivity()
         {
-            Molecule ethane = new SmilesParser("CC").parse();
+            Molecule ethane = Molecule.fromSmiles("CC");
 
             assertThat(parse(structural("X"), number(4)).matches(ethane, firstAtom(ethane))).isTrue();
         }
@@ -253,7 +252,7 @@ class AtomExpressionParserTest
         @Test
         void bare_h_matches_one_hydrogen()
         {
-            Molecule molecule = new SmilesParser("[CH1]=O").parse();
+            Molecule molecule = Molecule.fromSmiles("[CH1]=O");
 
             assertThat(parse(element("H")).matches(molecule, firstAtom(molecule))).isTrue();
         }
@@ -261,7 +260,7 @@ class AtomExpressionParserTest
         @Test
         void h_with_a_number_matches_that_total_hydrogen_count()
         {
-            Molecule ethane = new SmilesParser("CC").parse(); // each carbon has 3 implicit H
+            Molecule ethane = Molecule.fromSmiles("CC"); // each carbon has 3 implicit H
 
             assertThat(parse(element("H"), number(3)).matches(ethane, firstAtom(ethane))).isTrue();
             assertThat(parse(element("H"), number(4)).matches(ethane, firstAtom(ethane))).isFalse();
@@ -270,7 +269,7 @@ class AtomExpressionParserTest
         @Test
         void bare_lowercase_h_matches_one_implicit_hydrogen()
         {
-            Molecule molecule = new SmilesParser("[CH1]=O").parse();
+            Molecule molecule = Molecule.fromSmiles("[CH1]=O");
 
             assertThat(parse(structural("h")).matches(molecule, firstAtom(molecule))).isFalse(); // explicit, not implicit
         }
@@ -278,7 +277,7 @@ class AtomExpressionParserTest
         @Test
         void lowercase_h_with_a_number_matches_that_implicit_hydrogen_count()
         {
-            Molecule ethane = new SmilesParser("CC").parse();
+            Molecule ethane = Molecule.fromSmiles("CC");
 
             assertThat(parse(structural("h"), number(3)).matches(ethane, firstAtom(ethane))).isTrue();
         }
@@ -290,8 +289,8 @@ class AtomExpressionParserTest
         @Test
         void and_requires_both_sides()
         {
-            Molecule ring = new SmilesParser("C1CC1").parse();
-            Molecule chain = new SmilesParser("CCC").parse();
+            Molecule ring = Molecule.fromSmiles("C1CC1");
+            Molecule chain = Molecule.fromSmiles("CCC");
 
             AtomPredicate carbonInRing = parse(element("C"), AND, structural("R"));
 
@@ -302,8 +301,8 @@ class AtomExpressionParserTest
         @Test
         void implicit_and_behaves_like_explicit_and()
         {
-            Molecule ring = new SmilesParser("C1CC1").parse();
-            Molecule chain = new SmilesParser("CCC").parse();
+            Molecule ring = Molecule.fromSmiles("C1CC1");
+            Molecule chain = Molecule.fromSmiles("CCC");
 
             AtomPredicate carbonInRing = parse(element("C"), structural("R"));
 
@@ -314,7 +313,7 @@ class AtomExpressionParserTest
         @Test
         void or_requires_either_side()
         {
-            Molecule molecule = new SmilesParser("CO").parse();
+            Molecule molecule = Molecule.fromSmiles("CO");
             AtomPredicate carbonOrOxygen = parse(element("C"), OR, element("O"));
 
             assertThat(carbonOrOxygen.matches(molecule, firstAtom(molecule))).isTrue();
@@ -325,7 +324,7 @@ class AtomExpressionParserTest
         void semi_also_combines_with_and_but_binds_looser_than_or()
         {
             // "C,N;O" means (C or N) and O - with just a carbon it should fail either way
-            Molecule molecule = new SmilesParser("C").parse();
+            Molecule molecule = Molecule.fromSmiles("C");
             AtomPredicate expression = parse(element("C"), OR, element("N"), SEMI, element("O"));
 
             assertThat(expression.matches(molecule, firstAtom(molecule))).isFalse();
@@ -334,7 +333,7 @@ class AtomExpressionParserTest
         @Test
         void not_negates_the_single_following_primitive()
         {
-            Molecule molecule = new SmilesParser("CO").parse();
+            Molecule molecule = Molecule.fromSmiles("CO");
             AtomPredicate notCarbon = parse(NOT, element("C"));
 
             assertThat(notCarbon.matches(molecule, firstAtom(molecule))).isFalse();
@@ -345,7 +344,7 @@ class AtomExpressionParserTest
         void not_binds_tighter_than_implicit_and()
         {
             // "!C" and "R" combined by implicit-and: not-carbon AND in-ring
-            Molecule ring = new SmilesParser("C1CC1").parse(); // no nitrogen here, just checking it doesn't throw/misparse
+            Molecule ring = Molecule.fromSmiles("C1CC1"); // no nitrogen here, just checking it doesn't throw/misparse
             AtomPredicate expression = parse(NOT, element("C"), structural("R"));
 
             assertThat(expression.matches(ring, firstAtom(ring))).isFalse(); // carbon, so "!C" fails
@@ -364,7 +363,7 @@ class AtomExpressionParserTest
         @Test
         void is_reported_alongside_the_predicate_without_affecting_it()
         {
-            Molecule molecule = new SmilesParser("[CH1]=O").parse();
+            Molecule molecule = Molecule.fromSmiles("[CH1]=O");
             AtomExpressionParser.Result parsed =
                 result(List.of(element("C"), chirality("@"), element("H")), UNUSED_RESOLVER);
 
@@ -383,7 +382,7 @@ class AtomExpressionParserTest
         @Test
         void a_leading_marker_before_any_primitive_is_still_captured()
         {
-            Molecule molecule = new SmilesParser("C").parse();
+            Molecule molecule = Molecule.fromSmiles("C");
             AtomExpressionParser.Result parsed = result(List.of(chirality("@"), element("C")), UNUSED_RESOLVER);
 
             assertThat(parsed.chirality()).contains(Chirality.ANTICLOCKWISE);
@@ -427,7 +426,7 @@ class AtomExpressionParserTest
         @Test
         void expression_tokens_resolve_via_the_given_function_and_match_recursively()
         {
-            Molecule ethane = new SmilesParser("CC").parse();
+            Molecule ethane = Molecule.fromSmiles("CC");
             List<Token> tokens = List.of(EXPRESSION_START, atom("C"), atom("C"), EXPRESSION_END);
 
             assertThat(result(tokens, fixedResult(carbonBondedToCarbon())).predicate().matches(ethane, firstAtom(ethane))).isTrue();
@@ -436,7 +435,7 @@ class AtomExpressionParserTest
         @Test
         void expression_tokens_do_not_match_when_the_sub_pattern_does_not()
         {
-            Molecule methanol = new SmilesParser("CO").parse();
+            Molecule methanol = Molecule.fromSmiles("CO");
             List<Token> tokens = List.of(EXPRESSION_START, atom("C"), atom("C"), EXPRESSION_END);
 
             // the sub-pattern's anchor is carbon; methanol's second atom is oxygen
@@ -446,8 +445,8 @@ class AtomExpressionParserTest
         @Test
         void combines_with_other_primitives_via_implicit_and()
         {
-            Molecule ring = new SmilesParser("C1CC1").parse();
-            Molecule chain = new SmilesParser("CC").parse();
+            Molecule ring = Molecule.fromSmiles("C1CC1");
+            Molecule chain = Molecule.fromSmiles("CC");
             List<Token> tokens = List.of(EXPRESSION_START, atom("C"), atom("C"), EXPRESSION_END, structural("R"));
 
             AtomPredicate ringCarbonNextToCarbon = result(tokens, fixedResult(carbonBondedToCarbon())).predicate();

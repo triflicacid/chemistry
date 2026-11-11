@@ -1,7 +1,6 @@
 package com.ruben.chemistry.render;
 
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -12,7 +11,7 @@ class MoleculeSnapshotTest
     @Test
     void resolves_atoms_and_bonds_by_origin_index()
     {
-        Molecule molecule = parse("CC=O");
+        Molecule molecule = Molecule.fromSmiles("CC=O");
         MoleculeSnapshot snapshot = MoleculeSnapshot.of(molecule);
 
         assertThat(snapshot.getOrigin()).isSameAs(molecule);
@@ -23,7 +22,7 @@ class MoleculeSnapshotTest
     @Test
     void refuses_an_index_that_is_not_there()
     {
-        MoleculeSnapshot snapshot = MoleculeSnapshot.of(parse("CO"));
+        MoleculeSnapshot snapshot = MoleculeSnapshot.of(Molecule.fromSmiles("CO"));
 
         assertThatThrownBy(() -> snapshot.getAtom(2)).isInstanceOf(IndexOutOfBoundsException.class);
         assertThatThrownBy(() -> snapshot.getAtom(-1)).isInstanceOf(IndexOutOfBoundsException.class);
@@ -35,7 +34,7 @@ class MoleculeSnapshotTest
     @Test
     void finds_the_fragment_of_an_atom_and_of_a_bond()
     {
-        Molecule molecule = parse("CC.O.NN");
+        Molecule molecule = Molecule.fromSmiles("CC.O.NN");
         MoleculeSnapshot snapshot = MoleculeSnapshot.of(molecule);
 
         assertThat(snapshot.getFragmentCount()).isEqualTo(3);
@@ -52,7 +51,7 @@ class MoleculeSnapshotTest
     @Test
     void has_the_origin_as_its_only_fragment_if_connected()
     {
-        Molecule molecule = parse("CCO");
+        Molecule molecule = Molecule.fromSmiles("CCO");
         MoleculeSnapshot snapshot = MoleculeSnapshot.of(molecule);
 
         assertThat(snapshot.getFragmentCount()).isEqualTo(1);
@@ -62,7 +61,7 @@ class MoleculeSnapshotTest
     @Test
     void agrees_with_the_depiction_it_was_laid_out_with()
     {
-        Layout layout = MoleculeLayout.layout(parse("CC.O"));
+        Layout layout = MoleculeLayout.layout(Molecule.fromSmiles("CC.O"));
 
         for (AtomPlacement atom : layout.depiction().atoms())
         {
@@ -76,14 +75,9 @@ class MoleculeSnapshotTest
             if (bond.sourceBond().isPresent())
             {
                 assertThat(layout.depiction().atom(bond.first()).fragment())
-                    .isEqualTo(layout.snapshot().getFragmentIndexOfBond(bond.sourceBond().getAsInt()));
+                        .isEqualTo(layout.snapshot().getFragmentIndexOfBond(bond.sourceBond().getAsInt()));
             }
         }
         assertThat(layout.depiction().atoms()).extracting(AtomPlacement::fragment).contains(0, 1);
-    }
-
-    private static Molecule parse(String smiles)
-    {
-        return new SmilesParser(smiles).parse();
     }
 }

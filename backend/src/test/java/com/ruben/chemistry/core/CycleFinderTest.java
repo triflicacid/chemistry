@@ -2,7 +2,6 @@ package com.ruben.chemistry.core;
 
 import com.ruben.chemistry.core.CycleFinder.Cycle;
 import com.ruben.chemistry.core.CycleFinder.Cycles;
-import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -22,7 +21,7 @@ class CycleFinderTest
 
     private static Molecule parse(String smiles)
     {
-        return new SmilesParser(smiles).parse();
+        return Molecule.fromSmiles(smiles);
     }
 
     private static List<Integer> sizes(List<Cycle> cycles)

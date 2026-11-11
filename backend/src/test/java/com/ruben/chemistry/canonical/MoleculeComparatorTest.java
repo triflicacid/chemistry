@@ -5,7 +5,6 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smiles.SmilesParser;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -166,8 +165,8 @@ class MoleculeComparatorTest
         {
             // meso-2,3-dibromobutane: a symmetry of its constitution maps one stereocentre onto the
             // other and inverts it, so reflecting the molecule reproduces the molecule itself
-            Molecule meso = new SmilesParser("C[C@H](Br)[C@H](Br)C").parse();
-            Molecule reflected = new SmilesParser("C[C@@H](Br)[C@@H](Br)C").parse();
+            Molecule meso = Molecule.fromSmiles("C[C@H](Br)[C@H](Br)C");
+            Molecule reflected = Molecule.fromSmiles("C[C@@H](Br)[C@@H](Br)C");
 
             assertThat(compare(meso, reflected)).isZero();
         }
@@ -175,8 +174,8 @@ class MoleculeComparatorTest
         @Test
         void treats_an_achiral_ring_as_equal_to_its_mirror_image()
         {
-            Molecule cis = new SmilesParser("O[C@H]1CCCC[C@@H]1O").parse();
-            Molecule reflected = new SmilesParser("O[C@@H]1CCCC[C@H]1O").parse();
+            Molecule cis = Molecule.fromSmiles("O[C@H]1CCCC[C@@H]1O");
+            Molecule reflected = Molecule.fromSmiles("O[C@@H]1CCCC[C@H]1O");
 
             assertThat(compare(cis, reflected)).isZero();
         }
@@ -184,8 +183,8 @@ class MoleculeComparatorTest
         @Test
         void treats_a_chiral_molecule_as_unequal_to_its_mirror_image()
         {
-            Molecule chiral = new SmilesParser("C[C@H](Br)[C@@H](Br)C").parse();
-            Molecule reflected = new SmilesParser("C[C@@H](Br)[C@H](Br)C").parse();
+            Molecule chiral = Molecule.fromSmiles("C[C@H](Br)[C@@H](Br)C");
+            Molecule reflected = Molecule.fromSmiles("C[C@@H](Br)[C@H](Br)C");
 
             assertThat(compare(chiral, reflected)).isNotZero();
         }
@@ -379,8 +378,8 @@ class MoleculeComparatorTest
         void falls_back_to_the_bonds_when_every_atom_matches()
         {
             // o- and m-xylene: the same atoms in the same roles, so only what they bond to separates them
-            Molecule ortho = new SmilesParser("Cc1ccccc1C").parse();
-            Molecule meta = new SmilesParser("Cc1cccc(C)c1").parse();
+            Molecule ortho = Molecule.fromSmiles("Cc1ccccc1C");
+            Molecule meta = Molecule.fromSmiles("Cc1cccc(C)c1");
 
             assertThat(compare(ortho, meta)).isNotZero();
         }

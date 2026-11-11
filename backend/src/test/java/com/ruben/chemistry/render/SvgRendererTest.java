@@ -1,6 +1,7 @@
 package com.ruben.chemistry.render;
 
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -828,7 +829,7 @@ class SvgRendererTest
      */
     private static Depiction depict(String smiles)
     {
-        return MoleculeLayout.layout(new SmilesParser(smiles).parse()).depiction();
+        return MoleculeLayout.layout(Molecule.fromSmiles(smiles)).depiction();
     }
 
     /**

@@ -5,8 +5,6 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smarts.SmartsParser;
-import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.util.IdentitySet;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -21,12 +19,12 @@ class QueryStereoTest
 {
     private static Query query(String smarts)
     {
-        return new SmartsParser(smarts).parseQuery();
+        return Query.fromSmarts(smarts);
     }
 
     private static Molecule molecule(String smiles)
     {
-        return new SmilesParser(smiles).parse();
+        return Molecule.fromSmiles(smiles);
     }
 
     @Nested
