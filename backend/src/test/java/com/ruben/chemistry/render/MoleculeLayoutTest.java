@@ -4,6 +4,8 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.StereoDeclaration;
+import com.ruben.chemistry.render.rings.LayoutQuality;
+import com.ruben.chemistry.render.rings.RingRefinement;
 import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -555,12 +557,12 @@ class MoleculeLayoutTest
         }
 
         @Test
-        void draws_every_bond_of_cubane_one_bond_length_long()
+        void draws_every_bond_of_cubane_about_one_bond_length_long()
         {
             Depiction depiction = skeletalDepiction(CUBANE);
 
             assertThat(depiction.atoms()).hasSize(8);
-            assertThat(LayoutQuality.lengthError(pointsOf(depiction), bondsOf(depiction), 1)).isLessThan(1e-6);
+            assertThat(LayoutQuality.lengthError(pointsOf(depiction), bondsOf(depiction), 1)).isLessThan(0.05);
         }
 
         @Test
@@ -569,7 +571,66 @@ class MoleculeLayoutTest
             Depiction depiction = skeletalDepiction("C1C2CC1C2");
 
             assertThat(depiction.atoms()).hasSize(5);
-            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(depiction), bondsOf(depiction))).isGreaterThan(0.4);
+            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(depiction), bondsOf(depiction))).isGreaterThan(0.3);
+        }
+
+        @Test
+        void draws_a_different_view_of_a_cage_for_each_ring_ranking_that_has_one()
+        {
+            Molecule molecule = parse("C1CC2CCC1CC2");
+            Depiction best = MoleculeLayout.layout(molecule, DepictionOptions.skeletal()).depiction();
+            List<Layout> layouts = MoleculeLayout.layouts(molecule, DepictionOptions.skeletal(), 3);
+            Depiction second = layouts.get(1).depiction();
+
+            assertThat(layouts).hasSizeGreaterThanOrEqualTo(2);
+            assertThat(layouts.getFirst().depiction().looksLike(best)).isTrue();
+            assertThat(second.looksLike(best)).isFalse();
+            assertThat(second.atoms()).hasSameSizeAs(best.atoms());
+            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(second), bondsOf(second))).isGreaterThan(0.3);
+        }
+
+        @Test
+        void asks_for_at_least_one_layout()
+        {
+            assertThatThrownBy(() -> MoleculeLayout.layouts(parse("CC"), DepictionOptions.skeletal(), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void gathers_alternative_layouts_into_one_with_a_fragment_each()
+        {
+            Layout first = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal());
+            Layout second = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal().withRingRanking(1));
+            Depiction combined = Layout.sideBySide(List.of(first, second)).depiction();
+
+            assertThat(combined.atoms()).hasSize(first.depiction().atoms().size() * 2);
+            assertThat(combined.fragments()).hasSize(2);
+            assertThat(combined.bonds()).hasSize(first.depiction().bonds().size() * 2);
+        }
+
+        @Test
+        void rejects_a_negative_ring_ranking()
+        {
+            assertThatThrownBy(() -> DepictionOptions.skeletal().withRingRanking(-1)).isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void leaves_a_cage_as_first_laid_out_when_ring_refinement_is_none()
+        {
+            Depiction refined = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal()).depiction();
+            Depiction raw = MoleculeLayout.layout(parse(CUBANE),
+                DepictionOptions.skeletal().withRingRefinement(RingRefinement.NONE)).depiction();
+
+            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(refined), bondsOf(refined)))
+                .isGreaterThan(LayoutQuality.minimumAtomDistance(pointsOf(raw), bondsOf(raw)));
+        }
+
+        @Test
+        void keeps_cage_bonds_exactly_one_bond_length_when_projection_is_off()
+        {
+            Depiction depiction = MoleculeLayout.layout(parse(CUBANE), DepictionOptions.skeletal().withProjectCages(false)).depiction();
+
+            assertThat(LayoutQuality.lengthError(pointsOf(depiction), bondsOf(depiction), 1)).isLessThan(1e-6);
         }
 
         @Test

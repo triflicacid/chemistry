@@ -97,6 +97,15 @@ public record AtomPlacement(
     }
 
     /**
+     * @param placementIndex the index the atom should have instead
+     * @return this placement, renumbered
+     */
+    public AtomPlacement withIndex(int placementIndex)
+    {
+        return new AtomPlacement(placementIndex, element, isotope, charge, hydrogens, aromatic, vertex, sourceAtom, fragment, position);
+    }
+
+    /**
      * @param position where the atom should sit instead
      * @return this placement, moved
      */

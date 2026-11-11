@@ -1,6 +1,8 @@
-package com.ruben.chemistry.render;
+package com.ruben.chemistry.render.rings;
 
 import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.render.AngleFan;
+import com.ruben.chemistry.render.Point;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -8,16 +10,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Lays out one ring system.
+ * Places the rings of one ring system, each as a regular polygon.
  * <p>
  * The first ring is drawn as a regular polygon, and each ring after it is built on the atoms it shares with what is
  * already drawn, bulging away from the ring it was built on.
  * <p>
  * That greedy drawing is exact for simple fused systems, but it can fold bridged and caged ones, such as
- * {@code C12C3C4C1C5C2C3C45}, over themselves. When it does, {@link RingSystemSolver} redraws the system with every bond
+ * {@code C12C3C4C1C5C2C3C45}, over themselves. When it does, {@link RingEnergyMinimiser} redraws the system with every bond
  * still one bond length long.
  */
-final class RingSystemLayout
+final class PolygonRingPlacer
 {
     /** How close to zero a length has to be to count as nothing. */
     private static final double EPSILON = 1e-9;
@@ -32,7 +34,7 @@ final class RingSystemLayout
     /**
      * @param rings the system's rings, each as its atoms in the order they are joined around it
      */
-    private RingSystemLayout(List<List<Atom>> rings)
+    private PolygonRingPlacer(List<List<Atom>> rings)
     {
         this.rings = rings;
         this.centres = new Point[rings.size()];
@@ -40,13 +42,13 @@ final class RingSystemLayout
 
     /**
      * @param rings the system's rings, each as its atoms in the order they are joined around it; they must form one connected system
-     * @return where every atom of the system sits, with bonds a bond length long
+     * @return where every atom of the system sits, with bonds a bond length long, though rings of a bridged or caged system may overlap
      */
-    static Map<Atom, Point> layOut(List<List<Atom>> rings)
+    static Map<Atom, Point> place(List<List<Atom>> rings)
     {
-        RingSystemLayout layout = new RingSystemLayout(rings);
-        layout.build();
-        return RingSystemSolver.improve(rings, layout.positions);
+        PolygonRingPlacer placer = new PolygonRingPlacer(rings);
+        placer.build();
+        return placer.positions;
     }
 
     /**
@@ -336,7 +338,20 @@ final class RingSystemLayout
                 return centres[ring];
             }
         }
-        return centroid(positions.keySet());
+        // walk the rings in order, as an identity map iterates in a different order each run
+        List<Atom> placed = new ArrayList<>();
+        Map<Atom, Boolean> seen = new IdentityHashMap<>();
+        for (List<Atom> ring : rings)
+        {
+            for (Atom atom : ring)
+            {
+                if (positions.containsKey(atom) && seen.put(atom, true) == null)
+                {
+                    placed.add(atom);
+                }
+            }
+        }
+        return centroid(placed);
     }
 
     /**

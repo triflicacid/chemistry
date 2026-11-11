@@ -1,11 +1,13 @@
-package com.ruben.chemistry.render;
+package com.ruben.chemistry.render.rings;
+
+import com.ruben.chemistry.render.Point;
 
 /**
  * Measures how well a drawing keeps clear of itself.
  * <p>
  * A drawing is a set of points joined by bonds, each bond being a pair of indices into the points.
  */
-final class LayoutQuality
+public final class LayoutQuality
 {
     /** How close to zero a length has to be to count as nothing. */
     private static final double EPSILON = 1e-9;
@@ -19,7 +21,7 @@ final class LayoutQuality
      * @param bonds each bond as the pair of atoms it joins
      * @return the distance between the closest two atoms that are not bonded to one another, or {@link Double#MAX_VALUE} if there are none
      */
-    static double minimumAtomDistance(Point[] points, int[][] bonds)
+    public static double minimumAtomDistance(Point[] points, int[][] bonds)
     {
         boolean[][] joined = joinedPairs(points.length, bonds);
         double closest = Double.MAX_VALUE;
@@ -41,7 +43,7 @@ final class LayoutQuality
      * @param bonds each bond as the pair of atoms it joins
      * @return how many pairs of bonds that share no atom cross one another
      */
-    static int crossings(Point[] points, int[][] bonds)
+    public static int crossings(Point[] points, int[][] bonds)
     {
         int crossings = 0;
         for (int first = 0; first < bonds.length; first++)
@@ -63,7 +65,7 @@ final class LayoutQuality
      * @param second another bond
      * @return whether the two share no atom but cross
      */
-    static boolean crosses(Point[] points, int[] first, int[] second)
+    public static boolean crosses(Point[] points, int[] first, int[] second)
     {
         if (first[0] == second[0] || first[0] == second[1] || first[1] == second[0] || first[1] == second[1])
         {
@@ -78,7 +80,7 @@ final class LayoutQuality
      * @param length how long every bond is meant to be
      * @return how far the worst bond is from that length
      */
-    static double lengthError(Point[] points, int[][] bonds, double length)
+    public static double lengthError(Point[] points, int[][] bonds, double length)
     {
         double worst = 0;
         for (int[] bond : bonds)
@@ -95,7 +97,7 @@ final class LayoutQuality
      * @param d the other end of the second segment
      * @return whether the two segments touch or cross
      */
-    static boolean segmentsCross(Point a, Point b, Point c, Point d)
+    public static boolean segmentsCross(Point a, Point b, Point c, Point d)
     {
         double first = orientation(a, b, c);
         double second = orientation(a, b, d);

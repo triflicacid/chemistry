@@ -73,6 +73,12 @@ final class DepictGallery
         try
         {
             CliOptions options = CommandOptions.of(List.of(args), OUT_DIR);
+            if (options.get(CommandOptions.HELP))
+            {
+                System.out.println(USAGE);
+                System.exit(0);
+            }
+
             Path list = Path.of(options.onlySubject());
             Path directory = Path.of(options.get(OUT_DIR));
             List<Entry> entries = read(Files.readString(list, StandardCharsets.UTF_8));

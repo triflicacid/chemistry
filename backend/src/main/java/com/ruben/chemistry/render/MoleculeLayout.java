@@ -7,6 +7,9 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.StereoDeclaration;
+import com.ruben.chemistry.render.rings.LayoutQuality;
+import com.ruben.chemistry.render.rings.RingDrawer;
+import com.ruben.chemistry.render.rings.RingEffort;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -67,6 +70,7 @@ public final class MoleculeLayout
     private final Molecule molecule;
     private final MoleculeSnapshot snapshot;
     private final DepictionOptions options;
+    private final RingDrawer ringDrawer;
     private final List<Atom> atoms;
     private final Map<Atom, Integer> indices;
 
@@ -109,12 +113,14 @@ public final class MoleculeLayout
     /**
      * @param molecule the molecule to lay out
      * @param options the choices to lay it out by
+     * @param ringDrawer what draws the molecule's ring systems
      */
-    private MoleculeLayout(Molecule molecule, DepictionOptions options)
+    private MoleculeLayout(Molecule molecule, DepictionOptions options, RingDrawer ringDrawer)
     {
         this.molecule = molecule;
         this.snapshot = MoleculeSnapshot.of(molecule);
         this.options = options;
+        this.ringDrawer = ringDrawer;
         this.atoms = molecule.atoms();
         this.indices = new IdentityHashMap<>();
         this.positions = new Point[atoms.size()];
@@ -156,7 +162,47 @@ public final class MoleculeLayout
      */
     public static Layout layout(Molecule molecule, DepictionOptions options)
     {
-        MoleculeLayout layout = new MoleculeLayout(molecule, options);
+        return layOut(molecule, options, new RingDrawer(ringEffort(options, options.ringRanking() + 1)));
+    }
+
+    /**
+     * Lays a molecule out several ways.
+     *
+     * @param molecule the molecule to lay out
+     * @param options the choices to lay it out by; its ring ranking is ignored
+     * @param alternatives how many different layouts to look for, at least 1
+     * @return the layouts, best first; never empty
+     * @throws NullPointerException if either of the first two arguments is {@code null}
+     * @throws IllegalArgumentException if {@code alternatives} is less than 1, or {@code molecule} declares a parity at
+     *     an atom whose hydrogen the options leave undrawn
+     */
+    public static List<Layout> layouts(Molecule molecule, DepictionOptions options, int alternatives)
+    {
+        if (alternatives < 1)
+        {
+            throw new IllegalArgumentException("At least one layout is wanted, but was " + alternatives);
+        }
+        RingDrawer ringDrawer = new RingDrawer(ringEffort(options, alternatives));
+        List<Layout> layouts = new ArrayList<>();
+        for (int ranking = 0; ranking < alternatives; ranking++)
+        {
+            Layout layout = layOut(molecule, options.withRingRanking(ranking), ringDrawer);
+            if (layouts.stream().noneMatch(kept -> kept.depiction().looksLike(layout.depiction())))
+            {
+                layouts.add(layout);
+            }
+        }
+        return layouts;
+    }
+
+    private static RingEffort ringEffort(DepictionOptions options, int wanted)
+    {
+        return new RingEffort(options.projectCages(), options.ringRefinement(), wanted);
+    }
+
+    private static Layout layOut(Molecule molecule, DepictionOptions options, RingDrawer ringDrawer)
+    {
+        MoleculeLayout layout = new MoleculeLayout(molecule, options, ringDrawer);
         return new Layout(layout.build(), layout.snapshot);
     }
 
@@ -247,7 +293,10 @@ public final class MoleculeLayout
         {
             expand(pending.pop(), pending);
         }
-        repairBranches();
+        if (options.ringRefinement().isEnabled())
+        {
+            repairBranches();
+        }
 
         parts.add(new int[] {start, placements.size(), snapshot.getFragmentIndexOf(indexOf(root))});
     }
@@ -301,7 +350,9 @@ public final class MoleculeLayout
             }
         }
 
-        Map<Atom, Point> local = RingSystemLayout.layOut(systemRings);
+        List<Map<Atom, Point>> drawings = ringDrawer.draw(systemRings);
+        // select the ring layout based on the requested ranking
+        Map<Atom, Point> local = drawings.get(Math.min(options.ringRanking(), drawings.size() - 1));
         Point origin = local.get(entry);
 
         // turn the system so that the entry atom's way out points back at the atom the walk came from
@@ -387,10 +438,49 @@ public final class MoleculeLayout
                     current = next;
                 }
                 while (current != first && current != null);
-                ringOrders.add(order);
+                ringOrders.add(canonical(order));
             }
+            // the molecule lists its rings in no fixed order, so fix one to draw the same molecule the same way
+            ringOrders.sort(Comparator.comparing(
+                    (List<Atom> ring) -> ring.stream().map(this::indexOf).toList(),
+                    (first, second) ->
+                    {
+                        for (int at = 0; at < Math.min(first.size(), second.size()); at++)
+                        {
+                            int compared = Integer.compare(first.get(at), second.get(at));
+                            if (compared != 0)
+                            {
+                                return compared;
+                            }
+                        }
+                        return Integer.compare(first.size(), second.size());
+                    }));
         }
         return ringOrders;
+    }
+
+    /**
+     * @param ring a ring's atoms in the order they are joined
+     * @return the same ring starting at its lowest-numbered atom and heading for its lower-numbered neighbour
+     */
+    private List<Atom> canonical(List<Atom> ring)
+    {
+        int size = ring.size();
+        int start = 0;
+        for (int at = 1; at < size; at++)
+        {
+            if (indexOf(ring.get(at)) < indexOf(ring.get(start)))
+            {
+                start = at;
+            }
+        }
+        boolean backwards = size > 2 && indexOf(ring.get(Math.floorMod(start - 1, size))) < indexOf(ring.get((start + 1) % size));
+        List<Atom> ordered = new ArrayList<>();
+        for (int step = 0; step < size; step++)
+        {
+            ordered.add(ring.get(Math.floorMod(backwards ? start - step : start + step, size)));
+        }
+        return ordered;
     }
 
     /**

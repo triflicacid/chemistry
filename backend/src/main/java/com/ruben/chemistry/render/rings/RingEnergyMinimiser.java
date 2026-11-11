@@ -1,6 +1,7 @@
-package com.ruben.chemistry.render;
+package com.ruben.chemistry.render.rings;
 
 import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.render.Point;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -14,6 +15,7 @@ import java.util.Set;
 
 /**
  * Redraws a ring system whose first drawing collides with itself.
+ * It improves a drawing made by {@link PolygonRingPlacer}.
  * <p>
  * Every bond is held at exactly one bond length. Among the drawings that allow, a penalty is minimised that keeps each ring
  * near a regular polygon, keeps atoms apart from each other and from bonds they are not on, and gently pulls atoms
@@ -22,7 +24,7 @@ import java.util.Set;
  * Some systems, such as cubane, cannot be drawn with bonds of one length without bonds crossing. They get the drawing
  * with the fewest crossings that keeps atoms apart.
  */
-final class RingSystemSolver
+final class RingEnergyMinimiser
 {
     /** How far, in bond lengths, atoms have to be from each other for the drawing not to count as colliding. */
     static final double CLEAR_DISTANCE = 0.5;
@@ -68,9 +70,10 @@ final class RingSystemSolver
     private final int[][] rings;
     private final boolean[][] joined;
     private final int[][] symmetryClasses;
+    private int effort = 1;
     private final int count;
 
-    private RingSystemSolver(List<List<Atom>> ringAtoms)
+    private RingEnergyMinimiser(List<List<Atom>> ringAtoms)
     {
         Map<Atom, Integer> indices = new IdentityHashMap<>();
         for (List<Atom> ring : ringAtoms)
@@ -121,16 +124,22 @@ final class RingSystemSolver
      *
      * @param rings the system's rings, each as its atoms in the order they are joined around it
      * @param drawing the system's first drawing
-     * @return {@code drawing} if it keeps clear of itself, or else the best drawing found, which is never worse than it
+     * @param settings what to try and how hard; {@link RingRefinement#NONE} returns {@code drawing} untouched
+     * @return the drawings found, best first, never worse than {@code drawing}; just {@code drawing} if it keeps clear of itself
      */
-    static Map<Atom, Point> improve(List<List<Atom>> rings, Map<Atom, Point> drawing)
+    static List<Map<Atom, Point>> improve(List<List<Atom>> rings, Map<Atom, Point> drawing, RingEffort settings)
     {
-        RingSystemSolver solver = new RingSystemSolver(rings);
+        if (!settings.refinement().isEnabled())
+        {
+            return List.of(drawing);
+        }
+        RingEnergyMinimiser solver = new RingEnergyMinimiser(rings);
+        solver.effort = settings.refinement().effort();
         double[] seed = solver.pack(drawing);
         Score best = solver.score(seed);
         if (best.isClean())
         {
-            return drawing;
+            return List.of(drawing);
         }
 
         double[] chosen = seed;
@@ -148,7 +157,22 @@ final class RingSystemSolver
                 chosen = result;
             }
         }
-        if (!best.isClear())
+        List<double[]> views = settings.projectCages() ? new ForceFieldProjector(solver.count, solver.bonds, solver.effort).draws(settings.wanted()) : List.of();
+        boolean isView = false;
+        if (!views.isEmpty())
+        {
+            double[] projected = views.get(0);
+            Score score = solver.score(projected);
+            // a view of the real structure is preferred to any flat drawing that happens to be as clear
+            boolean keepsApart = score.clearance() >= ForceFieldProjector.VIEW_CLEARANCE - 1e-3;
+            if (keepsApart ? score.crossings() <= best.crossings() || !best.isClear() : !best.isClear() && score.betterThan(best))
+            {
+                best = score;
+                chosen = projected;
+                isView = keepsApart;
+            }
+        }
+        if (!best.isClear() && !isView)
         {
             // no drawing with bonds of one length keeps atoms apart, so let the bonds give a little
             for (double[] start : solver.starts(chosen))
@@ -162,7 +186,17 @@ final class RingSystemSolver
                 }
             }
         }
-        return solver.unpack(chosen);
+
+        List<Map<Atom, Point>> drawings = new ArrayList<>();
+        drawings.add(solver.unpack(chosen));
+        for (double[] view : views)
+        {
+            if (view != chosen && solver.score(view).clearance() >= ForceFieldProjector.VIEW_CLEARANCE - 1e-3)
+            {
+                drawings.add(solver.unpack(view));
+            }
+        }
+        return drawings;
     }
 
     /**
@@ -231,7 +265,7 @@ final class RingSystemSolver
 
         Random random = new Random(SEED);
         double[][] embedding = spectralEmbedding();
-        int views = Math.max(8, Math.min(STARTS, STARTS_BUDGET / (count * count)));
+        int views = Math.max(8, Math.min(STARTS, STARTS_BUDGET / (count * count))) * effort;
         for (int view = 0; view < views; view++)
         {
             double[] direction = unit(random);

@@ -6,10 +6,10 @@ import java.util.List;
 /**
  * Shares the directions leaving an atom out between the neighbours that have to go into it.
  */
-final class AngleFan
+public final class AngleFan
 {
     /** A whole turn, in radians. */
-    static final double TURN = Math.PI * 2;
+    public static final double TURN = Math.PI * 2;
 
     /** How close two spacings have to be before the earlier gap is preferred. */
     private static final double TIE = 1e-9;
@@ -43,7 +43,7 @@ final class AngleFan
      * @return the new directions, roomiest first
      * @throws IllegalArgumentException if {@code fixed} is empty
      */
-    static List<Double> fillGaps(List<Double> fixed, int count)
+    public static List<Double> fillGaps(List<Double> fixed, int count)
     {
         if (fixed.isEmpty())
         {
@@ -108,7 +108,7 @@ final class AngleFan
      * @param angle an angle in radians
      * @return the same direction, as an angle from zero up to but not including a whole turn
      */
-    static double normalise(double angle)
+    public static double normalise(double angle)
     {
         double normalised = angle % TURN;
         return normalised < 0 ? normalised + TURN : normalised;

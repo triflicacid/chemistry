@@ -8,6 +8,7 @@ import com.ruben.chemistry.render.DepictionOptions;
 import com.ruben.chemistry.render.FragmentArrangement;
 import com.ruben.chemistry.render.HydrogenStyle;
 import com.ruben.chemistry.render.RenderStyle;
+import com.ruben.chemistry.render.rings.RingRefinement;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,6 +42,12 @@ final class CommandOptions
             this.shape = shape;
         }
     }
+
+    static final CliOption<Boolean> HELP = CliOption.flag(
+            "help",
+            "show usage information for this command",
+            false
+    );
 
     static final CliOption<Drawing> STYLE = CliOption.choice(
             "style",
@@ -82,7 +89,7 @@ final class CommandOptions
                     "right", CellAlignment.RIGHT
             ),
             () -> CellAlignment.CENTRE
-    );
+    ).withDefaultText("centre");
 
     static final CliOption<HydrogenStyle> HYDROGENS = CliOption.choice(
             "hydrogens",
@@ -94,6 +101,9 @@ final class CommandOptions
                     "none", HydrogenStyle.NONE
             ),
             () -> HydrogenStyle.SEPARATE
+    ).withRequirement(
+            options -> options.get(STYLE) != Drawing.SKELETAL || options.get(CommandOptions.HYDROGENS) == HydrogenStyle.NONE,
+            "--hydrogens must be none with --style=skeletal, which leaves hydrogens out"
     );
 
     static final CliOption<Double> FRAGMENT_GAP = CliOption.number(
@@ -101,6 +111,52 @@ final class CommandOptions
             "px",
             "how many pixels of empty space lie between parts",
             30
+    );
+
+    static final CliOption<Boolean> PROJECT_CAGES = CliOption.flag(
+            "project-cages",
+            "whether a ring system that cannot be drawn flat is drawn as a view of its 3D structure",
+            true
+    ).withRequirement(
+            options -> options.get(CommandOptions.RING_REFINEMENT).isEnabled(),
+            "--project-cages has no effect with --ring-refinement=none, which does not work on ring systems"
+    );
+
+    static final CliOption<RingRefinement> RING_REFINEMENT = CliOption.parsed(
+            "ring-refinement",
+            "none|standard|thorough|<n>",
+            "how hard ring systems, and branches that hang off them, are worked on to avoid collisions; "
+                    + "a number is how many times the usual effort, and is raised to --ring-alternatives if that is higher",
+            RingRefinement::parse,
+            () -> RingRefinement.STANDARD
+    ).withDefaultText("standard");
+
+    static final CliOption<Integer> ALTERNATIVES = CliOption.parsed(
+            "ring-alternatives",
+            "n",
+            "how many different drawings of the ring systems to show side by side; 1 shows only the best",
+            input -> {
+                try
+                {
+                    int count = Integer.parseInt(input);
+                    if (count < 1)
+                    {
+                        throw new IllegalArgumentException("--ring-alternatives must be at least 1, but was " + count);
+                    }
+                    return count;
+                }
+                catch (NumberFormatException invalid)
+                {
+                    throw new IllegalArgumentException("--ring-alternatives must be a whole number, but was '" + input + "'");
+                }
+            },
+            () -> 1
+    ).withRequirement(
+            options -> options.get(CommandOptions.ALTERNATIVES) <= 1 || options.get(PROJECT_CAGES),
+            "--ring-alternatives above 1 needs --project-cages, since other drawings are other views of the 3D structure"
+    ).withRequirement(
+            options -> options.get(CommandOptions.ALTERNATIVES) <= 1 || options.get(RING_REFINEMENT).isEnabled(),
+            "--ring-alternatives above 1 cannot be had with --ring-refinement=none"
     );
 
     static final CliOption<Boolean> DEBUG_LAYOUT = CliOption.flag(
@@ -176,6 +232,7 @@ final class CommandOptions
     );
 
     static final List<CliOption<?>> DRAWING_OPTIONS = List.of(
+            HELP,
             STYLE,
             GEOMETRY,
             LAYOUT,
@@ -183,6 +240,9 @@ final class CommandOptions
             HYDROGENS,
             FRAGMENT_GAP,
             DEBUG_LAYOUT,
+            RING_REFINEMENT,
+            ALTERNATIVES,
+            PROJECT_CAGES,
             ISOTOPES,
             CHARGES,
             BOND_LENGTH,
@@ -281,7 +341,10 @@ final class CommandOptions
         return new DepictionOptions(
                 base.style(),
                 geometry,
-                hydrogens
+                hydrogens,
+                options.get(PROJECT_CAGES),
+                options.get(RING_REFINEMENT).atLeast(options.get(ALTERNATIVES) > 1 ? options.get(ALTERNATIVES) : 0),
+                0
         );
     }
 

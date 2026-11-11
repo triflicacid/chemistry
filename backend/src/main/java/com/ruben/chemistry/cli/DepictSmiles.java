@@ -1,5 +1,7 @@
 package com.ruben.chemistry.cli;
 
+import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.render.DepictionOptions;
 import com.ruben.chemistry.render.Layout;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.SvgRenderer;
@@ -58,6 +60,12 @@ final class DepictSmiles
         try
         {
             CliOptions options = CommandOptions.of(arguments, OUT);
+            if (options.get(CommandOptions.HELP))
+            {
+                System.out.println(USAGE);
+                System.exit(0);
+            }
+
             destination = options.get(OUT);
             document = render(options.onlySubject(), options);
         }
@@ -105,10 +113,11 @@ final class DepictSmiles
      */
     static String render(String smiles, CliOptions options)
     {
-        Layout layout = MoleculeLayout.layout(
-                new SmilesParser(smiles).parse(),
-                CommandOptions.depictionOptions(options));
+        Molecule molecule = new SmilesParser(smiles).parse();
+        DepictionOptions depiction = CommandOptions.depictionOptions(options);
 
-        return SvgRenderer.render(layout, CommandOptions.style(options));
+        List<Layout> layouts = MoleculeLayout.layouts(molecule, depiction, options.get(CommandOptions.ALTERNATIVES));
+
+        return SvgRenderer.render(Layout.sideBySide(layouts), CommandOptions.style(options));
     }
 }

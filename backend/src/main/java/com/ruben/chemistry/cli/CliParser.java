@@ -22,7 +22,7 @@ public final class CliParser
      * Or
      *   --name=value
      * <p>
-     * Boolean flags may be supplied without a value:
+     * Each option given is then checked against its {@link CliOption#requirements() requirements}, which are about the arguments as a whole. without a value:
      *   --debug
      * <p>
      * Repeatable options may be supplied multiple times:
@@ -109,7 +109,19 @@ public final class CliParser
             existing.add(parsed);
         }
 
-        return new CliOptions(options, values, subjects);
+        CliOptions parsed = new CliOptions(options, values, subjects);
+        for (String name : values.keySet())
+        {
+            for (CliOption.Requirement requirement : options.get(name).requirements())
+            {
+                if (!requirement.holds().test(parsed))
+                {
+                    throw new IllegalArgumentException(requirement.message());
+                }
+            }
+        }
+
+        return parsed;
     }
 
     private static Map<String, CliOption<?>> indexOptions(Collection<? extends CliOption<?>> definitions)
@@ -157,10 +169,13 @@ public final class CliParser
             {
                 String label = "  --" + option.name() + (option.flag() ? "" : " " + option.metavar());
 
+                String defaultText = option.defaultText();
+
                 result.append(String.format(
-                        "  %-" + width + "s  %s%n",
+                        "  %-" + width + "s  %s%s%n",
                         label,
-                        option.help()));
+                        option.help(),
+                        defaultText == null ? "" : " (default: " + defaultText + ")"));
             }
         }
 

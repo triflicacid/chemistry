@@ -2,10 +2,12 @@
 package com.ruben.chemistry.cli;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -30,13 +32,54 @@ public sealed interface CliOption<T>
     T parse(String input);
 
     /**
+     * @return how the default is written in usage text, or {@code null} if there is no default to show
+     */
+    String defaultText();
+
+    /**
+     * @return what must hold of all the arguments for this option to be given; checked only if it was given
+     */
+    List<Requirement> requirements();
+
+    /**
+     * @param text how to write the default in usage text, in place of what is worked out from it
+     * @return this option, showing that default
+     */
+    CliOption<T> withDefaultText(String text);
+
+    /**
+     * @param holds whether this option may be given alongside the other arguments, which are the arguments as parsed;
+     *     options that were not given answer with their defaults
+     * @param message what to say when it does not hold
+     * @return this option, also requiring that
+     */
+    CliOption<T> withRequirement(Predicate<CliOptions> holds, String message);
+
+    /**
+     * A condition on the whole command line that must hold if an option is given.
+     *
+     * @param holds whether it holds for the arguments
+     * @param message what to say when it does not
+     */
+    record Requirement(Predicate<CliOptions> holds, String message)
+    {
+        public Requirement
+        {
+            Objects.requireNonNull(holds);
+            Objects.requireNonNull(message);
+        }
+    }
+
+    /**
      * An option whose accepted values are explicitly enumerated.
      */
     record Choice<T>(
             String name,
             String help,
             Map<String, T> values,
-            Supplier<T> defaultValueSupplier
+            Supplier<T> defaultValueSupplier,
+            String shownDefault,
+            List<Requirement> requirements
     ) implements CliOption<T>
     {
         public Choice
@@ -49,6 +92,37 @@ public sealed interface CliOption<T>
             values.forEach((key, value) -> normalised.put(key.toLowerCase(Locale.ROOT), value));
 
             values = Map.copyOf(normalised);
+            requirements = List.copyOf(requirements);
+        }
+
+        @Override
+        public String defaultText()
+        {
+            if (shownDefault != null)
+            {
+                return shownDefault;
+            }
+            T value = defaultValue();
+            return values.entrySet().stream()
+                    .filter(entry -> Objects.equals(entry.getValue(), value))
+                    .map(Map.Entry::getKey)
+                    .sorted()
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        @Override
+        public CliOption<T> withDefaultText(String text)
+        {
+            return new Choice<>(name, help, values, defaultValueSupplier, text, requirements);
+        }
+
+        @Override
+        public CliOption<T> withRequirement(Predicate<CliOptions> holds, String message)
+        {
+            List<Requirement> more = new java.util.ArrayList<>(requirements);
+            more.add(new Requirement(holds, message));
+            return new Choice<>(name, help, values, defaultValueSupplier, shownDefault, more);
         }
 
         @Override
@@ -72,7 +146,7 @@ public sealed interface CliOption<T>
         @Override
         public T defaultValue()
         {
-            return defaultValueSupplier.get();
+            return defaultValueSupplier == null ? null : defaultValueSupplier.get();
         }
 
         @Override
@@ -97,9 +171,11 @@ public sealed interface CliOption<T>
             String metavar,
             String help,
             Function<String, T> parser,
-            Supplier<T>defaultValueSupplier,
+            Supplier<T> defaultValueSupplier,
             boolean flag,
-            boolean repeatable
+            boolean repeatable,
+            String shownDefault,
+            List<Requirement> requirements
     ) implements CliOption<T>
     {
         public Parsed
@@ -108,12 +184,37 @@ public sealed interface CliOption<T>
             Objects.requireNonNull(metavar);
             Objects.requireNonNull(help);
             Objects.requireNonNull(parser);
+            requirements = List.copyOf(requirements);
         }
 
         @Override
         public T defaultValue()
         {
-            return defaultValueSupplier.get();
+            return defaultValueSupplier == null ? null : defaultValueSupplier.get();
+        }
+
+        @Override
+        public String defaultText()
+        {
+            if (shownDefault != null)
+            {
+                return shownDefault;
+            }
+            return Objects.toString(defaultValue(), null);
+        }
+
+        @Override
+        public CliOption<T> withDefaultText(String text)
+        {
+            return new Parsed<>(name, metavar, help, parser, defaultValueSupplier, flag, repeatable, text, requirements);
+        }
+
+        @Override
+        public CliOption<T> withRequirement(Predicate<CliOptions> holds, String message)
+        {
+            List<Requirement> more = new java.util.ArrayList<>(requirements);
+            more.add(new Requirement(holds, message));
+            return new Parsed<>(name, metavar, help, parser, defaultValueSupplier, flag, repeatable, shownDefault, more);
         }
 
         @Override
@@ -132,7 +233,7 @@ public sealed interface CliOption<T>
             Map<String, T> values,
             Supplier<T> defaultValueSupplier)
     {
-        return new Choice<>(name, help, values, defaultValueSupplier);
+        return new Choice<>(name, help, values, defaultValueSupplier, null, List.of());
     }
 
     /**
@@ -170,7 +271,8 @@ public sealed interface CliOption<T>
                         throw new IllegalArgumentException("--" + name + " must be a number, but was '" + input + "'");
                     }
                 },
-                () -> defaultValue);
+                () -> defaultValue)
+                .withDefaultText(defaultValue == Math.rint(defaultValue) ? Long.toString((long) defaultValue) : Double.toString(defaultValue));
     }
 
     /**
@@ -226,6 +328,6 @@ public sealed interface CliOption<T>
             boolean flag,
             boolean repeatable)
     {
-        return new Parsed<>(name, metavar, help, parser, defaultValueSupplier, flag, repeatable);
+        return new Parsed<>(name, metavar, help, parser, defaultValueSupplier, flag, repeatable, null, List.of());
     }
 }

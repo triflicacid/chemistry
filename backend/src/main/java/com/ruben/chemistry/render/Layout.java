@@ -2,6 +2,8 @@ package com.ruben.chemistry.render;
 
 import com.ruben.chemistry.core.Molecule;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.OptionalInt;
 
@@ -13,6 +15,55 @@ import java.util.OptionalInt;
  */
 public record Layout(Depiction depiction, MoleculeSnapshot snapshot)
 {
+    /**
+     * Gathers drawings of one molecule into one, each as a set of fragments of their own so that they are arranged
+     * as the parts of a disconnected molecule are.
+     *
+     * @param layouts the drawings, each of the same molecule
+     * @return the combined layout, which is {@code layouts}'s only element if there is just the one, and which resolves atoms
+     *     and bonds as the first does
+     * @throws IllegalArgumentException if there are no layouts
+     */
+    public static Layout sideBySide(List<Layout> layouts)
+    {
+        if (layouts.isEmpty())
+        {
+            throw new IllegalArgumentException("There is nothing to put side by side");
+        }
+        if (layouts.size() == 1)
+        {
+            return layouts.get(0);
+        }
+
+        List<AtomPlacement> atoms = new ArrayList<>();
+        List<BondPlacement> bonds = new ArrayList<>();
+        List<RingPlacement> rings = new ArrayList<>();
+        List<FragmentFrame> fragments = new ArrayList<>();
+        for (Layout layout : layouts)
+        {
+            Depiction depiction = layout.depiction();
+            int atomOffset = atoms.size();
+            int fragmentOffset = fragments.size();
+            for (AtomPlacement atom : depiction.atoms())
+            {
+                atoms.add(atom.withIndex(atom.placementIndex() + atomOffset).inFragment(atom.fragment() + fragmentOffset));
+            }
+            for (BondPlacement bond : depiction.bonds())
+            {
+                bonds.add(new BondPlacement(bond.first() + atomOffset, bond.second() + atomOffset, bond.order(), bond.style(), bond.sourceBond()));
+            }
+            for (RingPlacement ring : depiction.rings())
+            {
+                rings.add(new RingPlacement(ring.atoms().stream().map(atom -> atom + atomOffset).toList(), ring.circle()));
+            }
+            for (FragmentFrame frame : depiction.fragments())
+            {
+                fragments.add(new FragmentFrame(frame.index() + fragmentOffset, frame.bounds()));
+            }
+        }
+        return new Layout(new Depiction(atoms, bonds, rings, fragments), layouts.get(0).snapshot());
+    }
+
     /**
      * Finds the atom placement created from the given molecule atom
      *

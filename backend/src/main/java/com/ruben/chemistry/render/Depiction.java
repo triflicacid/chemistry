@@ -3,6 +3,7 @@ package com.ruben.chemistry.render;
 import com.ruben.chemistry.core.Molecule;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -22,6 +23,9 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
 
     /** The distance between an atom and a hydrogen hanging off it. */
     public static final double HYDROGEN_BOND_LENGTH = 0.7;
+
+    /** How far, in bond lengths, the distances between atoms of two drawings may differ for them to look the same. */
+    private static final double SAME_SHAPE_TOLERANCE = 0.05;
 
     /**
      * @throws IllegalArgumentException if an atom is out of index order, or a bond refers to an atom that is not there
@@ -138,6 +142,55 @@ public record Depiction(List<AtomPlacement> atoms, List<BondPlacement> bonds, Li
     public Bounds bounds()
     {
         return Bounds.around(atoms.stream().map(AtomPlacement::position).toList());
+    }
+
+    /**
+     * @param other another depiction
+     * @return whether it draws the same atoms in the same shape, give or take a turn, a reflection or a small difference in distance
+     */
+    public boolean looksLike(Depiction other)
+    {
+        if (atoms.size() != other.atoms.size() || fragments.size() != other.fragments.size())
+        {
+            return false;
+        }
+        for (int fragment = 0; fragment < fragments.size(); fragment++)
+        {
+            double[] mine = sortedDistances(fragment);
+            double[] theirs = other.sortedDistances(fragment);
+            if (mine.length != theirs.length)
+            {
+                return false;
+            }
+            for (int index = 0; index < mine.length; index++)
+            {
+                if (Math.abs(mine[index] - theirs[index]) > SAME_SHAPE_TOLERANCE)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @param fragment a fragment's index
+     * @return the distance between every pair of its atoms, smallest first
+     */
+    private double[] sortedDistances(int fragment)
+    {
+        List<Point> points = atoms.stream().filter(atom -> atom.fragment() == fragment).map(AtomPlacement::position).toList();
+        double[] distances = new double[points.size() * (points.size() - 1) / 2];
+        int next = 0;
+        for (int first = 0; first < points.size(); first++)
+        {
+            for (int second = first + 1; second < points.size(); second++)
+            {
+                distances[next++] = Math.hypot(points.get(first).x() - points.get(second).x(), points.get(first).y() - points.get(second).y());
+            }
+        }
+        Arrays.sort(distances);
+        return distances;
     }
 
     /**
