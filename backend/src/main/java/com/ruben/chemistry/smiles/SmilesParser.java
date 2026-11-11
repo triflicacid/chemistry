@@ -11,8 +11,10 @@ import com.ruben.chemistry.notation.StereoTracker;
 import com.ruben.chemistry.util.CallGuard;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 
@@ -41,6 +43,9 @@ public final class SmilesParser
 
     /** The atom the next one bonds to, or {@code null} at the start of a disconnected fragment. */
     private Atom previousAtom;
+
+    /** Atom pairs joined by an unwritten bond that was taken to be aromatic, pending a check that it lies on a ring. */
+    private final List<Atom[]> inferredAromatic = new ArrayList<>();
 
     /** A bond symbol read but not yet applied, since the atom it bonds to comes after it. */
     private String pendingBondSymbol;
@@ -92,7 +97,28 @@ public final class SmilesParser
             throw new InvalidNotationException("Unpaired ring closure digit", source, firstUnpaired.position());
         }
 
-        return builder.build();
+        return demoteAcyclicAromaticBonds();
+    }
+
+    /**
+     * An unwritten bond between two aromatic atoms is only aromatic if it lies on a ring, otherwise
+     * is it a single bond. We can only know this after the fact.
+     *
+     * @return the built molecule
+     */
+    private Molecule demoteAcyclicAromaticBonds()
+    {
+        Molecule molecule = builder.build();
+        boolean changed = false;
+        for (Atom[] pair : inferredAromatic)
+        {
+            if (molecule.bridges().contains(molecule.bondBetween(pair[0], pair[1]).orElseThrow()))
+            {
+                builder.setBondOrder(pair[0], pair[1], BondOrder.SINGLE);
+                changed = true;
+            }
+        }
+        return changed ? builder.build() : molecule;
     }
 
     /**
@@ -509,6 +535,10 @@ public final class SmilesParser
             BondOrder order = pendingBondSymbol != null
                 ? bondOrderOf(pendingBondSymbol)
                 : BondOrder.inferredBetween(previousAtom, atom);
+            if (pendingBondSymbol == null && order == BondOrder.AROMATIC)
+            {
+                inferredAromatic.add(new Atom[] {previousAtom, atom});
+            }
             builder.addBond(previousAtom, atom, order);
             stereo.recordBond(previousAtom, atom, order == BondOrder.DOUBLE);
 

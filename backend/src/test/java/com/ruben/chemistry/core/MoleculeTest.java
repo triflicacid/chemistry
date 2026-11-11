@@ -224,6 +224,130 @@ class MoleculeTest
     }
 
     @Nested
+    class Bridges
+    {
+        private Molecule.Builder carbons(Atom... atoms)
+        {
+            return new Molecule.Builder().addAtoms(atoms);
+        }
+
+        private Atom[] carbons(int count)
+        {
+            Atom[] atoms = new Atom[count];
+            for (int i = 0; i < count; i++)
+            {
+                atoms[i] = Atom.organic("C");
+            }
+            return atoms;
+        }
+
+        @Test
+        void is_empty_for_an_unbonded_atom()
+        {
+            Atom[] c = carbons(1);
+
+            assertThat(carbons(c).build().bridges()).isEmpty();
+        }
+
+        @Test
+        void contains_every_bond_of_an_acyclic_molecule()
+        {
+            // propane: C-C-C
+            Atom[] c = carbons(3);
+            Molecule molecule = carbons(c)
+                .addBond(c[0], c[1], BondOrder.SINGLE)
+                .addBond(c[1], c[2], BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.bridges()).containsExactlyInAnyOrderElementsOf(molecule.bondsOf(c[1]));
+            assertThat(molecule.bridges()).hasSize(2);
+        }
+
+        @Test
+        void is_empty_for_a_simple_ring()
+        {
+            // cyclopropane: C1CC1
+            Atom[] c = carbons(3);
+            Molecule molecule = carbons(c)
+                .addBond(c[0], c[1], BondOrder.SINGLE)
+                .addBond(c[1], c[2], BondOrder.SINGLE)
+                .addBond(c[2], c[0], BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.bridges()).isEmpty();
+        }
+
+        @Test
+        void contains_only_the_bond_connecting_two_separate_rings()
+        {
+            // C1CC1C1CC1: two cyclopropane rings joined by a single bond
+            Atom[] c = carbons(6);
+            Molecule molecule = carbons(c)
+                .addBond(c[0], c[1], BondOrder.SINGLE)
+                .addBond(c[1], c[2], BondOrder.SINGLE)
+                .addBond(c[2], c[0], BondOrder.SINGLE)
+                .addBond(c[2], c[3], BondOrder.SINGLE)
+                .addBond(c[3], c[4], BondOrder.SINGLE)
+                .addBond(c[4], c[5], BondOrder.SINGLE)
+                .addBond(c[5], c[3], BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.bridges()).containsExactly(molecule.bondBetween(c[2], c[3]).orElseThrow());
+        }
+
+        @Test
+        void contains_the_bond_to_a_substituent_on_a_ring()
+        {
+            // methylcyclopropane: CC1CC1
+            Atom[] c = carbons(4);
+            Molecule molecule = carbons(c)
+                .addBond(c[0], c[1], BondOrder.SINGLE)
+                .addBond(c[1], c[2], BondOrder.SINGLE)
+                .addBond(c[2], c[3], BondOrder.SINGLE)
+                .addBond(c[3], c[1], BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.bridges()).containsExactly(molecule.bondBetween(c[0], c[1]).orElseThrow());
+        }
+
+        @Test
+        void is_empty_for_fused_rings_including_the_shared_bond()
+        {
+            // bicyclo[4.4.0]decane: two six-membered rings sharing the bond c[0]-c[5]
+            Atom[] c = carbons(10);
+            Molecule.Builder builder = carbons(c);
+            for (int i = 0; i < 5; i++)
+            {
+                builder.addBond(c[i], c[i + 1], BondOrder.SINGLE);
+            }
+            builder.addBond(c[5], c[0], BondOrder.SINGLE);
+            builder.addBond(c[5], c[6], BondOrder.SINGLE);
+            builder.addBond(c[6], c[7], BondOrder.SINGLE);
+            builder.addBond(c[7], c[8], BondOrder.SINGLE);
+            builder.addBond(c[8], c[9], BondOrder.SINGLE);
+            builder.addBond(c[9], c[0], BondOrder.SINGLE);
+            Molecule molecule = builder.build();
+
+            assertThat(molecule.bridges()).isEmpty();
+        }
+
+        @Test
+        void finds_bridges_in_each_fragment_of_a_disconnected_molecule()
+        {
+            // CC.C1CC1: a bridge in one fragment, only ring bonds in the other
+            Atom[] c = carbons(5);
+            Molecule molecule = carbons(c)
+                .addBond(c[0], c[1], BondOrder.SINGLE)
+                .addBond(c[2], c[3], BondOrder.SINGLE)
+                .addBond(c[3], c[4], BondOrder.SINGLE)
+                .addBond(c[4], c[2], BondOrder.SINGLE)
+                .build();
+
+            assertThat(molecule.bridges()).containsExactly(molecule.bondBetween(c[0], c[1]).orElseThrow());
+        }
+    }
+
+    @Nested
     class Rings
     {
         @Test

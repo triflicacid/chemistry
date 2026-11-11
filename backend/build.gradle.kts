@@ -20,3 +20,19 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+tasks.register<JavaExec>("depict") {
+    group = "chemistry"
+    description = "Draws a SMILES string as an SVG document, e.g. --args=\"CCO --out=ethanol.svg\"."
+    mainClass = "com.ruben.chemistry.cli.DepictSmiles"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("gallery") {
+    group = "chemistry"
+    description = "Draws every molecule in a name,smiles file into out/, with a contact sheet."
+    mainClass = "com.ruben.chemistry.cli.DepictGallery"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = projectDir
+    args("examples/molecules.csv")
+}

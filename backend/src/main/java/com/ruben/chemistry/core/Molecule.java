@@ -4,9 +4,12 @@ import com.ruben.chemistry.util.CachedFunction;
 import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.util.IdentitySet;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -54,6 +57,7 @@ public final class Molecule
     private final Map<Atom, Chirality> chiralityByAtom;
     private final Map<Bond, DoubleBondStereo> doubleBondStereoByBond;
     private final CachedValue<Set<Bond>> ringBonds = new CachedValue<>(this::computeRingBonds);
+    private final CachedValue<Set<Bond>> bridges = new CachedValue<>(this::computeBridges);
     private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
     private final CachedValue<List<Molecule>> fragments = new CachedValue<>(() -> MoleculeFragmenter.fragment(this));
@@ -364,6 +368,111 @@ public final class Molecule
     {
         return ringBonds.get();
     }
+
+    /**
+     * Finds every bridge: a bond whose removal disconnects its fragment, i.e., one which doesn't lie on a ring.
+     * This is more efficient than {@link #ringBonds()} if it is to be used for ring membership checks.
+     *
+     * @return this molecule's bridges
+     */
+    public Set<Bond> bridges()
+    {
+        return bridges.get();
+    }
+
+    /** One atom on the depth-first search stack of {@link #computeBridges}, with the bond it was reached by and its bonds still to try. */
+    private record SearchFrame(Atom atom, Bond via, Iterator<Bond> remaining)
+    {
+    }
+
+    /**
+     * Finds all bridges using Tarjan's low-link algorithm.
+     * A bridge is a bond whose removal disconnects its endpoints.
+     *
+     * @return the bridges, using reference identity
+     */
+    private Set<Bond> computeBridges()
+    {
+        // Discovery time (DFS visitation order) of each atom
+        Map<Atom, Integer> discovery = new IdentityHashMap<>();
+
+        // Lowest discovery time reachable from each atom's DFS subtree (including the atom itself)
+        Map<Atom, Integer> low = new IdentityHashMap<>();
+
+        Set<Bond> found = IdentitySet.of();
+        Deque<SearchFrame> stack = new ArrayDeque<>();
+
+        // Start a DFS from every unvisited atom.
+        for (Atom root : atoms)
+        {
+            if (discovery.containsKey(root))
+            {
+                continue;
+            }
+
+            // Assign the root its discovery time.
+            discovery.put(root, discovery.size());
+
+            // Initially, the root can reach only itself.
+            low.put(root, discovery.get(root));
+
+            stack.push(new SearchFrame(root, null, bondsOf(root).iterator()));
+
+            // Continue until this connected component has been explored.
+            while (!stack.isEmpty())
+            {
+                SearchFrame frame = stack.peek();
+                if (frame.remaining().hasNext())
+                {
+                    // Take the next unexplored bond of this atom.
+                    Bond bond = frame.remaining().next();
+
+                    // Ignore the bond used to enter this atom.
+                    if (bond == frame.via())
+                    {
+                        continue;
+                    }
+
+                    Atom next = bond.getOther(frame.atom);
+                    if (discovery.containsKey(next))
+                    {
+                        // The neighbouring atom has already been visited, so this is a back edge and
+                        // provides an alternative route.
+                        low.merge(frame.atom(), discovery.get(next), Math::min);
+                    }
+                    else
+                    {
+                        discovery.put(next, discovery.size());
+                        low.put(next, discovery.get(next));
+                        stack.push(new SearchFrame(next, bond, bondsOf(next).iterator()));
+                    }
+                }
+                else
+                {
+                    // No unexplored bonds remain.
+                    stack.pop();
+
+                    // If this was not the root, propagate its low-link value to its parent.
+                    if (!stack.isEmpty())
+                    {
+                        Atom parent = stack.peek().atom();
+
+                        // The parent can reach everything its child can reach, so incorporate the child's low value.
+                        low.merge(parent, low.get(frame.atom()), Math::min);
+
+                        // If the child's subtree cannot reach the parent (or any ancestor), the tree edge connecting them is a bridge.
+                        if (low.get(frame.atom()) > discovery.get(parent))
+                        {
+                            found.add(frame.via());
+                        }
+                    }
+                }
+            }
+        }
+
+        return found;
+    }
+
 
     /**
      * @return the union of the relevant cycles' bonds: every non-bridge bond lies on some cycle, and relevant cycles span all cycles
@@ -889,6 +998,31 @@ public final class Molecule
             }
             Bond removed = bonds.remove(index);
             doubleBondStereo.remove(removed);
+            return this;
+        }
+
+        /**
+         * Changes the order of an existing bond.
+         *
+         * @param first one endpoint atom
+         * @param second the other endpoint atom
+         * @param order the new bond order
+         * @return this builder, for chaining
+         * @throws IllegalArgumentException if no bond exists between the atoms, or the bond has declared double bond stereo
+         */
+        public Builder setBondOrder(Atom first, Atom second, BondOrder order)
+        {
+            int index = indexOfBond(first, second);
+            if (index == -1)
+            {
+                throw new IllegalArgumentException("No bond exists between the given atoms");
+            }
+            Bond old = bonds.get(index);
+            if (doubleBondStereo.containsKey(old))
+            {
+                throw new IllegalArgumentException("Bond has declared double bond stereo");
+            }
+            bonds.set(index, new Bond(old.first(), old.second(), order));
             return this;
         }
 
