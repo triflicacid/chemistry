@@ -3,6 +3,7 @@ package com.ruben.chemistry.query;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.util.IdentityMap;
 
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -20,6 +21,12 @@ import java.util.Set;
  */
 public record MatchLabels(Map<Atom, String> atoms, Map<Bond, String> bonds)
 {
+    public MatchLabels
+    {
+        atoms = IdentityMap.copyOf(atoms);
+        bonds = IdentityMap.copyOf(bonds);
+    }
+
     /**
      * @param match a match against {@code molecule}
      * @param molecule the molecule {@code match} was found in
