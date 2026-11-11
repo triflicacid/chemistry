@@ -5,6 +5,10 @@ build/
 !**/src/test/**/build/
 .kotlin
 
+### Front-end ###
+node_modules/
+frontend/dist/
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
