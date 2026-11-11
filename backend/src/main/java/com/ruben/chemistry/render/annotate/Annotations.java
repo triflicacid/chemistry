@@ -6,6 +6,7 @@ import com.ruben.chemistry.util.IdentityMap;
 
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -19,13 +20,15 @@ public final class Annotations
     private final Map<Bond, BondLook> bonds;
     private final AtomLook defaultAtom;
     private final BondLook defaultBond;
+    private final Optional<AnnotationStyle> style;
 
-    private Annotations(Map<Atom, AtomLook> atoms, Map<Bond, BondLook> bonds, AtomLook defaultAtom, BondLook defaultBond)
+    private Annotations(Map<Atom, AtomLook> atoms, Map<Bond, BondLook> bonds, AtomLook defaultAtom, BondLook defaultBond, Optional<AnnotationStyle> style)
     {
         this.atoms = IdentityMap.copyOf(atoms);
         this.bonds = IdentityMap.copyOf(bonds);
         this.defaultAtom = defaultAtom;
         this.defaultBond = defaultBond;
+        this.style = style;
     }
 
     /**
@@ -34,6 +37,14 @@ public final class Annotations
     public static Annotations none()
     {
         return EMPTY;
+    }
+
+    /**
+     * @return how halos and badges are drawn, which is {@link AnnotationStyle#defaults()} unless a style was given
+     */
+    public AnnotationStyle style()
+    {
+        return style.orElseGet(AnnotationStyle::defaults);
     }
 
     /**
@@ -72,13 +83,14 @@ public final class Annotations
 
     /**
      * @param other annotations to combine with these
-     * @return annotations in which each aspect set by {@code other} wins over one set by these
+     * @return annotations in which each aspect set by {@code other} wins over one set by these, including the style
      */
     public Annotations merge(Annotations other)
     {
         Builder builder = toBuilder();
         other.atoms.forEach(builder::atom);
         other.bonds.forEach(builder::bond);
+        other.style.ifPresent(builder::style);
         return builder.defaultAtom(other.defaultAtom).defaultBond(other.defaultBond).build();
     }
 
@@ -90,6 +102,7 @@ public final class Annotations
         Builder builder = new Builder();
         atoms.forEach(builder::atom);
         bonds.forEach(builder::bond);
+        style.ifPresent(builder::style);
         return builder.defaultAtom(defaultAtom).defaultBond(defaultBond);
     }
 
@@ -99,6 +112,17 @@ public final class Annotations
         private final Map<Bond, BondLook> bonds = new IdentityHashMap<>();
         private AtomLook defaultAtom = AtomLook.NONE;
         private BondLook defaultBond = BondLook.NONE;
+        private Optional<AnnotationStyle> style = Optional.empty();
+
+        /**
+         * @param style how halos and badges are drawn
+         * @return this builder
+         */
+        public Builder style(AnnotationStyle style)
+        {
+            this.style = Optional.of(style);
+            return this;
+        }
 
         /**
          * @param atom the atom to restyle
@@ -167,7 +191,7 @@ public final class Annotations
          */
         public Annotations build()
         {
-            return new Annotations(atoms, bonds, defaultAtom, defaultBond);
+            return new Annotations(atoms, bonds, defaultAtom, defaultBond, style);
         }
     }
 }
