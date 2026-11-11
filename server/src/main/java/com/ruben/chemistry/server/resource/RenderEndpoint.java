@@ -6,6 +6,8 @@ import com.ruben.chemistry.server.http.EndpointRegistry;
 import com.ruben.chemistry.server.http.HttpException;
 import com.ruben.chemistry.server.http.HttpMethod;
 import com.ruben.chemistry.server.http.Request;
+import com.ruben.chemistry.server.render.RenderException;
+import com.ruben.chemistry.server.render.SmilesRenderer;
 
 import java.io.IOException;
 
@@ -20,20 +22,15 @@ public final class RenderEndpoint extends Endpoint
     {
     }
 
-    private static final String SVG = """
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" width="200" height="120">
-              <text x="100" y="60" font-family="monospace" font-size="72" text-anchor="middle"
-                    dominant-baseline="central" transform="rotate(90 100 60)">:3</text>
-            </svg>
-            """;
+    private final SmilesRenderer renderer = new SmilesRenderer();
 
     @Override
     public void registerHandlers(EndpointRegistry registry)
     {
-        registry.register(HttpMethod.POST, "/api/render", this::handleRender);
+        registry.register(HttpMethod.POST, "/api/render", this::render);
     }
 
-    void handleRender(Request request, Context context) throws IOException
+    private void render(Request request, Context context) throws IOException
     {
         RenderRequest body = request.body(RenderRequest.class);
         if (body.smiles() == null || body.smiles().isBlank())
@@ -41,6 +38,13 @@ public final class RenderEndpoint extends Endpoint
             throw new HttpException(400, "INVALID_BODY", "smiles: is required");
         }
 
-        context.respond(200, "image/svg+xml", SVG);
+        try
+        {
+            context.respond(200, "image/svg+xml", renderer.render(body.smiles().trim()));
+        }
+        catch (RenderException failure)
+        {
+            throw new HttpException(400, failure.code(), failure.getMessage());
+        }
     }
 }
