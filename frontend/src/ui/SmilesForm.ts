@@ -39,6 +39,11 @@ export class SmilesForm {
     });
   }
 
+  /** Replaces what is in the input. */
+  setSmiles(smiles: string): void {
+    this.input.value = smiles;
+  }
+
   /** Disables the button while a request is running. */
   setBusy(busy: boolean): void {
     this.button.disabled = busy;

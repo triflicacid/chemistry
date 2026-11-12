@@ -23,6 +23,34 @@ export class App {
     this.results.showMessage("Enter a SMILES string and press RENDER.");
     root.append(title, this.form.element, this.optionsSlot, this.results.element);
     void this.loadOptions();
+
+    const remembered = this.store.remembered;
+    if (remembered) {
+      this.form.setSmiles(remembered.smiles);
+      if (remembered.id !== null) {
+        void this.restore(remembered.id, remembered.smiles);
+      }
+    }
+  }
+
+  /** Shows the molecule left from the last visit. */
+  private async restore(id: MoleculeId, smiles: string): Promise<void> {
+    this.results.showMessage("Loading the last molecule...");
+    this.form.setBusy(true);
+    try {
+      const [{ svg, moleculeId }, metadata] = await Promise.all([
+        this.api.moleculeSvg(id),
+        this.api.metadata(id),
+      ]);
+      this.store.rememberMolecule(moleculeId, metadata.smiles);
+      this.results.showMolecule(svg, moleculeId, metadata.smiles, metadata.canonical_smiles);
+      this.results.inspect(metadata, moleculeId);
+    } catch (error) {
+      this.store.rememberSmiles(smiles);
+      this.results.showError(`Could not load the last molecule: ${App.describe(error)}`);
+    } finally {
+      this.form.setBusy(false);
+    }
   }
 
   private async loadOptions(): Promise<void> {
@@ -45,11 +73,11 @@ export class App {
     try {
       const created = await this.api.createMolecule(smiles);
       const { svg, moleculeId } = await this.api.renderMolecule(created.id, this.options?.values() ?? {});
-      this.store.viewMolecule(moleculeId);
+      this.store.rememberMolecule(moleculeId, created.smiles);
       this.results.showMolecule(svg, moleculeId, created.smiles, created.canonical_smiles);
       void this.inspect(moleculeId);
     } catch (error) {
-      this.store.clear();
+      this.store.rememberSmiles(smiles);
       this.results.showError(App.describe(error));
     } finally {
       this.form.setBusy(false);

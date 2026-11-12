@@ -1,18 +1,60 @@
 import type { MoleculeId } from "./api/types";
 
-export class ViewStore {
-  private molecule: MoleculeId | null = null;
+/** A molecule remembered between visits. */
+export interface RememberedMolecule {
+  /** null if the server has no molecule for the SMILES. */
+  id: MoleculeId | null;
+  smiles: string;
+}
 
-  /** The id of the molecule being viewed, or null if none is. */
+/** localStorage key. */
+const KEY = "chemistry.molecule";
+
+export class ViewStore {
+  private molecule: RememberedMolecule | null = ViewStore.read();
+
   get moleculeId(): MoleculeId | null {
+    return this.molecule?.id ?? null;
+  }
+
+  get remembered(): RememberedMolecule | null {
     return this.molecule;
   }
 
-  viewMolecule(id: MoleculeId): void {
-    this.molecule = id;
+  rememberMolecule(id: MoleculeId, smiles: string): void {
+    this.molecule = { id, smiles };
+    ViewStore.write(this.molecule);
   }
 
-  clear(): void {
-    this.molecule = null;
+  rememberSmiles(smiles: string): void {
+    this.molecule = { id: null, smiles };
+    ViewStore.write(this.molecule);
+  }
+
+  private static read(): RememberedMolecule | null {
+    try {
+      const stored = localStorage.getItem(KEY);
+      if (!stored) {
+        return null;
+      }
+      const molecule = JSON.parse(stored) as Partial<RememberedMolecule>;
+      if (typeof molecule.smiles !== "string") {
+        return null;
+      }
+      return { id: typeof molecule.id === "string" ? molecule.id : null, smiles: molecule.smiles };
+    } catch {
+      return null;
+    }
+  }
+
+  private static write(molecule: RememberedMolecule | null): void {
+    try {
+      if (molecule) {
+        localStorage.setItem(KEY, JSON.stringify(molecule));
+      } else {
+        localStorage.removeItem(KEY);
+      }
+    } catch {
+    }
   }
 }
