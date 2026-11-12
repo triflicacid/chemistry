@@ -14,6 +14,7 @@ import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,9 @@ public final class SmilesWriter
     /** The direction character chosen for each bond acting as a double bond's reference. */
     private final Map<Bond, BondDirection> directionOf = new IdentityHashMap<>();
 
+    /** Where each atom's own token (without its ring-closure digits) was written, filled by {@link #write()}. */
+    private final Map<Atom, Span> atomSpans = new IdentityHashMap<>();
+
     private int nextRingNumber = 1;
     private boolean renderChirality = true;
     private boolean renderDoubleBondStereo = true;
@@ -66,6 +70,25 @@ public final class SmilesWriter
     public SmilesWriter(Molecule molecule)
     {
         this.molecule = molecule;
+    }
+
+    /**
+     * A range of characters in a SMILES string.
+     *
+     * @param start the index of the first character
+     * @param end the index after the last character
+     */
+    public record Span(int start, int end)
+    {
+    }
+
+    /**
+     * @return where each of the molecule's atoms was written by the last {@link #write()}, by atom identity;
+     *     atoms written as part of a labelled hydrogen are not included
+     */
+    public Map<Atom, Span> atomSpans()
+    {
+        return Collections.unmodifiableMap(atomSpans);
     }
 
     /**
@@ -419,8 +442,12 @@ public final class SmilesWriter
 
         List<Atom> labelledHydrogens = labelledHydrogensOf(atom);
         int expanded = labelledHydrogens.size();
+        List<String> closures = ringClosureTokens(atom);
+        int start = text.length();
         text.append(asWritten(atom, expanded)
-            .toString(ringClosureTokens(atom), resolveChirality(atom, arrivingBond, branches, expanded)));
+            .toString(closures, resolveChirality(atom, arrivingBond, branches, expanded)));
+        int closuresLength = closures.stream().mapToInt(String::length).sum();
+        atomSpans.put(atom, new Span(start, text.length() - closuresLength));
 
         // All but the last branch are wrapped in brackets so the chain can resume from this atom afterwards
         int remaining = expanded + branches.size();

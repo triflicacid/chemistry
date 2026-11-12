@@ -44,6 +44,7 @@ public final class MoleculeEndpoint extends Endpoint
         registry.register(HttpMethod.POST, "/api/molecules", this::create);
         registry.register(HttpMethod.POST, "/api/molecules/:id/render", this::render);
         registry.register(HttpMethod.GET, "/api/molecules/:id/svg", this::svg);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/metadata", this::metadata);
     }
 
     private void create(Request request, ResponseContext responseContext) throws IOException
@@ -90,11 +91,21 @@ public final class MoleculeEndpoint extends Endpoint
     private void svg(Request request, ResponseContext responseContext) throws IOException
     {
         StoredMolecule stored = find(request);
-        String svg = stored.latest()
-                .map(Rendering::svg)
-                .orElseThrow(() -> new HttpException(404, "NOT_RENDERED", "The molecule has not been rendered yet"));
         responseContext.header(MOLECULE_ID_HEADER, stored.id());
-        responseContext.respond(200, "image/svg+xml", svg);
+        responseContext.respond(200, "image/svg+xml", latest(stored).svg());
+    }
+
+    private void metadata(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        responseContext.header(MOLECULE_ID_HEADER, stored.id());
+        responseContext.respond(200, stored.metadata());
+    }
+
+    private Rendering latest(StoredMolecule stored)
+    {
+        return stored.latest()
+                .orElseThrow(() -> new HttpException(404, "NOT_RENDERED", "The molecule has not been rendered yet"));
     }
 
     private StoredMolecule find(Request request)

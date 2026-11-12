@@ -1,6 +1,7 @@
 package com.ruben.chemistry.server.molecule;
 
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.server.render.MoleculeMetadata;
 import com.ruben.chemistry.server.render.Rendering;
 
 import java.util.Optional;
@@ -11,6 +12,7 @@ public final class StoredMolecule
     private final String smiles;
     private final Molecule molecule;
     private volatile Rendering latest;
+    private volatile MoleculeMetadata metadata;
 
     StoredMolecule(String id, String smiles, Molecule molecule)
     {
@@ -34,17 +36,22 @@ public final class StoredMolecule
         return molecule;
     }
 
-    /**
-     * @return the latest render
-     */
+    public MoleculeMetadata metadata()
+    {
+        MoleculeMetadata result = metadata;
+        if (result == null)
+        {
+            result = MoleculeMetadata.of(molecule, smiles);
+            metadata = result;
+        }
+        return result;
+    }
+
     public Optional<Rendering> latest()
     {
         return Optional.ofNullable(latest);
     }
 
-    /**
-     * @param rendering the latest render
-     */
     public void setLatest(Rendering rendering)
     {
         this.latest = rendering;

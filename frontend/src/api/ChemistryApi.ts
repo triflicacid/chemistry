@@ -1,5 +1,5 @@
 import { ApiError, HttpClient } from "./http";
-import type { MoleculeId, OptionDescriptor, OptionValues } from "./types";
+import type { MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, StoredMolecule } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
@@ -24,9 +24,13 @@ export class ChemistryApi {
   }
 
   /** Stores a molecule. */
-  async createMolecule(smiles: string): Promise<MoleculeId> {
-    const body = await this.http.json<{ id: MoleculeId }>("POST", "/api/molecules", { json: { smiles } });
-    return body.id;
+  createMolecule(smiles: string): Promise<StoredMolecule> {
+    return this.http.json<StoredMolecule>("POST", "/api/molecules", { json: { smiles } });
+  }
+
+  /** Fetches a molecule's metadata. */
+  metadata(id: MoleculeId): Promise<MoleculeMetadata> {
+    return this.http.json<MoleculeMetadata>("GET", `/api/molecules/${encodeURIComponent(id)}/metadata`);
   }
 
   /** Draws a stored molecule. */

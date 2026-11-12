@@ -40,21 +40,22 @@ final class ExchangeContext implements ResponseContext
     }
 
     @Override
-    public void respond(String body) throws IOException
-    {
-        respond(200, TEXT, body);
-    }
-
-    @Override
-    public void respond(Map<?, ?> body) throws IOException
+    public void respond(Object body) throws IOException
     {
         respond(200, body);
     }
 
     @Override
-    public void respond(int code, Map<?, ?> body) throws IOException
+    public void respond(int code, Object body) throws IOException
     {
-        respond(code, JSON, JsonWriter.write(body));
+        if (body instanceof String s)
+        {
+            respond(code, TEXT, s);
+        }
+        else
+        {
+            respond(code, JSON, JsonWriter.write(body));
+        }
     }
 
     @Override

@@ -1,5 +1,6 @@
 import { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
+import type { MoleculeId } from "../api/types";
 import { ViewStore } from "../store";
 import { OptionsPanel } from "./OptionsPanel";
 import { ResultsView } from "./ResultsView";
@@ -43,14 +44,27 @@ export class App {
     this.form.setBusy(true);
     try {
       const created = await this.api.createMolecule(smiles);
-      const { svg, moleculeId } = await this.api.renderMolecule(created, this.options?.values() ?? {});
+      const { svg, moleculeId } = await this.api.renderMolecule(created.id, this.options?.values() ?? {});
       this.store.viewMolecule(moleculeId);
-      this.results.showSvg(svg, moleculeId);
+      this.results.showMolecule(svg, moleculeId, created.smiles);
+      void this.inspect(moleculeId);
     } catch (error) {
       this.store.clear();
       this.results.showError(App.describe(error));
     } finally {
       this.form.setBusy(false);
+    }
+  }
+
+  /** Fetches what hovering needs; the drawing is usable without it, so failing is not an error to show. */
+  private async inspect(moleculeId: MoleculeId): Promise<void> {
+    try {
+      const metadata = await this.api.metadata(moleculeId);
+      if (this.store.moleculeId === moleculeId) {
+        this.results.inspect(metadata, moleculeId);
+      }
+    } catch (error) {
+      console.warn("Could not load the molecule's metadata", error);
     }
   }
 

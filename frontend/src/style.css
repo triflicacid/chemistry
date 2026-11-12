@@ -111,3 +111,74 @@ button.small {
   padding: .25rem .6rem;
   font-size: .85rem;
 }
+
+.card .smiles {
+  display: block;
+  margin-bottom: .5rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.smiles-highlight {
+  background: #ffd33d;
+  border-radius: 2px;
+}
+
+.card svg .atom.hover > circle:first-of-type {
+  fill: rgba(255, 211, 61, .45);
+}
+
+.card svg .bond.hover > line:first-of-type {
+  stroke: rgba(255, 211, 61, .55);
+}
+
+.plaques {
+  position: fixed;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  max-width: 22rem;
+  pointer-events: none;
+}
+
+.plaques[hidden] {
+  display: none;
+}
+
+.plaque {
+  padding: .5rem .7rem;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+  font-size: .85rem;
+}
+
+.plaque h2 {
+  margin: 0 0 .3rem;
+  font-size: .9rem;
+}
+
+.plaque dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .1rem .8rem;
+  margin: 0;
+}
+
+.plaque dt {
+  color: #57606a;
+}
+
+.plaque dd {
+  margin: 0;
+}
+
+.plaque .ring {
+  margin: .2rem 0 0;
+}
+
+.plaque code {
+  overflow-wrap: anywhere;
+}

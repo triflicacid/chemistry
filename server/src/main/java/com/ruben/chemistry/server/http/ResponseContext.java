@@ -28,29 +28,21 @@ public interface ResponseContext
     void respond(int code) throws IOException;
 
     /**
-     * Answers 200 with a plain-text body.
+     * Answers 200 with a text or JSON body.
      *
-     * @param body the text
+     * @param body a {@link String} is written as text, anything else as a JSON object; see {@link JsonWriter}
      * @throws IOException if the response cannot be sent
      */
-    void respond(String body) throws IOException;
+    void respond(Object body) throws IOException;
 
     /**
-     * Answers 200 with a JSON body.
-     *
-     * @param body written as a JSON object; see {@link JsonWriter}
-     * @throws IOException if the response cannot be sent
-     */
-    void respond(Map<?, ?> body) throws IOException;
-
-    /**
-     * Answers with a status and a JSON body.
+     * Answers with a status and a text or JSON body.
      *
      * @param code the HTTP status
-     * @param body written as a JSON object; see {@link JsonWriter}
+     * @param body a {@link String} is written as text, anything else as a JSON object; see {@link JsonWriter}
      * @throws IOException if the response cannot be sent
      */
-    void respond(int code, Map<?, ?> body) throws IOException;
+    void respond(int code, Object body) throws IOException;
 
     /**
      * Answers with a status and a body of any type, e.g. {@code image/svg+xml}.
