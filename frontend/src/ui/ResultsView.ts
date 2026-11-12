@@ -8,6 +8,7 @@ interface Shown {
   moleculeId: MoleculeId;
   svg: SVGSVGElement;
   smiles: SmilesText;
+  canonical: SmilesText;
 }
 
 /** The section below the form where results or an error are shown. */
@@ -28,18 +29,19 @@ export class ResultsView {
     this.show(text, "message error");
   }
 
-  /** Shows a rendered molecule and its SMILES, replacing whatever was there. */
-  showMolecule(svg: string, moleculeId: MoleculeId, smiles: string): void {
+  /** Shows a rendered molecule and its SMILES. */
+  showMolecule(svg: string, moleculeId: MoleculeId, smiles: string, canonicalSmiles: string): void {
     this.reset();
 
     const drawing = sanitiseSvg(svg);
     const text = new SmilesText(smiles);
+    const canonical = new SmilesText(canonicalSmiles);
     const card = document.createElement("figure");
     card.className = "card";
     card.dataset.molecule = moleculeId;
-    card.append(text.element, drawing);
+    card.append(ResultsView.label("SMILES"), text.element, ResultsView.label("Canonical SMILES"), canonical.element, drawing);
     this.element.replaceChildren(card);
-    this.shown = { moleculeId, svg: drawing, smiles: text };
+    this.shown = { moleculeId, svg: drawing, smiles: text, canonical };
   }
 
   /** Makes the molecule shown inspectable, unless it is no longer the one being shown. */
@@ -48,7 +50,14 @@ export class ResultsView {
       return;
     }
     this.inspector?.detach();
-    this.inspector = new MoleculeInspector(this.shown.svg, this.shown.smiles, metadata);
+    this.inspector = new MoleculeInspector(this.shown.svg, this.shown.smiles, this.shown.canonical, metadata);
+  }
+
+  private static label(text: string): HTMLElement {
+    const label = document.createElement("span");
+    label.className = "smiles-label";
+    label.textContent = text;
+    return label;
   }
 
   private show(text: string, className: string): void {

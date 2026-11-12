@@ -14,10 +14,12 @@ const OFFSET = 14;
 export class MoleculeInspector {
   private readonly plaques = document.createElement("div");
   private current: Element | null = null;
+  private ends: Element[] = [];
 
   constructor(
-    svg: SVGSVGElement,
+    private readonly svg: SVGSVGElement,
     private readonly smiles: SmilesText,
+    private readonly canonical: SmilesText,
     private readonly metadata: MoleculeMetadata,
   ) {
     this.plaques.className = "plaques";
@@ -58,10 +60,22 @@ export class MoleculeInspector {
       .map((ring) => this.metadata.rings[ring])
       .filter((ring): ring is RingInfo => ring !== undefined);
 
-    this.smiles.highlight(atoms.map((member) => member.span));
+    // a bond's ends get colours 1 and 2
+    const firstColour = bond ? 1 : 0;
+    this.smiles.highlight(atoms.map((member) => member.span), firstColour);
+    this.canonical.highlight(atoms.map((member) => member.canonical_span), firstColour);
+    if (bond) {
+      atoms.forEach((member, position) => {
+        const end = this.svg.querySelector(`.atom[data-atom="${member.index}"]`);
+        end?.classList.add(`hover-end-${firstColour + position}`);
+        if (end) {
+          this.ends.push(end);
+        }
+      });
+    }
     this.plaques.replaceChildren(this.describe(target, atom, bond, atoms));
     if (rings.length > 0) {
-      this.plaques.append(this.describeRings(target.kind, atoms, rings));
+      this.plaques.append(this.describeRings(target.kind, atoms, rings, firstColour));
     }
     this.plaques.hidden = false;
     this.place(event);
@@ -85,8 +99,10 @@ export class MoleculeInspector {
   private clear(): void {
     this.current?.classList.remove("hover");
     this.current = null;
+    this.ends.forEach((end) => end.classList.remove("hover-end-1", "hover-end-2"));
+    this.ends = [];
     this.smiles.highlight([]);
-    this.plaques.hidden = true;
+    this.canonical.highlight([]);
   }
 
   /** Keeps the plaques next to the pointer, but on screen. */
@@ -123,9 +139,14 @@ export class MoleculeInspector {
         ["Between", ends.map((end) => `${end.element} ${end.index}`).join(" – ")],
       );
     } else {
+      // untraceable element
       const element = target.element as HTMLElement;
-      title = target.kind === "atom" ? `Atom ${element.dataset.element ?? ""}` : "Bond";
-      rows.push(["Note", "Added by the drawing"]);
+      const hydrogen = target.kind === "atom" && element.dataset.element === "H";
+      title = target.kind === "atom" ? (hydrogen ? "Implicit hydrogen" : `Atom ${element.dataset.element ?? ""}`) : "Inferred bond";
+      rows.push([
+        "Note",
+        target.kind === "bond" || hydrogen ? "Inferred" : "Added by the drawing",
+      ]);
       if (target.kind === "bond" && element.dataset.order) {
         rows.push(["Order", element.dataset.order]);
       }
@@ -144,7 +165,7 @@ export class MoleculeInspector {
     return plaque;
   }
 
-  private describeRings(kind: Target["kind"], atoms: AtomInfo[], rings: RingInfo[]): HTMLElement {
+  private describeRings(kind: Target["kind"], atoms: AtomInfo[], rings: RingInfo[], firstColour: number): HTMLElement {
     const subject = kind === "atom" ? "atom" : "bond";
     const plaque = MoleculeInspector.plaque(
       rings.length === 1 ? `This ${subject} is in a ring` : `This ${subject} is in ${rings.length} rings`,
@@ -156,7 +177,7 @@ export class MoleculeInspector {
       line.append(`Ring (${ring.size}): `);
 
       const text = new SmilesText(ring.smiles);
-      text.highlight(atoms.map((atom) => MoleculeInspector.spanIn(ring, atom.index)));
+      text.highlight(atoms.map((atom) => MoleculeInspector.spanIn(ring, atom.index)), firstColour);
       line.append(text.element);
       plaque.append(line);
     }

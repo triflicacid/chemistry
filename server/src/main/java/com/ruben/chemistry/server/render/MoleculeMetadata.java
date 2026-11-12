@@ -18,14 +18,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
+import java.util.function.Function;
 
 /**
  * @param smiles the SMILES the molecule was parsed from; atoms' spans are positions in it
+ * @param canonicalSmiles the molecule as canonical SMILES; atoms' canonical spans are positions in it
  * @param atoms one entry per atom, at its index in {@link Molecule#atoms()}
  * @param bonds one entry per bond, at its index in {@link Molecule#bonds()}
  * @param rings the rings of the molecule
  */
-public record MoleculeMetadata(String smiles, List<AtomInfo> atoms, List<BondInfo> bonds, List<RingInfo> rings)
+public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomInfo> atoms, List<BondInfo> bonds, List<RingInfo> rings)
 {
     /**
      * @param index the atom's index in the molecule
@@ -39,6 +41,7 @@ public record MoleculeMetadata(String smiles, List<AtomInfo> atoms, List<BondInf
      * @param rings the indices (into {@link MoleculeMetadata#rings()}) of the rings the atom is in
      * @param fragment the index of the connected fragment it is in
      * @param span where the atom is written in {@link MoleculeMetadata#smiles()}
+     * @param canonicalSpan where the atom is written in {@link MoleculeMetadata#canonicalSmiles()}
      */
     public record AtomInfo(
             int index,
@@ -51,7 +54,8 @@ public record MoleculeMetadata(String smiles, List<AtomInfo> atoms, List<BondInf
             boolean aromatic,
             List<Integer> rings,
             int fragment,
-            Span span)
+            Span span,
+            Span canonicalSpan)
     {
     }
 
@@ -81,9 +85,11 @@ public record MoleculeMetadata(String smiles, List<AtomInfo> atoms, List<BondInf
     /**
      * @param molecule a molecule
      * @param smiles the SMILES it was parsed from
+     * @param canonicalSmiles the molecule as canonical SMILES
+     * @param canonicalSpanOf where an atom of the molecule is written in {@code canonicalSmiles}
      * @return the metadata of every atom, bond and ring in it
      */
-    public static MoleculeMetadata of(Molecule molecule, String smiles)
+    public static MoleculeMetadata of(Molecule molecule, String smiles, String canonicalSmiles, Function<Atom, Span> canonicalSpanOf)
     {
         MoleculeSnapshot snapshot = MoleculeSnapshot.of(molecule);
         List<Span> sourceSpans = sourceSpans(smiles);
@@ -138,7 +144,8 @@ public record MoleculeMetadata(String smiles, List<AtomInfo> atoms, List<BondInf
                     atom.aromatic(),
                     ringsOfAtom.get(index),
                     snapshot.getFragmentIndexOf(index),
-                    sourceSpans.size() == moleculeAtoms.size() ? sourceSpans.get(index) : null));
+                    sourceSpans.size() == moleculeAtoms.size() ? sourceSpans.get(index) : null,
+                    canonicalSpanOf.apply(atom)));
         }
         List<BondInfo> bonds = new ArrayList<>();
         for (int index = 0; index < moleculeBonds.size(); index++)
@@ -147,7 +154,7 @@ public record MoleculeMetadata(String smiles, List<AtomInfo> atoms, List<BondInf
             bonds.add(new BondInfo(index, indexOfAtom.get(bond.first()), indexOfAtom.get(bond.second()),
                     bond.order().name().toLowerCase(Locale.ROOT), ringsOfBond.get(index)));
         }
-        return new MoleculeMetadata(smiles, atoms, bonds, rings);
+        return new MoleculeMetadata(smiles, canonicalSmiles, atoms, bonds, rings);
     }
 
     /**

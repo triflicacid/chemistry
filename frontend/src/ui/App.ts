@@ -46,7 +46,7 @@ export class App {
       const created = await this.api.createMolecule(smiles);
       const { svg, moleculeId } = await this.api.renderMolecule(created.id, this.options?.values() ?? {});
       this.store.viewMolecule(moleculeId);
-      this.results.showMolecule(svg, moleculeId, created.smiles);
+      this.results.showMolecule(svg, moleculeId, created.smiles, created.canonical_smiles);
       void this.inspect(moleculeId);
     } catch (error) {
       this.store.clear();

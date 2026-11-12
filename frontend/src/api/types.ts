@@ -40,6 +40,8 @@ export interface AtomInfo {
   fragment: number;
   /** Where the atom is written in MoleculeMetadata.smiles. */
   span: Span | null;
+  /** Where the atom is written in MoleculeMetadata.canonical_smiles. */
+  canonical_span: Span | null;
 }
 
 export interface BondInfo {
@@ -65,6 +67,7 @@ export interface RingInfo {
 
 export interface MoleculeMetadata {
   smiles: string;
+  canonical_smiles: string;
   atoms: AtomInfo[];
   bonds: BondInfo[];
   rings: RingInfo[];
@@ -74,4 +77,5 @@ export interface MoleculeMetadata {
 export interface StoredMolecule {
   id: MoleculeId;
   smiles: string;
+  canonical_smiles: string;
 }

@@ -1,6 +1,8 @@
 package com.ruben.chemistry.server.render;
 
+import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.smiles.SmilesWriter;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -9,7 +11,10 @@ class MoleculeMetadataTest
 {
     private static MoleculeMetadata of(String smiles)
     {
-        return MoleculeMetadata.of(Molecule.fromSmiles(smiles), smiles);
+        Molecule molecule = Molecule.fromSmiles(smiles);
+        SmilesWriter writer = new SmilesWriter(molecule).setRanker(new CanonicalRanker());
+        String canonical = writer.write();
+        return MoleculeMetadata.of(molecule, smiles, canonical, writer.atomSpans()::get);
     }
 
     @Test
@@ -68,6 +73,20 @@ class MoleculeMetadataTest
         {
             String text = ring.smiles().substring(ring.spans().get(index).start(), ring.spans().get(index).end());
             assertThat(text).isEqualTo(metadata.atoms().get(ring.atoms().get(index)).element().toLowerCase().equals("n") ? "[nH]" : "c");
+        }
+    }
+
+    @Test
+    void should_locate_atoms_in_the_canonical_smiles()
+    {
+        MoleculeMetadata metadata = of("OCC");
+
+        assertThat(metadata.canonicalSmiles()).isNotBlank();
+        assertThat(metadata.atoms()).extracting(MoleculeMetadata.AtomInfo::canonicalSpan).doesNotContainNull();
+        for (MoleculeMetadata.AtomInfo atom : metadata.atoms())
+        {
+            String text = metadata.canonicalSmiles().substring(atom.canonicalSpan().start(), atom.canonicalSpan().end());
+            assertThat(text).isEqualTo(atom.element());
         }
     }
 

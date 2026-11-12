@@ -62,7 +62,8 @@ public final class MoleculeEndpoint extends Endpoint
             StoredMolecule stored = store.add(smiles, molecule);
             responseContext.respond(201, Map.of(
                     "id", stored.id(),
-                    "smiles", stored.smiles()));
+                    "smiles", stored.smiles(),
+                    "canonical_smiles", stored.canonicalSmiles()));
         }
         catch (RenderException failure)
         {
