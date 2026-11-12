@@ -2,6 +2,12 @@ export class SmilesForm {
   readonly element = document.createElement("form");
   private readonly input = document.createElement("textarea");
   private readonly button = document.createElement("button");
+  private readonly actions = document.createElement("div");
+
+  /** Adds a control next to the RENDER button. */
+  addAction(control: HTMLElement): void {
+    this.actions.append(control);
+  }
 
   constructor(onSubmit: (smiles: string) => void) {
     const label = document.createElement("label");
@@ -16,7 +22,10 @@ export class SmilesForm {
     this.button.type = "submit";
     this.button.textContent = "RENDER";
 
-    this.element.append(label, this.input, this.button);
+    this.actions.className = "actions";
+    this.actions.append(this.button);
+
+    this.element.append(label, this.input, this.actions);
     this.element.addEventListener("submit", (event) => {
       event.preventDefault();
       onSubmit(this.input.value.trim());

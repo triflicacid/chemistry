@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-final class ExchangeContext implements Context
+final class ExchangeContext implements ResponseContext
 {
     private static final String JSON = "application/json; charset=utf-8";
     private static final String TEXT = "text/plain; charset=utf-8";
@@ -25,7 +25,7 @@ final class ExchangeContext implements Context
     }
 
     @Override
-    public Context header(String name, String value)
+    public ResponseContext header(String name, String value)
     {
         exchange.getResponseHeaders().set(name, value);
         return this;

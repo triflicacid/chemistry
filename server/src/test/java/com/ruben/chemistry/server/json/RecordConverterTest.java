@@ -39,7 +39,7 @@ class RecordConverterTest
     @Test
     void should_bind_nested_records_lists_maps_and_enums()
     {
-        Request bound = RecordConverter.parse("""
+        Request bound = parse("""
                 {"smiles":"CCO","options":{"layout":"COLUMN","metadata":true,"scale":2,
                 "background":{"element":"C","rgb":16},
                 "colours":[{"element":"N","rgb":1},{"element":"O","rgb":2}],
@@ -59,7 +59,7 @@ class RecordConverterTest
     @Test
     void should_leave_missing_reference_components_null()
     {
-        Request bound = RecordConverter.parse("{\"smiles\":\"C\"}", Request.class);
+        Request bound = parse("{\"smiles\":\"C\"}", Request.class);
 
         assertThat(bound.options()).isNull();
     }
@@ -67,38 +67,38 @@ class RecordConverterTest
     @Test
     void should_require_primitive_components()
     {
-        assertThatThrownBy(() -> RecordConverter.parse("{}", Positive.class))
+        assertThatThrownBy(() -> parse("{}", Positive.class))
                 .isInstanceOf(JsonException.class).hasMessage("n: is required");
     }
 
     @Test
     void should_reject_unknown_properties_with_their_path()
     {
-        assertThatThrownBy(() -> RecordConverter.parse("{\"smiles\":\"C\",\"options\":{\"nope\":1}}", Request.class))
+        assertThatThrownBy(() -> parse("{\"smiles\":\"C\",\"options\":{\"nope\":1}}", Request.class))
                 .isInstanceOf(JsonException.class).hasMessage("options.nope: unknown property");
     }
 
     @Test
     void should_report_type_mismatches_with_their_path()
     {
-        assertThatThrownBy(() -> RecordConverter.parse("{\"smiles\":1}", Request.class))
+        assertThatThrownBy(() -> parse("{\"smiles\":1}", Request.class))
                 .hasMessage("smiles: expected a string, got an integer");
-        assertThatThrownBy(() -> RecordConverter.parse("{\"options\":[]}", Request.class))
+        assertThatThrownBy(() -> parse("{\"options\":[]}", Request.class))
                 .hasMessage("options: expected an object, got an array");
-        assertThatThrownBy(() -> RecordConverter.parse("{\"options\":{\"colours\":[{\"rgb\":\"x\"}]}}", Request.class))
+        assertThatThrownBy(() -> parse("{\"options\":{\"colours\":[{\"rgb\":\"x\"}]}}", Request.class))
                 .hasMessage("options.colours[0].rgb: expected an integer, got a string");
-        assertThatThrownBy(() -> RecordConverter.parse("{\"options\":{\"layout\":\"GRID\"}}", Request.class))
+        assertThatThrownBy(() -> parse("{\"options\":{\"layout\":\"GRID\"}}", Request.class))
                 .hasMessage("options.layout: must be one of [ROW, COLUMN]");
-        assertThatThrownBy(() -> RecordConverter.parse("{\"n\":1.5}", Positive.class))
+        assertThatThrownBy(() -> parse("{\"n\":1.5}", Positive.class))
                 .hasMessage("n: expected an integer, got a number");
-        assertThatThrownBy(() -> RecordConverter.parse("{\"n\":3000000000}", Positive.class))
+        assertThatThrownBy(() -> parse("{\"n\":3000000000}", Positive.class))
                 .hasMessage("n: must be between -2147483648 and 2147483647");
     }
 
     @Test
     void should_report_a_failing_record_constructor()
     {
-        assertThatThrownBy(() -> RecordConverter.parse("{\"n\":0}", Positive.class))
+        assertThatThrownBy(() -> parse("{\"n\":0}", Positive.class))
                 .isInstanceOf(JsonException.class).hasMessage("must be positive");
     }
 
@@ -114,20 +114,20 @@ class RecordConverterTest
 
         assertThat(json).isEqualTo(
                 "{\"my_value\":\"a\",\"http_code\":7,\"smiles_url\":\"u\",\"inner_colour\":{\"element\":\"C\",\"rgb\":1}}");
-        assertThat(RecordConverter.parse(json, Named.class)).isEqualTo(named);
+        assertThat(parse(json, Named.class)).isEqualTo(named);
     }
 
     @Test
     void should_reject_camel_case_keys()
     {
-        assertThatThrownBy(() -> RecordConverter.parse("{\"myValue\":\"a\",\"http_code\":1}", Named.class))
+        assertThatThrownBy(() -> parse("{\"myValue\":\"a\",\"http_code\":1}", Named.class))
                 .hasMessage("myValue: unknown property");
     }
 
     @Test
     void should_name_nested_paths_in_snake_case()
     {
-        assertThatThrownBy(() -> RecordConverter.parse("{\"inner_colour\":{\"rgb\":\"x\"},\"http_code\":1}", Named.class))
+        assertThatThrownBy(() -> parse("{\"inner_colour\":{\"rgb\":\"x\"},\"http_code\":1}", Named.class))
                 .hasMessage("inner_colour.rgb: expected an integer, got a string");
     }
 
@@ -147,5 +147,10 @@ class RecordConverterTest
     {
         assertThatThrownBy(() -> RecordConverter.bind(Map.of(), (Class) String.class))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static <T extends Record> T parse(String json, Class<T> type)
+    {
+        return RecordConverter.bind(JsonParser.parse(json), type, JsonNames::of);
     }
 }

@@ -2,10 +2,8 @@ package com.ruben.chemistry.server.render;
 
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
-import com.ruben.chemistry.render.DepictionOptions;
 import com.ruben.chemistry.render.Layout;
 import com.ruben.chemistry.render.MoleculeLayout;
-import com.ruben.chemistry.render.RenderStyle;
 import com.ruben.chemistry.render.SvgRenderer;
 
 public final class SmilesRenderer
@@ -13,15 +11,16 @@ public final class SmilesRenderer
     /** The longest SMILES string accepted. */
     public static final int MAX_SMILES_LENGTH = 5_000;
 
-    private static final RenderStyle STYLE = RenderStyle.builder().metadata(true).build();
-
     /**
      * @param smiles the molecule, written in SMILES
+     * @param options how to draw it
      * @return the SVG document
-     * @throws RenderException if the SMILES is too long or invalid, or the molecule cannot be laid out
+     * @throws RenderException if the SMILES is too long or invalid, an option is invalid, or the molecule cannot be laid out
      */
-    public String render(String smiles)
+    public String render(String smiles, RenderOptions options)
     {
+        OptionsMapper.Settings settings = OptionsMapper.map(options);
+
         if (smiles.length() > MAX_SMILES_LENGTH)
         {
             throw new RenderException("SMILES_TOO_LONG", "The SMILES string is longer than " + MAX_SMILES_LENGTH + " characters");
@@ -39,8 +38,8 @@ public final class SmilesRenderer
 
         try
         {
-            Layout layout = MoleculeLayout.layout(molecule, DepictionOptions.defaults());
-            return SvgRenderer.render(layout, STYLE);
+            Layout layout =             MoleculeLayout.layout(molecule, settings.depiction());
+                        return SvgRenderer.render(layout, settings.style());
         }
         catch (IllegalArgumentException | IllegalStateException unsupported)
         {

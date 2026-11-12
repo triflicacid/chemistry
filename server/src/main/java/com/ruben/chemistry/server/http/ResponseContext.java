@@ -8,7 +8,7 @@ import java.util.Map;
 /**
  * Respond to an incoming {@link Request}.
  */
-public interface Context
+public interface ResponseContext
 {
     /**
      * Sets a header on the response.
@@ -17,7 +17,7 @@ public interface Context
      * @param value its value
      * @return this
      */
-    Context header(String name, String value);
+    ResponseContext header(String name, String value);
 
     /**
      * Answers with a status and no body.

@@ -8,7 +8,7 @@ public abstract class Endpoint
     /**
      * Registers this endpoint's routes.
      *
-     * @param registry where to register them; it only adds routes
+     * @param registry where to register them
      */
     public abstract void registerHandlers(EndpointRegistry registry);
 }

@@ -11,9 +11,6 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.function.Function;
 
-/**
- * What a client asked for.
- */
 public final class Request
 {
     private final HttpMethod method;
@@ -57,7 +54,7 @@ public final class Request
     }
 
     /**
-     * @return the path asked for, without the query string or any trailing slash
+     * @return the path asked for
      */
     public String path()
     {
@@ -65,7 +62,7 @@ public final class Request
     }
 
     /**
-     * @return the values of the {@code :name} segments of the route that matched, decoded
+     * @return the values of the {@code :name} segments of the route that matched
      */
     public Map<String, String> pathParameters()
     {
@@ -88,8 +85,7 @@ public final class Request
     }
 
     /**
-     * @return the query parameters ({@code ?x=y&z=1}), decoded, in the order given;
-     *     where a name repeats the first value is kept
+     * @return the query parameters ({@code ?x=y&z=1})
      */
     public Map<String, String> query()
     {

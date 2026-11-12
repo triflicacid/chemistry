@@ -3,6 +3,7 @@ package com.ruben.chemistry.server;
 import com.ruben.chemistry.server.http.EndpointFactory;
 import com.ruben.chemistry.server.http.Server;
 import com.ruben.chemistry.server.resource.HealthEndpoint;
+import com.ruben.chemistry.server.resource.OptionsEndpoint;
 import com.ruben.chemistry.server.resource.RenderEndpoint;
 
 import java.io.IOException;
@@ -11,10 +12,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Starts the {@link Server} that exposes the chemistry library to the front-end.
+ * Starts the {@link Server} that serves the chemistry front-end.
  * <p>
- * Run with {@code ./gradlew :server:run}; the port is the first argument, else
- * the {@code PORT} environment variable, else 8080.
+ * Run with {@code ./gradlew :server:run}.
+ * The port is the first argument, else the {@code PORT} environment variable, else 8080.
  */
 public final class Main
 {
@@ -23,7 +24,8 @@ public final class Main
 
     private static final List<EndpointFactory> endpoints = List.of(
             HealthEndpoint::new,
-            RenderEndpoint::new
+            RenderEndpoint::new,
+            OptionsEndpoint::new
     );
 
     private Main()

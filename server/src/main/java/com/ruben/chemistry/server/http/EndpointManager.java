@@ -59,8 +59,7 @@ final class EndpointManager implements EndpointRegistry
     }
 
     /**
-     * Lets each endpoint register its routes. An endpoint is given only an
-     * {@link EndpointRegistry} view, so it cannot reach the rest of this manager.
+     * Register all the given endpoints with this manager.
      *
      * @param endpoints the endpoints to register
      * @return this
@@ -220,9 +219,6 @@ final class EndpointManager implements EndpointRegistry
         matched.handler.handle(request, context);
     }
 
-    /**
-     * Splits a path into segments, ignoring empty ones (so a trailing slash is ignored).
-     */
     private static List<String> segments(String path)
     {
         List<String> segments = new ArrayList<>();
@@ -236,9 +232,6 @@ final class EndpointManager implements EndpointRegistry
         return segments;
     }
 
-    /**
-     * Decodes each segment of a raw path separately, so an encoded slash stays inside its segment.
-     */
     private static String decodeRawPath(String rawPath)
     {
         if (rawPath == null)

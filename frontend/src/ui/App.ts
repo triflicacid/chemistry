@@ -1,13 +1,15 @@
 import { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
+import { OptionsPanel } from "./OptionsPanel";
 import { ResultsView } from "./ResultsView";
 import { SmilesForm } from "./SmilesForm";
 
+/** The whole page: title, SMILES form, options, results. */
 export class App {
-  private readonly form = new SmilesForm((smiles) => void this.render(smiles));
   private readonly results = new ResultsView();
-  /** Ignores a response if a newer render has started since. */
-  private latest = 0;
+  private readonly form = new SmilesForm((smiles) => void this.render(smiles));
+  private options: OptionsPanel | null = null;
+  private readonly optionsSlot = document.createElement("div");
 
   constructor(private readonly api: ChemistryApi) {}
 
@@ -15,33 +17,38 @@ export class App {
     const title = document.createElement("h1");
     title.textContent = "Chemistry";
 
-    root.replaceChildren(title, this.form.element, this.results.element);
+    this.results.showMessage("Enter a SMILES string and press RENDER.");
+    root.append(title, this.form.element, this.optionsSlot, this.results.element);
+    void this.loadOptions();
+  }
+
+  private async loadOptions(): Promise<void> {
+    try {
+      this.options = new OptionsPanel(await this.api.options());
+      this.form.addAction(this.options.toggle);
+      this.optionsSlot.replaceChildren(this.options.element);
+    } catch (error) {
+      this.optionsSlot.textContent = `Options unavailable: ${App.describe(error)}`;
+    }
   }
 
   private async render(smiles: string): Promise<void> {
-    if (smiles === "") {
-      this.results.showError("Enter a SMILES string first.");
+    if (!smiles) {
+      this.results.showError("Please enter a SMILES string.");
       return;
     }
 
-    const request = ++this.latest;
     this.form.setBusy(true);
-    this.results.showMessage("Rendering…");
-
     try {
-      const svg = await this.api.render(smiles);
-      if (request === this.latest) {
-        this.results.showSvg(svg);
-      }
+      this.results.showSvg(await this.api.render(smiles, this.options?.values() ?? {}));
     } catch (error) {
-      if (request === this.latest) {
-        this.results.showError(error instanceof ApiError ? error.message : String(error));
-      }
-      console.error("Render failed", error);
+      this.results.showError(App.describe(error));
     } finally {
-      if (request === this.latest) {
-        this.form.setBusy(false);
-      }
+      this.form.setBusy(false);
     }
+  }
+
+  private static describe(error: unknown): string {
+    return error instanceof ApiError ? error.message : String(error);
   }
 }

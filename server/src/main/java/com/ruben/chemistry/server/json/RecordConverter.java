@@ -30,7 +30,7 @@ public final class RecordConverter
      */
     public static <T extends Record> T bind(Map<String, Object> object, Class<T> type)
     {
-        return bind(object, type, JsonNames::of);
+        return bind(object, type, Function.identity());
     }
 
     /**
@@ -45,20 +45,6 @@ public final class RecordConverter
     public static <T extends Record> T bind(Map<String, Object> object, Class<T> type, Function<String, String> keys)
     {
         return type.cast(bindRecord(object, type, "", keys));
-    }
-
-    /**
-     * Parses {@code json} and binds it.
-     *
-     * @param json JSON text whose top level is an object
-     * @param type the record to build
-     * @param <T> the record type
-     * @return the record
-     * @throws JsonException if the text is not valid JSON or does not fit the record
-     */
-    public static <T extends Record> T parse(String json, Class<T> type)
-    {
-        return bind(JsonParser.parse(json), type);
     }
 
     private static Object bindRecord(Object value, Class<?> type, String path, Function<String, String> keys)
