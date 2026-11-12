@@ -54,6 +54,7 @@ button:disabled {
 .card svg {
   max-width: 100%;
   height: auto;
+  cursor: default;
 }
 
 .message.error {

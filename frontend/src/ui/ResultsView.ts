@@ -22,11 +22,11 @@ export class ResultsView {
   }
 
   showMessage(text: string): void {
-    this.show(text, "message");
+    this.show(text, "message", "p");
   }
 
   showError(text: string): void {
-    this.show(text, "message error");
+    this.show(text, "message error", "pre");
   }
 
   /** Shows a rendered molecule and its SMILES. */
@@ -60,9 +60,9 @@ export class ResultsView {
     return label;
   }
 
-  private show(text: string, className: string): void {
+  private show(text: string, className: string, elementTag?: string): void {
     this.reset();
-    const message = document.createElement("p");
+    const message = document.createElement(elementTag ?? "p");
     message.className = className;
     message.textContent = text;
     this.element.replaceChildren(message);

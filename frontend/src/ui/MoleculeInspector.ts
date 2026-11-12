@@ -11,6 +11,9 @@ interface Target {
 /** Offset of the plaques from the pointer in pixels. */
 const OFFSET = 14;
 
+/** How far outside an atom or bond the pointer may stray before the plaques disappear in pixels. */
+const PADDING = 12;
+
 export class MoleculeInspector {
   private readonly plaques = document.createElement("div");
   private current: Element | null = null;
@@ -39,11 +42,8 @@ export class MoleculeInspector {
 
   private over(event: PointerEvent): void {
     const target = MoleculeInspector.targetOf(event);
-    if (!target) {
-      this.clear();
-      return;
-    }
-    if (target.element === this.current) {
+    // leaving onto the bare canvas is left to move(), which allows the pointer some slack
+    if (!target || target.element === this.current) {
       return;
     }
 
@@ -82,8 +82,13 @@ export class MoleculeInspector {
   }
 
   private move(event: PointerEvent): void {
-    if (this.current) {
+    if (!this.current) {
+      return;
+    }
+    if (MoleculeInspector.near(this.current, event)) {
       this.place(event);
+    } else {
+      this.clear();
     }
   }
 
@@ -97,6 +102,8 @@ export class MoleculeInspector {
   }
 
   private clear(): void {
+    this.plaques.hidden = true;
+    this.plaques.replaceChildren();
     this.current?.classList.remove("hover");
     this.current = null;
     this.ends.forEach((end) => end.classList.remove("hover-end-1", "hover-end-2"));
@@ -182,6 +189,16 @@ export class MoleculeInspector {
       plaque.append(line);
     }
     return plaque;
+  }
+
+  private static near(element: Element, event: MouseEvent): boolean {
+    const box = element.getBoundingClientRect();
+    return (
+      event.clientX >= box.left - PADDING &&
+      event.clientX <= box.right + PADDING &&
+      event.clientY >= box.top - PADDING &&
+      event.clientY <= box.bottom + PADDING
+    );
   }
 
   private static spanIn(ring: RingInfo, atom: number): Span | null {
