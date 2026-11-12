@@ -1,5 +1,6 @@
 import { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
+import { ViewStore } from "../store";
 import { OptionsPanel } from "./OptionsPanel";
 import { ResultsView } from "./ResultsView";
 import { SmilesForm } from "./SmilesForm";
@@ -7,6 +8,7 @@ import { SmilesForm } from "./SmilesForm";
 /** The whole page: title, SMILES form, options, results. */
 export class App {
   private readonly results = new ResultsView();
+  private readonly store = new ViewStore();
   private readonly form = new SmilesForm((smiles) => void this.render(smiles));
   private options: OptionsPanel | null = null;
   private readonly optionsSlot = document.createElement("div");
@@ -40,8 +42,12 @@ export class App {
 
     this.form.setBusy(true);
     try {
-      this.results.showSvg(await this.api.render(smiles, this.options?.values() ?? {}));
+      const created = await this.api.createMolecule(smiles);
+      const { svg, moleculeId } = await this.api.renderMolecule(created, this.options?.values() ?? {});
+      this.store.viewMolecule(moleculeId);
+      this.results.showSvg(svg, moleculeId);
     } catch (error) {
+      this.store.clear();
       this.results.showError(App.describe(error));
     } finally {
       this.form.setBusy(false);

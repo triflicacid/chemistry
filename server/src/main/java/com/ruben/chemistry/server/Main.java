@@ -3,8 +3,8 @@ package com.ruben.chemistry.server;
 import com.ruben.chemistry.server.http.EndpointFactory;
 import com.ruben.chemistry.server.http.Server;
 import com.ruben.chemistry.server.resource.HealthEndpoint;
+import com.ruben.chemistry.server.resource.MoleculeEndpoint;
 import com.ruben.chemistry.server.resource.OptionsEndpoint;
-import com.ruben.chemistry.server.resource.RenderEndpoint;
 
 import java.io.IOException;
 import java.util.List;
@@ -24,7 +24,7 @@ public final class Main
 
     private static final List<EndpointFactory> endpoints = List.of(
             HealthEndpoint::new,
-            RenderEndpoint::new,
+            MoleculeEndpoint::new,
             OptionsEndpoint::new
     );
 

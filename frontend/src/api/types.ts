@@ -15,3 +15,6 @@ export interface OptionDescriptor {
 
 /** Option values by name. */
 export type OptionValues = Record<string, boolean | number | string>;
+
+/** The server's id for a stored molecule. */
+export type MoleculeId = string;

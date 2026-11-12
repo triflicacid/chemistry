@@ -19,7 +19,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.UUID;
 
 /**
  * Draws a {@link Depiction} as an SVG document.
@@ -68,9 +67,6 @@ public final class SvgRenderer
     /** The snapshot the depiction's indices refer to, or {@code null} if not known. */
     private final MoleculeSnapshot snapshot;
 
-    /** The snapshot's ID, or {@code null} if there is no snapshot. */
-    private final UUID snapshotId;
-
     /** How individual atoms and bonds are restyled; only ever has a look for something when there is a snapshot. */
     private final Annotations annotations;
 
@@ -116,7 +112,6 @@ public final class SvgRenderer
     private SvgRenderer(Depiction depiction, RenderStyle style, MoleculeSnapshot snapshot, Annotations annotations)
     {
         this.snapshot = snapshot;
-        this.snapshotId = snapshot == null ? null : snapshot.getId();
         this.annotations = annotations;
         this.bondWidth = style.bondWidth();
         this.style = style;
@@ -421,7 +416,6 @@ public final class SvgRenderer
 
     /**
      * Draws a depiction.
-     * <strong>Note</strong> this does not record a UUID.
      *
      * @param depiction the depiction to draw
      * @param style how it should be drawn
@@ -469,7 +463,6 @@ public final class SvgRenderer
         if (style.metadata())
         {
             svg.attribute("data-metadata", "true");
-            svg.attribute("data-snapshot", snapshotId == null ? null : snapshotId.toString());
         }
 
         if (style.debugLayout())
