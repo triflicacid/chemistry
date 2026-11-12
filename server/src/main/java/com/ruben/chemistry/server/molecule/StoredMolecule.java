@@ -1,34 +1,31 @@
 package com.ruben.chemistry.server.molecule;
 
 import com.ruben.chemistry.canonical.CanonicalRanker;
-import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.server.render.MoleculeMetadata;
+import com.ruben.chemistry.server.render.MoleculeRenderer;
 import com.ruben.chemistry.server.render.Rendering;
 import com.ruben.chemistry.smiles.SmilesWriter;
-import com.ruben.chemistry.smiles.SmilesWriter.Span;
 
-import java.util.Map;
 import java.util.Optional;
 
 public final class StoredMolecule
 {
     private final String id;
-    private final String smiles;
-    private final String canonicalSmiles;
-    private final Map<Atom, Span> canonicalSpans;
+    private final MoleculeMetadata.Notation source;
+    private final MoleculeMetadata.Notation canonical;
     private final Molecule molecule;
     private volatile Rendering latest;
     private volatile MoleculeMetadata metadata;
 
-    StoredMolecule(String id, String smiles, Molecule molecule)
+    StoredMolecule(String id, MoleculeRenderer.Parsed parsed)
     {
         this.id = id;
-        this.smiles = smiles;
-        this.molecule = molecule;
+        this.source = parsed.source();
+        this.molecule = parsed.molecule();
         SmilesWriter writer = new SmilesWriter(molecule).setRanker(new CanonicalRanker());
-        this.canonicalSmiles = writer.write();
-        this.canonicalSpans = writer.atomSpans();
+        String written = writer.write();
+        this.canonical = new MoleculeMetadata.Notation(written, writer.atomSpans(), writer.bondSpans());
     }
 
     public String id()
@@ -38,12 +35,12 @@ public final class StoredMolecule
 
     public String smiles()
     {
-        return smiles;
+        return source.smiles();
     }
 
     public String canonicalSmiles()
     {
-        return canonicalSmiles;
+        return canonical.smiles();
     }
 
     public Molecule molecule()
@@ -56,7 +53,7 @@ public final class StoredMolecule
         MoleculeMetadata result = metadata;
         if (result == null)
         {
-            result = MoleculeMetadata.of(molecule, smiles, canonicalSmiles, canonicalSpans::get);
+            result = MoleculeMetadata.of(molecule, source, canonical);
             metadata = result;
         }
         return result;

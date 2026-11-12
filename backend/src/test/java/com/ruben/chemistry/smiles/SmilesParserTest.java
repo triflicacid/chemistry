@@ -904,4 +904,55 @@ class SmilesParserTest
             assertThat(molecule.bondCount()).isEqualTo(7);
         }
     }
+
+    @Nested
+    class Spans
+    {
+        @Test
+        void records_where_each_atom_and_bond_was_written()
+        {
+            SmilesParser parser = new SmilesParser("CC(=O)[O-]");
+            Molecule molecule = parser.parse();
+
+            List<Atom> atoms = molecule.atoms();
+            assertThat(parser.atomSpans().get(atoms.get(0))).isEqualTo(new Span(0, 1));
+            assertThat(parser.atomSpans().get(atoms.get(1))).isEqualTo(new Span(1, 2));
+            assertThat(parser.atomSpans().get(atoms.get(2))).isEqualTo(new Span(4, 5));
+            assertThat(parser.atomSpans().get(atoms.get(3))).isEqualTo(new Span(6, 10));
+
+            Bond written = molecule.bondBetween(atoms.get(1), atoms.get(2)).orElseThrow();
+            assertThat(parser.bondSpans().get(written)).containsExactly(new Span(3, 4));
+        }
+
+        @Test
+        void records_nothing_for_bonds_that_were_not_written()
+        {
+            SmilesParser parser = new SmilesParser("CCO");
+            parser.parse();
+
+            assertThat(parser.bondSpans()).isEmpty();
+        }
+
+        @Test
+        void records_the_digits_of_a_ring_bond_at_both_of_its_ends()
+        {
+            SmilesParser parser = new SmilesParser("C1CCCCC1");
+            Molecule molecule = parser.parse();
+
+            List<Atom> atoms = molecule.atoms();
+            Bond closure = molecule.bondBetween(atoms.get(0), atoms.get(5)).orElseThrow();
+            assertThat(parser.bondSpans().get(closure)).containsExactly(new Span(1, 2), new Span(7, 8));
+        }
+
+        @Test
+        void records_a_ring_bond_symbol_together_with_its_digits()
+        {
+            SmilesParser parser = new SmilesParser("C=1CCCCC=1");
+            Molecule molecule = parser.parse();
+
+            List<Atom> atoms = molecule.atoms();
+            Bond closure = molecule.bondBetween(atoms.get(0), atoms.get(5)).orElseThrow();
+            assertThat(parser.bondSpans().get(closure)).containsExactly(new Span(1, 3), new Span(8, 10));
+        }
+    }
 }

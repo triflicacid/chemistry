@@ -52,6 +52,9 @@ export interface BondInfo {
   second: number;
   order: string;
   rings: number[];
+  spans: Span[];
+  /** The same, in MoleculeMetadata.canonical_smiles. */
+  canonical_spans: Span[];
 }
 
 export interface RingInfo {

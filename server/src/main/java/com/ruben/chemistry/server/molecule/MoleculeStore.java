@@ -1,6 +1,6 @@
 package com.ruben.chemistry.server.molecule;
 
-import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.server.render.MoleculeRenderer;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -40,13 +40,12 @@ public final class MoleculeStore
     }
 
     /**
-     * @param smiles the notation the molecule was parsed from
-     * @param molecule the molecule
+     * @param parsed a molecule read from SMILES
      * @return the stored molecule
      */
-    public StoredMolecule add(String smiles, Molecule molecule)
+    public StoredMolecule add(MoleculeRenderer.Parsed parsed)
     {
-        StoredMolecule stored = new StoredMolecule(UUID.randomUUID().toString(), smiles, molecule);
+        StoredMolecule stored = new StoredMolecule(UUID.randomUUID().toString(), parsed);
         synchronized (molecules)
         {
             molecules.put(stored.id(), stored);

@@ -2,8 +2,12 @@ package com.ruben.chemistry.server.render;
 
 import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.smiles.SmilesWriter;
+import com.ruben.chemistry.smiles.Span;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -11,10 +15,13 @@ class MoleculeMetadataTest
 {
     private static MoleculeMetadata of(String smiles)
     {
-        Molecule molecule = Molecule.fromSmiles(smiles);
+        SmilesParser parser = new SmilesParser(smiles);
+        Molecule molecule = parser.parse();
         SmilesWriter writer = new SmilesWriter(molecule).setRanker(new CanonicalRanker());
         String canonical = writer.write();
-        return MoleculeMetadata.of(molecule, smiles, canonical, writer.atomSpans()::get);
+        MoleculeMetadata.Notation source = new MoleculeMetadata.Notation(smiles, parser.atomSpans(), parser.bondSpans());
+        return MoleculeMetadata.of(molecule, source,
+            new MoleculeMetadata.Notation(canonical, writer.atomSpans(), writer.bondSpans()));
     }
 
     @Test
@@ -87,6 +94,60 @@ class MoleculeMetadataTest
         {
             String text = metadata.canonicalSmiles().substring(atom.canonicalSpan().start(), atom.canonicalSpan().end());
             assertThat(text).isEqualTo(atom.element());
+        }
+    }
+
+    @Test
+    void should_locate_written_bond_orders_in_the_source()
+    {
+        MoleculeMetadata metadata = of("CC=CC");
+
+        assertThat(metadata.bonds()).extracting(MoleculeMetadata.BondInfo::spans)
+            .containsExactly(List.of(), List.of(new Span(2, 3)), List.of());
+    }
+
+    @Test
+    void should_locate_a_ring_bond_written_at_both_of_its_ends()
+    {
+        MoleculeMetadata metadata = of("C=1C=CC=CC=1");
+
+        MoleculeMetadata.BondInfo closure = metadata.bonds().stream()
+            .filter(bond -> bond.spans().size() == 2)
+            .findFirst()
+            .orElseThrow();
+        assertThat(closure.spans()).containsExactly(new Span(1, 3), new Span(10, 12));
+        for (Span span : closure.spans())
+        {
+            assertThat(metadata.smiles().substring(span.start(), span.end())).isEqualTo("=1");
+        }
+    }
+
+    @Test
+    void should_locate_written_bonds_in_the_canonical_smiles()
+    {
+        MoleculeMetadata metadata = of("CC=CC");
+
+        MoleculeMetadata.BondInfo written = metadata.bonds().stream()
+            .filter(bond -> !bond.canonicalSpans().isEmpty())
+            .findFirst()
+            .orElseThrow();
+        assertThat(written.order()).isEqualTo("double");
+        Span span = written.canonicalSpans().getFirst();
+        assertThat(metadata.canonicalSmiles().substring(span.start(), span.end())).isEqualTo("=");
+    }
+
+    @Test
+    void should_locate_a_ring_bond_in_the_canonical_smiles()
+    {
+        MoleculeMetadata metadata = of("c1ccccc1");
+
+        MoleculeMetadata.BondInfo closure = metadata.bonds().stream()
+            .filter(bond -> bond.canonicalSpans().size() == 2)
+            .findFirst()
+            .orElseThrow();
+        for (Span span : closure.canonicalSpans())
+        {
+            assertThat(metadata.canonicalSmiles().substring(span.start(), span.end())).isEqualTo("1");
         }
     }
 

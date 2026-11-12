@@ -1,5 +1,6 @@
 import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, Span } from "../api/types";
 import { SmilesText } from "./SmilesText";
+import type { Highlight } from "./SmilesText";
 
 /** What the mouse pointer is over. */
 interface Target {
@@ -60,10 +61,12 @@ export class MoleculeInspector {
       .map((ring) => this.metadata.rings[ring])
       .filter((ring): ring is RingInfo => ring !== undefined);
 
-    // a bond's ends get colours 1 and 2
+    // a bond itself gets colour 0, like a hovered atom, and its ends colours 1 and 2
     const firstColour = bond ? 1 : 0;
-    this.smiles.highlight(atoms.map((member) => member.span), firstColour);
-    this.canonical.highlight(atoms.map((member) => member.canonical_span), firstColour);
+    this.smiles.highlight(MoleculeInspector.highlights(bond?.spans, atoms.map((member) => member.span), firstColour));
+    this.canonical.highlight(
+      MoleculeInspector.highlights(bond?.canonical_spans, atoms.map((member) => member.canonical_span), firstColour),
+    );
     if (bond) {
       atoms.forEach((member, position) => {
         const end = this.svg.querySelector(`.atom[data-atom="${member.index}"]`);
@@ -144,6 +147,7 @@ export class MoleculeInspector {
       rows.push(
         ["Order", bond.order],
         ["Between", ends.map((end) => `${end.element} ${end.index}`).join(" – ")],
+        ["Written", this.written(bond)],
       );
     } else {
       // untraceable element
@@ -172,6 +176,13 @@ export class MoleculeInspector {
     return plaque;
   }
 
+  /** How the bond is written in the SMILES, or that only its atoms imply it. */
+  private written(bond: BondInfo): string {
+    return bond.spans.length === 0
+      ? "inferred"
+      : bond.spans.map((span) => this.metadata.smiles.slice(span.start, span.end)).join(" + ");
+  }
+
   private describeRings(kind: Target["kind"], atoms: AtomInfo[], rings: RingInfo[], firstColour: number): HTMLElement {
     const subject = kind === "atom" ? "atom" : "bond";
     const plaque = MoleculeInspector.plaque(
@@ -184,7 +195,10 @@ export class MoleculeInspector {
       line.append(`Ring (${ring.size}): `);
 
       const text = new SmilesText(ring.smiles);
-      text.highlight(atoms.map((atom) => MoleculeInspector.spanIn(ring, atom.index)), firstColour);
+      text.highlight(atoms.map((atom, position) => ({
+        span: MoleculeInspector.spanIn(ring, atom.index),
+        colour: firstColour + position,
+      })));
       line.append(text.element);
       plaque.append(line);
     }
@@ -199,6 +213,13 @@ export class MoleculeInspector {
       event.clientY >= box.top - PADDING &&
       event.clientY <= box.bottom + PADDING
     );
+  }
+
+  private static highlights(bond: Span[] | undefined, members: (Span | null)[], firstColour: number): Highlight[] {
+    return [
+      ...(bond ?? []).map((span) => ({ span, colour: 0 })),
+      ...members.map((span, position) => ({ span, colour: firstColour + position })),
+    ];
   }
 
   private static spanIn(ring: RingInfo, atom: number): Span | null {

@@ -58,8 +58,7 @@ public final class MoleculeEndpoint extends Endpoint
 
         try
         {
-            Molecule molecule = renderer.parse(smiles);
-            StoredMolecule stored = store.add(smiles, molecule);
+            StoredMolecule stored = store.add(renderer.parse(smiles));
             responseContext.respond(201, Map.of(
                     "id", stored.id(),
                     "smiles", stored.smiles(),

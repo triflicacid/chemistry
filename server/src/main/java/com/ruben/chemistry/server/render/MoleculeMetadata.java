@@ -6,11 +6,8 @@ import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.render.MoleculeSnapshot;
-import com.ruben.chemistry.smiles.Lexer;
 import com.ruben.chemistry.smiles.SmilesWriter;
-import com.ruben.chemistry.smiles.SmilesWriter.Span;
-import com.ruben.chemistry.smiles.Token;
-import com.ruben.chemistry.smiles.TokenType;
+import com.ruben.chemistry.smiles.Span;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -18,7 +15,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
-import java.util.function.Function;
 
 /**
  * @param smiles the SMILES the molecule was parsed from; atoms' spans are positions in it
@@ -65,8 +61,12 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomI
      * @param second the index of the other end atom
      * @param order {@code single}, {@code double}, {@code triple}, {@code quadruple} or {@code aromatic}
      * @param rings the indices (into {@link MoleculeMetadata#rings()}) of the rings the bond is in
+     * @param spans where the bond is written in {@link MoleculeMetadata#smiles()}, which is empty for a
+     *     chain bond written without a symbol, and has one entry per end for a ring-closure bond
+     * @param canonicalSpans the same, in {@link MoleculeMetadata#canonicalSmiles()}
      */
-    public record BondInfo(int index, int first, int second, String order, List<Integer> rings)
+    public record BondInfo(int index, int first, int second, String order, List<Integer> rings, List<Span> spans,
+                           List<Span> canonicalSpans)
     {
     }
 
@@ -83,16 +83,25 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomI
     }
 
     /**
+     * Where a molecule's atoms and bonds are written in one notation of it.
+     *
+     * @param smiles the notation
+     * @param atomSpans where each atom is written in it
+     * @param bondSpans where each bond is written in it
+     */
+    public record Notation(String smiles, Map<Atom, Span> atomSpans, Map<Bond, List<Span>> bondSpans)
+    {
+    }
+
+    /**
      * @param molecule a molecule
-     * @param smiles the SMILES it was parsed from
-     * @param canonicalSmiles the molecule as canonical SMILES
-     * @param canonicalSpanOf where an atom of the molecule is written in {@code canonicalSmiles}
+     * @param source the SMILES it was parsed from, and where its atoms and bonds are written in it
+     * @param canonical the molecule as canonical SMILES, and where they are written in that
      * @return the metadata of every atom, bond and ring in it
      */
-    public static MoleculeMetadata of(Molecule molecule, String smiles, String canonicalSmiles, Function<Atom, Span> canonicalSpanOf)
+    public static MoleculeMetadata of(Molecule molecule, Notation source, Notation canonical)
     {
         MoleculeSnapshot snapshot = MoleculeSnapshot.of(molecule);
-        List<Span> sourceSpans = sourceSpans(smiles);
         List<Atom> moleculeAtoms = molecule.atoms();
         List<Bond> moleculeBonds = molecule.bonds();
 
@@ -144,43 +153,19 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomI
                     atom.aromatic(),
                     ringsOfAtom.get(index),
                     snapshot.getFragmentIndexOf(index),
-                    sourceSpans.size() == moleculeAtoms.size() ? sourceSpans.get(index) : null,
-                    canonicalSpanOf.apply(atom)));
+                    source.atomSpans().get(atom),
+                    canonical.atomSpans().get(atom)));
         }
         List<BondInfo> bonds = new ArrayList<>();
         for (int index = 0; index < moleculeBonds.size(); index++)
         {
             Bond bond = moleculeBonds.get(index);
             bonds.add(new BondInfo(index, indexOfAtom.get(bond.first()), indexOfAtom.get(bond.second()),
-                    bond.order().name().toLowerCase(Locale.ROOT), ringsOfBond.get(index)));
+                    bond.order().name().toLowerCase(Locale.ROOT), ringsOfBond.get(index),
+                    source.bondSpans().getOrDefault(bond, List.of()),
+                    canonical.bondSpans().getOrDefault(bond, List.of())));
         }
-        return new MoleculeMetadata(smiles, canonicalSmiles, atoms, bonds, rings);
-    }
-
-    /**
-     * @param smiles a SMILES string
-     * @return where each atom is written in it, in the order the parser creates them
-     */
-    private static List<Span> sourceSpans(String smiles)
-    {
-        List<Span> spans = new ArrayList<>();
-        int bracketStart = -1;
-        for (Token token : new Lexer(smiles).tokenize())
-        {
-            if (token.type() == TokenType.ATOM)
-            {
-                spans.add(new Span(token.position(), token.position() + token.text().length()));
-            }
-            else if (token.type() == TokenType.BRACKET_OPEN)
-            {
-                bracketStart = token.position();
-            }
-            else if (token.type() == TokenType.BRACKET_CLOSE)
-            {
-                spans.add(new Span(bracketStart, token.position() + 1));
-            }
-        }
-        return spans;
+        return new MoleculeMetadata(source.smiles(), canonical.smiles(), atoms, bonds, rings);
     }
 
     private static List<List<Integer>> emptyLists(int count)

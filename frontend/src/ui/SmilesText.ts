@@ -1,5 +1,11 @@
 import type { Span } from "../api/types";
 
+/** A range to highlight, and which of the stylesheet's colours to give it. */
+export interface Highlight {
+  span: Span | null;
+  colour: number;
+}
+
 export class SmilesText {
   /** How many highlight colours the stylesheet defines (.smiles-highlight-0 ...). */
   private static readonly COLOURS = 3;
@@ -15,12 +21,11 @@ export class SmilesText {
   }
 
   /**
-   * Highlights exactly the given none-overlapping ranges.
-   * The nth range gets colour {@code firstColour} + n (index, cycles through pallet)
+   * Highlights exactly the given none-overlapping ranges, each in its own colour.
+   * A colour cycles through the pallet, and a range of null is left out.
    */
-  highlight(spans: readonly (Span | null)[], firstColour = 0): void {
-    const ordered = spans
-      .map((span, index) => ({ span, colour: firstColour + index }))
+  highlight(highlights: readonly Highlight[]): void {
+    const ordered = highlights
       .filter((entry): entry is { span: Span; colour: number } => entry.span !== null)
       .sort((a, b) => a.span.start - b.span.start);
     const nodes: Node[] = [];
