@@ -1,6 +1,7 @@
 package com.ruben.chemistry.smiles;
 
 import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondDirection;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
@@ -12,7 +13,9 @@ import com.ruben.chemistry.util.CallGuard;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +54,15 @@ public final class SmilesParser
     private String pendingBondSymbol;
     private int pendingBondPosition;
 
+    /** Where each atom was written, by atom identity. */
+    private final Map<Atom, Span> atomSpans = new IdentityHashMap<>();
+
+    /** Every bond symbol written, against the atoms it joins, but not finished yet. */
+    private final List<WrittenBond> writtenBonds = new ArrayList<>();
+
+    /** Where each bond's symbols were written. */
+    private final Map<Bond, List<Span>> bondSpans = new IdentityHashMap<>();
+
     /**
      * Creates a parser for the given source string.
      *
@@ -60,6 +72,26 @@ public final class SmilesParser
     {
         this.source = source;
         this.lexer = new Lexer(source);
+    }
+
+    /**
+     * @return where each atom of the parsed molecule was written in the source, by atom identity
+     */
+    public Map<Atom, Span> atomSpans()
+    {
+        return Collections.unmodifiableMap(atomSpans);
+    }
+
+    /**
+     * A chain bond is written as its symbol alone, which is left out when its order is the one its
+     * atoms imply, so most have no entry. A ring-closure bond has one entry per end: its digits,
+     * together with the bond symbol before them if there was one.
+     *
+     * @return where each bond of the parsed molecule was written in the source, by bond identity
+     */
+    public Map<Bond, List<Span>> bondSpans()
+    {
+        return Collections.unmodifiableMap(bondSpans);
     }
 
     /**
@@ -97,7 +129,50 @@ public final class SmilesParser
             throw new InvalidNotationException("Unpaired ring closure digit", source, firstUnpaired.position());
         }
 
-        return demoteAcyclicAromaticBonds();
+        Molecule molecule = demoteAcyclicAromaticBonds();
+        resolveBondSpans(molecule);
+        return molecule;
+    }
+
+    /**
+     * Maps the bond symbols written in the source onto the bonds of the finished molecule, which
+     * {@link #demoteAcyclicAromaticBonds()} may have rebuilt.
+     *
+     * @param molecule the parsed molecule
+     */
+    /**
+     * @return where the bond symbol waiting to be applied was written, or {@code null} if there is none
+     */
+    private Span pendingBondSpan()
+    {
+        return pendingBondSymbol == null
+            ? null
+            : new Span(pendingBondPosition, pendingBondPosition + pendingBondSymbol.length());
+    }
+
+    /**
+     * Records where a bond was written, ignoring a bond that was written without a symbol.
+     *
+     * @param first the atom the bond was written from
+     * @param second the atom it was written to
+     * @param span where its symbol was written, or {@code null} if it had none
+     */
+    private void recordWrittenBond(Atom first, Atom second, Span span)
+    {
+        if (span != null)
+        {
+            writtenBonds.add(new WrittenBond(first, second, span));
+        }
+    }
+
+    private void resolveBondSpans(Molecule molecule)
+    {
+        for (WrittenBond written : writtenBonds)
+        {
+            Bond bond = molecule.bondBetween(written.first(), written.second()).orElseThrow();
+            bondSpans.computeIfAbsent(bond, key -> new ArrayList<>()).add(written.span());
+        }
+        bondSpans.replaceAll((bond, spans) -> List.copyOf(spans));
     }
 
     /**
@@ -156,6 +231,7 @@ public final class SmilesParser
                 .aromatic(NotationSymbols.isAromaticSymbol(token.text()))
                 .build();
         builder.addAtom(atom);
+        atomSpans.put(atom, spanOf(token));
         return atom;
     }
 
@@ -168,7 +244,7 @@ public final class SmilesParser
      */
     private Atom parseBracketAtom()
     {
-        lexer.next();
+        Token open = lexer.next();
 
         // every component is optional but their order is fixed, so each parse step either
         // consumes its component or leaves the position untouched for the next one
@@ -190,7 +266,7 @@ public final class SmilesParser
             Token unexpected = lexer.peek();
             throw new InvalidNotationException("Expected ']' to close bracket atom", source, unexpected.position());
         }
-        lexer.next();
+        Token close = lexer.next();
 
         Atom atom = Atom.builder(NotationSymbols.canonicalElement(symbol.text()))
             .aromatic(NotationSymbols.isAromaticSymbol(symbol.text()))
@@ -200,6 +276,7 @@ public final class SmilesParser
             .atomClass(atomClass)
             .build();
         builder.addAtom(atom);
+        atomSpans.put(atom, new Span(open.position(), close.position() + close.text().length()));
 
         if (asWritten != null)
         {
@@ -415,13 +492,14 @@ public final class SmilesParser
 
         // the pending symbol belongs to this closure, not to whatever atom comes next
         String symbolHere = pendingBondSymbol;
+        Span writtenHere = ringBondEnd(pendingBondSpan(), token);
         pendingBondSymbol = null;
 
         // a digit's first occurrence opens a ring, its second closes the one it opened
         PendingRingClosure opened = openRingBonds.remove(token.text());
         if (opened == null)
         {
-            openRingBonds.put(token.text(), new PendingRingClosure(previousAtom, symbolHere, token.position()));
+            openRingBonds.put(token.text(), new PendingRingClosure(previousAtom, symbolHere, writtenHere, token.position()));
             return;
         }
 
@@ -433,6 +511,9 @@ public final class SmilesParser
         BondOrder order = resolveRingBondOrder(opened.bondSymbol(), symbolHere, opened.atom(), previousAtom, token);
         builder.addBond(opened.atom(), previousAtom, order);
         stereo.recordBond(opened.atom(), previousAtom, order == BondOrder.DOUBLE);
+        // a ring bond is written at both of its ends, as the digits that pair them up
+        recordWrittenBond(opened.atom(), previousAtom, opened.writtenSpan());
+        recordWrittenBond(opened.atom(), previousAtom, writtenHere);
 
         registerRingClosureDirectionalEdges(opened.atom(), previousAtom, opened.bondSymbol(), symbolHere, token);
     }
@@ -509,9 +590,22 @@ public final class SmilesParser
      *
      * @param atom the atom the ring closure was opened on
      * @param bondSymbol the bond symbol written immediately before the digit when it was opened, or {@code null}
+     * @param writtenSpan where this end of the bond was written: its digits, with any symbol before them
      * @param position the opening digit's source position, for error reporting if it's never closed
      */
-    private record PendingRingClosure(Atom atom, String bondSymbol, int position)
+    private record PendingRingClosure(Atom atom, String bondSymbol, Span writtenSpan, int position)
+    {
+    }
+
+    /**
+     * A bond symbol written in the source, held against the atoms it joins because the bonds
+     * themselves do not survive {@link #demoteAcyclicAromaticBonds()}.
+     *
+     * @param first the atom the bond was written from
+     * @param second the atom it was written to
+     * @param span where the symbol was written
+     */
+    private record WrittenBond(Atom first, Atom second, Span span)
     {
     }
 
@@ -541,6 +635,7 @@ public final class SmilesParser
             }
             builder.addBond(previousAtom, atom, order);
             stereo.recordBond(previousAtom, atom, order == BondOrder.DOUBLE);
+            recordWrittenBond(previousAtom, atom, pendingBondSpan());
 
             // a direction is only ever written on a single bond flanking a double bond, never on the double bond itself
             if (order != BondOrder.DOUBLE && isDirectional(pendingBondSymbol))
@@ -556,6 +651,22 @@ public final class SmilesParser
 
         pendingBondSymbol = null;
         previousAtom = atom;
+    }
+
+    private static Span spanOf(Token token)
+    {
+        return new Span(token.position(), token.position() + token.text().length());
+    }
+
+    /**
+     * @param symbol where a ring closure's bond symbol was written, or {@code null} if it had none
+     * @param digits the ring closure's digit token
+     * @return where that end of the ring bond was written, the symbol and the digits together
+     */
+    private static Span ringBondEnd(Span symbol, Token digits)
+    {
+        Span span = spanOf(digits);
+        return symbol == null ? span : new Span(symbol.start(), span.end());
     }
 
     /**

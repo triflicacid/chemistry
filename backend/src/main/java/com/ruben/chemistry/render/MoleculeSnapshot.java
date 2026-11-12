@@ -8,15 +8,12 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * Resolves the indices a {@link Depiction} carries back to the {@link Molecule} it was drawn from.
  */
 public final class MoleculeSnapshot
 {
-    private final UUID id = UUID.randomUUID();
-
     private final Molecule origin;
 
     /** The origin's fragments, which share its atoms and bonds. */
@@ -61,15 +58,6 @@ public final class MoleculeSnapshot
     public static MoleculeSnapshot of(Molecule origin)
     {
         return new MoleculeSnapshot(Objects.requireNonNull(origin, "origin"));
-    }
-
-    /**
-     * Our UUID: placement indices are only valid for this snapshot if they originate from a Layout with the same UUID.
-     * @return a random identifier unique to this snapshot.
-     */
-    public UUID getId()
-    {
-        return id;
     }
 
     /**

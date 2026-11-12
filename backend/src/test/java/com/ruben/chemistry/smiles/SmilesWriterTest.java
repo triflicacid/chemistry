@@ -3,6 +3,7 @@ package com.ruben.chemistry.smiles;
 import com.ruben.chemistry.canonical.Ranker;
 import com.ruben.chemistry.canonical.Ranking;
 import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
@@ -657,6 +658,69 @@ class SmilesWriterTest
             String smiles = new SmilesWriter(molecule).setRenderDoubleBondStereo(false).write();
 
             assertThat(smiles).isEqualTo("FC=CF");
+        }
+    }
+
+    @Nested
+    class Spans
+    {
+        @Test
+        void records_where_a_written_bond_symbol_was_put()
+        {
+            SmilesWriter writer = new SmilesWriter(Molecule.fromSmiles("CC=CC"));
+            String smiles = writer.write();
+
+            Bond doubleBond = writer.bondSpans().keySet().stream().findFirst().orElseThrow();
+            assertThat(doubleBond.order()).isEqualTo(BondOrder.DOUBLE);
+            assertThat(writer.bondSpans()).hasSize(1);
+            Span span = writer.bondSpans().get(doubleBond).getFirst();
+            assertThat(smiles.substring(span.start(), span.end())).isEqualTo("=");
+        }
+
+        @Test
+        void records_nothing_for_a_bond_written_without_a_symbol()
+        {
+            SmilesWriter writer = new SmilesWriter(Molecule.fromSmiles("CCO"));
+            writer.write();
+
+            assertThat(writer.bondSpans()).isEmpty();
+        }
+
+        @Test
+        void records_a_ring_bond_at_both_of_the_ends_it_is_written_at()
+        {
+            Molecule molecule = Molecule.fromSmiles("C1CCCCC1");
+            SmilesWriter writer = new SmilesWriter(molecule);
+            String smiles = writer.write();
+
+            Bond closure = writer.bondSpans().keySet().stream().findFirst().orElseThrow();
+            assertThat(writer.bondSpans().get(closure)).hasSize(2);
+            for (Span span : writer.bondSpans().get(closure))
+            {
+                assertThat(smiles.substring(span.start(), span.end())).isEqualTo("1");
+            }
+        }
+
+        @Test
+        void keeps_a_ring_bond_symbol_with_its_digits_and_out_of_the_atom_span()
+        {
+            Molecule molecule = Molecule.fromSmiles("C=1CCCCC=1");
+            SmilesWriter writer = new SmilesWriter(molecule);
+            String smiles = writer.write();
+
+            Bond closure = writer.bondSpans().keySet().stream()
+                .filter(bond -> bond.order() == BondOrder.DOUBLE)
+                .findFirst()
+                .orElseThrow();
+            for (Span span : writer.bondSpans().get(closure))
+            {
+                assertThat(smiles.substring(span.start(), span.end())).isEqualTo("=1");
+            }
+            for (Atom atom : molecule.atoms())
+            {
+                Span span = writer.atomSpans().get(atom);
+                assertThat(smiles.substring(span.start(), span.end())).isEqualTo("C");
+            }
         }
     }
 }

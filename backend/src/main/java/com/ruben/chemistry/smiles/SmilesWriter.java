@@ -14,6 +14,7 @@ import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,12 @@ public final class SmilesWriter
     /** The direction character chosen for each bond acting as a double bond's reference. */
     private final Map<Bond, BondDirection> directionOf = new IdentityHashMap<>();
 
+    /** Where each atom's own token was written. */
+    private final Map<Atom, Span> atomSpans = new IdentityHashMap<>();
+
+    /** Where each bond was written, by bond identity. */
+    private final Map<Bond, List<Span>> bondSpans = new IdentityHashMap<>();
+
     private int nextRingNumber = 1;
     private boolean renderChirality = true;
     private boolean renderDoubleBondStereo = true;
@@ -66,6 +73,25 @@ public final class SmilesWriter
     public SmilesWriter(Molecule molecule)
     {
         this.molecule = molecule;
+    }
+
+    /**
+     * @return where each of the molecule's atoms was written by the last {@link #write()}
+     */
+    public Map<Atom, Span> atomSpans()
+    {
+        return Collections.unmodifiableMap(atomSpans);
+    }
+
+    /**
+     * A bond is written as the symbol before the atom it leads to, left out when its order is the
+     * one its atoms imply, or as a ring-closure token at each of its two ends.
+     *
+     * @return where each of the molecule's bonds was written by the last {@link #write()}
+     */
+    public Map<Bond, List<Span>> bondSpans()
+    {
+        return Collections.unmodifiableMap(bondSpans);
     }
 
     /**
@@ -158,6 +184,7 @@ public final class SmilesWriter
         ranking = ranker == null ? null : ranker.rank(molecule);
 
         molecule.atoms().forEach(atom -> ringBondsOfAtom.put(atom, new ArrayList<>()));
+        bondSpans.clear();
 
         // First pass: walk the graph purely to assign ring numbers
         for (Atom atom : rootAtoms())
@@ -403,7 +430,12 @@ public final class SmilesWriter
 
         if (arrivingBond != null)
         {
+            int symbolStart = text.length();
             text.append(bondSymbolPrefix(arrivingBond));
+            if (text.length() > symbolStart)
+            {
+                bondSpans.put(arrivingBond, List.of(new Span(symbolStart, text.length())));
+            }
         }
 
         // Ring bonds are already represented by numbers, so don't consider them as branches
@@ -419,8 +451,14 @@ public final class SmilesWriter
 
         List<Atom> labelledHydrogens = labelledHydrogensOf(atom);
         int expanded = labelledHydrogens.size();
+        List<String> closures = ringClosureTokens(atom);
+        int start = text.length();
         text.append(asWritten(atom, expanded)
-            .toString(ringClosureTokens(atom), resolveChirality(atom, arrivingBond, branches, expanded)));
+            .toString(closures, resolveChirality(atom, arrivingBond, branches, expanded)));
+        int closuresLength = closures.stream().mapToInt(String::length).sum();
+        int closuresStart = text.length() - closuresLength;
+        atomSpans.put(atom, new Span(start, closuresStart));
+        recordRingClosureSpans(atom, closures, closuresStart);
 
         // All but the last branch are wrapped in brackets so the chain can resume from this atom afterwards
         int remaining = expanded + branches.size();
@@ -565,6 +603,25 @@ public final class SmilesWriter
                 return ringBondSymbolPrefix(bond, atom) + digits;
             })
             .toList();
+    }
+
+    /**
+     * Records where an atom's ring-closure tokens were written, each being one end of a ring bond.
+     *
+     * @param atom the atom just written
+     * @param closures its ring-closure tokens, in the order {@link #ringClosureTokens} returned them
+     * @param start where the first of them was written
+     */
+    private void recordRingClosureSpans(Atom atom, List<String> closures, int start)
+    {
+        List<Bond> ringBonds = ringBondsOfAtom.get(atom);
+        int position = start;
+        for (int index = 0; index < closures.size(); index++)
+        {
+            int end = position + closures.get(index).length();
+            bondSpans.computeIfAbsent(ringBonds.get(index), bond -> new ArrayList<>()).add(new Span(position, end));
+            position = end;
+        }
     }
 
     /**

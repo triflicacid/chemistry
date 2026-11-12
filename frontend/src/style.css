@@ -1,0 +1,207 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 2rem 1rem;
+  color: #1f2328;
+}
+
+#app {
+  max-width: 60rem;
+  margin: 0 auto;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+label {
+  font-weight: 600;
+}
+
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 1rem;
+  padding: 0.5rem;
+}
+
+button {
+  font-size: 1rem;
+  padding: 0.4rem 1.2rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: progress;
+}
+
+.results {
+  margin-top: 1.5rem;
+}
+
+.card {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  overflow: auto;
+}
+
+.card svg {
+  max-width: 100%;
+  height: auto;
+  cursor: default;
+}
+
+.message.error {
+  color: #cf222e;
+}
+
+.options {
+  margin: 1rem 0;
+}
+
+.options-body {
+  display: grid;
+  gap: .6rem;
+  margin-top: .6rem;
+  padding: .8rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.options-body[hidden] {
+  display: none;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+}
+
+.option-label {
+  min-width: 11rem;
+}
+
+.radios, .arrangement {
+  display: flex;
+  gap: .8rem;
+  align-items: center;
+}
+
+.arrangement input[type=number] {
+  width: 5rem;
+}
+
+.option input[type=number] {
+  width: 7rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+button.small {
+  padding: .25rem .6rem;
+  font-size: .85rem;
+}
+
+.card .smiles {
+  display: block;
+  margin-bottom: .5rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.card .smiles-label {
+  display: block;
+  font-size: .75rem;
+  color: #57606a;
+}
+
+.smiles-highlight {
+  background: #ffd33d;
+  border-radius: 2px;
+}
+
+.smiles-highlight-1 {
+  background: #79c0ff;
+}
+
+.smiles-highlight-2 {
+  background: #ffa657;
+}
+
+.card svg .atom.hover > circle:first-of-type {
+  fill: rgba(255, 211, 61, .45);
+}
+
+.card svg .atom.hover-end-1 > circle:first-of-type {
+  fill: rgba(121, 192, 255, .35);
+}
+
+.card svg .atom.hover-end-2 > circle:first-of-type {
+  fill: rgba(255, 166, 87, .35);
+}
+
+.card svg .bond.hover > line:first-of-type {
+  stroke: rgba(255, 211, 61, .55);
+}
+
+.plaques {
+  position: fixed;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  max-width: 22rem;
+  pointer-events: none;
+}
+
+.plaques[hidden] {
+  display: none;
+}
+
+.plaque {
+  padding: .5rem .7rem;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+  font-size: .85rem;
+}
+
+.plaque h2 {
+  margin: 0 0 .3rem;
+  font-size: .9rem;
+}
+
+.plaque dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .1rem .8rem;
+  margin: 0;
+}
+
+.plaque dt {
+  color: #57606a;
+}
+
+.plaque dd {
+  margin: 0;
+}
+
+.plaque .ring {
+  margin: .2rem 0 0;
+}
+
+.plaque code {
+  overflow-wrap: anywhere;
+}
