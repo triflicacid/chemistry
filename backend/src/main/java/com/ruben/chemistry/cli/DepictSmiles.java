@@ -4,7 +4,8 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.render.DepictionOptions;
 import com.ruben.chemistry.render.Layout;
 import com.ruben.chemistry.render.MoleculeLayout;
-import com.ruben.chemistry.render.SvgRenderer;
+import com.ruben.chemistry.render.SceneRenderer;
+import com.ruben.chemistry.render.svg.SvgWriter;
 import com.ruben.chemistry.smiles.SmilesParser;
 
 import java.io.IOException;
@@ -149,6 +150,6 @@ final class DepictSmiles
 
         List<Layout> layouts = MoleculeLayout.layouts(molecule, depiction, alternatives);
 
-        return SvgRenderer.render(Layout.sideBySide(layouts), CommandOptions.style(options));
+        return SvgWriter.write(SceneRenderer.render(Layout.sideBySide(layouts), CommandOptions.style(options)));
     }
 }

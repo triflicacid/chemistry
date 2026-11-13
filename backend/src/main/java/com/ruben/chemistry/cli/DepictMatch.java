@@ -8,7 +8,8 @@ import com.ruben.chemistry.render.Colour;
 import com.ruben.chemistry.render.Layout;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.RenderStyle;
-import com.ruben.chemistry.render.SvgRenderer;
+import com.ruben.chemistry.render.SceneRenderer;
+import com.ruben.chemistry.render.svg.SvgWriter;
 import com.ruben.chemistry.render.match.MatchAnnotator;
 import com.ruben.chemistry.render.match.MatchStyle;
 
@@ -223,13 +224,13 @@ final class DepictMatch
 
         if (options.get(VIEW) == View.MERGED)
         {
-            return SvgRenderer.render(layout, style, MatchAnnotator.annotate(matches, molecule, matchStyle));
+            return SvgWriter.write(SceneRenderer.render(layout, style, MatchAnnotator.annotate(matches, molecule, matchStyle)));
         }
 
         List<String> panels = new ArrayList<>();
         for (Match match : matches)
         {
-            panels.add(SvgRenderer.render(layout, style, MatchAnnotator.annotate(match, molecule, matchStyle)));
+            panels.add(SvgWriter.write(SceneRenderer.render(layout, style, MatchAnnotator.annotate(match, molecule, matchStyle))));
         }
         return SvgPanels.row(panels);
     }

@@ -1,27 +1,25 @@
-package com.ruben.chemistry.render.svg;
+package com.ruben.chemistry.render.scene;
 
 import com.ruben.chemistry.render.Point;
 import com.ruben.chemistry.render.annotate.AnnotationStyle;
 import com.ruben.chemistry.render.annotate.Badge;
 import com.ruben.chemistry.render.annotate.Halo;
 
-import java.util.Objects;
-
 /**
- * Draws an {@link AnnotationStyle} onto an SVG.
+ * Draws an {@link AnnotationStyle} onto a scene.
  */
 public final class AnnotationLayer
 {
-    private final SvgWriter svg;
+    private final SceneBuilder scene;
     private final AnnotationStyle style;
 
     /**
-     * @param svg the document to draw onto
+     * @param scene the scene to draw onto
      * @param style how halos and badges look
      */
-    public AnnotationLayer(SvgWriter svg, AnnotationStyle style)
+    public AnnotationLayer(SceneBuilder scene, AnnotationStyle style)
     {
-        this.svg = svg;
+        this.scene = scene;
         this.style = style;
     }
 
@@ -34,7 +32,7 @@ public final class AnnotationLayer
      */
     public void atomHalo(Point centre, double radius, Halo halo)
     {
-        svg.circle(centre, radius * halo.radiusScale())
+        scene.circle(centre, radius * halo.radiusScale())
             .fill(halo.colour()).opacity(style.haloOpacity());
     }
 
@@ -48,7 +46,7 @@ public final class AnnotationLayer
      */
     public void bondHalo(Point from, Point to, double width, Halo halo)
     {
-        svg.line(from, to)
+        scene.line(from, to)
             .stroke(halo.colour()).strokeWidth(width * halo.radiusScale()).roundCaps().opacity(style.haloOpacity());
     }
 
@@ -60,7 +58,7 @@ public final class AnnotationLayer
      */
     public void badge(Point at, Badge badge)
     {
-        svg.text(at)
+        scene.text(at)
             .attribute("font-family", style.fontFamily())
             .attribute("font-size", style.badgeFontSize())
             .fill(badge.colour().orElse(style.badgeColour()))

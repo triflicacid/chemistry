@@ -4,10 +4,13 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.render.annotate.Annotations;
 import com.ruben.chemistry.render.annotate.AtomLook;
 import com.ruben.chemistry.render.annotate.BondLook;
-import com.ruben.chemistry.render.svg.AnnotationLayer;
-import com.ruben.chemistry.render.svg.Element;
-import com.ruben.chemistry.render.svg.Looks;
-import com.ruben.chemistry.render.svg.SvgWriter;
+import com.ruben.chemistry.render.scene.AnnotationLayer;
+import com.ruben.chemistry.render.scene.Attribute;
+import com.ruben.chemistry.render.scene.Element;
+import com.ruben.chemistry.render.scene.Gradient;
+import com.ruben.chemistry.render.scene.Looks;
+import com.ruben.chemistry.render.scene.Scene;
+import com.ruben.chemistry.render.scene.SceneBuilder;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -21,9 +24,10 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * Draws a {@link Depiction} as an SVG document.
+ * Lays a {@link Depiction} out on a page as a {@link Scene}: shapes and text at pixel coordinates. See
+ * {@link SvgRenderer} to write one as SVG.
  */
-public final class SvgRenderer
+public final class SceneRenderer
 {
     /** The colour of the debug outline around each cell. */
     private static final Colour CELL_OUTLINE = Colour.of("#1c7ed6");
@@ -94,8 +98,8 @@ public final class SvgRenderer
     /** The bonds, keyed by the pair of atoms they join, of rings drawn with a circle inside, which are drawn as single bonds. */
     private final Set<Long> circled = new HashSet<>();
 
-    /** The document being built up. */
-    private final SvgWriter svg;
+    /** The scene being built up. */
+    private final SceneBuilder svg;
 
     /** What the bond being drawn is painted with: a plain colour, or one of the gradients. */
     private String bondPaint;
@@ -109,7 +113,7 @@ public final class SvgRenderer
      * @param snapshot the snapshot the depiction's indices refer to, or {@code null} if not known
      * @param annotations how individual atoms and bonds are restyled
      */
-    private SvgRenderer(Depiction depiction, RenderStyle style, MoleculeSnapshot snapshot, Annotations annotations)
+    private SceneRenderer(Depiction depiction, RenderStyle style, MoleculeSnapshot snapshot, Annotations annotations)
     {
         this.snapshot = snapshot;
         this.annotations = annotations;
@@ -127,7 +131,7 @@ public final class SvgRenderer
         this.depiction = arrange(depiction);
         this.bounds = this.depiction.bounds();
         this.bondPaint = style.bondColour().hex();
-        this.svg = new SvgWriter(width(), height());
+        this.svg = new SceneBuilder(width(), height());
         this.annotationLayer = new AnnotationLayer(svg, annotations.style());
         for (BondPlacement bond : depiction.bonds())
         {
@@ -406,10 +410,10 @@ public final class SvgRenderer
      * Draws a depiction in the default style.
      *
      * @param depiction the depiction to draw
-     * @return a standalone SVG document
+     * @return the scene
      * @throws NullPointerException if {@code depiction} is {@code null}
      */
-    public static String render(Depiction depiction)
+    public static Scene render(Depiction depiction)
     {
         return render(depiction, RenderStyle.defaults());
     }
@@ -419,11 +423,11 @@ public final class SvgRenderer
      *
      * @param depiction the depiction to draw
      * @param style how it should be drawn
-     * @return a standalone SVG document
+     * @return the scene
      */
-    public static String render(Depiction depiction, RenderStyle style)
+    public static Scene render(Depiction depiction, RenderStyle style)
     {
-        return new SvgRenderer(depiction, style, null, Annotations.none()).draw();
+        return new SceneRenderer(depiction, style, null, Annotations.none()).draw();
     }
 
     /**
@@ -431,9 +435,9 @@ public final class SvgRenderer
      *
      * @param layout the layout to draw
      * @param style how it should be drawn
-     * @return a standalone SVG document
+     * @return the scene
      */
-    public static String render(Layout layout, RenderStyle style)
+    public static Scene render(Layout layout, RenderStyle style)
     {
         return render(layout, style, Annotations.none());
     }
@@ -442,22 +446,22 @@ public final class SvgRenderer
      * Draws a layout's depiction, restyling individual atoms and bonds.
      * <p>
      * Halos are drawn behind the structure and badges on top of it. A hydrogen the depiction made up takes the look of
-     * the atom it is attached to, apart from its badge. With no annotations the document is the same as without.
+     * the atom it is attached to, apart from its badge. With no annotations the scene is the same as without.
      *
      * @param layout the layout to draw
      * @param style how it should be drawn
      * @param annotations how to restyle the layout's atoms and bonds, which belong to its snapshot's molecule
-     * @return a standalone SVG document
+     * @return the scene
      */
-    public static String render(Layout layout, RenderStyle style, Annotations annotations)
+    public static Scene render(Layout layout, RenderStyle style, Annotations annotations)
     {
-        return new SvgRenderer(layout.depiction(), style, layout.snapshot(), annotations).draw();
+        return new SceneRenderer(layout.depiction(), style, layout.snapshot(), annotations).draw();
     }
 
     /**
-     * @return the whole document, bonds first so that atoms sit over the ends of them
+     * @return the whole scene, bonds first so that atoms sit over the ends of them
      */
-    private String draw()
+    private Scene draw()
     {
         style.background().ifPresent(svg::background);
         if (style.metadata())
@@ -486,7 +490,7 @@ public final class SvgRenderer
             drawAtom(atom);
         }
         drawBadges();
-        return svg.render();
+        return svg.build();
     }
 
     /**
@@ -662,7 +666,7 @@ public final class SvgRenderer
     {
         double scale = style.bondLength();
         Point corner = toPage(new Point(box[0], box[3]));
-        Element outline = svg.rect(corner, (box[2] - box[0]) * scale, (box[3] - box[1]) * scale)
+        Element.Rect outline = svg.rect(corner, (box[2] - box[0]) * scale, (box[3] - box[1]) * scale)
             .fill("none").stroke(colour).strokeWidth(1);
         if (dashes.length > 0)
         {
@@ -768,7 +772,7 @@ public final class SvgRenderer
         AtomPlacement first = depiction.atom(bond.first());
         AtomPlacement second = depiction.atom(bond.second());
 
-        Element group = svg.group().cssClass("bond")
+        Element.Group group = svg.group().cssClass("bond")
             .attribute("data-bond", bond.sourceBond().isPresent() ? String.valueOf(bond.sourceBond().getAsInt()) : null)
             .attribute("data-order", bond.order().name().toLowerCase(Locale.ROOT))
             .attribute("data-style", bond.style().name().toLowerCase(Locale.ROOT))
@@ -865,10 +869,10 @@ public final class SvgRenderer
     private String gradient(Colour from, Colour to, Point start, Point end)
     {
         return svg.linearGradient("bond", start, end, List.of(
-            new SvgWriter.Stop(0, from),
-            new SvgWriter.Stop(GRADIENT_SHOULDER, from.mix(to, 0.5 - GRADIENT_DRIFT)),
-            new SvgWriter.Stop(1 - GRADIENT_SHOULDER, from.mix(to, 0.5 + GRADIENT_DRIFT)),
-            new SvgWriter.Stop(1, to)));
+            new Gradient.Stop(0, from),
+            new Gradient.Stop(GRADIENT_SHOULDER, from.mix(to, 0.5 - GRADIENT_DRIFT)),
+            new Gradient.Stop(1 - GRADIENT_SHOULDER, from.mix(to, 0.5 + GRADIENT_DRIFT)),
+            new Gradient.Stop(1, to)));
     }
 
     /**
@@ -1043,7 +1047,7 @@ public final class SvgRenderer
      */
     private void line(Point from, Point to, boolean dashed)
     {
-        Element line = svg.line(from, to).stroke(bondPaint).strokeWidth(bondWidth).roundCaps();
+        Element.Line line = svg.line(from, to).stroke(bondPaint).strokeWidth(bondWidth).roundCaps();
         if (dashed)
         {
             line.dash(AROMATIC_DASH, AROMATIC_DASH);
@@ -1095,7 +1099,7 @@ public final class SvgRenderer
     {
         Point centre = toPage(atom.position());
 
-        Element group = svg.group().cssClass("atom")
+        Element.Group group = svg.group().cssClass("atom")
             .attribute("data-atom", atom.sourceAtom().isPresent() ? String.valueOf(atom.sourceAtom().getAsInt()) : null)
             .attribute("data-placement", String.valueOf(atom.placementIndex()))
             .attribute("data-fragment", String.valueOf(atom.fragment()))
@@ -1138,7 +1142,7 @@ public final class SvgRenderer
     {
         Point centre = toPage(atom.position());
 
-        Element label = svg.text(centre)
+        Element.Text label = svg.text(centre)
             .attribute("font-family", style.fontFamily())
             .attribute("font-size", style.fontSize())
             .fill(Looks.fill(look, style.colourOf(atom.element())))
@@ -1160,8 +1164,8 @@ public final class SvgRenderer
             for (Run run : runs)
             {
                 label.span(run.text(),
-                    "font-size", SvgWriter.number(style.fontSize() * run.scale()),
-                    "dy", SvgWriter.number(run.rise() - baseline));
+                    Attribute.of("font-size", style.fontSize() * run.scale()),
+                    Attribute.of("dy", run.rise() - baseline));
                 baseline = run.rise();
             }
         }

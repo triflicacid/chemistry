@@ -5,7 +5,8 @@ import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.render.Layout;
 import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.render.MoleculeLayout;
-import com.ruben.chemistry.render.SvgRenderer;
+import com.ruben.chemistry.render.SceneRenderer;
+import com.ruben.chemistry.render.svg.SvgWriter;
 
 public final class MoleculeRenderer
 {
@@ -60,7 +61,7 @@ public final class MoleculeRenderer
         try
         {
             Layout layout = MoleculeLayout.layout(molecule, settings.depiction());
-            return new Rendering(SvgRenderer.render(layout, settings.style()), layout);
+            return new Rendering(SvgWriter.write(SceneRenderer.render(layout, settings.style())), layout);
         }
         catch (IllegalArgumentException | IllegalStateException unsupported)
         {

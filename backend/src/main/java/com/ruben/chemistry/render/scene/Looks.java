@@ -1,4 +1,4 @@
-package com.ruben.chemistry.render.svg;
+package com.ruben.chemistry.render.scene;
 
 import com.ruben.chemistry.render.Colour;
 import com.ruben.chemistry.render.annotate.AtomLook;
@@ -53,7 +53,7 @@ public final class Looks
      * @param look how the atom is restyled
      * @return {@code element}, with the look's opacity applied if it has one
      */
-    public static Element apply(Element element, AtomLook look)
+    public static <E extends Element<E>> E apply(E element, AtomLook look)
     {
         look.opacity().ifPresent(element::opacity);
         return element;
@@ -64,7 +64,7 @@ public final class Looks
      * @param look how the bond is restyled
      * @return {@code element}, with the look's opacity applied if it has one
      */
-    public static Element apply(Element element, BondLook look)
+    public static <E extends Element<E>> E apply(E element, BondLook look)
     {
         look.opacity().ifPresent(element::opacity);
         return element;
