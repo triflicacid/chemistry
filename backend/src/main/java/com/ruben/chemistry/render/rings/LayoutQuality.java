@@ -3,9 +3,7 @@ package com.ruben.chemistry.render.rings;
 import com.ruben.chemistry.render.Point;
 
 /**
- * Measures how well a drawing keeps clear of itself.
- * <p>
- * A drawing is a set of points joined by bonds, each bond being a pair of indices into the points.
+ * Measures how well a drawing reads: how clear it keeps of itself and whether it hides a bend.
  */
 public final class LayoutQuality
 {

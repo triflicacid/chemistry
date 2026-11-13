@@ -7,11 +7,7 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * Builds a connected set of atoms in space with a simple force field, which holds every bond at one bond length, keeps
- * the two ends of a pair of bonds at a tetrahedral distance, and pushes atoms that are not bonded apart.
- * <p>
- * The search starts from random positions, so it is run several times over and the structures it settles on that differ
- * in strain are kept as the different shapes the system can take.
+ * Builds a connected set of atoms in space with a simple force field, and finds the different shapes it can take.
  */
 final class StructureEmbedder
 {
@@ -109,6 +105,8 @@ final class StructureEmbedder
      */
     List<double[]> structures()
     {
+        // each run starts from random positions and settles wherever it can, so run it many times over and keep the
+        // results that differ in strain as the different shapes the system can take
         Random random = new Random(SEED);
         List<double[]> structures = new ArrayList<>();
         List<Double> strains = new ArrayList<>();

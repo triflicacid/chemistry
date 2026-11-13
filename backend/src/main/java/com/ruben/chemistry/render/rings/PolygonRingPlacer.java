@@ -11,13 +11,6 @@ import java.util.Map;
 
 /**
  * Places the rings of one ring system, each as a regular polygon.
- * <p>
- * The first ring is drawn as a regular polygon, and each ring after it is built on the atoms it shares with what is
- * already drawn, bulging away from the ring it was built on.
- * <p>
- * That greedy drawing is exact for simple fused systems, but it can fold bridged and caged ones, such as
- * {@code C12C3C4C1C5C2C3C45}, over themselves. When it does, {@link RingEnergyMinimiser} redraws the system with every bond
- * still one bond length long.
  */
 final class PolygonRingPlacer
 {
@@ -59,6 +52,8 @@ final class PolygonRingPlacer
         placeFirst(0);
         while (true)
         {
+            // take whichever ring is left that shares the most atoms with those already drawn, so that each one is
+            // built on as much as possible of what is settled rather than on a single atom
             int next = -1;
             int most = 0;
             for (int ring = 0; ring < rings.size(); ring++)

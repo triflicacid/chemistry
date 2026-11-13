@@ -9,12 +9,7 @@ import java.util.List;
 
 /**
  * Draws a connected set of atoms as a flat view of the shape {@link StructureEmbedder} builds for it in space. Atoms
- * are never moved within a drawing, so a drawing is always a true view of the structure and never a reshaped one; only
- * the view as a whole is scaled, so that its middling bond is one bond length.
- * <p>
- * A bond seen at an angle looks shorter, so bonds of one length in space are drawn different lengths. The best view is
- * the one that keeps atoms apart and then foreshortens most evenly, as a bond drawn far shorter than the bonds around
- * it reads as a kink rather than as a bond pointing away from the reader.
+ * are never moved within a drawing, so a drawing is always a true view of the structure and never a reshaped one.
  */
 final class StructureProjector
 {
@@ -27,11 +22,7 @@ final class StructureProjector
     /** how many of the best views of each structure are kept to begin with */
     private static final int SHORTLIST_VIEWS = 6;
 
-    /**
-     * How far apart atoms have to be, in bond lengths, for a view of a structure to count as keeping them apart. Views
-     * that keep them this far apart are told apart by how evenly they foreshorten rather than by room to spare, so this
-     * is the room a drawing needs rather than a distance to maximise.
-     */
+    /** How far apart atoms have to be, in bond lengths, for a view of a structure to count as keeping them apart. */
     static final double VIEW_CLEARANCE = 0.45;
 
     /** How short a bond may look, in bond lengths, before the view counts as colliding. */
@@ -75,8 +66,6 @@ final class StructureProjector
 
     /**
      * Takes the usual shortlist of views, and widens it only while that leaves fewer different drawings than wanted.
-     * The effort alone sets how many views there are to choose from, so asking for more drawings never changes which
-     * is best, and fewer than wanted come back once the structure has no more views that look different.
      *
      * @param wanted how many different drawings are wanted
      * @return the different drawings found, best first, as x and y of each atom in turn; empty if the system could not be built in space

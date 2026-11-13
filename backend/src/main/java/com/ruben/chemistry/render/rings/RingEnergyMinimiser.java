@@ -15,17 +15,8 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Redraws a ring system whose first drawing collides with itself.
- * It improves a drawing made by {@link PolygonRingPlacer}.
- * <p>
- * Every bond is held at exactly one bond length. Among the drawings that allow, a penalty is minimised that keeps each ring
- * near a regular polygon, keeps atoms apart from each other and from bonds they are not on, and gently pulls atoms
- * that are equivalent by symmetry to look alike. The search starts from several drawings and keeps the best result.
- * <p>
- * A cage, such as cubane, has no flat drawing that any molecule could have, so none is searched for: it is handed
- * straight to {@link StructureProjector} and drawn as a view of its shape in space. Systems that are not cages but
- * still cannot be drawn with bonds of one length without bonds crossing get the drawing with the fewest crossings that
- * keeps atoms apart.
+ * Redraws a ring system whose first drawing collides with itself, keeping every bond one bond length long, or hands a
+ * cage to {@link StructureProjector} to be drawn as a view of its shape in space.
  */
 final class RingEnergyMinimiser
 {
@@ -345,8 +336,7 @@ final class RingEnergyMinimiser
 
     /**
      * @param points where each atom is drawn
-     * @return how many degrees the most pinched angle falls short of what its own ring would turn through if it were
-     *     regular, or zero if none falls short
+     * @return how many degrees the most pinched angle falls short of its own ring's angle, or zero if none falls short
      */
     private double pinch(Point[] points)
     {
@@ -373,7 +363,7 @@ final class RingEnergyMinimiser
      * @param centre the atom the two bonds meet at
      * @param first the atom at the far end of one bond
      * @param second the atom at the far end of the other
-     * @param regular the angle the smallest such ring would turn through were it drawn as a regular polygon
+     * @param regular the angle to hold them to
      */
     private record RingAngle(int centre, int first, int second, double regular)
     {
@@ -393,10 +383,10 @@ final class RingEnergyMinimiser
                 int centre = ring[at];
                 int before = ring[(at - 1 + ring.length) % ring.length];
                 int after = ring[(at + 1) % ring.length];
-                // the smallest ring through a pair of bonds sets how tight their angle may be, so a three-ring is
-                // held to its own sixty degrees rather than to a six-ring's hundred and twenty
                 List<Integer> key = List.of(centre, Math.min(before, after), Math.max(before, after));
                 RingAngle kept = found.get(key);
+                // the smallest ring through the pair wins, so a three-ring is held to its own sixty degrees rather
+                // than to a six-ring's hundred and twenty
                 if (kept == null || regular < kept.regular())
                 {
                     found.put(key, new RingAngle(centre, before, after, regular));
@@ -408,7 +398,8 @@ final class RingEnergyMinimiser
 
     /**
      * @param seed the drawing already made
-     * @return the drawings to search from: the given one, a spring drawing, and noisy copies of both
+     * @return the drawings to search from: the given one, a spring drawing, flat views of the spectral embedding, and
+     *     scattered drawings
      */
     private List<double[]> starts(double[] seed)
     {
@@ -417,9 +408,43 @@ final class RingEnergyMinimiser
         starts.add(springDrawing());
 
         Random random = new Random(SEED);
+        double[][] embedding = spectralEmbedding();
         int views = Math.max(8, Math.min(STARTS, STARTS_BUDGET / (count * count))) * effort;
+        for (int view = 0; view < views; view++)
+        {
+            double[] direction = unit(random);
+            double[] across = unit(random);
+            // two directions at right angles to each other and to nothing else in particular make the page
+            double along = Vectors.dot(direction, across);
+            for (int axis = 0; axis < 3; axis++)
+            {
+                across[axis] -= along * direction[axis];
+            }
+            double norm = Math.sqrt(Vectors.dot(across, across));
+            if (norm < 1e-6)
+            {
+                continue;
+            }
+            for (int axis = 0; axis < 3; axis++)
+            {
+                across[axis] /= norm;
+            }
+            double[] up = {
+                direction[1] * across[2] - direction[2] * across[1],
+                direction[2] * across[0] - direction[0] * across[2],
+                direction[0] * across[1] - direction[1] * across[0]};
+
+            double[] drawing = new double[count * 2];
+            for (int atom = 0; atom < count; atom++)
+            {
+                drawing[atom * 2] = Vectors.dot(embedding[atom], across);
+                drawing[atom * 2 + 1] = Vectors.dot(embedding[atom], up);
+            }
+            starts.add(drawing);
+        }
+
         double spread = Math.sqrt(count) / 2;
-        for (int scattered = 0; scattered < views + views / 2; scattered++)
+        for (int scattered = 0; scattered < views / 2; scattered++)
         {
             double[] drawing = new double[count * 2];
             for (int at = 0; at < drawing.length; at++)
@@ -431,7 +456,195 @@ final class RingEnergyMinimiser
         return starts;
     }
 
-            /**
+    private static double[] unit(Random random)
+    {
+        double[] vector = {random.nextGaussian(), random.nextGaussian(), random.nextGaussian()};
+        double norm = Math.sqrt(Vectors.dot(vector, vector));
+        for (int axis = 0; axis < 3; axis++)
+        {
+            vector[axis] /= norm;
+        }
+        return vector;
+    }
+
+    /**
+     * Puts every atom in space so that how far apart atoms are tracks how many bonds apart they are.
+     *
+     * @return each atom's three coordinates, scaled so that bonds are about one bond length long
+     */
+    private double[][] spectralEmbedding()
+    {
+        // how many bonds apart every pair of atoms is, breadth first from each one in turn
+        double[][] squared = new double[count][count];
+        for (int from = 0; from < count; from++)
+        {
+            int[] distance = new int[count];
+            Arrays.fill(distance, -1);
+            distance[from] = 0;
+            java.util.ArrayDeque<Integer> queue = new java.util.ArrayDeque<>();
+            queue.add(from);
+            while (!queue.isEmpty())
+            {
+                int atom = queue.poll();
+                for (int other = 0; other < count; other++)
+                {
+                    if (joined[atom][other] && distance[other] < 0)
+                    {
+                        distance[other] = distance[atom] + 1;
+                        queue.add(other);
+                    }
+                }
+            }
+            for (int other = 0; other < count; other++)
+            {
+                squared[from][other] = (double) distance[other] * distance[other];
+            }
+        }
+
+        // double centring turns squared distances into dot products about the middle
+        double[] rowMeans = new double[count];
+        double total = 0;
+        for (int row = 0; row < count; row++)
+        {
+            for (int column = 0; column < count; column++)
+            {
+                rowMeans[row] += squared[row][column] / count;
+            }
+            total += rowMeans[row] / count;
+        }
+        double[][] products = new double[count][count];
+        for (int row = 0; row < count; row++)
+        {
+            for (int column = 0; column < count; column++)
+            {
+                products[row][column] = -0.5 * (squared[row][column] - rowMeans[row] - rowMeans[column] + total);
+            }
+        }
+
+        // the directions those dot products spread furthest along are the ones to lay the atoms out on
+        double[][] vectors = new double[count][count];
+        double[] values = eigen(products, vectors);
+        Integer[] order = new Integer[count];
+        for (int index = 0; index < count; index++)
+        {
+            order[index] = index;
+        }
+        Arrays.sort(order, (first, second) -> Double.compare(values[second], values[first]));
+
+        // the three widest, which put the atoms as near their bond-count distances as three dimensions allow
+        double[][] embedding = new double[count][3];
+        for (int axis = 0; axis < 3 && axis < count; axis++)
+        {
+            double root = Math.sqrt(Math.max(0, values[order[axis]]));
+            for (int atom = 0; atom < count; atom++)
+            {
+                embedding[atom][axis] = vectors[atom][order[axis]] * root;
+            }
+        }
+
+        // bond counts come out at whatever size, so bring the typical bond back to one bond length
+        double bondLength = 0;
+        for (int[] bond : bonds)
+        {
+            for (int axis = 0; axis < 3; axis++)
+            {
+                double difference = embedding[bond[0]][axis] - embedding[bond[1]][axis];
+                bondLength += difference * difference;
+            }
+        }
+        double scale = bondLength > 1e-12 ? 1 / Math.sqrt(bondLength / bonds.length) : 1;
+        for (double[] point : embedding)
+        {
+            for (int axis = 0; axis < 3; axis++)
+            {
+                point[axis] *= scale;
+            }
+        }
+        return embedding;
+    }
+
+    /**
+     * Finds the directions a symmetric matrix spreads along, and how far it spreads along each.
+     *
+     * @param matrix the matrix, which is destroyed
+     * @param vectors where to put the directions, one per column
+     * @return how far it spreads along each direction, in the order of the columns
+     */
+    private static double[] eigen(double[][] matrix, double[][] vectors)
+    {
+        // turn the matrix two axes at a time until only its diagonal is left, keeping every turn made: the diagonal
+        // is then how far it spreads, and the turns together are the directions it spreads along
+        int size = matrix.length;
+        for (int row = 0; row < size; row++)
+        {
+            Arrays.fill(vectors[row], 0);
+            vectors[row][row] = 1;
+        }
+        for (int sweep = 0; sweep < 60; sweep++)
+        {
+            // how much is left off the diagonal, which is what a sweep drives down
+            double off = 0;
+            for (int row = 0; row < size; row++)
+            {
+                for (int column = row + 1; column < size; column++)
+                {
+                    off += matrix[row][column] * matrix[row][column];
+                }
+            }
+            if (off < 1e-22)
+            {
+                break;
+            }
+            for (int p = 0; p < size; p++)
+            {
+                for (int q = p + 1; q < size; q++)
+                {
+                    if (Math.abs(matrix[p][q]) < 1e-300)
+                    {
+                        continue;
+                    }
+                    // the one turn of these two axes that leaves nothing off the diagonal between them, taking the
+                    // smaller of its two roots, as the larger turns much further for the same result
+                    double theta = (matrix[q][q] - matrix[p][p]) / (2 * matrix[p][q]);
+                    double tangent = Math.signum(theta == 0 ? 1 : theta) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+                    double cosine = 1 / Math.sqrt(tangent * tangent + 1);
+                    double sine = tangent * cosine;
+                    // turning the matrix means turning its columns and then its rows
+                    for (int k = 0; k < size; k++)
+                    {
+                        double kp = matrix[k][p];
+                        double kq = matrix[k][q];
+                        matrix[k][p] = cosine * kp - sine * kq;
+                        matrix[k][q] = sine * kp + cosine * kq;
+                    }
+                    for (int k = 0; k < size; k++)
+                    {
+                        double pk = matrix[p][k];
+                        double qk = matrix[q][k];
+                        matrix[p][k] = cosine * pk - sine * qk;
+                        matrix[q][k] = sine * pk + cosine * qk;
+                    }
+                    // the same turn onto the running total, which ends up holding every turn made
+                    for (int k = 0; k < size; k++)
+                    {
+                        double kp = vectors[k][p];
+                        double kq = vectors[k][q];
+                        vectors[k][p] = cosine * kp - sine * kq;
+                        vectors[k][q] = sine * kp + cosine * kq;
+                    }
+                }
+            }
+        }
+        // nothing is left off the diagonal, so the diagonal is the answer
+        double[] values = new double[size];
+        for (int index = 0; index < size; index++)
+        {
+            values[index] = matrix[index][index];
+        }
+        return values;
+    }
+
+    /**
      * @return the largest ring drawn as a regular polygon, with everything else pulled to the middle of its neighbours
      */
     private double[] springDrawing()
