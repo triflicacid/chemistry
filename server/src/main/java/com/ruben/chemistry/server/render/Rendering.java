@@ -1,6 +1,6 @@
 package com.ruben.chemistry.server.render;
 
-import com.ruben.chemistry.render.Layout;
+import com.ruben.chemistry.render.Structure2D;
 import com.ruben.chemistry.render.MoleculeSnapshot;
 import com.ruben.chemistry.render.scene.Scene;
 
@@ -12,7 +12,7 @@ import com.ruben.chemistry.render.scene.Scene;
  * @param svg the scene written as an SVG document
  * @param layout the layout the scene was drawn from
  */
-public record Rendering(Scene scene, String svg, Layout layout)
+public record Rendering(Scene scene, String svg, Structure2D layout)
 {
     /**
      * @return the snapshot the layout's indices refer to

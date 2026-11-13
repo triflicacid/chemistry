@@ -5,7 +5,7 @@ import com.ruben.chemistry.query.Match;
 import com.ruben.chemistry.query.Query;
 import com.ruben.chemistry.query.SubstructureMatcher;
 import com.ruben.chemistry.render.Colour;
-import com.ruben.chemistry.render.Layout;
+import com.ruben.chemistry.render.Structure2D;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.RenderStyle;
 import com.ruben.chemistry.render.SceneRenderer;
@@ -219,7 +219,7 @@ final class DepictMatch
             matchStyle = matchStyle.withColour(options.get(MATCH_COLOUR));
         }
 
-        Layout layout = MoleculeLayout.layout(molecule, CommandOptions.depictionOptions(options));
+        Structure2D layout = MoleculeLayout.layout(molecule, CommandOptions.depictionOptions(options));
         RenderStyle style = CommandOptions.style(options);
 
         if (options.get(VIEW) == View.MERGED)

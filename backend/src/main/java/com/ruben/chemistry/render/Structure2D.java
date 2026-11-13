@@ -13,7 +13,7 @@ import java.util.OptionalInt;
  * @param depiction the data describing what to draw, suitable for sending to a client
  * @param snapshot the server-side molecule data used to resolve source indices
  */
-public record Layout(Depiction depiction, MoleculeSnapshot snapshot)
+public record Structure2D(Depiction depiction, MoleculeSnapshot snapshot)
 {
     /**
      * Gathers drawings of one molecule into one, each as a set of fragments of their own so that they are arranged
@@ -24,7 +24,7 @@ public record Layout(Depiction depiction, MoleculeSnapshot snapshot)
      *     and bonds as the first does
      * @throws IllegalArgumentException if there are no layouts
      */
-    public static Layout sideBySide(List<Layout> layouts)
+    public static Structure2D sideBySide(List<Structure2D> layouts)
     {
         if (layouts.isEmpty())
         {
@@ -39,7 +39,7 @@ public record Layout(Depiction depiction, MoleculeSnapshot snapshot)
         List<BondPlacement> bonds = new ArrayList<>();
         List<RingPlacement> rings = new ArrayList<>();
         List<FragmentFrame> fragments = new ArrayList<>();
-        for (Layout layout : layouts)
+        for (Structure2D layout : layouts)
         {
             Depiction depiction = layout.depiction();
             int atomOffset = atoms.size();
@@ -61,7 +61,7 @@ public record Layout(Depiction depiction, MoleculeSnapshot snapshot)
                 fragments.add(new FragmentFrame(frame.index() + fragmentOffset, frame.bounds()));
             }
         }
-        return new Layout(new Depiction(atoms, bonds, rings, fragments), layouts.get(0).snapshot());
+        return new Structure2D(new Depiction(atoms, bonds, rings, fragments), layouts.get(0).snapshot());
     }
 
     /**

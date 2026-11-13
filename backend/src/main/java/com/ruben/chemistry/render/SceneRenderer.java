@@ -437,7 +437,7 @@ public final class SceneRenderer
      * @param style how it should be drawn
      * @return the scene
      */
-    public static Scene render(Layout layout, RenderStyle style)
+    public static Scene render(Structure2D layout, RenderStyle style)
     {
         return render(layout, style, Annotations.none());
     }
@@ -453,7 +453,7 @@ public final class SceneRenderer
      * @param annotations how to restyle the layout's atoms and bonds, which belong to its snapshot's molecule
      * @return the scene
      */
-    public static Scene render(Layout layout, RenderStyle style, Annotations annotations)
+    public static Scene render(Structure2D layout, RenderStyle style, Annotations annotations)
     {
         return new SceneRenderer(layout.depiction(), style, layout.snapshot(), annotations).draw();
     }

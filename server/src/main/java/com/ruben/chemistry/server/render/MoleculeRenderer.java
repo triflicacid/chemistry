@@ -2,7 +2,7 @@ package com.ruben.chemistry.server.render;
 
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
-import com.ruben.chemistry.render.Layout;
+import com.ruben.chemistry.render.Structure2D;
 import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.SceneRenderer;
@@ -61,7 +61,7 @@ public final class MoleculeRenderer
 
         try
         {
-            Layout layout = MoleculeLayout.layout(molecule, settings.depiction());
+            Structure2D layout = MoleculeLayout.layout(molecule, settings.depiction());
             Scene scene = SceneRenderer.render(layout, settings.style());
             return new Rendering(scene, SvgWriter.write(scene), layout);
         }

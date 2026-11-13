@@ -28,6 +28,13 @@ tasks.register<JavaExec>("depict") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("depict3d") {
+    group = "chemistry"
+    description = "Draws a SMILES string in 3D as an SVG document, e.g. --args=\"C1CC2CCC1CC2 --out=bicyclo.svg --yaw=40\"."
+    mainClass = "com.ruben.chemistry.cli.DepictSpace"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("match") {
     group = "chemistry"
     description = "Draws a SMILES string with the matches of a SMARTS pattern highlighted, e.g. --args=\"CCO CO --out=ethanol.svg\"."

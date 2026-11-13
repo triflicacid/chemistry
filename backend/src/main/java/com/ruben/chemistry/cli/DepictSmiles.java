@@ -2,7 +2,7 @@ package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.render.DepictionOptions;
-import com.ruben.chemistry.render.Layout;
+import com.ruben.chemistry.render.Structure2D;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.SceneRenderer;
 import com.ruben.chemistry.render.svg.SvgWriter;
@@ -148,8 +148,8 @@ final class DepictSmiles
         int alternatives = options.get(ALTERNATIVES);
         DepictionOptions depiction = CommandOptions.depictionOptions(options);
 
-        List<Layout> layouts = MoleculeLayout.layouts(molecule, depiction, alternatives);
+        List<Structure2D> layouts = MoleculeLayout.layouts(molecule, depiction, alternatives);
 
-        return SvgWriter.write(SceneRenderer.render(Layout.sideBySide(layouts), CommandOptions.style(options)));
+        return SvgWriter.write(SceneRenderer.render(Structure2D.sideBySide(layouts), CommandOptions.style(options)));
     }
 }
