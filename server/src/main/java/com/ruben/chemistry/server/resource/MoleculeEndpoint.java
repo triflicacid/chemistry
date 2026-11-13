@@ -13,6 +13,7 @@ import com.ruben.chemistry.server.render.MoleculeRenderer;
 import com.ruben.chemistry.server.render.RenderException;
 import com.ruben.chemistry.server.render.RenderOptions;
 import com.ruben.chemistry.server.render.Rendering;
+import com.ruben.chemistry.server.render.SceneJson;
 
 import java.io.IOException;
 import java.util.Map;
@@ -44,6 +45,8 @@ public final class MoleculeEndpoint extends Endpoint
         registry.register(HttpMethod.POST, "/api/molecules", this::create);
         registry.register(HttpMethod.POST, "/api/molecules/:id/render", this::render);
         registry.register(HttpMethod.GET, "/api/molecules/:id/svg", this::svg);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/scene", this::renderScene);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/scene", this::scene);
         registry.register(HttpMethod.GET, "/api/molecules/:id/metadata", this::metadata);
     }
 
@@ -72,6 +75,26 @@ public final class MoleculeEndpoint extends Endpoint
 
     private void render(Request request, ResponseContext responseContext) throws IOException
     {
+        Rendering rendering = draw(request, responseContext);
+        responseContext.respond(200, "image/svg+xml", rendering.svg());
+    }
+
+    private void renderScene(Request request, ResponseContext responseContext) throws IOException
+    {
+        Rendering rendering = draw(request, responseContext);
+        responseContext.respond(200, SceneJson.of(rendering.scene()));
+    }
+
+    private void scene(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        responseContext.header(MOLECULE_ID_HEADER, stored.id());
+        responseContext.respond(200, SceneJson.of(latest(stored).scene()));
+    }
+
+    /** Draws the molecule in the request's path with the request's options, and makes it the molecule's latest. */
+    private Rendering draw(Request request, ResponseContext responseContext)
+    {
         StoredMolecule stored = find(request);
         RenderOptions options = request.hasBody() ? request.body(RenderRequest.class).options() : null;
 
@@ -80,7 +103,7 @@ public final class MoleculeEndpoint extends Endpoint
             Rendering rendering = renderer.render(stored.molecule(), options == null ? RenderOptions.defaults() : options);
             stored.setLatest(rendering);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
-            responseContext.respond(200, "image/svg+xml", rendering.svg());
+            return rendering;
         }
         catch (RenderException failure)
         {

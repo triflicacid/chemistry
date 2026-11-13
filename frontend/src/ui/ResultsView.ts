@@ -1,5 +1,7 @@
-import type { MoleculeId, MoleculeMetadata } from "../api/types";
-import { sanitiseSvg } from "../svg";
+import type { MoleculeId, MoleculeMetadata, Scene } from "../api/types";
+import { Selection } from "../store";
+import type { MoleculeView } from "../view/MoleculeView";
+import { SvgView } from "../view/SvgView";
 import { FormulaView } from "./FormulaView";
 import { MoleculeInspector } from "./MoleculeInspector";
 import { SmilesText } from "./SmilesText";
@@ -8,9 +10,10 @@ import { SmilesText } from "./SmilesText";
 interface Shown {
   moleculeId: MoleculeId;
   card: HTMLElement;
-  svg: SVGSVGElement;
+  view: MoleculeView;
   smiles: SmilesText;
   canonical: SmilesText;
+  unsubscribe: () => void;
 }
 
 /** The section below the form where results or an error are shown. */
@@ -19,6 +22,7 @@ export class ResultsView {
   private shown: Shown | null = null;
   private inspector: MoleculeInspector | null = null;
   private formula: FormulaView | null = null;
+  private readonly selection = new Selection();
 
   constructor() {
     this.element.className = "results";
@@ -33,18 +37,21 @@ export class ResultsView {
   }
 
   /** Shows a rendered molecule and its SMILES. */
-  showMolecule(svg: string, moleculeId: MoleculeId, smiles: string, canonicalSmiles: string): void {
+  showMolecule(scene: Scene, moleculeId: MoleculeId, smiles: string, canonicalSmiles: string): void {
     this.reset();
 
-    const drawing = sanitiseSvg(svg);
+    const view = new SvgView();
+    view.setScene(scene);
+    this.selection.clear();
+    const unsubscribe = this.selection.subscribe(() => view.setSelection(this.selection));
     const text = new SmilesText(smiles);
     const canonical = new SmilesText(canonicalSmiles);
     const card = document.createElement("figure");
     card.className = "card";
     card.dataset.molecule = moleculeId;
-    card.append(ResultsView.label("SMILES"), text.element, ResultsView.label("Canonical SMILES"), canonical.element, drawing);
+    card.append(ResultsView.label("SMILES"), text.element, ResultsView.label("Canonical SMILES"),     canonical.element, view.element);
     this.element.replaceChildren(card);
-    this.shown = { moleculeId, card, svg: drawing, smiles: text, canonical };
+        this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
   }
 
   inspect(metadata: MoleculeMetadata, moleculeId: MoleculeId): void {
@@ -55,8 +62,8 @@ export class ResultsView {
     this.formula?.element.remove();
 
     this.formula = new FormulaView(metadata.formula, metadata.fragments.length);
-    this.shown.card.insertBefore(this.formula.element, this.shown.svg);
-    this.inspector = new MoleculeInspector(this.shown.svg, this.shown.smiles, this.shown.canonical, this.formula, metadata);
+    this.shown.card.insertBefore(this.formula.element,     this.shown.view.element);
+        this.inspector = new MoleculeInspector(this.shown.view, this.selection, this.shown.smiles, this.shown.canonical, this.formula, metadata);
   }
 
   private static label(text: string): HTMLElement {
@@ -78,6 +85,8 @@ export class ResultsView {
     this.inspector?.detach();
     this.inspector = null;
     this.formula = null;
+    this.shown?.unsubscribe();
+    this.shown?.view.dispose();
     this.shown = null;
   }
 }

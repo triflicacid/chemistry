@@ -2,27 +2,20 @@ import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, Span } from "../ap
 import { FormulaView } from "./FormulaView";
 import { SmilesText } from "./SmilesText";
 import type { Highlight } from "./SmilesText";
-
-/** What the mouse pointer is over. */
-interface Target {
-  element: Element;
-  kind: "atom" | "bond";
-  index: number | null;
-}
+import type { Selection } from "../store";
+import type { MoleculeView, Pick as Target, Point } from "../view/MoleculeView";
 
 /** Offset of the plaques from the pointer in pixels. */
 const OFFSET = 14;
 
-/** How far outside an atom or bond the pointer may stray before the plaques disappear in pixels. */
-const PADDING = 12;
-
 export class MoleculeInspector {
   private readonly plaques = document.createElement("div");
-  private current: Element | null = null;
-  private ends: Element[] = [];
+  private current: unknown = null;
+  private readonly stopListening: () => void;
 
   constructor(
-    private readonly svg: SVGSVGElement,
+    private readonly view: MoleculeView,
+    private readonly selection: Selection,
     private readonly smiles: SmilesText,
     private readonly canonical: SmilesText,
     private readonly formula: FormulaView,
@@ -32,27 +25,30 @@ export class MoleculeInspector {
     this.plaques.hidden = true;
     document.body.append(this.plaques);
 
-    svg.addEventListener("pointerover", (event) => this.over(event));
-    svg.addEventListener("pointermove", (event) => this.move(event));
-    svg.addEventListener("pointerleave", () => this.clear());
-    svg.addEventListener("click", (event) => this.click(event));
+    this.stopListening = view.listen({
+      hover: (target, at) => this.hover(target, at),
+      click: (target, additive) => this.click(target, additive),
+    });
   }
 
   detach(): void {
+    this.stopListening();
     this.clear();
     this.plaques.remove();
   }
 
-  private over(event: PointerEvent): void {
-    const target = MoleculeInspector.targetOf(event);
-    // leaving onto the bare canvas is left to move(), which allows the pointer some slack
-    if (!target || target.element === this.current) {
+  private hover(target: Target | null, at: Point): void {
+    if (!target) {
+      this.clear();
+      return;
+    }
+    if (target.handle === this.current) {
+      this.place(at);
       return;
     }
 
     this.clear();
-    this.current = target.element;
-    target.element.classList.add("hover");
+    this.current = target.handle;
 
     const atom = target.kind === "atom" && target.index !== null ? this.metadata.atoms[target.index] : undefined;
     const bond = target.kind === "bond" && target.index !== null ? this.metadata.bonds[target.index] : undefined;
@@ -69,15 +65,10 @@ export class MoleculeInspector {
     this.canonical.highlight(
       MoleculeInspector.highlights(bond?.canonical_spans, atoms.map((member) => member.canonical_span), firstColour),
     );
-    if (bond) {
-      atoms.forEach((member, position) => {
-        const end = this.svg.querySelector(`.atom[data-atom="${member.index}"]`);
-        end?.classList.add(`hover-end-${firstColour + position}`);
-        if (end) {
-          this.ends.push(end);
-        }
-      });
-    }
+    this.view.setHighlights({
+      hover: target,
+      ends: bond ? atoms.map((member, position) => ({ atom: member.index, colour: firstColour + position })) : [],
+    });
     const fragment = atoms[0]?.fragment;
     this.formula.highlightFragment(fragment ?? null);
 
@@ -90,46 +81,32 @@ export class MoleculeInspector {
       this.plaques.append(this.describeFragment(fragment));
     }
     this.plaques.hidden = false;
-    this.place(event);
+    this.place(at);
   }
 
-  private move(event: PointerEvent): void {
-    if (!this.current) {
-      return;
-    }
-    if (MoleculeInspector.near(this.current, event)) {
-      this.place(event);
-    } else {
-      this.clear();
-    }
-  }
-
-  private click(event: MouseEvent): void {
-    const target = MoleculeInspector.targetOf(event);
-    if (target?.kind === "atom" && target.index !== null) {
-      console.log("atom", this.metadata.atoms[target.index]);
-    } else if (target?.kind === "bond" && target.index !== null) {
-      console.log("bond", this.metadata.bonds[target.index]);
+  private click(target: Target | null, additive: boolean): void {
+    if (target && target.index !== null) {
+      this.selection.toggle(target.kind, target.index, additive);
+    } else if (!additive) {
+      this.selection.clear();
     }
   }
 
   private clear(): void {
     this.plaques.hidden = true;
     this.plaques.replaceChildren();
-    this.current?.classList.remove("hover");
     this.current = null;
-    this.ends.forEach((end) => end.classList.remove("hover-end-1", "hover-end-2"));
-    this.ends = [];
+    this.view.setHighlights({ hover: null, ends: [] });
     this.smiles.highlight([]);
     this.canonical.highlight([]);
     this.formula.highlightFragment(null);
   }
 
   /** Keeps the plaques next to the pointer, but on screen. */
-  private place(event: MouseEvent): void {
+  private place(at: Point): void {
     const { width, height } = this.plaques.getBoundingClientRect();
-    const left = event.clientX + OFFSET + width > window.innerWidth ? event.clientX - OFFSET - width : event.clientX + OFFSET;
-    const top = event.clientY + OFFSET + height > window.innerHeight ? event.clientY - OFFSET - height : event.clientY + OFFSET;
+    const left = at.x + OFFSET + width > window.innerWidth ? at.x - OFFSET - width : at.x + OFFSET;
+    const top = at.y + OFFSET + height > window.innerHeight ? at.y - OFFSET - height : at.y + OFFSET;
     this.plaques.style.left = `${Math.max(0, left)}px`;
     this.plaques.style.top = `${Math.max(0, top)}px`;
   }
@@ -161,15 +138,15 @@ export class MoleculeInspector {
       );
     } else {
       // untraceable element
-      const element = target.element as HTMLElement;
-      const hydrogen = target.kind === "atom" && element.dataset.element === "H";
-      title = target.kind === "atom" ? (hydrogen ? "Implicit hydrogen" : `Atom ${element.dataset.element ?? ""}`) : "Inferred bond";
+      const data = target.data;
+      const hydrogen = target.kind === "atom" && data.element === "H";
+      title = target.kind === "atom" ? (hydrogen ? "Implicit hydrogen" : `Atom ${data.element ?? ""}`) : "Inferred bond";
       rows.push([
         "Note",
         target.kind === "bond" || hydrogen ? "Inferred" : "Added by the drawing",
       ]);
-      if (target.kind === "bond" && element.dataset.order) {
-        rows.push(["Order", element.dataset.order]);
+      if (target.kind === "bond" && data.order) {
+        rows.push(["Order", data.order]);
       }
     }
 
@@ -230,16 +207,6 @@ export class MoleculeInspector {
     return plaque;
   }
 
-  private static near(element: Element, event: MouseEvent): boolean {
-    const box = element.getBoundingClientRect();
-    return (
-      event.clientX >= box.left - PADDING &&
-      event.clientX <= box.right + PADDING &&
-      event.clientY >= box.top - PADDING &&
-      event.clientY <= box.bottom + PADDING
-    );
-  }
-
   private static highlights(bond: Span[] | undefined, members: (Span | null)[], firstColour: number): Highlight[] {
     return [
       ...(bond ?? []).map((span) => ({ span, colour: 0 })),
@@ -270,15 +237,5 @@ export class MoleculeInspector {
     heading.textContent = title;
     plaque.append(heading);
     return plaque;
-  }
-
-  private static targetOf(event: Event): Target | null {
-    const element = (event.target as Element | null)?.closest<SVGElement>(".atom, .bond");
-    if (!element) {
-      return null;
-    }
-    const kind = element.classList.contains("atom") ? "atom" : "bond";
-    const index = element.dataset[kind];
-    return { element, kind, index: index === undefined ? null : Number(index) };
   }
 }

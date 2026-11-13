@@ -121,3 +121,40 @@ export interface StoredMolecule {
   smiles: string;
   canonical_smiles: string;
 }
+
+export interface ScenePoint {
+  x: number;
+  y: number;
+}
+
+/** Attribute values are strings, numbers or lists of numbers; names follow SVG's. */
+export type SceneAttributes = Record<string, string | number | number[]>;
+
+export interface SceneGradient {
+  id: string;
+  from: ScenePoint;
+  to: ScenePoint;
+  stops: { offset: number; colour: string }[];
+}
+
+interface SceneBase {
+  attributes: SceneAttributes;
+}
+
+export type SceneElement =
+  | (SceneBase & { type: "line"; from: ScenePoint; to: ScenePoint })
+  | (SceneBase & { type: "circle"; centre: ScenePoint; radius: number })
+  | (SceneBase & { type: "rect"; corner: ScenePoint; width: number; height: number })
+  | (SceneBase & { type: "polygon"; points: ScenePoint[] })
+  | (SceneBase & { type: "text"; at: ScenePoint; runs: { text: string; attributes: SceneAttributes | null }[] })
+  | (SceneBase & { type: "group"; children: SceneElement[] })
+  | (SceneBase & { type: "title" | "description"; text: string });
+
+export interface Scene {
+  width: number;
+  height: number;
+  background: string | null;
+  attributes: SceneAttributes;
+  gradients: SceneGradient[];
+  elements: SceneElement[];
+}

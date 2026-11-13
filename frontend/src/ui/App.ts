@@ -38,12 +38,12 @@ export class App {
     this.results.showMessage("Loading the last molecule...");
     this.form.setBusy(true);
     try {
-      const [{ svg, moleculeId }, metadata] = await Promise.all([
-        this.api.moleculeSvg(id),
+      const [{ scene, moleculeId }, metadata] = await Promise.all([
+        this.api.moleculeScene(id),
         this.api.metadata(id),
       ]);
       this.store.rememberMolecule(moleculeId, metadata.smiles);
-      this.results.showMolecule(svg, moleculeId, metadata.smiles, metadata.canonical_smiles);
+      this.results.showMolecule(scene, moleculeId, metadata.smiles, metadata.canonical_smiles);
       this.results.inspect(metadata, moleculeId);
     } catch (error) {
       this.store.rememberSmiles(smiles);
@@ -74,12 +74,12 @@ export class App {
       const created = await this.api.createMolecule(smiles);
 
       // fetching both at once keeps the card from growing a second time once the metadata lands
-      const [{ svg, moleculeId }, metadata] = await Promise.all([
-        this.api.renderMolecule(created.id, this.options?.values() ?? {}),
+      const [{ scene, moleculeId }, metadata] = await Promise.all([
+        this.api.renderScene(created.id, this.options?.values() ?? {}),
         this.inspectionOf(created.id),
       ]);
       this.store.rememberMolecule(moleculeId, created.smiles);
-      this.results.showMolecule(svg, moleculeId, created.smiles, created.canonical_smiles);
+      this.results.showMolecule(scene, moleculeId, created.smiles, created.canonical_smiles);
       if (metadata) {
         this.results.inspect(metadata, moleculeId);
       }

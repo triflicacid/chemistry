@@ -769,18 +769,15 @@ public final class SceneRenderer
      */
     private void openBond(BondPlacement bond, Point start, Point end, BondLook look)
     {
-        AtomPlacement first = depiction.atom(bond.first());
-        AtomPlacement second = depiction.atom(bond.second());
-
-        Element.Group group = svg.group().cssClass("bond")
-            .attribute("data-bond", bond.sourceBond().isPresent() ? String.valueOf(bond.sourceBond().getAsInt()) : null)
-            .attribute("data-order", bond.order().name().toLowerCase(Locale.ROOT))
-            .attribute("data-style", bond.style().name().toLowerCase(Locale.ROOT))
-            .attribute("data-first", String.valueOf(bond.first()))
-            .attribute("data-second", String.valueOf(bond.second()))
-            .attribute("data-first-atom", first.sourceAtom().isPresent() ? String.valueOf(first.sourceAtom().getAsInt()) : null)
-            .attribute("data-second-atom", second.sourceAtom().isPresent() ? String.valueOf(second.sourceAtom().getAsInt()) : null)
-            .attribute("data-fragment", String.valueOf(first.fragment()));
+        Element.Group group = svg.group().cssClass("bond");
+        if (bond.sourceBond().isPresent())
+        {
+            group.attribute("data-bond", String.valueOf(bond.sourceBond().getAsInt()));
+        }
+        else
+        {
+            group.attribute("data-order", bond.order().name().toLowerCase(Locale.ROOT));
+        }
         Looks.apply(group, look);
 
         svg.line(start, end).stroke("transparent")
@@ -1099,16 +1096,16 @@ public final class SceneRenderer
     {
         Point centre = toPage(atom.position());
 
-        Element.Group group = svg.group().cssClass("atom")
-            .attribute("data-atom", atom.sourceAtom().isPresent() ? String.valueOf(atom.sourceAtom().getAsInt()) : null)
-            .attribute("data-placement", String.valueOf(atom.placementIndex()))
-            .attribute("data-fragment", String.valueOf(atom.fragment()))
-            .attribute("data-element", atom.element())
-            .attribute("data-isotope", atom.isotope().isPresent() ? String.valueOf(atom.isotope().getAsInt()) : null)
-            .attribute("data-charge", String.valueOf(atom.charge()))
-            .attribute("data-hydrogens", String.valueOf(atom.hydrogens()))
-            .attribute("data-aromatic", String.valueOf(atom.aromatic()))
-            .attribute("data-implicit", String.valueOf(atom.isGeneratedHydrogen()));
+        Element.Group group = svg.group().cssClass("atom");
+        // parts the drawing added have no index into the molecule, so they say what they are themselves
+        if (atom.sourceAtom().isPresent())
+        {
+            group.attribute("data-atom", String.valueOf(atom.sourceAtom().getAsInt()));
+        }
+        else
+        {
+            group.attribute("data-element", atom.element());
+        }
         Looks.apply(group, look);
 
         svg.circle(centre, Math.max(clearances[atom.placementIndex()], style.radiusOf(atom.element()))).fill("transparent");

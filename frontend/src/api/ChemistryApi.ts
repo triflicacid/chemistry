@@ -1,11 +1,16 @@
 import { ApiError, HttpClient } from "./http";
-import type { MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, StoredMolecule } from "./types";
+import type { MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, Scene, StoredMolecule } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
 
 export interface SvgResponse {
   svg: string;
+  moleculeId: MoleculeId;
+}
+
+export interface SceneResponse {
+  scene: Scene;
   moleculeId: MoleculeId;
 }
 
@@ -41,6 +46,25 @@ export class ChemistryApi {
   /** The latest SVG the server drew for a stored molecule. */
   moleculeSvg(id: MoleculeId): Promise<SvgResponse> {
     return this.svg("GET", `/api/molecules/${encodeURIComponent(id)}/svg`);
+  }
+
+  /** Draws a stored molecule as a scene. */
+  async renderScene(id: MoleculeId, options: OptionValues): Promise<SceneResponse> {
+    return this.scene("POST", `/api/molecules/${encodeURIComponent(id)}/scene`, { json: { options } });
+  }
+
+  /** The latest scene the server drew for a stored molecule. */
+  moleculeScene(id: MoleculeId): Promise<SceneResponse> {
+    return this.scene("GET", `/api/molecules/${encodeURIComponent(id)}/scene`);
+  }
+
+  private async scene(method: string, path: string, options: { json?: unknown } = {}): Promise<SceneResponse> {
+    const response = await this.http.send(method, path, { ...options, accept: "application/json" });
+    const moleculeId = response.headers.get(MOLECULE_ID_HEADER);
+    if (!moleculeId) {
+      throw new ApiError(response.status, "MISSING_MOLECULE_ID", `The response had no ${MOLECULE_ID_HEADER} header`);
+    }
+    return { scene: (await response.json()) as Scene, moleculeId };
   }
 
   private async svg(method: string, path: string, options: { json?: unknown } = {}): Promise<SvgResponse> {

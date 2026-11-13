@@ -185,6 +185,14 @@ button.small {
   stroke: rgba(255, 211, 61, .55);
 }
 
+.card svg .atom.selected > circle:first-of-type {
+  fill: rgba(88, 166, 255, .4);
+}
+
+.card svg .bond.selected > line:first-of-type {
+  stroke: rgba(88, 166, 255, .6);
+}
+
 .plaques {
   position: fixed;
   z-index: 10;
