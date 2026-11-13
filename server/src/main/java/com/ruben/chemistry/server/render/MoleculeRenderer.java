@@ -2,6 +2,7 @@ package com.ruben.chemistry.server.render;
 
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
+import com.ruben.chemistry.render.FragmentArrangement;
 import com.ruben.chemistry.render.Structure2D;
 import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.render.MoleculeLayout;
@@ -92,10 +93,18 @@ public final class MoleculeRenderer
 
         try
         {
-            Structure2D layout = camera == null
-                    ? ProjectedLayout.bestView(molecule, structure, conformer, settings.depiction(), only)
-                    : ProjectedLayout.fromCamera(molecule, structure, conformer, camera, settings.depiction(), only);
-            Scene scene = SceneRenderer.render(layout, settings.style());
+            Structure2D layout;
+            Scene scene;
+            if (camera == null)
+            {
+                layout = ProjectedLayout.bestView(molecule, structure, conformer, settings.depiction(), only);
+                scene = SceneRenderer.render(layout, settings.style());
+            }
+            else
+            {
+                layout = ProjectedLayout.fromCamera(molecule, structure, conformer, camera, settings.depiction(), only);
+                scene = SceneRenderer.render(layout, settings.style().toBuilder().fragmentArrangement(new FragmentArrangement.AsPlaced()).build());
+            }
             return new Render2d(scene, SvgWriter.write(scene), layout);
         }
         catch (IllegalArgumentException | IllegalStateException unsupported)

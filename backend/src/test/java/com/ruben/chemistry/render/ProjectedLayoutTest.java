@@ -158,6 +158,35 @@ class ProjectedLayoutTest
     }
 
     @Test
+    void camera_view_keeps_disconnected_parts_where_they_are_seen()
+    {
+        Molecule molecule = Molecule.fromSmiles("CC.O");
+        Structure3D structure = Embedder.embed(molecule);
+
+        Depiction depiction = ProjectedLayout.fromCamera(molecule, structure, 0, FRONT, CONDENSED).depiction();
+
+        assertThat(depiction.fragments()).hasSize(2);
+        assertThat(depiction.fragments()).anySatisfy(frame -> assertThat(frame.bounds().centre().length()).isGreaterThan(1e-6));
+    }
+
+    @Test
+    void camera_view_leaves_out_a_part_out_of_view_without_moving_the_rest()
+    {
+        Molecule molecule = Molecule.fromSmiles("CC.O");
+        Structure3D structure = Embedder.embed(molecule);
+
+        Depiction whole = ProjectedLayout.fromCamera(molecule, structure, 0, FRONT, CONDENSED).depiction();
+        Depiction inView = ProjectedLayout.fromCamera(molecule, structure, 0, FRONT, CONDENSED, Set.of(0, 1)).depiction();
+
+        assertThat(inView.atoms()).extracting(AtomPlacement::element).containsExactly("C", "C");
+        assertThat(inView.fragments()).hasSize(1);
+        for (int atom = 0; atom < 2; atom++)
+        {
+            assertThat(inView.atom(atom).position().minus(whole.atom(atom).position()).length()).isLessThan(1e-9);
+        }
+    }
+
+    @Test
     void disconnected_parts_are_each_centred()
     {
         Molecule molecule = Molecule.fromSmiles("CC.O");

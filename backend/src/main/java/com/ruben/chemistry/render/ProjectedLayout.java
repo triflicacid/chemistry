@@ -146,7 +146,7 @@ public final class ProjectedLayout
             points[atom] = new Point(seen.x(), seen.y());
         }
         layout.scale(points, layout.bonds);
-        return layout.build(points);
+        return layout.build(points, false);
     }
 
     /**
@@ -220,7 +220,7 @@ public final class ProjectedLayout
                 points[members.get(at)] = new Point(view[at * 2], view[at * 2 + 1]);
             }
         }
-        return layout.build(points);
+        return layout.build(points, true);
     }
 
     private int fragmentOf(int placement)
@@ -251,9 +251,13 @@ public final class ProjectedLayout
         }
     }
 
-    private Structure2D build(Point[] points)
+    /** @param centred whether to move each disconnected part to the origin; false keeps the parts where they were seen */
+    private Structure2D build(Point[] points, boolean centred)
     {
-        centreParts(points);
+        if (centred)
+        {
+            centreParts(points);
+        }
 
         boolean condensed = options.effectiveHydrogens() == HydrogenStyle.CONDENSED;
         List<AtomPlacement> atoms = new ArrayList<>();
