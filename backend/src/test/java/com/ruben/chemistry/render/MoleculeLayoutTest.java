@@ -546,13 +546,46 @@ class MoleculeLayoutTest
             return depiction.bonds().stream().map(bond -> new int[] {bond.first(), bond.second()}).toArray(int[][]::new);
         }
 
+        /**
+         * @param depiction a drawing
+         * @return how evenly it foreshortens: 1 when every bond is drawn the same length, falling towards 0 as one
+         *     bond is drawn far shorter than another
+         */
+        private static double evennessOf(Depiction depiction)
+        {
+            Point[] points = pointsOf(depiction);
+            double shortest = Double.POSITIVE_INFINITY;
+            double longest = 0;
+            for (int[] bond : bondsOf(depiction))
+            {
+                double length = points[bond[0]].distanceTo(points[bond[1]]);
+                shortest = Math.min(shortest, length);
+                longest = Math.max(longest, length);
+            }
+            return shortest / longest;
+        }
+
         @Test
-        void draws_every_bond_of_cubane_about_one_bond_length_long()
+        void draws_cubane_as_an_evenly_foreshortened_view_of_its_shape()
         {
             Depiction depiction = skeletalDepiction(CUBANE);
 
             assertThat(depiction.atoms()).hasSize(8);
-            assertThat(LayoutQuality.lengthError(pointsOf(depiction), bondsOf(depiction), 1)).isLessThan(0.05);
+            assertThat(evennessOf(depiction)).isGreaterThan(0.6);
+            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(depiction), bondsOf(depiction))).isGreaterThan(0.3);
+        }
+
+        @Test
+        void never_draws_a_cage_flat_with_every_bond_one_bond_length_long()
+        {
+            // such a drawing needs bond angles no atom could hold, and the harder a flat search looks the likelier it
+            // is to turn one up, so a cage is drawn as a view of its shape in space at any effort
+            Depiction depiction = MoleculeLayout.layout(
+                    Molecule.fromSmiles("C1CC2CCC1CC2"),
+                    DepictionOptions.skeletal().withRingRefinement(RingRefinement.THOROUGH)).depiction();
+
+            assertThat(LayoutQuality.lengthError(pointsOf(depiction), bondsOf(depiction), 1)).isGreaterThan(0.05);
+            assertThat(LayoutQuality.minimumAtomDistance(pointsOf(depiction), bondsOf(depiction))).isGreaterThan(0.3);
         }
 
         @Test

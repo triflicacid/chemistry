@@ -40,8 +40,9 @@ final class DepictSmiles
     private static final CliOption<Integer> ALTERNATIVES = CliOption.parsed(
             "ring-alternatives",
             "n",
-            "how many different drawings of the ring systems to show side by side; 1 shows only the best. "
-                    + "Raises --ring-refinement to at least this",
+            "how many different drawings of the ring systems to show side by side, best first; 1 shows only the best. "
+                    + "Fewer are shown when a system has no more views that look different, which --ring-refinement "
+                    + "raises; asking for more never changes which drawing is best",
             input -> {
                 try
                 {
@@ -144,7 +145,7 @@ final class DepictSmiles
     {
         Molecule molecule = Molecule.fromSmiles(smiles);
         int alternatives = options.get(ALTERNATIVES);
-        DepictionOptions depiction = CommandOptions.depictionOptions(options, alternatives);
+        DepictionOptions depiction = CommandOptions.depictionOptions(options);
 
         List<Layout> layouts = MoleculeLayout.layouts(molecule, depiction, alternatives);
 

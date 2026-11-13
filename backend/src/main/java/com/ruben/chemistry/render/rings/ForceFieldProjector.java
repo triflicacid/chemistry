@@ -10,14 +10,15 @@ import java.util.Random;
 
 /**
  * Draws a connected set of atoms as a flat view of its three-dimensional shape: it builds the structure in space with a
- * simple force field, looks at it from the best direction, and then moves atoms only as far as that makes more bonds one
- * bond length long without harming the view.
+ * simple force field and looks at it from the best direction. Atoms are never moved within the drawing, so a drawing is
+ * always a true view of the structure and never a reshaped one; only the view as a whole is scaled, so that its
+ * middling bond is one bond length.
  * <p>
  * The force field holds every bond at one bond length, keeps the two ends of a pair of bonds at a tetrahedral distance,
  * and pushes atoms that are not bonded apart.
- * A bond seen at an angle looks shorter, never longer, so the drawing keeps the structure's shape and some bonds are
- * foreshortened. The best view is the one that keeps atoms apart, then has the fewest crossings, then the most bonds
- * of one bond length.
+ * A bond seen at an angle looks shorter, so bonds of one length in space are drawn different lengths. The best view is
+ * the one that keeps atoms apart and then foreshortens most evenly, as a bond drawn far shorter than the bonds around
+ * it reads as a kink rather than as a bond pointing away from the reader.
  */
 final class ForceFieldProjector
 {
@@ -39,17 +40,21 @@ final class ForceFieldProjector
     private static final int KEPT_EMBEDDINGS = 2;
     /** how many directions each structure is looked at from, times the effort, spread evenly over a sphere */
     private static final int VIEWS = 600;
-    /** how many of the best views of each structure have their bond lengths polished */
-    private static final int POLISHED_VIEWS = 6;
+    /** how many of the best views of each structure are kept to begin with */
+    private static final int SHORTLIST_VIEWS = 6;
 
-    /** How far apart atoms have to be, in bond lengths, for a view of a structure to count as keeping them apart. */
-    static final double VIEW_CLEARANCE = 0.35;
+    /**
+     * How far apart atoms have to be, in bond lengths, for a view of a structure to count as keeping them apart. Views
+     * that keep them this far apart are told apart by how evenly they foreshorten rather than by room to spare, so this
+     * is the room a drawing needs rather than a distance to maximise.
+     */
+    static final double VIEW_CLEARANCE = 0.45;
 
     /** How short a bond may look, in bond lengths, before the view counts as colliding. */
     private static final double MIN_BOND = 0.35;
 
-    /** How far a bond's length may be from one bond length and still count as one. */
-    private static final double UNIT_TOLERANCE = 0.02;
+    /** How much two views' evenness has to differ by for one of them to count as the more even. */
+    private static final double EVENNESS_RESOLUTION = 0.05;
 
     /** how much two clearances have to differ by to count as different */
     private static final double CLEARANCE_RESOLUTION = 1e-3;
@@ -59,6 +64,9 @@ final class ForceFieldProjector
 
     /** Two bonds at an atom whose angle has a cosine below this look like a straight line. */
     private static final double STRAIGHT_COSINE = -0.94;
+
+    /** Two bonds at an atom whose angle has a cosine above this are drawn one on top of the other. */
+    private static final double SHARP_COSINE = 0.94;
 
     /** fixed, so that a molecule is always drawn the same way */
     private static final long SEED = 0xCA6EL;
@@ -70,15 +78,6 @@ final class ForceFieldProjector
     private final boolean[][] angleMates;
     private final boolean[][] torsionMates;
     private final List<int[]> angles = new ArrayList<>();
-
-    /**
-     * @param count how many atoms there are
-     * @param bonds the bonds, as pairs of atom indices
-     */
-    ForceFieldProjector(int count, int[][] bonds)
-    {
-        this(count, bonds, 1);
-    }
 
     /**
      * @param count how many atoms there are
@@ -143,19 +142,21 @@ final class ForceFieldProjector
     }
 
     /**
-     * Polishes the usual shortlist of views, and widens it only while that leaves fewer different drawings than wanted.
+     * Takes the usual shortlist of views, and widens it only while that leaves fewer different drawings than wanted.
+     * How many views there are to draw from is set by the effort alone, so asking for more drawings never changes which
+     * drawing is best; it only reaches further down the same ranking, and returns fewer drawings than wanted once the
+     * structure has no more views that look different from those already found.
      *
      * @param wanted how many different drawings are wanted
      * @return the different drawings found, best first, as x and y of each atom in turn; empty if the system could not be built in space
      */
     List<double[]> draws(int wanted)
     {
-        // polish the usual shortlist of views, and widen it only while that leaves fewer different drawings than wanted
         List<double[]> structures = structures();
-        List<View> polished = new ArrayList<>();
+        List<View> found = new ArrayList<>();
         int[] done = new int[structures.size()];
         int keptStructures = Math.min(KEPT_EMBEDDINGS, structures.size());
-        int viewsEach = POLISHED_VIEWS;
+        int viewsEach = SHORTLIST_VIEWS;
         List<View> distinct;
         while (true)
         {
@@ -165,12 +166,12 @@ final class ForceFieldProjector
                 List<double[]> views = bestViews(structures.get(rank), viewsEach);
                 for (int index = done[rank]; index < views.size(); index++)
                 {
-                    polished.add(measure(orient(polish(views.get(index)))));
+                    found.add(measure(orient(views.get(index))));
                     grew = true;
                 }
                 done[rank] = Math.max(done[rank], views.size());
             }
-            distinct = distinctViews(polished);
+            distinct = distinctViews(found);
             if (distinct.size() >= wanted || !grew && keptStructures == structures.size())
             {
                 break;
@@ -292,106 +293,130 @@ final class ForceFieldProjector
     /**
      * How good a view is.
      *
-     * @param drawing x and y of each atom in turn
+     * @param drawing x and y of each atom in turn, scaled so that the middling bond is one bond length
      * @param clearance how far apart the closest atoms are, or bonds short, no more than the distance that counts as clear
      * @param crossings how many pairs of bonds cross
-     * @param unit how many bonds are one bond length long
-     * @param deviation the sum of squares of how far each bond is from one bond length
+     * @param hidden how many pairs of bonds at an atom are drawn as one line
+     * @param shortest how long the shortest bond is drawn
+     * @param longest how long the longest bond is drawn
      */
-    private record View(double[] drawing, double clearance, int crossings, int straight, int unit, double deviation)
+    private record View(double[] drawing, double clearance, int crossings, int hidden, double shortest, double longest)
     {
         boolean isClear()
         {
             return clearance >= VIEW_CLEARANCE - CLEARANCE_RESOLUTION;
         }
+
+        /**
+         * How evenly the view foreshortens: 1 when every bond is drawn the same length, falling towards 0 as one bond
+         * is drawn far shorter than another. It is a ratio, so it says the same thing whatever size the view is drawn
+         * at, which the lengths on their own would not.
+         *
+         * @return the evenness
+         */
+        double evenness()
+        {
+            return longest < 1e-12 ? 0 : shortest / longest;
+        }
     }
 
-    // views are ranked by whether atoms are kept clear (and, if not, how nearly), then by crossings, near-straight angles,
-    // the most bonds of one bond length and finally the smallest total error in bond lengths
+    // views are ranked by whether atoms are kept clear (and, if not, how nearly), then by how evenly they foreshorten,
+    // and only between views as even as each other by crossings and then by pairs of bonds drawn as one line.
+    // Crossings come second to evenness because a bridge drawn across a ring is how a cage is read, whereas a bond
+    // drawn far shorter than the bonds around it is never read as a bond at all.
     private static final Comparator<View> ORDER = Comparator
         .comparingInt((View view) -> view.isClear() ? 0 : 1)
         .thenComparingLong(view -> view.isClear() ? 0 : -Math.round(view.clearance / CLEARANCE_RESOLUTION))
+        .thenComparingLong(view -> -Math.round(view.evenness() / EVENNESS_RESOLUTION))
         .thenComparingInt(View::crossings)
-        .thenComparingInt(View::straight)
-        .thenComparingInt(view -> -view.unit)
-        .thenComparingLong(view -> Math.round(view.deviation * 1e6));
+        .thenComparingInt(View::hidden)
+        .thenComparingLong(view -> -Math.round(view.evenness() * 1e6));
 
     private View measure(double[] drawing)
     {
+        // measured at the size it will be drawn, so that views of the same structure are judged against each other
+        double[] scaled = toMedianBond(drawing);
         Point[] points = new Point[count];
         for (int atom = 0; atom < count; atom++)
         {
-            points[atom] = new Point(drawing[atom * 2], drawing[atom * 2 + 1]);
+            points[atom] = new Point(scaled[atom * 2], scaled[atom * 2 + 1]);
         }
         double shortest = Double.POSITIVE_INFINITY;
-        double deviation = 0;
-        int unit = 0;
+        double longest = 0;
         for (int[] bond : bonds)
         {
             double length = points[bond[0]].minus(points[bond[1]]).length();
             shortest = Math.min(shortest, length);
-            deviation += (length - 1) * (length - 1);
-            if (Math.abs(length - 1) < UNIT_TOLERANCE)
-            {
-                unit++;
-            }
+            longest = Math.max(longest, length);
         }
         // a very short bond is as bad as atoms that collide, as it looks like one atom
         double clearance = Math.min(VIEW_CLEARANCE, LayoutQuality.minimumAtomDistance(points, bonds));
         clearance = Math.min(clearance, shortest * VIEW_CLEARANCE / MIN_BOND);
-        return new View(drawing, clearance, LayoutQuality.crossings(points, bonds), straightAngles(points), unit, deviation);
+        return new View(scaled, clearance, LayoutQuality.crossings(points, bonds), hiddenBends(points), shortest, longest);
     }
 
     /**
-     * @return how many pairs of bonds at an atom are close to a straight line, which makes the atom look as if it were
-     *     not a bend at all
+     * Scales a drawing about the origin until its middling bond is one bond length. Scaling leaves the shape untouched,
+     * so this is not a reshaping; it only puts the view at the size the rest of the molecule is drawn at, since every
+     * bond of a view is foreshortened and the view would otherwise come out small.
+     *
+     * @param drawing x and y of each atom in turn
+     * @return the scaled drawing, or the drawing itself if it has collapsed to a point
      */
-    private int straightAngles(Point[] points)
+    private double[] toMedianBond(double[] drawing)
     {
-        int straight = 0;
+        double[] lengths = new double[bonds.length];
+        for (int bond = 0; bond < bonds.length; bond++)
+        {
+            lengths[bond] = Math.hypot(
+                drawing[bonds[bond][0] * 2] - drawing[bonds[bond][1] * 2],
+                drawing[bonds[bond][0] * 2 + 1] - drawing[bonds[bond][1] * 2 + 1]);
+        }
+        Arrays.sort(lengths);
+        int middle = lengths.length / 2;
+        double median = lengths.length % 2 == 1 ? lengths[middle] : (lengths[middle - 1] + lengths[middle]) / 2;
+        if (median < 1e-9)
+        {
+            return drawing;
+        }
+        double[] scaled = new double[drawing.length];
+        for (int at = 0; at < drawing.length; at++)
+        {
+            scaled[at] = drawing[at] / median;
+        }
+        return scaled;
+    }
+
+    /**
+     * @param points where each atom is drawn
+     * @return how many pairs of bonds at an atom are drawn as one line: either so near straight that the atom looks as
+     *     if it were not a bend at all, or so near each other that one bond lies on top of the other
+     */
+    private int hiddenBends(Point[] points)
+    {
+        int hidden = 0;
         for (int[] angle : angles)
         {
             Point first = points[angle[1]].minus(points[angle[0]]);
             Point second = points[angle[2]].minus(points[angle[0]]);
             double length = first.length() * second.length();
-            if (length > 1e-12 && (first.x() * second.x() + first.y() * second.y()) / length < STRAIGHT_COSINE)
+            if (length <= 1e-12)
             {
-                straight++;
+                continue;
+            }
+            double cosine = (first.x() * second.x() + first.y() * second.y()) / length;
+            if (cosine < STRAIGHT_COSINE || cosine > SHARP_COSINE)
+            {
+                hidden++;
             }
         }
-        return straight;
-    }
-
-    /**
-     * @return whether each pair of bonds at an atom turns the same way in {@code drawing} as in {@code reference}
-     */
-    private boolean turnsAsBefore(double[] reference, double[] drawing)
-    {
-        for (int[] angle : angles)
-        {
-            // a pair of bonds turns the same way while the sign of their cross product is unchanged
-            double before = turn(reference, angle);
-            double after = turn(drawing, angle);
-            if (before * after < 0)
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static double turn(double[] drawing, int[] angle)
-    {
-        double ax = drawing[angle[1] * 2] - drawing[angle[0] * 2];
-        double ay = drawing[angle[1] * 2 + 1] - drawing[angle[0] * 2 + 1];
-        double bx = drawing[angle[2] * 2] - drawing[angle[0] * 2];
-        double by = drawing[angle[2] * 2 + 1] - drawing[angle[0] * 2 + 1];
-        return ax * by - ay * bx;
+        return hidden;
     }
 
     /**
      * @param structure the system in space
-     * @return the best few flat views of it, before any polishing
+     * @param limit how many of the best views to return
+     * @return the best few flat views of it
      */
     private List<double[]> bestViews(double[] structure, int limit)
     {
@@ -425,68 +450,6 @@ final class ForceFieldProjector
             best.add(found.get(index).drawing);
         }
         return best;
-    }
-
-    /**
-     * Moves atoms to bring bonds nearer one bond length, as long as atoms do not get closer than they are, or than they
-     * have to be, and no more bonds cross.
-     */
-    private double[] polish(double[] drawing)
-    {
-        double[] x = drawing.clone();
-        View current = measure(x);
-        // atoms may not get closer than they already are, unless they are clear anyway
-        double floor = Math.min(VIEW_CLEARANCE, current.clearance) - 1e-9;
-        double step = 0.1;
-        double[] gradient = new double[x.length];
-        // gradient descent on the squared errors in bond lengths, taking only steps that harm nothing the view had
-        for (int iteration = 0; iteration < 1500 && current.deviation > 1e-14; iteration++)
-        {
-            Arrays.fill(gradient, 0);
-            for (int[] bond : bonds)
-            {
-                int first = bond[0] * 2;
-                int second = bond[1] * 2;
-                double dx = x[first] - x[second];
-                double dy = x[first + 1] - x[second + 1];
-                double length = Math.sqrt(dx * dx + dy * dy);
-                if (length < 1e-12)
-                {
-                    continue;
-                }
-                double scale = 2 * (length - 1) / length;
-                gradient[first] += scale * dx;
-                gradient[first + 1] += scale * dy;
-                gradient[second] -= scale * dx;
-                gradient[second + 1] -= scale * dy;
-            }
-
-            boolean moved = false;
-            for (int attempt = 0; attempt < 25; attempt++)
-            {
-                double[] next = x.clone();
-                for (int at = 0; at < next.length; at++)
-                {
-                    next[at] -= step * gradient[at];
-                }
-                View view = measure(next);
-                if (view.clearance >= floor && view.crossings <= current.crossings && view.straight <= current.straight
-                    && view.deviation < current.deviation - 1e-12 && turnsAsBefore(drawing, next))
-                {
-                    x = next;
-                    current = view;
-                    step *= 1.5;
-                    moved = true;
-                    break;
-                }
-                step *= 0.5;
-            }
-            if (!moved)
-            {
-                break;
-            }
-        }
-        return x;
     }
 
     /**

@@ -295,16 +295,6 @@ final class CommandOptions
      */
     static DepictionOptions depictionOptions(CliOptions options)
     {
-        return depictionOptions(options, 1);
-    }
-
-    /**
-     * Returns how the settings say a molecule should be drawn, when that many drawings of its rings are wanted.
-     *
-     * @param alternatives how many drawings of the ring systems are wanted; ring refinement is raised to at least this
-     */
-    static DepictionOptions depictionOptions(CliOptions options, int alternatives)
-    {
         Drawing drawing = options.get(STYLE);
 
         DepictionOptions base = drawing == Drawing.SKELETAL
@@ -324,7 +314,7 @@ final class CommandOptions
                 geometry,
                 hydrogens,
                 options.get(PROJECT_CAGES),
-                options.get(RING_REFINEMENT).atLeast(alternatives > 1 ? alternatives : 0),
+                options.get(RING_REFINEMENT),
                 0
         );
     }

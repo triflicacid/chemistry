@@ -21,8 +21,10 @@ import java.util.Set;
  * near a regular polygon, keeps atoms apart from each other and from bonds they are not on, and gently pulls atoms
  * that are equivalent by symmetry to look alike. The search starts from several drawings and keeps the best result.
  * <p>
- * Some systems, such as cubane, cannot be drawn with bonds of one length without bonds crossing. They get the drawing
- * with the fewest crossings that keeps atoms apart.
+ * A cage, such as cubane, has no flat drawing that any molecule could have, so none is searched for: it is handed
+ * straight to {@link ForceFieldProjector} and drawn as a view of its shape in space. Systems that are not cages but
+ * still cannot be drawn with bonds of one length without bonds crossing get the drawing with the fewest crossings that
+ * keeps atoms apart.
  */
 final class RingEnergyMinimiser
 {
@@ -103,7 +105,7 @@ final class RingEnergyMinimiser
             {
                 int first = rings[ring][member];
                 int second = rings[ring][(member + 1) % members.size()];
-                if (seen.add(((long) Math.min(first, second) << Integer.SIZE) | Math.max(first, second)))
+                if (seen.add(edgeKey(first, second)))
                 {
                     edges.add(new int[] {first, second});
                 }
@@ -120,12 +122,62 @@ final class RingEnergyMinimiser
     }
 
     /**
+     * Whether the system is a cage: two of its rings run together along a bridge of more than one bond, rather than
+     * meeting at a single bond as fused rings do or at a single atom as spiro rings do.
+     *
+     * @return whether it is a cage
+     */
+    private boolean isCage()
+    {
+        for (int first = 0; first < rings.length; first++)
+        {
+            for (int second = first + 1; second < rings.length; second++)
+            {
+                if (sharedBonds(rings[first], rings[second]) > 1)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param first one ring, as its atoms in the order they are joined around it
+     * @param second another such ring
+     * @return how many bonds the two rings have in common
+     */
+    private static int sharedBonds(int[] first, int[] second)
+    {
+        Set<Long> edges = new LinkedHashSet<>();
+        for (int member = 0; member < first.length; member++)
+        {
+            edges.add(edgeKey(first[member], first[(member + 1) % first.length]));
+        }
+        int shared = 0;
+        for (int member = 0; member < second.length; member++)
+        {
+            if (edges.contains(edgeKey(second[member], second[(member + 1) % second.length])))
+            {
+                shared++;
+            }
+        }
+        return shared;
+    }
+
+    private static long edgeKey(int first, int second)
+    {
+        return ((long) Math.min(first, second) << Integer.SIZE) | Math.max(first, second);
+    }
+
+    /**
      * Redraws a ring system if its drawing collides with itself.
      *
      * @param rings the system's rings, each as its atoms in the order they are joined around it
      * @param drawing the system's first drawing
      * @param settings what to try and how hard; {@link RingRefinement#NONE} returns {@code drawing} untouched
-     * @return the drawings found, best first, never worse than {@code drawing}; just {@code drawing} if it keeps clear of itself
+     * @return the drawings found, best first, never worse than {@code drawing}; just {@code drawing} if it keeps clear of itself,
+     *     and views of the system's shape in space if it is a cage
      */
     static List<Map<Atom, Point>> improve(List<List<Atom>> rings, Map<Atom, Point> drawing, RingEffort settings)
     {
@@ -135,6 +187,19 @@ final class RingEnergyMinimiser
         }
         RingEnergyMinimiser solver = new RingEnergyMinimiser(rings);
         solver.effort = settings.refinement().effort();
+
+        // a cage has no flat drawing that a molecule could have, whatever this minimiser makes of it, so it is drawn
+        // only as a view of its shape in space, and the flat search below is not even run
+        if (settings.projectCages() && solver.isCage())
+        {
+            List<double[]> views = new ForceFieldProjector(solver.count, solver.bonds, solver.effort)
+                .draws(settings.wanted());
+            if (!views.isEmpty())
+            {
+                return views.stream().map(solver::unpack).toList();
+            }
+        }
+
         double[] seed = solver.pack(drawing);
         Score best = solver.score(seed);
         if (best.isClean())
