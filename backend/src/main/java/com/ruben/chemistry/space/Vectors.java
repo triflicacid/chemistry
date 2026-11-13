@@ -1,9 +1,9 @@
-package com.ruben.chemistry.render.rings;
+package com.ruben.chemistry.space;
 
 /**
  * Arithmetic on vectors held as arrays of their components.
  */
-final class Vectors
+public final class Vectors
 {
     private Vectors()
     {
@@ -14,7 +14,7 @@ final class Vectors
      * @param second another vector of the same length
      * @return their dot product
      */
-    static double dot(double[] first, double[] second)
+    public static double dot(double[] first, double[] second)
     {
         double sum = 0;
         for (int at = 0; at < first.length; at++)
@@ -29,7 +29,7 @@ final class Vectors
      * @param second another
      * @return the vector at right angles to both, as long as the area they span
      */
-    static double[] cross(double[] first, double[] second)
+    public static double[] cross(double[] first, double[] second)
     {
         return new double[] {
             first[1] * second[2] - first[2] * second[1],
@@ -41,7 +41,7 @@ final class Vectors
      * @param vector a vector of three components, which must not be of no length
      * @return it, scaled to one long
      */
-    static double[] normalised(double[] vector)
+    public static double[] normalised(double[] vector)
     {
         double length = Math.sqrt(dot(vector, vector));
         return new double[] {vector[0] / length, vector[1] / length, vector[2] / length};
@@ -54,7 +54,7 @@ final class Vectors
      * @param second the point to measure to
      * @return the vector from the second point to the first
      */
-    static double[] offset(double[] x, int dimensions, int first, int second)
+    public static double[] offset(double[] x, int dimensions, int first, int second)
     {
         double[] offset = new double[dimensions];
         for (int axis = 0; axis < dimensions; axis++)
@@ -68,7 +68,7 @@ final class Vectors
      * @param values some numbers
      * @return the largest of them, ignoring sign
      */
-    static double worst(double[] values)
+    public static double worst(double[] values)
     {
         double worst = 0;
         for (double value : values)

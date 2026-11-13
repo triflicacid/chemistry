@@ -1,6 +1,7 @@
-package com.ruben.chemistry.render.rings;
+package com.ruben.chemistry.space;
 
 import com.ruben.chemistry.render.Point;
+import com.ruben.chemistry.render.rings.LayoutQuality;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,7 +12,7 @@ import java.util.List;
  * Draws a connected set of atoms as a flat view of the shape {@link StructureEmbedder} builds for it in space. Atoms
  * are never moved within a drawing, so a drawing is always a true view of the structure and never a reshaped one.
  */
-final class StructureProjector
+public final class StructureProjector
 {
     /** how many of the least strained structures are looked at */
     private static final int KEPT_STRUCTURES = 2;
@@ -23,7 +24,7 @@ final class StructureProjector
     private static final int SHORTLIST_VIEWS = 6;
 
     /** How far apart atoms have to be, in bond lengths, for a view of a structure to count as keeping them apart. */
-    static final double VIEW_CLEARANCE = 0.45;
+    public static final double VIEW_CLEARANCE = 0.45;
 
     /** How short a bond may look, in bond lengths, before the view counts as colliding. */
     private static final double MIN_BOND = 0.35;
@@ -47,7 +48,7 @@ final class StructureProjector
      * @param bonds the bonds, as pairs of atom indices
      * @param effort how many times the usual number of structures and views to search
      */
-    StructureProjector(int count, int[][] bonds, int effort)
+    public StructureProjector(int count, int[][] bonds, int effort)
     {
         this.effort = effort;
         this.count = count;
@@ -59,7 +60,7 @@ final class StructureProjector
      * @return the best flat view of it, as x and y of each atom in turn, scaled so that the middling bond is one bond length
      *     and turned so that it is longest from left to right
      */
-    double[] bestViewOf(double[] structure)
+    public double[] bestViewOf(double[] structure)
     {
         return orient(bestViews(structure, 1).getFirst());
     }
@@ -67,7 +68,7 @@ final class StructureProjector
     /**
      * @return the best drawing, as x and y of each atom in turn, or {@code null} if the system could not be built in space
      */
-    double[] draw()
+    public double[] draw()
     {
         List<double[]> drawings = draws(1);
         return drawings.isEmpty() ? null : drawings.getFirst();
@@ -79,7 +80,7 @@ final class StructureProjector
      * @param wanted how many different drawings are wanted
      * @return the different drawings found, best first, as x and y of each atom in turn; empty if the system could not be built in space
      */
-    List<double[]> draws(int wanted)
+    public List<double[]> draws(int wanted)
     {
         if (embedder == null)
         {

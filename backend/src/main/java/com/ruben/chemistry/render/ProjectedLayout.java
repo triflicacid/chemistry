@@ -4,7 +4,7 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.render.rings.StructureViews;
+import com.ruben.chemistry.space.StructureViews;
 import com.ruben.chemistry.space.Camera;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.space.Vec3;

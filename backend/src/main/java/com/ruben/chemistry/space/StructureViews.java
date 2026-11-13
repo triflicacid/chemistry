@@ -1,4 +1,4 @@
-package com.ruben.chemistry.render.rings;
+package com.ruben.chemistry.space;
 
 /**
  * Finds the flat view of a system in space that reads best as a drawing.

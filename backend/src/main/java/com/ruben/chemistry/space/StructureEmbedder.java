@@ -1,4 +1,4 @@
-package com.ruben.chemistry.render.rings;
+package com.ruben.chemistry.space;
 
 import java.util.ArrayList;
 import java.util.Arrays;

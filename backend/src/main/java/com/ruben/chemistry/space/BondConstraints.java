@@ -1,9 +1,9 @@
-package com.ruben.chemistry.render.rings;
+package com.ruben.chemistry.space;
 
 /**
  * Holds a set of points so that every bond between them stays one bond length long, in however many dimensions the points have.
  */
-final class BondConstraints
+public final class BondConstraints
 {
     /** How far a bond's squared length may be from one for the bond to count as the right length. */
     private static final double SETTLED = 1e-13;
@@ -30,7 +30,7 @@ final class BondConstraints
      * @param bonds the bonds, as pairs of point indices
      * @param dimensions how many components each point has
      */
-    BondConstraints(int[][] bonds, int dimensions)
+    public BondConstraints(int[][] bonds, int dimensions)
     {
         this.bonds = bonds;
         this.dimensions = dimensions;
@@ -57,7 +57,7 @@ final class BondConstraints
      * @param x the points, which are changed
      * @return whether every bond ended up the right length
      */
-    boolean restore(double[] x)
+    public boolean restore(double[] x)
     {
         double ridge = FIRST_RIDGE;
         double[] residual = residual(x);
@@ -104,7 +104,7 @@ final class BondConstraints
      * @param gradient a direction to move them in
      * @return that direction, less the part that would change a length
      */
-    double[] tangent(double[] x, double[] gradient)
+    public double[] tangent(double[] x, double[] gradient)
     {
         double[] along = new double[bonds.length];
         for (int bond = 0; bond < bonds.length; bond++)
