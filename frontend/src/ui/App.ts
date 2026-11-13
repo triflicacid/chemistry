@@ -93,13 +93,10 @@ export class App {
   }
 
   mount(root: HTMLElement): void {
-    const title = document.createElement("h1");
-    title.textContent = "Chemistry";
-
     this.results.showMessage("Enter a SMILES string and press RENDER.");
     this.form.addAction(this.buildModes());
     this.form.addAction(this.projectActions);
-    root.append(title, this.form.element, this.optionsSlot, this.results.element);
+    root.append(this.form.element, this.optionsSlot, this.results.element);
     void this.loadOptions();
 
     const remembered = this.store.remembered;
