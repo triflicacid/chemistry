@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +23,7 @@ import java.util.Set;
  * that are equivalent by symmetry to look alike. The search starts from several drawings and keeps the best result.
  * <p>
  * A cage, such as cubane, has no flat drawing that any molecule could have, so none is searched for: it is handed
- * straight to {@link ForceFieldProjector} and drawn as a view of its shape in space. Systems that are not cages but
+ * straight to {@link StructureProjector} and drawn as a view of its shape in space. Systems that are not cages but
  * still cannot be drawn with bonds of one length without bonds crossing get the drawing with the fewest crossings that
  * keeps atoms apart.
  */
@@ -33,6 +34,12 @@ final class RingEnergyMinimiser
 
     /** How far a bond's length may be from one bond length and still count as exactly that. */
     private static final double LENGTH_TOLERANCE = 1e-7;
+
+    /** How many degrees an angle may fall short of its ring's own angle before no atom could hold it. */
+    private static final double PINCH_TOLERANCE = 30;
+
+    /** How many degrees two drawings' worst angles have to differ by for one to count as the less pinched. */
+    private static final double PINCH_RESOLUTION = 1;
 
     /** How much two drawings' closest atoms have to differ by for one to count as clearer. */
     private static final double DISTANCE_RESOLUTION = 1e-3;
@@ -62,14 +69,14 @@ final class RingEnergyMinimiser
     private static final int STARTS_BUDGET = 4000;
 
     private static final int MAX_DESCENT_STEPS = 400;
-    private static final int MAX_PROJECTIONS = 100;
     private static final double GRADIENT_TOLERANCE = 1e-7;
-    private static final double RIDGE = 1e-12;
     private static final long SEED = 0x5EEDL;
 
     private final List<Atom> atoms = new ArrayList<>();
     private final int[][] bonds;
     private final int[][] rings;
+    private final BondConstraints constraints;
+    private final List<RingAngle> ringAngles;
     private final boolean[][] joined;
     private final int[][] symmetryClasses;
     private int effort = 1;
@@ -118,6 +125,8 @@ final class RingEnergyMinimiser
             joined[bond[0]][bond[1]] = true;
             joined[bond[1]][bond[0]] = true;
         }
+        constraints = new BondConstraints(bonds, 2);
+        ringAngles = findRingAngles();
         symmetryClasses = findSymmetryClasses();
     }
 
@@ -192,7 +201,7 @@ final class RingEnergyMinimiser
         // only as a view of its shape in space, and the flat search below is not even run
         if (settings.projectCages() && solver.isCage())
         {
-            List<double[]> views = new ForceFieldProjector(solver.count, solver.bonds, solver.effort)
+            List<double[]> views = new StructureProjector(solver.count, solver.bonds, solver.effort)
                 .draws(settings.wanted());
             if (!views.isEmpty())
             {
@@ -222,14 +231,14 @@ final class RingEnergyMinimiser
                 chosen = result;
             }
         }
-        List<double[]> views = settings.projectCages() ? new ForceFieldProjector(solver.count, solver.bonds, solver.effort).draws(settings.wanted()) : List.of();
+        List<double[]> views = settings.projectCages() ? new StructureProjector(solver.count, solver.bonds, solver.effort).draws(settings.wanted()) : List.of();
         boolean isView = false;
         if (!views.isEmpty())
         {
             double[] projected = views.get(0);
             Score score = solver.score(projected);
             // a view of the real structure is preferred to any flat drawing that happens to be as clear
-            boolean keepsApart = score.clearance() >= ForceFieldProjector.VIEW_CLEARANCE - 1e-3;
+            boolean keepsApart = score.clearance() >= StructureProjector.VIEW_CLEARANCE - 1e-3;
             if (keepsApart ? score.crossings() <= best.crossings() || !best.isClear() : !best.isClear() && score.betterThan(best))
             {
                 best = score;
@@ -256,7 +265,7 @@ final class RingEnergyMinimiser
         drawings.add(solver.unpack(chosen));
         for (double[] view : views)
         {
-            if (view != chosen && solver.score(view).clearance() >= ForceFieldProjector.VIEW_CLEARANCE - 1e-3)
+            if (view != chosen && solver.score(view).clearance() >= StructureProjector.VIEW_CLEARANCE - 1e-3)
             {
                 drawings.add(solver.unpack(view));
             }
@@ -272,16 +281,24 @@ final class RingEnergyMinimiser
      * @param crossings how many pairs of bonds cross
      * @param energy the penalty for the drawing's shape
      */
-    private record Score(boolean exact, double clearance, int crossings, double energy)
+    private record Score(boolean exact, double clearance, int crossings, double pinch, double energy)
     {
         boolean isClean()
         {
-            return exact && clearance >= CLEAR_DISTANCE - DISTANCE_RESOLUTION && crossings == 0;
+            return exact && isClear() && holdsAngles() && crossings == 0;
         }
 
         boolean isClear()
         {
             return clearance >= CLEAR_DISTANCE - DISTANCE_RESOLUTION;
+        }
+
+        /**
+         * @return whether every angle a ring turns through is one its atoms could hold
+         */
+        boolean holdsAngles()
+        {
+            return pinch <= PINCH_TOLERANCE;
         }
 
         boolean betterThan(Score other)
@@ -293,6 +310,14 @@ final class RingEnergyMinimiser
             if (!isClear() && Math.abs(clearance - other.clearance) > DISTANCE_RESOLUTION)
             {
                 return clearance > other.clearance;
+            }
+            if (holdsAngles() != other.holdsAngles())
+            {
+                return holdsAngles();
+            }
+            if (!holdsAngles() && Math.abs(pinch - other.pinch) > PINCH_RESOLUTION)
+            {
+                return pinch < other.pinch;
             }
             if (exact != other.exact)
             {
@@ -315,7 +340,70 @@ final class RingEnergyMinimiser
         Point[] points = points(x);
         boolean exact = LayoutQuality.lengthError(points, bonds, 1) <= LENGTH_TOLERANCE;
         double clearance = Math.min(CLEAR_DISTANCE, LayoutQuality.minimumAtomDistance(points, bonds));
-        return new Score(exact, clearance, LayoutQuality.crossings(points, bonds), energy(x, null));
+        return new Score(exact, clearance, LayoutQuality.crossings(points, bonds), pinch(points), energy(x, null));
+    }
+
+    /**
+     * @param points where each atom is drawn
+     * @return how many degrees the most pinched angle falls short of what its own ring would turn through if it were
+     *     regular, or zero if none falls short
+     */
+    private double pinch(Point[] points)
+    {
+        double pinch = 0;
+        for (RingAngle angle : ringAngles)
+        {
+            Point one = points[angle.first()].minus(points[angle.centre()]);
+            Point other = points[angle.second()].minus(points[angle.centre()]);
+            double lengths = one.length() * other.length();
+            if (lengths <= 1e-12)
+            {
+                continue;
+            }
+            double cosine = (one.x() * other.x() + one.y() * other.y()) / lengths;
+            double drawn = Math.toDegrees(Math.acos(Math.clamp(cosine, -1, 1)));
+            pinch = Math.max(pinch, angle.regular() - drawn);
+        }
+        return pinch;
+    }
+
+    /**
+     * A pair of bonds at an atom that a ring turns through.
+     *
+     * @param centre the atom the two bonds meet at
+     * @param first the atom at the far end of one bond
+     * @param second the atom at the far end of the other
+     * @param regular the angle the smallest such ring would turn through were it drawn as a regular polygon
+     */
+    private record RingAngle(int centre, int first, int second, double regular)
+    {
+    }
+
+    /**
+     * @return every pair of bonds at an atom that a ring turns through, each with the angle to hold it to
+     */
+    private List<RingAngle> findRingAngles()
+    {
+        Map<List<Integer>, RingAngle> found = new LinkedHashMap<>();
+        for (int[] ring : rings)
+        {
+            double regular = 180.0 * (ring.length - 2) / ring.length;
+            for (int at = 0; at < ring.length; at++)
+            {
+                int centre = ring[at];
+                int before = ring[(at - 1 + ring.length) % ring.length];
+                int after = ring[(at + 1) % ring.length];
+                // the smallest ring through a pair of bonds sets how tight their angle may be, so a three-ring is
+                // held to its own sixty degrees rather than to a six-ring's hundred and twenty
+                List<Integer> key = List.of(centre, Math.min(before, after), Math.max(before, after));
+                RingAngle kept = found.get(key);
+                if (kept == null || regular < kept.regular())
+                {
+                    found.put(key, new RingAngle(centre, before, after, regular));
+                }
+            }
+        }
+        return List.copyOf(found.values());
     }
 
     /**
@@ -329,43 +417,9 @@ final class RingEnergyMinimiser
         starts.add(springDrawing());
 
         Random random = new Random(SEED);
-        double[][] embedding = spectralEmbedding();
         int views = Math.max(8, Math.min(STARTS, STARTS_BUDGET / (count * count))) * effort;
-        for (int view = 0; view < views; view++)
-        {
-            double[] direction = unit(random);
-            double[] across = unit(random);
-            // two directions at right angles to each other and to nothing else in particular make the page
-            double along = dot(direction, across);
-            for (int axis = 0; axis < 3; axis++)
-            {
-                across[axis] -= along * direction[axis];
-            }
-            double norm = Math.sqrt(dot(across, across));
-            if (norm < 1e-6)
-            {
-                continue;
-            }
-            for (int axis = 0; axis < 3; axis++)
-            {
-                across[axis] /= norm;
-            }
-            double[] up = {
-                direction[1] * across[2] - direction[2] * across[1],
-                direction[2] * across[0] - direction[0] * across[2],
-                direction[0] * across[1] - direction[1] * across[0]};
-
-            double[] drawing = new double[count * 2];
-            for (int atom = 0; atom < count; atom++)
-            {
-                drawing[atom * 2] = dot(embedding[atom], across);
-                drawing[atom * 2 + 1] = dot(embedding[atom], up);
-            }
-            starts.add(drawing);
-        }
-
         double spread = Math.sqrt(count) / 2;
-        for (int scattered = 0; scattered < views / 2; scattered++)
+        for (int scattered = 0; scattered < views + views / 2; scattered++)
         {
             double[] drawing = new double[count * 2];
             for (int at = 0; at < drawing.length; at++)
@@ -377,184 +431,7 @@ final class RingEnergyMinimiser
         return starts;
     }
 
-    private static double[] unit(Random random)
-    {
-        double[] vector = {random.nextGaussian(), random.nextGaussian(), random.nextGaussian()};
-        double norm = Math.sqrt(dot(vector, vector));
-        for (int axis = 0; axis < 3; axis++)
-        {
-            vector[axis] /= norm;
-        }
-        return vector;
-    }
-
-    /**
-     * Puts every atom in space so that how far apart atoms are tracks how many bonds apart they are, which makes a cage
-     * into something like the solid it is, to be looked at from any side.
-     *
-     * @return each atom's three coordinates, scaled so that bonds are about one bond length long
-     */
-    private double[][] spectralEmbedding()
-    {
-        double[][] squared = new double[count][count];
-        for (int from = 0; from < count; from++)
-        {
-            int[] distance = new int[count];
-            Arrays.fill(distance, -1);
-            distance[from] = 0;
-            java.util.ArrayDeque<Integer> queue = new java.util.ArrayDeque<>();
-            queue.add(from);
-            while (!queue.isEmpty())
-            {
-                int atom = queue.poll();
-                for (int other = 0; other < count; other++)
-                {
-                    if (joined[atom][other] && distance[other] < 0)
-                    {
-                        distance[other] = distance[atom] + 1;
-                        queue.add(other);
-                    }
-                }
-            }
-            for (int other = 0; other < count; other++)
-            {
-                squared[from][other] = (double) distance[other] * distance[other];
-            }
-        }
-
-        // double centring turns squared distances into dot products about the middle
-        double[] rowMeans = new double[count];
-        double total = 0;
-        for (int row = 0; row < count; row++)
-        {
-            for (int column = 0; column < count; column++)
-            {
-                rowMeans[row] += squared[row][column] / count;
-            }
-            total += rowMeans[row] / count;
-        }
-        double[][] products = new double[count][count];
-        for (int row = 0; row < count; row++)
-        {
-            for (int column = 0; column < count; column++)
-            {
-                products[row][column] = -0.5 * (squared[row][column] - rowMeans[row] - rowMeans[column] + total);
-            }
-        }
-
-        double[][] vectors = new double[count][count];
-        double[] values = eigen(products, vectors);
-        Integer[] order = new Integer[count];
-        for (int index = 0; index < count; index++)
-        {
-            order[index] = index;
-        }
-        Arrays.sort(order, (first, second) -> Double.compare(values[second], values[first]));
-
-        double[][] embedding = new double[count][3];
-        for (int axis = 0; axis < 3 && axis < count; axis++)
-        {
-            double root = Math.sqrt(Math.max(0, values[order[axis]]));
-            for (int atom = 0; atom < count; atom++)
-            {
-                embedding[atom][axis] = vectors[atom][order[axis]] * root;
-            }
-        }
-
-        double bondLength = 0;
-        for (int[] bond : bonds)
-        {
-            for (int axis = 0; axis < 3; axis++)
-            {
-                double difference = embedding[bond[0]][axis] - embedding[bond[1]][axis];
-                bondLength += difference * difference;
-            }
-        }
-        double scale = bondLength > 1e-12 ? 1 / Math.sqrt(bondLength / bonds.length) : 1;
-        for (double[] point : embedding)
-        {
-            for (int axis = 0; axis < 3; axis++)
-            {
-                point[axis] *= scale;
-            }
-        }
-        return embedding;
-    }
-
-    /**
-     * Finds the eigenvalues and eigenvectors of a symmetric matrix by Jacobi rotations.
-     *
-     * @param matrix the matrix, which is destroyed
-     * @param vectors where to put the eigenvectors, one per column
-     * @return the eigenvalues
-     */
-    private static double[] eigen(double[][] matrix, double[][] vectors)
-    {
-        int size = matrix.length;
-        for (int row = 0; row < size; row++)
-        {
-            Arrays.fill(vectors[row], 0);
-            vectors[row][row] = 1;
-        }
-        for (int sweep = 0; sweep < 60; sweep++)
-        {
-            double off = 0;
-            for (int row = 0; row < size; row++)
-            {
-                for (int column = row + 1; column < size; column++)
-                {
-                    off += matrix[row][column] * matrix[row][column];
-                }
-            }
-            if (off < 1e-22)
-            {
-                break;
-            }
-            for (int p = 0; p < size; p++)
-            {
-                for (int q = p + 1; q < size; q++)
-                {
-                    if (Math.abs(matrix[p][q]) < 1e-300)
-                    {
-                        continue;
-                    }
-                    double theta = (matrix[q][q] - matrix[p][p]) / (2 * matrix[p][q]);
-                    double tangent = Math.signum(theta == 0 ? 1 : theta) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
-                    double cosine = 1 / Math.sqrt(tangent * tangent + 1);
-                    double sine = tangent * cosine;
-                    for (int k = 0; k < size; k++)
-                    {
-                        double kp = matrix[k][p];
-                        double kq = matrix[k][q];
-                        matrix[k][p] = cosine * kp - sine * kq;
-                        matrix[k][q] = sine * kp + cosine * kq;
-                    }
-                    for (int k = 0; k < size; k++)
-                    {
-                        double pk = matrix[p][k];
-                        double qk = matrix[q][k];
-                        matrix[p][k] = cosine * pk - sine * qk;
-                        matrix[q][k] = sine * pk + cosine * qk;
-                    }
-                    for (int k = 0; k < size; k++)
-                    {
-                        double kp = vectors[k][p];
-                        double kq = vectors[k][q];
-                        vectors[k][p] = cosine * kp - sine * kq;
-                        vectors[k][q] = sine * kp + cosine * kq;
-                    }
-                }
-            }
-        }
-        double[] values = new double[size];
-        for (int index = 0; index < size; index++)
-        {
-            values[index] = matrix[index][index];
-        }
-        return values;
-    }
-
-    /**
+            /**
      * @return the largest ring drawn as a regular polygon, with everything else pulled to the middle of its neighbours
      */
     private double[] springDrawing()
@@ -623,7 +500,7 @@ final class RingEnergyMinimiser
         for (int iteration = 0; iteration < 2000; iteration++)
         {
             relaxedEnergy(x, gradient);
-            double norm = dot(gradient, gradient);
+            double norm = Vectors.dot(gradient, gradient);
             if (Math.sqrt(norm) < GRADIENT_TOLERANCE)
             {
                 break;
@@ -688,7 +565,7 @@ final class RingEnergyMinimiser
     private double[] solve(double[] start)
     {
         double[] x = start.clone();
-        if (!project(x))
+        if (!constraints.restore(x))
         {
             return null;
         }
@@ -699,8 +576,8 @@ final class RingEnergyMinimiser
         for (int iteration = 0; iteration < MAX_DESCENT_STEPS; iteration++)
         {
             energy(x, gradient);
-            double[] direction = tangent(x, gradient);
-            double norm = dot(direction, direction);
+            double[] direction = constraints.tangent(x, gradient);
+            double norm = Vectors.dot(direction, direction);
             if (Math.sqrt(norm) < GRADIENT_TOLERANCE)
             {
                 break;
@@ -714,7 +591,7 @@ final class RingEnergyMinimiser
                 {
                     next[at] -= step * direction[at];
                 }
-                if (project(next))
+                if (constraints.restore(next))
                 {
                     double nextEnergy = energy(next, null);
                     if (nextEnergy < energy - 1e-4 * step * norm)
@@ -736,219 +613,7 @@ final class RingEnergyMinimiser
         return x;
     }
 
-    /**
-     * Moves a drawing, as little as it can, until every bond is one bond length long.
-     *
-     * @param x the drawing, which is changed
-     * @return whether it got there
-     */
-    private boolean project(double[] x)
-    {
-        double ridge = 1e-6;
-        double[] residual = residualOf(x);
-        double size = dot(residual, residual);
-        for (int round = 0; round < MAX_PROJECTIONS; round++)
-        {
-            if (worst(residual) < 1e-13)
-            {
-                return true;
-            }
-
-            double[] multipliers = solveGram(x, residual, ridge);
-            if (multipliers != null)
-            {
-                double[] next = x.clone();
-                for (int bond = 0; bond < bonds.length; bond++)
-                {
-                    int first = bonds[bond][0];
-                    int second = bonds[bond][1];
-                    double dx = x[first * 2] - x[second * 2];
-                    double dy = x[first * 2 + 1] - x[second * 2 + 1];
-                    next[first * 2] -= 2 * dx * multipliers[bond];
-                    next[first * 2 + 1] -= 2 * dy * multipliers[bond];
-                    next[second * 2] += 2 * dx * multipliers[bond];
-                    next[second * 2 + 1] += 2 * dy * multipliers[bond];
-                }
-                double[] nextResidual = residualOf(next);
-                double nextSize = dot(nextResidual, nextResidual);
-                if (nextSize < size)
-                {
-                    System.arraycopy(next, 0, x, 0, x.length);
-                    residual = nextResidual;
-                    size = nextSize;
-                    ridge = Math.max(ridge / 10, RIDGE);
-                    continue;
-                }
-            }
-
-            ridge *= 10;
-            if (ridge > 1e8)
-            {
-                return false;
-            }
-        }
-        return worst(residual) < 1e-13;
-    }
-
-    /**
-     * @param x the drawing
-     * @return how far each bond's squared length is from one
-     */
-    private double[] residualOf(double[] x)
-    {
-        double[] residual = new double[bonds.length];
-        for (int bond = 0; bond < bonds.length; bond++)
-        {
-            double dx = x[bonds[bond][0] * 2] - x[bonds[bond][1] * 2];
-            double dy = x[bonds[bond][0] * 2 + 1] - x[bonds[bond][1] * 2 + 1];
-            residual[bond] = dx * dx + dy * dy - 1;
-        }
-        return residual;
-    }
-
-    private static double worst(double[] values)
-    {
-        double worst = 0;
-        for (double value : values)
-        {
-            worst = Math.max(worst, Math.abs(value));
-        }
-        return worst;
-    }
-
-    /**
-     * @param x the drawing
-     * @param gradient which way the penalty rises
-     * @return that, with any part that would change a bond's length taken out
-     */
-    private double[] tangent(double[] x, double[] gradient)
-    {
-        double[] along = new double[bonds.length];
-        for (int bond = 0; bond < bonds.length; bond++)
-        {
-            int first = bonds[bond][0];
-            int second = bonds[bond][1];
-            along[bond] = 2 * ((x[first * 2] - x[second * 2]) * (gradient[first * 2] - gradient[second * 2])
-                + (x[first * 2 + 1] - x[second * 2 + 1]) * (gradient[first * 2 + 1] - gradient[second * 2 + 1]));
-        }
-        double[] multipliers = solveGram(x, along);
-        double[] result = gradient.clone();
-        if (multipliers == null)
-        {
-            return result;
-        }
-        for (int bond = 0; bond < bonds.length; bond++)
-        {
-            int first = bonds[bond][0];
-            int second = bonds[bond][1];
-            double dx = x[first * 2] - x[second * 2];
-            double dy = x[first * 2 + 1] - x[second * 2 + 1];
-            result[first * 2] -= 2 * dx * multipliers[bond];
-            result[first * 2 + 1] -= 2 * dy * multipliers[bond];
-            result[second * 2] += 2 * dx * multipliers[bond];
-            result[second * 2 + 1] += 2 * dy * multipliers[bond];
-        }
-        return result;
-    }
-
-    /**
-     * Solves {@code (J Jᵀ + ridge) y = rhs}, where {@code J} is how each bond's squared length changes with each coordinate.
-     *
-     * @param x the drawing
-     * @param rhs the right-hand side, one entry per bond
-     * @return {@code y}, or {@code null} if the system is singular
-     */
-    private double[] solveGram(double[] x, double[] rhs)
-    {
-        return solveGram(x, rhs, RIDGE);
-    }
-
-    private double[] solveGram(double[] x, double[] rhs, double ridge)
-    {
-        int size = bonds.length;
-        double[][] gram = new double[size][size + 1];
-        for (int row = 0; row < size; row++)
-        {
-            for (int column = row; column < size; column++)
-            {
-                double value = shared(x, bonds[row], bonds[column]);
-                gram[row][column] = value;
-                gram[column][row] = value;
-            }
-            gram[row][row] += ridge;
-            gram[row][size] = rhs[row];
-        }
-
-        for (int pivot = 0; pivot < size; pivot++)
-        {
-            int best = pivot;
-            for (int row = pivot + 1; row < size; row++)
-            {
-                if (Math.abs(gram[row][pivot]) > Math.abs(gram[best][pivot]))
-                {
-                    best = row;
-                }
-            }
-            if (Math.abs(gram[best][pivot]) < 1e-14)
-            {
-                return null;
-            }
-            double[] swap = gram[pivot];
-            gram[pivot] = gram[best];
-            gram[best] = swap;
-            for (int row = pivot + 1; row < size; row++)
-            {
-                double factor = gram[row][pivot] / gram[pivot][pivot];
-                for (int column = pivot; column <= size; column++)
-                {
-                    gram[row][column] -= factor * gram[pivot][column];
-                }
-            }
-        }
-
-        double[] solution = new double[size];
-        for (int row = size - 1; row >= 0; row--)
-        {
-            double sum = gram[row][size];
-            for (int column = row + 1; column < size; column++)
-            {
-                sum -= gram[row][column] * solution[column];
-            }
-            solution[row] = sum / gram[row][row];
-        }
-        return solution;
-    }
-
-    /**
-     * @param x the drawing
-     * @param first a bond
-     * @param second a bond
-     * @return the dot product of the two bonds' rows of {@code J}
-     */
-    private static double shared(double[] x, int[] first, int[] second)
-    {
-        double total = 0;
-        for (int end = 0; end < 2; end++)
-        {
-            for (int other = 0; other < 2; other++)
-            {
-                if (first[end] != second[other])
-                {
-                    continue;
-                }
-                int partnerFirst = first[1 - end];
-                int partnerSecond = second[1 - other];
-                double ax = x[first[end] * 2] - x[partnerFirst * 2];
-                double ay = x[first[end] * 2 + 1] - x[partnerFirst * 2 + 1];
-                double bx = x[second[other] * 2] - x[partnerSecond * 2];
-                double by = x[second[other] * 2 + 1] - x[partnerSecond * 2 + 1];
-                total += 4 * (ax * bx + ay * by);
-            }
-        }
-        return total;
-    }
-
-    /**
+        /**
      * @param x the drawing
      * @param gradient where to put which way the penalty rises, or {@code null} to skip that
      * @return the penalty for the drawing's shape
@@ -1249,13 +914,4 @@ final class RingEnergyMinimiser
         return points;
     }
 
-    private static double dot(double[] first, double[] second)
-    {
-        double total = 0;
-        for (int at = 0; at < first.length; at++)
-        {
-            total += first[at] * second[at];
-        }
-        return total;
-    }
 }

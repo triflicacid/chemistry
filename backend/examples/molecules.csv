@@ -459,6 +459,7 @@ phenanthrene,c1ccc2c(c1)ccc1ccccc12,ring;aromatic;fused
 pyrene,c1cc2ccc3cccc4ccc(c1)c2c34,ring;aromatic;fused
 tetracene,c1ccc2cc3cc4ccccc4cc3cc2c1,ring;aromatic;fused
 chrysene,c1ccc2c(c1)ccc1c3ccccc3ccc21,ring;aromatic;fused
+hexahelicene,c1ccc2ccc3ccc4ccc5ccc6ccccc6c5c4c3c2c1,ring;aromatic;fused
 indane,C1Cc2ccccc2C1,ring;fused;aromatic
 tetralin,C1CCc2ccccc2C1,ring;fused;aromatic
 indole,c1ccc2[nH]ccc2c1,ring;aromatic;fused;heteroatom

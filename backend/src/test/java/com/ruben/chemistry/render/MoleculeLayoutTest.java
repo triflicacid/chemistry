@@ -565,6 +565,54 @@ class MoleculeLayoutTest
             return shortest / longest;
         }
 
+        /**
+         * @param depiction a drawing
+         * @return the sharpest angle between two bonds at an atom, in degrees
+         */
+        private static double sharpestAngleOf(Depiction depiction)
+        {
+            Point[] points = pointsOf(depiction);
+            List<List<Integer>> neighbours = new ArrayList<>();
+            for (int atom = 0; atom < points.length; atom++)
+            {
+                neighbours.add(new ArrayList<>());
+            }
+            for (int[] bond : bondsOf(depiction))
+            {
+                neighbours.get(bond[0]).add(bond[1]);
+                neighbours.get(bond[1]).add(bond[0]);
+            }
+            double sharpest = 180;
+            for (int centre = 0; centre < points.length; centre++)
+            {
+                List<Integer> around = neighbours.get(centre);
+                for (int first = 0; first < around.size(); first++)
+                {
+                    for (int second = first + 1; second < around.size(); second++)
+                    {
+                        Point one = points[around.get(first)].minus(points[centre]);
+                        Point other = points[around.get(second)].minus(points[centre]);
+                        double cosine = (one.x() * other.x() + one.y() * other.y()) / (one.length() * other.length());
+                        sharpest = Math.min(sharpest, Math.toDegrees(Math.acos(Math.clamp(cosine, -1, 1))));
+                    }
+                }
+            }
+            return sharpest;
+        }
+
+        @Test
+        void settles_for_the_least_pinched_angles_when_a_cage_has_to_be_drawn_flat()
+        {
+            // with no projection there is no drawing a molecule could have, so the flat search is judged on how little
+            // it pinches an angle, and must not trade that away for bonds of one length however hard it looks
+            Depiction depiction = MoleculeLayout.layout(
+                    Molecule.fromSmiles("C1CC2CCC1CC2"),
+                    DepictionOptions.skeletal().withProjectCages(false)
+                            .withRingRefinement(RingRefinement.THOROUGH)).depiction();
+
+            assertThat(sharpestAngleOf(depiction)).isGreaterThan(25);
+        }
+
         @Test
         void draws_cubane_as_an_evenly_foreshortened_view_of_its_shape()
         {

@@ -12,8 +12,52 @@ public final class LayoutQuality
     /** How close to zero a length has to be to count as nothing. */
     private static final double EPSILON = 1e-9;
 
+    /** Two bonds at an atom whose angle has a cosine below this are drawn as one straight line. */
+    private static final double STRAIGHT_COSINE = -0.94;
+
+    /** Two bonds at an atom whose angle has a cosine above this are drawn one on top of the other. */
+    private static final double SHARP_COSINE = 0.94;
+
     private LayoutQuality()
     {
+    }
+
+    /**
+     * @param points where each atom sits
+     * @param bonds each bond as the pair of atoms it joins
+     * @return how many pairs of bonds at an atom are drawn as one line: either so near straight that the atom looks as
+     *     if it were not a bend at all, or so near each other that one bond lies on top of the other
+     */
+    public static int hiddenBends(Point[] points, int[][] bonds)
+    {
+        boolean[][] joined = joinedPairs(points.length, bonds);
+        int hidden = 0;
+        for (int centre = 0; centre < points.length; centre++)
+        {
+            for (int first = 0; first < points.length; first++)
+            {
+                for (int second = first + 1; second < points.length; second++)
+                {
+                    if (!joined[centre][first] || !joined[centre][second])
+                    {
+                        continue;
+                    }
+                    Point one = points[first].minus(points[centre]);
+                    Point other = points[second].minus(points[centre]);
+                    double lengths = one.length() * other.length();
+                    if (lengths <= EPSILON)
+                    {
+                        continue;
+                    }
+                    double cosine = (one.x() * other.x() + one.y() * other.y()) / lengths;
+                    if (cosine < STRAIGHT_COSINE || cosine > SHARP_COSINE)
+                    {
+                        hidden++;
+                    }
+                }
+            }
+        }
+        return hidden;
     }
 
     /**
