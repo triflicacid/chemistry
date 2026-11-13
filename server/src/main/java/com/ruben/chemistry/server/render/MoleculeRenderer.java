@@ -12,6 +12,8 @@ import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.render.svg.SvgWriter;
 import com.ruben.chemistry.render.scene.Scene;
 
+import java.util.Set;
+
 public final class MoleculeRenderer
 {
     /** The longest SMILES string accepted. */
@@ -80,18 +82,19 @@ public final class MoleculeRenderer
      * @param conformer which conformer of {@code structure} to draw
      * @param camera where to look from, or null to choose the clearest direction
      * @param options how to draw it
+     * @param only the atoms whose disconnected parts to draw, or null to draw every part
      * @return the drawing, with the snapshot it was laid out from
      * @throws RenderException if an option is invalid or the molecule cannot be drawn from that conformer
      */
-    public Render2d project2d(Molecule molecule, Structure3D structure, int conformer, Camera camera, Render2dOptions options)
+    public Render2d project2d(Molecule molecule, Structure3D structure, int conformer, Camera camera, Render2dOptions options, Set<Integer> only)
     {
         Render2dOptionsMapper.Settings settings = Render2dOptionsMapper.map(options);
 
         try
         {
             Structure2D layout = camera == null
-                    ? ProjectedLayout.bestView(molecule, structure, conformer, settings.depiction())
-                    : ProjectedLayout.fromCamera(molecule, structure, conformer, camera, settings.depiction());
+                    ? ProjectedLayout.bestView(molecule, structure, conformer, settings.depiction(), only)
+                    : ProjectedLayout.fromCamera(molecule, structure, conformer, camera, settings.depiction(), only);
             Scene scene = SceneRenderer.render(layout, settings.style());
             return new Render2d(scene, SvgWriter.write(scene), layout);
         }

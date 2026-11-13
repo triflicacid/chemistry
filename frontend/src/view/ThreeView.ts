@@ -1,6 +1,7 @@
 import {
   AmbientLight,
   ArrowHelper,
+  Box3,
   CanvasTexture,
   Color,
   ConeGeometry,
@@ -114,6 +115,12 @@ export class ThreeView implements MoleculeView {
   private highlights: Highlights = { hover: null, ends: [] };
   private frame = 0;
   private radius = 3;
+  /** The middle of what is drawn, which the view starts out orbiting. */
+  private centre = new Vector3();
+  /** Every drawn atom, by site index, with the molecule atom it is or belongs to. */
+  private sitePoints = new Map<number, { atom: number; at: Vector3 }>();
+  private rightDown: { x: number; y: number } | null = null;
+  private axes: Group | null = null;
   private readonly textures = new Map<string, CanvasTexture>();
 
   constructor(
@@ -136,10 +143,15 @@ export class ThreeView implements MoleculeView {
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = false;
-    this.controls.addEventListener("change", () => this.requestRender());
+    this.controls.addEventListener("change", () => {
+      this.syncAxes();
+      this.requestRender();
+    });
 
     canvas.addEventListener("pointermove", this.onMove);
     canvas.addEventListener("pointerleave", this.onLeave);
+    canvas.addEventListener("pointerdown", this.onDown);
+    canvas.addEventListener("pointerup", this.onUp);
 
     this.resizer = new ResizeObserver(() => this.resize());
     this.resizer.observe(this.element);
@@ -179,6 +191,19 @@ export class ThreeView implements MoleculeView {
     };
   }
 
+  /** The molecule atoms of everything drawn that is inside what the camera sees now. */
+  visibleAtoms(): number[] {
+    this.camera.updateMatrixWorld();
+    const seen = new Set<number>();
+    for (const { atom, at } of this.sitePoints.values()) {
+      const ndc = at.clone().project(this.camera);
+      if (Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1 && Math.abs(ndc.z) <= 1) {
+        seen.add(atom);
+      }
+    }
+    return [...seen];
+  }
+
   resetView(): void {
     const distance = (1.1 * this.radius) / Math.sin((FIELD_OF_VIEW * Math.PI) / 360);
     const yaw = (30 * Math.PI) / 180;
@@ -187,8 +212,9 @@ export class ThreeView implements MoleculeView {
       Math.cos(pitch) * Math.sin(yaw) * distance,
       Math.sin(pitch) * distance,
       Math.cos(pitch) * Math.cos(yaw) * distance,
-    );
-    this.controls.target.set(0, 0, 0);
+    ).add(this.centre);
+    this.controls.target.copy(this.centre);
+    this.syncAxes();
     this.camera.up.copy(UP);
     this.controls.update();
     this.requestRender();
@@ -200,6 +226,8 @@ export class ThreeView implements MoleculeView {
     const canvas = this.renderer.domElement;
     canvas.removeEventListener("pointermove", this.onMove);
     canvas.removeEventListener("pointerleave", this.onLeave);
+    canvas.removeEventListener("pointerdown", this.onDown);
+    canvas.removeEventListener("pointerup", this.onUp);
     this.controls.dispose();
     this.clearContent();
     this.textures.forEach((texture) => texture.dispose());
@@ -233,6 +261,12 @@ export class ThreeView implements MoleculeView {
 
     const anyHeavy = sites.some((site) => site.element !== "H");
     const shown = sites.map((site) => this.settings.hydrogens || !anyHeavy || site.element !== "H");
+    const box = new Box3();
+    sites.forEach((site) => shown[site.index] && box.expandByPoint(point(site.index)));
+    this.centre = box.isEmpty() ? new Vector3() : box.getCenter(new Vector3());
+    this.sitePoints = new Map(
+      sites.filter((site) => shown[site.index]).map((site) => [site.index, { atom: site.atom, at: point(site.index) }]),
+    );
     const links = connections.filter((link) => shown[link.first] && shown[link.second]);
     const bonded = new Set(links.flatMap((link) => [link.first, link.second]));
     const neighbours = new Map<number, number[]>();
@@ -249,7 +283,7 @@ export class ThreeView implements MoleculeView {
       }
       const size = this.ballRadius(site, bonded.has(site.index));
       const at = point(site.index);
-      radius = Math.max(radius, at.length() + Math.max(size, this.settings.style === "spacefill" ? 0 : 0.3));
+      radius = Math.max(radius, at.distanceTo(this.centre) + Math.max(size, this.settings.style === "spacefill" ? 0 : 0.3));
       if (size > 0) {
         const colour = new Color(site.colour);
         if (strain) {
@@ -508,11 +542,20 @@ export class ThreeView implements MoleculeView {
     this.content.add(sprite);
   }
 
+  /** Axes sit on the point the view orbits, so they show where the pivot is. */
   private addAxes(): void {
     const colours = [0xe41a1c, 0x2ca02c, 0x1f4fd8];
+    const axes = new Group();
     [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)].forEach((direction, i) => {
-      this.content.add(new ArrowHelper(direction, new Vector3(), AXIS_LENGTH, colours[i], 0.5, 0.36));
+      axes.add(new ArrowHelper(direction, new Vector3(), AXIS_LENGTH, colours[i], 0.5, 0.36));
     });
+    this.axes = axes;
+    this.syncAxes();
+    this.content.add(axes);
+  }
+
+  private syncAxes(): void {
+    this.axes?.position.copy(this.controls.target);
   }
 
   private addDebug(
@@ -687,6 +730,49 @@ export class ThreeView implements MoleculeView {
   private readonly onLeave = (): void => {
     this.listeners.forEach((listener) => listener.hover?.(null, { x: 0, y: 0 }));
   };
+
+  private readonly onDown = (event: PointerEvent): void => {
+    this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
+  };
+
+  /** A right-click that is not a pan pivots on the atom nearest what was clicked, or back on the middle if nothing was. */
+  private readonly onUp = (event: PointerEvent): void => {
+    const down = this.rightDown;
+    this.rightDown = null;
+    if (event.button !== 2 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) {
+      return;
+    }
+    const hit = this.hitAt(event);
+    let nearest: Vector3 | null = null;
+    let best = Infinity;
+    if (hit) {
+      for (const { at } of this.sitePoints.values()) {
+        const distance = at.distanceToSquared(hit);
+        if (distance < best) {
+          best = distance;
+          nearest = at;
+        }
+      }
+    }
+    this.pivotOn(nearest ?? this.centre);
+  };
+
+  /** Moves the point the view orbits to `to`, carrying the camera with it so that the view keeps its angle. */
+  private pivotOn(to: Vector3): void {
+    this.camera.position.add(to.clone().sub(this.controls.target));
+    this.controls.target.copy(to);
+    this.syncAxes();
+    this.controls.update();
+    this.requestRender();
+  }
+
+  private hitAt(event: PointerEvent): Vector3 | null {
+    const box = this.renderer.domElement.getBoundingClientRect();
+    const pointer = new Vector2(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
+    this.raycaster.setFromCamera(pointer, this.camera);
+    const hits = this.raycaster.intersectObjects(this.parts.map((part) => part.object), true);
+    return hits.find((hit) => hit.object.userData.part)?.point ?? null;
+  }
 
   private resize(): void {
     const width = Math.max(1, this.element.clientWidth);

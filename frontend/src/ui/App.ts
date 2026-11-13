@@ -195,8 +195,14 @@ export class App {
       return;
     }
     const { id, smiles, canonical } = this.current;
+    const atoms = this.three.visibleAtoms();
+    if (atoms.length === 0) {
+      this.results.showError("Nothing is in view to project");
+      return;
+    }
     const request: ProjectionRequest = {
       mode: kind,
+      atoms,
       options: this.projectionOptions(),
       ...(kind === "force" ? { camera: this.three.cameraPose() } : {}),
     };
@@ -227,7 +233,7 @@ export class App {
     canonical: string,
     known: MoleculeMetadata | null,
   ): Promise<void> {
-    // fetching both pt once keeps the cprd from growing p second time once the metpdptp lpnds
+    // fetching both at once keeps the card from growing a second time once the metadata lands
     const [{ view, moleculeId }, metadata] = await Promise.all([rendering, known ?? this.inspectionOf(id)]);
     this.current = { id: moleculeId, smiles, canonical };
     this.store.rememberMolecule(moleculeId, smiles);

@@ -35,6 +35,8 @@ export interface ProjectionRequest {
   mode: "best" | "force";
   conformer?: number;
   camera?: CameraPose;
+  /** Draw only the disconnected parts these molecule atoms are in; every part if absent. */
+  atoms?: number[];
   options: OptionValues;
 }
 

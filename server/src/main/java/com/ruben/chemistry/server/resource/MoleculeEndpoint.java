@@ -20,7 +20,10 @@ import com.ruben.chemistry.server.render.Render2dJson;
 import com.ruben.chemistry.server.render.Render3dJson;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class MoleculeEndpoint extends Endpoint
 {
@@ -69,8 +72,9 @@ public final class MoleculeEndpoint extends Endpoint
      * @param conformer which conformer to draw (default 0)
      * @param camera where to look from; required for {@code force}
      * @param options how to draw it (optional)
+     * @param atoms draw only the disconnected parts these atoms (by index) are in; every part if absent
      */
-    public record ProjectRequest(String mode, Integer conformer, CameraRequest camera, Render2dOptions options)
+    public record ProjectRequest(String mode, Integer conformer, CameraRequest camera, Render2dOptions options, List<Integer> atoms)
     {
     }
 
@@ -205,11 +209,16 @@ public final class MoleculeEndpoint extends Endpoint
             camera = body.camera().toCamera();
         }
         int conformer = body.conformer() == null ? 0 : body.conformer();
+        if (body.atoms() != null && body.atoms().isEmpty())
+        {
+            throw new HttpException(400, "INVALID_BODY", "atoms: must not be empty");
+        }
+        Set<Integer> only = body.atoms() == null ? null : new HashSet<>(body.atoms());
 
         try
         {
             Render2d render = renderer.project2d(stored.molecule(), structure, conformer, camera,
-                    body.options() == null ? Render2dOptions.defaults() : body.options());
+                    body.options() == null ? Render2dOptions.defaults() : body.options(), only);
             stored.setLatest2d(render);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
             responseContext.respond(200, Render2dJson.of(render.scene()));

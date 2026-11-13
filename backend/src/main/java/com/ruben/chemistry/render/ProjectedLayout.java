@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.Set;
 
 /**
  * Lays a molecule out as a flat view of its {@link Structure3D}.
@@ -30,8 +31,10 @@ public final class ProjectedLayout
     private final List<Vec3> spots = new ArrayList<>();
     private final List<Bonded> bonds = new ArrayList<>();
     private final int[] placementOfAtom;
+    /** Each fragment's index among those drawn, or -1 if it is left out. */
+    private final int[] drawnFragment;
 
-    private ProjectedLayout(Molecule molecule, Structure3D structure, int conformer, DepictionOptions options)
+    private ProjectedLayout(Molecule molecule, Structure3D structure, int conformer, DepictionOptions options, Set<Integer> only)
     {
         if (conformer < 0 || conformer >= structure.conformers().size())
         {
@@ -41,6 +44,8 @@ public final class ProjectedLayout
         this.options = options;
         this.snapshot = MoleculeSnapshot.of(molecule);
         this.placementOfAtom = new int[molecule.atoms().size()];
+        Arrays.fill(placementOfAtom, -1);
+        this.drawnFragment = chooseFragments(only);
 
         List<Vec3> positions = structure.conformers().get(conformer).positions();
         boolean hydrogensShown = options.effectiveHydrogens().isSeparate();
@@ -48,7 +53,7 @@ public final class ProjectedLayout
         Arrays.fill(placementOfSite, -1);
         for (Structure3D.Site site : structure.sites())
         {
-            if (site.implied() && !hydrogensShown)
+            if (drawnFragment[snapshot.getFragmentIndexOf(site.atom())] < 0 || site.implied() && !hydrogensShown)
             {
                 continue;
             }
@@ -72,6 +77,37 @@ public final class ProjectedLayout
         }
     }
 
+    /** The fragments holding any of the atoms, numbered from 0 in order, and -1 for the rest; every fragment if {@code only} is null. */
+    private int[] chooseFragments(Set<Integer> only)
+    {
+        int[] chosen = new int[snapshot.getFragmentCount()];
+        Arrays.fill(chosen, only == null ? 0 : -1);
+        if (only != null)
+        {
+            for (int atom : only)
+            {
+                if (atom < 0 || atom >= molecule.atoms().size())
+                {
+                    throw new IllegalArgumentException("There is no atom " + atom + "; there are " + molecule.atoms().size());
+                }
+                chosen[snapshot.getFragmentIndexOf(atom)] = 0;
+            }
+        }
+        int next = 0;
+        for (int fragment = 0; fragment < chosen.length; fragment++)
+        {
+            if (chosen[fragment] >= 0)
+            {
+                chosen[fragment] = next++;
+            }
+        }
+        if (next == 0)
+        {
+            throw new IllegalArgumentException("There are no atoms to draw");
+        }
+        return chosen;
+    }
+
     /**
      * Draws the molecule exactly as a camera sees it.
      *
@@ -85,7 +121,24 @@ public final class ProjectedLayout
      */
     public static Structure2D fromCamera(Molecule molecule, Structure3D structure, int conformer, Camera camera, DepictionOptions options)
     {
-        ProjectedLayout layout = new ProjectedLayout(molecule, structure, conformer, options);
+        return fromCamera(molecule, structure, conformer, camera, options, null);
+    }
+
+    /**
+     * Draws the molecule exactly as a camera sees it, leaving out the disconnected parts that none of the given atoms are in.
+     *
+     * @param molecule the molecule
+     * @param structure the molecule in space
+     * @param conformer the index of the conformer to draw
+     * @param camera where to look from
+     * @param options how much to spell out
+     * @param only the atoms whose disconnected parts to draw, or null to draw every part
+     * @return the drawing
+     * @throws IllegalArgumentException if there is no such conformer or atom, or no atoms to draw
+     */
+    public static Structure2D fromCamera(Molecule molecule, Structure3D structure, int conformer, Camera camera, DepictionOptions options, Set<Integer> only)
+    {
+        ProjectedLayout layout = new ProjectedLayout(molecule, structure, conformer, options, only);
         Point[] points = new Point[layout.drawn.size()];
         for (int atom = 0; atom < points.length; atom++)
         {
@@ -108,7 +161,24 @@ public final class ProjectedLayout
      */
     public static Structure2D bestView(Molecule molecule, Structure3D structure, int conformer, DepictionOptions options)
     {
-        ProjectedLayout layout = new ProjectedLayout(molecule, structure, conformer, options);
+        return bestView(molecule, structure, conformer, options, null);
+    }
+
+    /**
+     * Draws the molecule from the direction that keeps its atoms apart and its bonds evenly long, leaving out the
+     * disconnected parts that none of the given atoms are in.
+     *
+     * @param molecule the molecule
+     * @param structure the molecule in space
+     * @param conformer the index of the conformer to draw
+     * @param options how much to spell out
+     * @param only the atoms whose disconnected parts to draw, or null to draw every part
+     * @return the drawing
+     * @throws IllegalArgumentException if there is no such conformer or atom, or no atoms to draw
+     */
+    public static Structure2D bestView(Molecule molecule, Structure3D structure, int conformer, DepictionOptions options, Set<Integer> only)
+    {
+        ProjectedLayout layout = new ProjectedLayout(molecule, structure, conformer, options, only);
         Point[] points = new Point[layout.drawn.size()];
         for (int fragment = 0; fragment < layout.snapshot.getFragmentCount(); fragment++)
         {
@@ -155,7 +225,7 @@ public final class ProjectedLayout
 
     private int fragmentOf(int placement)
     {
-        return snapshot.getFragmentIndexOf(drawn.get(placement).atom());
+        return drawnFragment[snapshot.getFragmentIndexOf(drawn.get(placement).atom())];
     }
 
     /** Scales the points about the origin so that the middling bond is one bond length. */
@@ -288,7 +358,10 @@ public final class ProjectedLayout
                 Bond bond = molecule.bondBetween(order.get(at), order.get((at + 1) % order.size())).orElseThrow();
                 aromatic &= bond.order() == BondOrder.AROMATIC;
             }
-            rings.add(new RingPlacement(members, aromatic && options.style() == DepictionStyle.SKELETAL));
+            if (!members.contains(-1))
+            {
+                rings.add(new RingPlacement(members, aromatic && options.style() == DepictionStyle.SKELETAL));
+            }
         }
         return rings;
     }
