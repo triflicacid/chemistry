@@ -15,7 +15,7 @@ interface Shown {
   unsubscribe: () => void;
 }
 
-/** The section below the form where results or an error are shown. */
+/** The section below the form where results or an error are shown. Views passed in are never disposed here. */
 export class ResultsView {
   readonly element = document.createElement("section");
   private shown: Shown | null = null;
@@ -82,8 +82,12 @@ export class ResultsView {
     this.inspector?.detach();
     this.inspector = null;
     this.formula = null;
-    this.shown?.unsubscribe();
-    this.shown?.view.dispose();
+    if (this.shown) {
+      // the caller owns the view and may show it again, so leave it clean rather than disposing it
+      this.shown.unsubscribe();
+      this.shown.view.setSelection({ atoms: new Set(), bonds: new Set() });
+      this.shown.view.setHighlights({ hover: null, ends: [] });
+    }
     this.shown = null;
   }
 }

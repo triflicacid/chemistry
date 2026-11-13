@@ -64,8 +64,34 @@ export class Selection {
 /** localStorage key. */
 const KEY = "chemistry.molecule";
 
+const MODE_KEY = "chemistry.mode";
+
+export type ViewMode = "2d" | "3d";
+
 export class ViewStore {
   private molecule: RememberedMolecule | null = ViewStore.read();
+  private viewMode: ViewMode = ViewStore.readMode();
+
+  /** Whether the user last looked at the 2D or the 3D drawing. */
+  get mode(): ViewMode {
+    return this.viewMode;
+  }
+
+  rememberMode(mode: ViewMode): void {
+    this.viewMode = mode;
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+    }
+  }
+
+  private static readMode(): ViewMode {
+    try {
+      return localStorage.getItem(MODE_KEY) === "3d" ? "3d" : "2d";
+    } catch {
+      return "2d";
+    }
+  }
 
   get moleculeId(): MoleculeId | null {
     return this.molecule?.id ?? null;

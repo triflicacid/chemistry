@@ -16,7 +16,9 @@ export class App {
   private options2d: OptionsPanel | null = null;
   private options3d: OptionsPanel | null = null;
   private readonly optionsSlot = document.createElement("div");
-  private mode: "2d" | "3d" = "2d";
+  private mode: "2d" | "3d" = this.store.mode;
+  /** The live views of the molecule on show */
+  private cache: { id: MoleculeId; two?: SvgView; three?: ThreeView; conformers?: unknown } | null = null;
   private readonly modeInputs = new Map<"2d" | "3d", HTMLInputElement>();
   private readonly projectActions = App.buildProjectActions((kind) => void this.project(kind));
   private current: { id: MoleculeId; smiles: string; canonical: string } | null = null;
@@ -60,7 +62,7 @@ export class App {
         this.setMode(value);
         if (this.current) {
           // showing what the server already has keeps a projection, or the 3D shape, from being redone
-          void this.display(this.current.id, this.current.smiles, this.current.canonical, null, true);
+          void this.display(this.current.id, this.current.smiles, this.current.canonical, null, true, true);
         }
       });
       label.append(input, ` ${text}`);
@@ -71,6 +73,7 @@ export class App {
 
   private setMode(mode: "2d" | "3d"): void {
     this.mode = mode;
+    this.store.rememberMode(mode);
     const input = this.modeInputs.get(mode);
     if (input) {
       input.checked = true;
@@ -147,7 +150,7 @@ export class App {
     this.form.setBusy(true);
     try {
       const created = await this.api.createMolecule(smiles);
-
+      this.dropCache();
       await this.display(created.id, created.smiles, created.canonical_smiles, null);
     } catch (error) {
       this.store.rememberSmiles(smiles);
@@ -157,18 +160,71 @@ export class App {
     }
   }
 
-  /** Draws the molecule in the current mode. */
-  private async display(id: MoleculeId, smiles: string, canonical: string, known: MoleculeMetadata | null, cached = false): Promise<void> {
+  /** Draws the molecule in the current mode; with `reuse`, shows the view already made for this mode instead of fetching again. */
+  private async display(
+    id: MoleculeId,
+    smiles: string,
+    canonical: string,
+    known: MoleculeMetadata | null,
+    cached = false,
+    reuse = false,
+  ): Promise<void> {
     this.three = null;
-    const rendering = this.mode === "2d"
-      ? this.structure2d(id, cached).then(({ scene, moleculeId }) => ({ view: App.sceneView(scene), moleculeId }))
-      : this.structure3d(id, cached).then((structure) => {
-          this.conformers = this.options3d?.resolved().conformers;
-          const view = new ThreeView(structure, this.options3d?.resolved() ?? {});
-          this.three = view;
-          return { view, moleculeId: id };
-        });
+    const kept = reuse && this.cache?.id === id ? this.cache : null;
+    let rendering: Promise<{ view: SvgView | ThreeView; moleculeId: MoleculeId }>;
+    if (this.mode === "2d") {
+      rendering = kept?.two
+        ? Promise.resolve({ view: kept.two, moleculeId: id })
+        : this.structure2d(id, cached).then(({ scene, moleculeId }) => {
+            const view = App.sceneView(scene);
+            this.keep(moleculeId, "two", view);
+            return { view, moleculeId };
+          });
+    } else if (kept?.three) {
+      this.conformers = kept.conformers;
+      this.three = kept.three;
+      rendering = Promise.resolve({ view: kept.three, moleculeId: id });
+    } else {
+      rendering = this.structure3d(id, cached).then((structure) => {
+        const conformers = this.options3d?.resolved().conformers;
+        const view = new ThreeView(structure, this.options3d?.resolved() ?? {});
+        this.conformers = conformers;
+        this.keep(id, "three", view, conformers);
+        this.three = view;
+        return { view, moleculeId: id };
+      });
+    }
     await this.present(rendering, id, smiles, canonical, known);
+  }
+
+  /** Remembers a freshly made view, disposing the one it replaces and everything of a different molecule. */
+  private keep(id: MoleculeId, mode: "two" | "three", view: SvgView | ThreeView, conformers?: unknown): void {
+    if (this.cache?.id !== id) {
+      this.dropCache();
+      this.cache = { id };
+    }
+    const entry = this.cache as { id: MoleculeId; two?: SvgView; three?: ThreeView; conformers?: unknown };
+    const old = entry[mode];
+    if (old && old !== view) {
+      this.results.showMessage("Drawing...");
+      old.dispose();
+    }
+    if (mode === "two") {
+      entry.two = view as SvgView;
+    } else {
+      entry.three = view as ThreeView;
+      entry.conformers = conformers;
+    }
+  }
+
+  private dropCache(): void {
+    if (this.cache) {
+      // lets the results view clean up the views before they are disposed
+      this.results.showMessage("Drawing...");
+    }
+    this.cache?.two?.dispose();
+    this.cache?.three?.dispose();
+    this.cache = null;
   }
 
   /** The 2D options for a projection: the user's own 2D choices, with the look of the 3D view carried over. */
@@ -209,7 +265,11 @@ export class App {
 
     this.form.setBusy(true);
     try {
-      const rendering = this.api.project2d(id, request).then(({ scene, moleculeId }) => ({ view: App.sceneView(scene), moleculeId }));
+      const rendering = this.api.project2d(id, request).then(({ scene, moleculeId }) => {
+        const view = App.sceneView(scene);
+        this.keep(moleculeId, "two", view);
+        return { view, moleculeId };
+      });
       this.three = null;
       await this.present(rendering, id, smiles, canonical, null);
       this.setMode("2d");
