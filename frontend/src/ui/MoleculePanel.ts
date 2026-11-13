@@ -23,51 +23,75 @@ interface Cache {
   conformers?: unknown;
 }
 
-let panelCount = 0;
+/** A flat drawing of the 3D structure, shown in a tab of its own. */
+interface Projection {
+  readonly number: number;
+  readonly moleculeId: MoleculeId;
+  readonly view: SvgView;
+  readonly tab: HTMLElement;
+}
 
 export class MoleculePanel {
   readonly element = document.createElement("div");
   private readonly results = new ResultsView();
   private readonly projectActions: HTMLElement;
-  /** The mode choice and projection buttons, shown once there is a molecule to act on. */
+  /** The tabs and projection buttons, shown once there is a molecule to act on. */
   private readonly toolbar = document.createElement("div");
-  private readonly modeInputs = new Map<Mode, HTMLInputElement>();
+  private readonly tabs = document.createElement("div");
+  private readonly modeTabs = new Map<Mode, HTMLElement>();
+  private readonly projections: Projection[] = [];
+  private nextProjection = 1;
+  /** The tab being shown: a mode, or the number of a projection. */
+  private active: Mode | number;
   private cache: Cache | null = null;
   private current: { id: MoleculeId; smiles: string; canonical: string } | null = null;
   private three: ThreeView | null = null;
   private conformers: unknown = null;
 
   constructor(private readonly host: PanelHost, private mode: Mode) {
+    this.active = mode;
     this.element.className = "panel";
     this.projectActions = this.buildProjectActions();
     this.projectActions.hidden = mode !== "3d";
-    this.toolbar.className = "actions";
+    this.toolbar.className = "toolbar";
     this.toolbar.hidden = true;
-    this.toolbar.append(this.buildModes(), this.projectActions);
+    this.tabs.className = "tabs";
+    this.tabs.setAttribute("role", "tablist");
+    for (const [value, text] of [["2d", "2D"], ["3d", "3D"]] as const) {
+      const tab = document.createElement("div");
+      tab.className = "tab";
+      tab.append(this.tabButton(text, () => {
+        this.host.modeChosen(value);
+        void this.setMode(value);
+      }));
+      this.modeTabs.set(value, tab);
+      this.tabs.append(tab);
+    }
+    this.markActive();
+    this.toolbar.append(this.tabs, this.projectActions);
     this.element.append(this.toolbar, this.results.element);
   }
 
-  private buildModes(): HTMLElement {
-    const name = `mode-${panelCount++}`;
-    const group = document.createElement("div");
-    group.className = "radios modes";
-    group.setAttribute("role", "radiogroup");
-    for (const [value, text] of [["2d", "2D"], ["3d", "3D"]] as const) {
-      const label = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = "radio";
-      input.name = name;
-      input.value = value;
-      input.checked = value === this.mode;
-      this.modeInputs.set(value, input);
-      input.addEventListener("change", () => {
-        this.host.modeChosen(value);
-        void this.setMode(value);
-      });
-      label.append(input, ` ${text}`);
-      group.append(label);
+  private tabButton(text: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tab-label";
+    button.setAttribute("role", "tab");
+    button.textContent = text;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  /** Highlights the tab being shown. */
+  private markActive(): void {
+    const tabs = [
+      ...[...this.modeTabs].map(([mode, tab]) => ({ tab, on: mode === this.active })),
+      ...this.projections.map((projection) => ({ tab: projection.tab, on: projection.number === this.active })),
+    ];
+    for (const { tab, on } of tabs) {
+      tab.classList.toggle("active", on);
+      tab.querySelector(".tab-label")?.setAttribute("aria-selected", String(on));
     }
-    return group;
   }
 
   /** Creates the molecule on the server and draws it; a failure is shown in the panel rather than thrown. */
@@ -83,10 +107,11 @@ export class MoleculePanel {
     }
   }
 
-  /** Switches between the 2D and 3D drawing, reusing a view already made. */
+  /** Switches to the 2D or 3D drawing, reusing a view already made. */
   async setMode(mode: Mode): Promise<void> {
     this.mode = mode;
-    this.modeInputs.get(mode)!.checked = true;
+    this.active = mode;
+    this.markActive();
     this.projectActions.hidden = mode !== "3d";
     if (!this.current) {
       return;
@@ -118,6 +143,8 @@ export class MoleculePanel {
 
   dispose(): void {
     this.dropCache();
+    this.projections.forEach((projection) => projection.view.dispose());
+    this.projections.length = 0;
     this.element.remove();
   }
 
@@ -229,7 +256,7 @@ export class MoleculePanel {
     if (!this.three || !this.current) {
       return;
     }
-    const { id, smiles, canonical } = this.current;
+    const { id } = this.current;
     const atoms = this.three.visibleAtoms();
     if (atoms.length === 0) {
       this.results.showError("Nothing is in view to project");
@@ -243,19 +270,73 @@ export class MoleculePanel {
     };
 
     try {
-      const rendering = this.host.api.project2d(id, request).then(({ scene, moleculeId }) => {
-        const view = MoleculePanel.sceneView(scene);
-        this.keep(moleculeId, "two", view);
-        return { view, moleculeId };
-      });
-      this.three = null;
-      await this.present(rendering, id, smiles, canonical, null);
-      this.mode = "2d";
-      this.modeInputs.get("2d")!.checked = true;
-      this.projectActions.hidden = true;
+      const { scene, moleculeId } = await this.host.api.project2d(id, request);
+      const number = this.nextProjection++;
+      const projection: Projection = {
+        number,
+        moleculeId,
+        view: MoleculePanel.sceneView(scene),
+        tab: this.buildProjectionTab(number),
+      };
+      this.projections.push(projection);
+      this.tabs.append(projection.tab);
+      await this.showProjection(projection);
     } catch (error) {
       this.results.showError(MoleculePanel.describe(error));
     }
+  }
+
+  private buildProjectionTab(number: number): HTMLElement {
+    const tab = document.createElement("div");
+    tab.className = "tab";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "tab-close";
+    close.textContent = "×";
+    close.title = `Close projection #${number}`;
+    close.setAttribute("aria-label", close.title);
+    close.addEventListener("click", () => void this.closeProjection(number));
+    tab.append(
+      this.tabButton(`projection #${number}`, () => {
+        const projection = this.projections.find((candidate) => candidate.number === number);
+        if (projection) {
+          void this.showProjection(projection);
+        }
+      }),
+      close,
+    );
+    return tab;
+  }
+
+  /** Shows a projection, leaving the 3D view it came from untouched behind its tab. */
+  private async showProjection(projection: Projection): Promise<void> {
+    if (!this.current) {
+      return;
+    }
+    this.active = projection.number;
+    this.markActive();
+    this.projectActions.hidden = true;
+    this.three = null;
+    const { id, smiles, canonical } = this.current;
+    try {
+      await this.present(Promise.resolve({ view: projection.view, moleculeId: projection.moleculeId }), id, smiles, canonical, null, false);
+    } catch (error) {
+      this.results.showError(MoleculePanel.describe(error));
+    }
+  }
+
+  private async closeProjection(number: number): Promise<void> {
+    const index = this.projections.findIndex((projection) => projection.number === number);
+    if (index < 0) {
+      return;
+    }
+    const [projection] = this.projections.splice(index, 1) as [Projection];
+    projection.tab.remove();
+    if (this.active === number) {
+      // back to the drawing it was made from, so that the view is not still showing when it is disposed
+      await this.setMode(this.mode);
+    }
+    projection.view.dispose();
   }
 
   private static sceneView(scene: Scene): SvgView {
@@ -264,16 +345,20 @@ export class MoleculePanel {
     return view;
   }
 
+  /** @param track whether this is the molecule's own drawing, which later switches of mode refetch from */
   private async present(
     rendering: Promise<{ view: SvgView | ThreeView; moleculeId: MoleculeId }>,
     id: MoleculeId,
     smiles: string,
     canonical: string,
     known: MoleculeMetadata | null,
+    track = true,
   ): Promise<void> {
     // fetching both at once keeps the card from growing a second time once the metadata lands
     const [{ view, moleculeId }, metadata] = await Promise.all([rendering, known ?? this.inspectionOf(id)]);
-    this.current = { id: moleculeId, smiles, canonical };
+    if (track) {
+      this.current = { id: moleculeId, smiles, canonical };
+    }
     this.results.showMolecule(view, moleculeId, smiles, canonical);
     if (metadata) {
       this.results.inspect(metadata, moleculeId);

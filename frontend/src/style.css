@@ -108,6 +108,66 @@ button:disabled {
   gap: .6rem;
 }
 
+.toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: .6rem;
+  border-bottom: 1px solid #8884;
+}
+
+.tabs {
+  display: flex;
+  gap: .2rem;
+  flex-wrap: wrap;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  border: 1px solid #8884;
+  border-bottom: none;
+  border-radius: .35rem .35rem 0 0;
+  margin-bottom: -1px;
+  opacity: .7;
+}
+
+.tab.active {
+  opacity: 1;
+  border-color: #888;
+  background: #8882;
+  font-weight: 600;
+}
+
+.tab button {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: .85rem;
+  padding: .25rem .6rem;
+}
+
+.tab .tab-close {
+  padding: .25rem .4rem .25rem 0;
+  opacity: .6;
+  line-height: 1;
+}
+
+.tab .tab-close:hover {
+  opacity: 1;
+}
+
+.toolbar .modes {
+  display: flex;
+  gap: .4rem;
+  padding-bottom: .2rem;
+}
+
+.toolbar [hidden] {
+  display: none;
+}
+
 button.small {
   padding: .25rem .6rem;
   font-size: .85rem;
