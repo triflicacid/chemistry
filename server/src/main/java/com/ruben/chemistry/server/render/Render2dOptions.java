@@ -12,6 +12,7 @@ package com.ruben.chemistry.server.render;
  * @param charges whether a charge is written beside a symbol
  * @param fontSize how many pixels tall a symbol is written
  * @param bondGradient whether a bond runs between the colours of the atoms at its ends
+ * @param depthBonds whether a projection of a 3D structure draws bonds towards or away from the viewer as wedges and hashes
  */
 public record Render2dOptions(
         String style,
@@ -21,13 +22,14 @@ public record Render2dOptions(
         Boolean isotopes,
         Boolean charges,
         Double fontSize,
-        Boolean bondGradient)
+        Boolean bondGradient,
+        Boolean depthBonds)
 {
     /**
      * @return options that change nothing
      */
     public static Render2dOptions defaults()
     {
-        return new Render2dOptions(null, null, null, null, null, null, null, null);
+        return new Render2dOptions(null, null, null, null, null, null, null, null, null);
     }
 }

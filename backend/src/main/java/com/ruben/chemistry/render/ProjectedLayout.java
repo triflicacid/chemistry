@@ -24,6 +24,9 @@ public final class ProjectedLayout
     {
     }
 
+    /** How far, in bond lengths, the ends of a bond must differ in depth for it to be drawn as a wedge or hash. */
+    private static final double DEPTH_THRESHOLD = 0.35;
+
     private final Molecule molecule;
     private final DepictionOptions options;
     private final MoleculeSnapshot snapshot;
@@ -140,13 +143,19 @@ public final class ProjectedLayout
     {
         ProjectedLayout layout = new ProjectedLayout(molecule, structure, conformer, options, only);
         Point[] points = new Point[layout.drawn.size()];
+        double[] depths = new double[points.length];
         for (int atom = 0; atom < points.length; atom++)
         {
             Camera.Projected seen = camera.project(layout.spots.get(atom));
             points[atom] = new Point(seen.x(), seen.y());
+            depths[atom] = seen.depth();
         }
-        layout.scale(points, layout.bonds);
-        return layout.build(points, false);
+        double median = layout.scale(points, layout.bonds);
+        for (int atom = 0; atom < depths.length; atom++)
+        {
+            depths[atom] /= median;
+        }
+        return layout.build(points, depths, false);
     }
 
     /**
@@ -180,6 +189,7 @@ public final class ProjectedLayout
     {
         ProjectedLayout layout = new ProjectedLayout(molecule, structure, conformer, options, only);
         Point[] points = new Point[layout.drawn.size()];
+        double[] depths = new double[points.length];
         for (int fragment = 0; fragment < layout.snapshot.getFragmentCount(); fragment++)
         {
             List<Integer> members = new ArrayList<>();
@@ -214,13 +224,14 @@ public final class ProjectedLayout
                 }
             }
 
-            double[] view = StructureViews.best(positions, inside.toArray(new int[0][]));
+            double[] view = StructureViews.bestWithDepth(positions, inside.toArray(new int[0][]));
             for (int at = 0; at < members.size(); at++)
             {
-                points[members.get(at)] = new Point(view[at * 2], view[at * 2 + 1]);
+                points[members.get(at)] = new Point(view[at * 3], view[at * 3 + 1]);
+                depths[members.get(at)] = view[at * 3 + 2];
             }
         }
-        return layout.build(points, true);
+        return layout.build(points, depths, true);
     }
 
     private int fragmentOf(int placement)
@@ -228,8 +239,12 @@ public final class ProjectedLayout
         return drawnFragment[snapshot.getFragmentIndexOf(drawn.get(placement).atom())];
     }
 
-    /** Scales the points about the origin so that the middling bond is one bond length. */
-    private static void scale(Point[] points, List<Bonded> bonds)
+    /**
+     * Scales the points about the origin so that the middling bond is one bond length.
+     *
+     * @return what the points were divided by, or 1 if they were left alone
+     */
+    private static double scale(Point[] points, List<Bonded> bonds)
     {
         double[] lengths = bonds.stream()
             .mapToDouble(bond -> points[bond.first()].minus(points[bond.second()]).length())
@@ -237,22 +252,23 @@ public final class ProjectedLayout
             .toArray();
         if (lengths.length == 0)
         {
-            return;
+            return 1;
         }
         int middle = lengths.length / 2;
         double median = lengths.length % 2 == 1 ? lengths[middle] : (lengths[middle - 1] + lengths[middle]) / 2;
         if (median < 1e-9)
         {
-            return;
+            return 1;
         }
         for (int atom = 0; atom < points.length; atom++)
         {
             points[atom] = new Point(points[atom].x() / median, points[atom].y() / median);
         }
+        return median;
     }
 
-    /** @param centred whether to move each disconnected part to the origin; false keeps the parts where they were seen */
-    private Structure2D build(Point[] points, boolean centred)
+    /** @param depths how far each drawn atom is from the viewer, at the scale of {@code points}; used to wedge bonds if asked */
+    private Structure2D build(Point[] points, double[] depths, boolean centred)
     {
         if (centred)
         {
@@ -278,13 +294,16 @@ public final class ProjectedLayout
                 points[index]));
         }
 
-        List<BondPlacement> placements = new ArrayList<>();
         int[] degrees = new int[atoms.size()];
         for (Bonded bond : bonds)
         {
-            placements.add(new BondPlacement(bond.first(), bond.second(), bond.order(), BondStyle.PLAIN, bond.source()));
             degrees[bond.first()]++;
             degrees[bond.second()]++;
+        }
+        List<BondPlacement> placements = new ArrayList<>();
+        for (Bonded bond : bonds)
+        {
+            placements.add(options.depthBonds() ? withDepth(bond, depths, degrees) : new BondPlacement(bond.first(), bond.second(), bond.order(), BondStyle.PLAIN, bond.source()));
         }
 
         if (options.style() == DepictionStyle.SKELETAL)
@@ -297,6 +316,28 @@ public final class ProjectedLayout
             }
         }
         return new Structure2D(new Depiction(atoms, placements, ringsOf()), snapshot);
+    }
+
+    /**
+     * Draws a bond as a wedge if it comes towards the viewer and a hash if it goes away, narrow at the more bonded
+     * atom, or at the farther one if the two are bonded alike. A bond that is not single or lies near the page stays plain.
+     */
+    private static BondPlacement withDepth(Bonded bond, double[] depths, int[] degrees)
+    {
+        int first = bond.first();
+        int second = bond.second();
+        double rise = depths[first] - depths[second];
+        BondPlacement plain = new BondPlacement(first, second, bond.order(), BondStyle.PLAIN, bond.source());
+        if (bond.order() != BondOrder.SINGLE || Math.abs(rise) < DEPTH_THRESHOLD)
+        {
+            return plain;
+        }
+
+        boolean narrowAtFirst = degrees[first] != degrees[second] ? degrees[first] > degrees[second] : rise > 0;
+        int narrow = narrowAtFirst ? first : second;
+        int broad = narrowAtFirst ? second : first;
+        BondStyle style = depths[broad] < depths[narrow] ? BondStyle.WEDGE : BondStyle.HASH;
+        return new BondPlacement(narrow, broad, bond.order(), style, bond.source());
     }
 
     /** Moves each disconnected part so that the middle of its bounds is the origin, as a layout does. */

@@ -112,7 +112,10 @@ public final class OptionSchema
                         "number", style.fontSize(), "px", FONT_SIZE_MIN, FONT_SIZE_MAX, null, null),
                 new Option("bond_gradient", "Bond gradient",
                         "Whether a bond runs between the colours of the atoms at its ends",
-                        "boolean", style.bondGradient(), null, null, null, null, null));
+                        "boolean", style.bondGradient(), null, null, null, null, null),
+                new Option("depth_bonds", "Depth bonds",
+                        "Whether a 2D projection of a 3D structure draws bonds that point towards the viewer as wedges and away as hashes",
+                        "boolean", false, null, null, null, null, null));
     }
 
     static final List<Choice> STYLES_3D = List.of(

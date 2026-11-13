@@ -43,6 +43,11 @@ public final class Render2dOptionsMapper
             depiction = depiction.withHydrogens(HydrogenStyle.valueOf(hydrogens.toUpperCase(Locale.ROOT)));
         }
 
+        if (options.depthBonds() != null)
+        {
+            depiction = depiction.withDepthBonds(options.depthBonds());
+        }
+
         RenderStyle.Builder style = RenderStyle.builder().metadata(true);
         if ("circles".equals(styleName))
         {

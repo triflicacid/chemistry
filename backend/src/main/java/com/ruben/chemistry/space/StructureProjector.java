@@ -66,6 +66,25 @@ public final class StructureProjector
     }
 
     /**
+     * @param structure a system already in space, as x, y and z of each atom in turn
+     * @return the same view as {@link #bestViewOf}, as x, y and depth of each atom in turn, the depth being how far
+     *     the atom is from the viewer at the same scale as x and y
+     */
+    public double[] bestViewWithDepthOf(double[] structure)
+    {
+        View best = rankedViews(structure, 1).getFirst();
+        double[] flat = orient(best.drawing);
+        double[] result = new double[count * 3];
+        for (int atom = 0; atom < count; atom++)
+        {
+            result[atom * 3] = flat[atom * 2];
+            result[atom * 3 + 1] = flat[atom * 2 + 1];
+            result[atom * 3 + 2] = best.depth[atom];
+        }
+        return result;
+    }
+
+    /**
      * @return the best drawing, as x and y of each atom in turn, or {@code null} if the system could not be built in space
      */
     public double[] draw()
@@ -188,13 +207,14 @@ public final class StructureProjector
      * How good a view is.
      *
      * @param drawing x and y of each atom in turn, scaled so that the middling bond is one bond length
+     * @param depth how far each atom is from the viewer, at the same scale as {@code drawing}
      * @param clearance how far apart the closest atoms are, or bonds short, no more than the distance that counts as clear
      * @param crossings how many pairs of bonds cross
      * @param hidden how many pairs of bonds at an atom are drawn as one line
      * @param shortest how long the shortest bond is drawn
      * @param longest how long the longest bond is drawn
      */
-    private record View(double[] drawing, double clearance, int crossings, int hidden, double shortest, double longest)
+    private record View(double[] drawing, double[] depth, double clearance, int crossings, int hidden, double shortest, double longest)
     {
         boolean isClear()
         {
@@ -224,8 +244,23 @@ public final class StructureProjector
 
     private View measure(double[] drawing)
     {
+        return measure(drawing, new double[count]);
+    }
+
+    private View measure(double[] drawing, double[] depth)
+    {
         // measured at the size it will be drawn, so that views of the same structure are judged against each other
         double[] scaled = toMedianBond(drawing);
+        double[] scaledDepth = depth;
+        double median = medianBond(drawing);
+        if (median >= 1e-9)
+        {
+            scaledDepth = new double[depth.length];
+            for (int at = 0; at < depth.length; at++)
+            {
+                scaledDepth[at] = depth[at] / median;
+            }
+        }
         Point[] points = new Point[count];
         for (int atom = 0; atom < count; atom++)
         {
@@ -242,17 +277,15 @@ public final class StructureProjector
         // a very short bond is as bad as atoms that collide, as it looks like one atom
         double clearance = Math.min(VIEW_CLEARANCE, LayoutQuality.minimumAtomDistance(points, bonds));
         clearance = Math.min(clearance, shortest * VIEW_CLEARANCE / MIN_BOND);
-        return new View(scaled, clearance, LayoutQuality.crossings(points, bonds),
+        return new View(scaled, scaledDepth, clearance, LayoutQuality.crossings(points, bonds),
             LayoutQuality.hiddenBends(points, bonds), shortest, longest);
     }
 
     /**
-     * Scales a drawing about the origin until its middling bond is one bond length, which leaves its shape untouched.
-     *
      * @param drawing x and y of each atom in turn
-     * @return the scaled drawing, or the drawing itself if it has collapsed to a point
+     * @return how long the middling bond is drawn
      */
-    private double[] toMedianBond(double[] drawing)
+    private double medianBond(double[] drawing)
     {
         double[] lengths = new double[bonds.length];
         for (int bond = 0; bond < bonds.length; bond++)
@@ -264,7 +297,18 @@ public final class StructureProjector
         // the middling bond, rather than the longest, so that a view is not shrunk by one bond lying square to the page
         Arrays.sort(lengths);
         int middle = lengths.length / 2;
-        double median = lengths.length % 2 == 1 ? lengths[middle] : (lengths[middle - 1] + lengths[middle]) / 2;
+        return lengths.length % 2 == 1 ? lengths[middle] : (lengths[middle - 1] + lengths[middle]) / 2;
+    }
+
+    /**
+     * Scales a drawing about the origin until its middling bond is one bond length, which leaves its shape untouched.
+     *
+     * @param drawing x and y of each atom in turn
+     * @return the scaled drawing, or the drawing itself if it has collapsed to a point
+     */
+    private double[] toMedianBond(double[] drawing)
+    {
+        double median = medianBond(drawing);
         if (median < 1e-9)
         {
             return drawing;
@@ -284,6 +328,11 @@ public final class StructureProjector
      */
     private List<double[]> bestViews(double[] structure, int limit)
     {
+        return rankedViews(structure, limit).stream().map(View::drawing).toList();
+    }
+
+    private List<View> rankedViews(double[] structure, int limit)
+    {
         List<View> found = new ArrayList<>();
         int views = VIEWS * effort;
         // view directions run along a fibonacci spiral, which spreads them evenly over a sphere
@@ -299,21 +348,19 @@ public final class StructureProjector
             double[] up = Vectors.cross(direction, right);
 
             double[] drawing = new double[count * 2];
+            double[] depth = new double[count];
             for (int atom = 0; atom < count; atom++)
             {
                 double[] at = {structure[atom * 3], structure[atom * 3 + 1], structure[atom * 3 + 2]};
                 drawing[atom * 2] = Vectors.dot(at, right);
                 drawing[atom * 2 + 1] = Vectors.dot(at, up);
+                // the viewer stands on the side the direction points to, so what lies against it is further away
+                depth[atom] = -Vectors.dot(at, direction);
             }
-            found.add(measure(drawing));
+            found.add(measure(drawing, depth));
         }
         found.sort(ORDER);
-        List<double[]> best = new ArrayList<>();
-        for (int index = 0; index < Math.min(limit, found.size()); index++)
-        {
-            best.add(found.get(index).drawing);
-        }
-        return best;
+        return new ArrayList<>(found.subList(0, Math.min(limit, found.size())));
     }
 
     /**

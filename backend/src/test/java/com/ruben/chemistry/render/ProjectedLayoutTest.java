@@ -80,6 +80,35 @@ class ProjectedLayoutTest
     }
 
     @Test
+    void depth_bonds_are_plain_unless_asked_for()
+    {
+        Molecule molecule = Molecule.fromSmiles("CC(C)(C)C");
+        Structure3D structure = Embedder.embed(molecule);
+
+        Depiction depiction = ProjectedLayout.bestView(molecule, structure, 0, DepictionOptions.defaults()).depiction();
+
+        assertThat(depiction.bonds()).allMatch(bond -> bond.style() == BondStyle.PLAIN);
+    }
+
+    @Test
+    void depth_bonds_wedge_and_hash_bonds_that_leave_the_page()
+    {
+        Molecule molecule = Molecule.fromSmiles("CC(C)(C)C");
+        Structure3D structure = Embedder.embed(molecule);
+        Camera camera = Camera.orbit(Vec3.ZERO, 20, 15, 30, 0);
+
+        Depiction depiction = ProjectedLayout.fromCamera(molecule, structure, 0, camera, DepictionOptions.defaults().withDepthBonds(true)).depiction();
+
+        assertThat(depiction.bonds()).extracting(BondPlacement::style).contains(BondStyle.WEDGE, BondStyle.HASH);
+        for (BondPlacement bond : depiction.bonds().stream().filter(b -> b.style().isStereo()).toList())
+        {
+            int degreeOfNarrow = (int) depiction.bonds().stream().filter(b -> b.first() == bond.first() || b.second() == bond.first()).count();
+            int degreeOfBroad = (int) depiction.bonds().stream().filter(b -> b.first() == bond.second() || b.second() == bond.second()).count();
+            assertThat(degreeOfNarrow).isGreaterThanOrEqualTo(degreeOfBroad);
+        }
+    }
+
+    @Test
     void bond_orders_are_carried_over()
     {
         Molecule molecule = Molecule.fromSmiles("C=O");
