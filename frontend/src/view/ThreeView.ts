@@ -23,7 +23,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { Connection3D, OptionValues, Site3D, Structure3D } from "../api/types";
+import type { CameraPose, Connection3D, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
 import type { Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
 type Style = "ball_and_stick" | "sticks" | "wireframe" | "spacefill";
@@ -166,6 +166,17 @@ export class ThreeView implements MoleculeView {
   setHighlights(highlights: Highlights): void {
     this.highlights = highlights;
     this.refreshEmphasis();
+  }
+
+  /** Where the camera is now, so the server can draw what it sees. */
+  cameraPose(): CameraPose {
+    const vector = ({ x, y, z }: Vector3): Vector => ({ x, y, z });
+    return {
+      eye: vector(this.camera.position),
+      target: vector(this.controls.target),
+      up: vector(this.camera.up),
+      field_of_view: FIELD_OF_VIEW,
+    };
   }
 
   resetView(): void {

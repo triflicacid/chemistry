@@ -5,7 +5,10 @@ import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.render.Structure2D;
 import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.render.MoleculeLayout;
+import com.ruben.chemistry.render.ProjectedLayout;
 import com.ruben.chemistry.render.SceneRenderer;
+import com.ruben.chemistry.space.Camera;
+import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.render.svg.SvgWriter;
 import com.ruben.chemistry.render.scene.Scene;
 
@@ -62,7 +65,34 @@ public final class MoleculeRenderer
         try
         {
             Structure2D layout = MoleculeLayout.layout(molecule, settings.depiction());
-            Scene scene = Scenerenderer.render2d(layout, settings.style());
+            Scene scene = SceneRenderer.render(layout, settings.style());
+            return new Render2d(scene, SvgWriter.write(scene), layout);
+        }
+        catch (IllegalArgumentException | IllegalStateException unsupported)
+        {
+            throw new RenderException("CANNOT_RENDER", unsupported.getMessage());
+        }
+    }
+
+    /**
+     * @param molecule the molecule to draw
+     * @param structure the molecule in space
+     * @param conformer which conformer of {@code structure} to draw
+     * @param camera where to look from, or null to choose the clearest direction
+     * @param options how to draw it
+     * @return the drawing, with the snapshot it was laid out from
+     * @throws RenderException if an option is invalid or the molecule cannot be drawn from that conformer
+     */
+    public Render2d project2d(Molecule molecule, Structure3D structure, int conformer, Camera camera, Render2dOptions options)
+    {
+        Render2dOptionsMapper.Settings settings = Render2dOptionsMapper.map(options);
+
+        try
+        {
+            Structure2D layout = camera == null
+                    ? ProjectedLayout.bestView(molecule, structure, conformer, settings.depiction())
+                    : ProjectedLayout.fromCamera(molecule, structure, conformer, camera, settings.depiction());
+            Scene scene = SceneRenderer.render(layout, settings.style());
             return new Render2d(scene, SvgWriter.write(scene), layout);
         }
         catch (IllegalArgumentException | IllegalStateException unsupported)

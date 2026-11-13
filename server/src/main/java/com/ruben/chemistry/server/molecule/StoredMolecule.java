@@ -6,6 +6,7 @@ import com.ruben.chemistry.server.render.MoleculeMetadata;
 import com.ruben.chemistry.server.render.MoleculeRenderer;
 import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.smiles.SmilesWriter;
+import com.ruben.chemistry.space.Structure3D;
 
 import java.util.Map;
 import java.util.Optional;
@@ -18,7 +19,7 @@ public final class StoredMolecule
     private final Molecule molecule;
     private volatile Render2d latest2d;
     private volatile MoleculeMetadata metadata;
-    private volatile Map<String, Object> latestStructure3d;
+    private volatile Structure3D latestStructure3d;
 
     StoredMolecule(String id, MoleculeRenderer.Parsed parsed)
     {
@@ -66,18 +67,18 @@ public final class StoredMolecule
         return Optional.ofNullable(latest2d);
     }
 
-    public void setLatest2d(Render2d Render2d)
+    public void setLatest2d(Render2d render)
     {
-        this.latest2d = Render2d;
+        this.latest2d = render;
     }
 
     /** The most recently generated 3D structure, if any. */
-    public Optional<Map<String, Object>> latestStructure3d()
+    public Optional<Structure3D> latestStructure3d()
     {
         return Optional.ofNullable(latestStructure3d);
     }
 
-    public void setLatestStructure3d(Map<String, Object> structure)
+    public void setLatestStructure3d(Structure3D structure)
     {
         this.latestStructure3d = structure;
     }

@@ -1,7 +1,9 @@
 package com.ruben.chemistry.server.resource;
 
+import com.ruben.chemistry.space.Camera;
 import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Structure3D;
+import com.ruben.chemistry.space.Vec3;
 import com.ruben.chemistry.server.http.Endpoint;
 import com.ruben.chemistry.server.http.EndpointRegistry;
 import com.ruben.chemistry.server.http.HttpException;
@@ -36,6 +38,42 @@ public final class MoleculeEndpoint extends Endpoint
     {
     }
 
+    public record Vector(double x, double y, double z)
+    {
+        Vec3 toVec3()
+        {
+            return new Vec3(x, y, z);
+        }
+    }
+
+    /**
+     * @param eye where the camera is
+     * @param target what it looks at
+     * @param up which way is up on the picture
+     * @param fieldOfView the angle the view spans in degrees, or 0 or absent for an orthographic view
+     */
+    public record CameraRequest(Vector eye, Vector target, Vector up, Double fieldOfView)
+    {
+        Camera toCamera()
+        {
+            if (eye == null || target == null || up == null)
+            {
+                throw new HttpException(400, "INVALID_BODY", "camera: eye, target and up are required");
+            }
+            return new Camera(eye.toVec3(), target.toVec3(), up.toVec3(), fieldOfView == null ? 0 : fieldOfView);
+        }
+    }
+
+    /**
+     * @param mode {@code best} to choose the clearest direction, or {@code force} to draw as {@code camera} sees it (default {@code best})
+     * @param conformer which conformer to draw (default 0)
+     * @param camera where to look from; required for {@code force}
+     * @param options how to draw it (optional)
+     */
+    public record ProjectRequest(String mode, Integer conformer, CameraRequest camera, Render2dOptions options)
+    {
+    }
+
     private static final String MOLECULE_ID_HEADER = "X-Molecule-Id";
 
     private final MoleculeStore store = new MoleculeStore();
@@ -52,6 +90,7 @@ public final class MoleculeEndpoint extends Endpoint
         registry.register(HttpMethod.GET, "/api/molecules/:id/metadata", this::metadata);
         registry.register(HttpMethod.POST, "/api/molecules/:id/structure/3d", this::generateStructure3d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/structure/3d", this::getStructure3d);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/projection/2d", this::projectStructure2d);
     }
 
     private void create(Request request, ResponseContext responseContext) throws IOException
@@ -79,14 +118,14 @@ public final class MoleculeEndpoint extends Endpoint
 
     private void render2d(Request request, ResponseContext responseContext) throws IOException
     {
-        Render2d Render2d = draw(request, responseContext);
-        responseContext.respond(200, "image/svg+xml", Render2d.svg());
+        Render2d render = draw(request, responseContext);
+        responseContext.respond(200, "image/svg+xml", render.svg());
     }
 
     private void generateStructure2d(Request request, ResponseContext responseContext) throws IOException
     {
-        Render2d Render2d = draw(request, responseContext);
-        responseContext.respond(200, Render2dJson.of(Render2d.scene()));
+        Render2d render = draw(request, responseContext);
+        responseContext.respond(200, Render2dJson.of(render.scene()));
     }
 
     private void getStructure2d(Request request, ResponseContext responseContext) throws IOException
@@ -104,10 +143,10 @@ public final class MoleculeEndpoint extends Endpoint
 
         try
         {
-            Render2d Render2d = renderer.render2d(stored.molecule(), options == null ? Render2dOptions.defaults() : options);
-            stored.setLatest2d(Render2d);
+            Render2d render = renderer.render2d(stored.molecule(), options == null ? Render2dOptions.defaults() : options);
+            stored.setLatest2d(render);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
-            return Render2d;
+            return render;
         }
         catch (RenderException failure)
         {
@@ -132,10 +171,53 @@ public final class MoleculeEndpoint extends Endpoint
     private void getStructure3d(Request request, ResponseContext responseContext) throws IOException
     {
         StoredMolecule stored = find(request);
-        Map<String, Object> json = stored.latestStructure3d()
-                .orElseThrow(() -> new HttpException(404, "NOT_GENERATED", "The molecule has no 3D structure yet"));
+        Structure3D structure = latestStructure3d(stored);
         responseContext.header(MOLECULE_ID_HEADER, stored.id());
-        responseContext.respond(200, json);
+        responseContext.respond(200, Render3dJson.of(stored.molecule(), structure));
+    }
+
+    private Structure3D latestStructure3d(StoredMolecule stored)
+    {
+        return stored.latestStructure3d()
+                .orElseThrow(() -> new HttpException(404, "NOT_GENERATED", "The molecule has no 3D structure yet"));
+    }
+
+    /** Draws the molecule's latest 3D structure flat, either as the given camera sees it or from its best direction. */
+    private void projectStructure2d(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        Structure3D structure = latestStructure3d(stored);
+        ProjectRequest body = request.body(ProjectRequest.class);
+
+        boolean forced = switch (body.mode() == null ? "best" : body.mode())
+        {
+            case "best" -> false;
+            case "force" -> true;
+            default -> throw new HttpException(400, "INVALID_BODY", "mode: must be best or force, but was '" + body.mode() + "'");
+        };
+        Camera camera = null;
+        if (forced)
+        {
+            if (body.camera() == null)
+            {
+                throw new HttpException(400, "INVALID_BODY", "camera: is required when mode is force");
+            }
+            camera = body.camera().toCamera();
+        }
+        int conformer = body.conformer() == null ? 0 : body.conformer();
+
+        try
+        {
+            Render2d render = renderer.project2d(stored.molecule(), structure, conformer, camera,
+                    body.options() == null ? Render2dOptions.defaults() : body.options());
+            stored.setLatest2d(render);
+            responseContext.header(MOLECULE_ID_HEADER, stored.id());
+            responseContext.respond(200, Render2dJson.of(render.scene()));
+        }
+        catch (RenderException failure)
+        {
+            throw new HttpException(400, failure.code(), failure.getMessage());
+        }
     }
 
     private void generateStructure3d(Request request, ResponseContext responseContext) throws IOException
@@ -154,10 +236,9 @@ public final class MoleculeEndpoint extends Endpoint
         try
         {
             Structure3D structure = Embedder.embed(stored.molecule(), chosen);
-            Map<String, Object> json = Render3dJson.of(stored.molecule(), structure);
-            stored.setLatestStructure3d(json);
+            stored.setLatestStructure3d(structure);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
-            responseContext.respond(200, json);
+            responseContext.respond(200, Render3dJson.of(stored.molecule(), structure));
         }
         catch (IllegalArgumentException | IllegalStateException failure)
         {

@@ -40,7 +40,7 @@ final class StructureProjector
     private final int effort;
     private final int count;
     private final int[][] bonds;
-    private final StructureEmbedder embedder;
+    private StructureEmbedder embedder;
 
     /**
      * @param count how many atoms there are
@@ -52,7 +52,16 @@ final class StructureProjector
         this.effort = effort;
         this.count = count;
         this.bonds = bonds;
-        embedder = new StructureEmbedder(count, bonds, effort);
+    }
+
+    /**
+     * @param structure a system already in space, as x, y and z of each atom in turn
+     * @return the best flat view of it, as x and y of each atom in turn, scaled so that the middling bond is one bond length
+     *     and turned so that it is longest from left to right
+     */
+    double[] bestViewOf(double[] structure)
+    {
+        return orient(bestViews(structure, 1).getFirst());
     }
 
     /**
@@ -72,6 +81,10 @@ final class StructureProjector
      */
     List<double[]> draws(int wanted)
     {
+        if (embedder == null)
+        {
+            embedder = new StructureEmbedder(count, bonds, effort);
+        }
         List<double[]> structures = embedder.structures();
         List<View> found = new ArrayList<>();
         int[] done = new int[structures.size()];

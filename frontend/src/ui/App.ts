@@ -1,6 +1,6 @@
 import { ChemistryApi, type SceneResponse } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import type { MoleculeId, MoleculeMetadata, Structure3D } from "../api/types";
+import type { MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
 import { ViewStore } from "../store";
 import { ResultsView } from "./ResultsView";
 import { SmilesForm } from "./SmilesForm";
@@ -17,11 +17,32 @@ export class App {
   private options3d: OptionsPanel | null = null;
   private readonly optionsSlot = document.createElement("div");
   private mode: "2d" | "3d" = "2d";
+  private readonly modeInputs = new Map<"2d" | "3d", HTMLInputElement>();
+  private readonly projectActions = App.buildProjectActions((kind) => void this.project(kind));
   private current: { id: MoleculeId; smiles: string; canonical: string } | null = null;
   private three: ThreeView | null = null;
   private conformers: unknown = null;
 
   constructor(private readonly api: ChemistryApi) {}
+
+  private static buildProjectActions(onChoose: (kind: "best" | "force") => void): HTMLElement {
+    const group = document.createElement("div");
+    group.className = "modes";
+    group.hidden = true;
+    for (const [kind, text, hint] of [
+      ["best", "Project (best)", "Draw the 3D structure flat from the direction that keeps atoms apart and bonds evenly long"],
+      ["force", "Project (as seen)", "Draw the 3D structure flat exactly as it is now seen, even if atoms overlap"],
+    ] as const) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "small";
+      button.textContent = text;
+      button.title = hint;
+      button.addEventListener("click", () => onChoose(kind));
+      group.append(button);
+    }
+    return group;
+  }
 
   private buildModes(): HTMLElement {
     const group = document.createElement("div");
@@ -34,11 +55,12 @@ export class App {
       input.name = "mode";
       input.value = value;
       input.checked = value === this.mode;
+      this.modeInputs.set(value, input);
       input.addEventListener("change", () => {
-        this.mode = value;
-        this.showOptions();
+        this.setMode(value);
         if (this.current) {
-          void this.display(this.current.id, this.current.smiles, this.current.canonical, null);
+          // showing what the server already has keeps a projection, or the 3D shape, from being redone
+          void this.display(this.current.id, this.current.smiles, this.current.canonical, null, true);
         }
       });
       label.append(input, ` ${text}`);
@@ -47,8 +69,18 @@ export class App {
     return group;
   }
 
+  private setMode(mode: "2d" | "3d"): void {
+    this.mode = mode;
+    const input = this.modeInputs.get(mode);
+    if (input) {
+      input.checked = true;
+    }
+    this.showOptions();
+  }
+
   /** Shows the options panel for the current mode. */
   private showOptions(): void {
+    this.projectActions.hidden = this.mode !== "3d";
     for (const [panel, mode] of [[this.options2d, "2d"], [this.options3d, "3d"]] as const) {
       if (panel) {
         panel.toggle.hidden = mode !== this.mode;
@@ -63,6 +95,7 @@ export class App {
 
     this.results.showMessage("Enter a SMILES string and press RENDER.");
     this.form.addAction(this.buildModes());
+    this.form.addAction(this.projectActions);
     root.append(title, this.form.element, this.optionsSlot, this.results.element);
     void this.loadOptions();
 
@@ -128,18 +161,72 @@ export class App {
   private async display(id: MoleculeId, smiles: string, canonical: string, known: MoleculeMetadata | null, cached = false): Promise<void> {
     this.three = null;
     const rendering = this.mode === "2d"
-      ? this.structure2d(id, cached).then(({ scene, moleculeId }) => {
-          const view = new SvgView();
-          view.setScene(scene);
-          return { view, moleculeId };
-        })
+      ? this.structure2d(id, cached).then(({ scene, moleculeId }) => ({ view: App.sceneView(scene), moleculeId }))
       : this.structure3d(id, cached).then((structure) => {
           this.conformers = this.options3d?.resolved().conformers;
           const view = new ThreeView(structure, this.options3d?.resolved() ?? {});
           this.three = view;
           return { view, moleculeId: id };
         });
+    await this.present(rendering, id, smiles, canonical, known);
+  }
 
+  /** The 2D options for a projection: the user's own 2D choices, with the look of the 3D view carried over. */
+  private projectionOptions(): OptionValues {
+    const own = this.options2d?.resolved() ?? {};
+    const seen = this.options3d?.resolved() ?? {};
+    const carried: OptionValues = {};
+
+    carried.style = seen.style === "sticks" || seen.style === "wireframe" ? "skeletal" : "circles";
+    if (seen.hydrogens === false) {
+      carried.hydrogens = "none";
+    } else if (own.hydrogens === "none") {
+      carried.hydrogens = "separate";
+    }
+    if (typeof seen.charges === "boolean") {
+      carried.charges = seen.charges;
+    }
+    return { ...own, ...carried };
+  }
+
+  /** Draws the current 3D structure flat, from its best direction or exactly as it is seen. */
+  private async project(kind: "best" | "force"): Promise<void> {
+    if (!this.three || !this.current) {
+      return;
+    }
+    const { id, smiles, canonical } = this.current;
+    const request: ProjectionRequest = {
+      mode: kind,
+      options: this.projectionOptions(),
+      ...(kind === "force" ? { camera: this.three.cameraPose() } : {}),
+    };
+
+    this.form.setBusy(true);
+    try {
+      const rendering = this.api.project2d(id, request).then(({ scene, moleculeId }) => ({ view: App.sceneView(scene), moleculeId }));
+      this.three = null;
+      await this.present(rendering, id, smiles, canonical, null);
+      this.setMode("2d");
+    } catch (error) {
+      this.results.showError(App.describe(error));
+    } finally {
+      this.form.setBusy(false);
+    }
+  }
+
+  private static sceneView(scene: Scene): SvgView {
+    const view = new SvgView();
+    view.setScene(scene);
+    return view;
+  }
+
+  private async present(
+    rendering: Promise<{ view: SvgView | ThreeView; moleculeId: MoleculeId }>,
+    id: MoleculeId,
+    smiles: string,
+    canonical: string,
+    known: MoleculeMetadata | null,
+  ): Promise<void> {
     // fetching both pt once keeps the cprd from growing p second time once the metpdptp lpnds
     const [{ view, moleculeId }, metadata] = await Promise.all([rendering, known ?? this.inspectionOf(id)]);
     this.current = { id: moleculeId, smiles, canonical };

@@ -16,6 +16,28 @@ export interface OptionDescriptor {
 /** Option values by name. */
 export type OptionValues = Record<string, boolean | number | string>;
 
+export interface Vector {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Where a 3D view's camera is, in the molecule's coordinates. */
+export interface CameraPose {
+  eye: Vector;
+  target: Vector;
+  up: Vector;
+  field_of_view: number;
+}
+
+/** How to draw a 3D structure flat: from the clearest direction, or exactly as `camera` sees it. */
+export interface ProjectionRequest {
+  mode: "best" | "force";
+  conformer?: number;
+  camera?: CameraPose;
+  options: OptionValues;
+}
+
 /** The server's id for a stored molecule. */
 export type MoleculeId = string;
 

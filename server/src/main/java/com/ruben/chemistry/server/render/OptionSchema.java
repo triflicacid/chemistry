@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Describes the Render2d options a client may set.
+ * Describes the 2D drawing options a client may set.
  */
 public final class OptionSchema
 {

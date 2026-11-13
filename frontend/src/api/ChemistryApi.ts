@@ -1,5 +1,5 @@
 import { ApiError, HttpClient } from "./http";
-import type { MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, Scene, StoredMolecule, Structure3D } from "./types";
+import type { MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, Scene, StoredMolecule, Structure3D } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
@@ -75,6 +75,11 @@ export class ChemistryApi {
   /** The latest scene the server drew for a stored molecule; fails with `NOT_RENDERED` if there is none. */
   cachedStructure2d(id: MoleculeId): Promise<SceneResponse> {
     return this.scene("GET", `/api/molecules/${encodeURIComponent(id)}/structure/2d`);
+  }
+
+  /** Draws the stored molecule's latest 3D structure flat; the server keeps the drawing as the molecule's latest 2D one. */
+  project2d(id: MoleculeId, request: ProjectionRequest): Promise<SceneResponse> {
+    return this.scene("POST", `/api/molecules/${encodeURIComponent(id)}/projection/2d`, { json: request });
   }
 
   private async scene(method: string, path: string, options: { json?: unknown } = {}): Promise<SceneResponse> {
