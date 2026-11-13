@@ -64,16 +64,55 @@ export interface RingInfo {
   atoms: number[];
   bonds: number[];
   smiles: string;
+  formula: string;
   /** Where each of atoms is written in smiles, in the same order. */
   spans: Span[];
+}
+
+/** One unit of a fragmented formula */
+export interface UnitInfo {
+  span: Span;
+  /** How many of the unit there are. */
+  count: number;
+  /** Indices into MoleculeMetadata.fragments. */
+  fragments: number[];
+}
+
+export interface FragmentedInfo {
+  text: string;
+  units: UnitInfo[];
+}
+
+export interface FormulaInfo {
+  /** e.g. C₆H₁₂O₆. */
+  molecular: string;
+  /** e.g. CH₂O. */
+  empirical: string;
+  /** e.g. CH₃CH₂OH. */
+  condensed: string;
+  /** e.g. Cu²⁺·SO₄²⁻·5H₂O. */
+  components: FragmentedInfo;
+  /** e.g. CuSO₄·5H₂O. */
+  neutral_units: FragmentedInfo;
+}
+
+export interface FragmentInfo {
+  index: number;
+  atoms: number[];
+  bonds: number[];
+  smiles: string;
+  formula: string;
+  charge: number;
 }
 
 export interface MoleculeMetadata {
   smiles: string;
   canonical_smiles: string;
+  formula: FormulaInfo;
   atoms: AtomInfo[];
   bonds: BondInfo[];
   rings: RingInfo[];
+  fragments: FragmentInfo[];
 }
 
 /** A molecule the server has stored. */

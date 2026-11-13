@@ -1,4 +1,5 @@
 import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, Span } from "../api/types";
+import { FormulaView } from "./FormulaView";
 import { SmilesText } from "./SmilesText";
 import type { Highlight } from "./SmilesText";
 
@@ -24,6 +25,7 @@ export class MoleculeInspector {
     private readonly svg: SVGSVGElement,
     private readonly smiles: SmilesText,
     private readonly canonical: SmilesText,
+    private readonly formula: FormulaView,
     private readonly metadata: MoleculeMetadata,
   ) {
     this.plaques.className = "plaques";
@@ -76,9 +78,16 @@ export class MoleculeInspector {
         }
       });
     }
+    const fragment = atoms[0]?.fragment;
+    this.formula.highlightFragment(fragment ?? null);
+
     this.plaques.replaceChildren(this.describe(target, atom, bond, atoms));
     if (rings.length > 0) {
       this.plaques.append(this.describeRings(target.kind, atoms, rings, firstColour));
+    }
+    // a molecule of one fragment is the fragment, so naming it would say nothing
+    if (fragment !== undefined && this.metadata.fragments.length > 1) {
+      this.plaques.append(this.describeFragment(fragment));
     }
     this.plaques.hidden = false;
     this.place(event);
@@ -113,6 +122,7 @@ export class MoleculeInspector {
     this.ends = [];
     this.smiles.highlight([]);
     this.canonical.highlight([]);
+    this.formula.highlightFragment(null);
   }
 
   /** Keeps the plaques next to the pointer, but on screen. */
@@ -141,7 +151,7 @@ export class MoleculeInspector {
       if (atom.aromatic) {
         rows.push(["Aromatic", "yes"]);
       }
-      rows.push(["Fragment", String(atom.fragment)]);
+      rows.push(["Fragment", `${atom.fragment} (of ${this.metadata.fragments.length})`]);
     } else if (bond) {
       title = `Bond ${bond.index}`;
       rows.push(
@@ -164,15 +174,30 @@ export class MoleculeInspector {
     }
 
     const plaque = MoleculeInspector.plaque(title);
-    const list = document.createElement("dl");
-    for (const [name, value] of rows) {
-      const term = document.createElement("dt");
-      term.textContent = name;
-      const description = document.createElement("dd");
-      description.textContent = value;
-      list.append(term, description);
+    plaque.append(MoleculeInspector.details(rows));
+    return plaque;
+  }
+
+  /** The fragment the hovered atom or bond belongs to, and the unit of the formula it was gathered into. */
+  private describeFragment(index: number): HTMLElement {
+    const fragment = this.metadata.fragments[index];
+    if (!fragment) {
+      return MoleculeInspector.plaque(`Fragment ${index}`);
     }
-    plaque.append(list);
+
+    const rows: [string, string][] = [
+      ["Formula", fragment.formula],
+      ["SMILES", fragment.smiles],
+    ];
+    const units = this.metadata.formula.neutral_units;
+    const unit = units.units.find((candidate) => candidate.fragments.includes(index));
+    // a unit standing for the one fragment repeats the rows above, so it is only worth naming when counted
+    if (unit && unit.count > 1) {
+      rows.push(["In unit", `${units.text.slice(unit.span.start, unit.span.end)} — one of ${unit.count}`]);
+    }
+
+    const plaque = MoleculeInspector.plaque(`Fragment ${index} (of ${this.metadata.fragments.length})`);
+    plaque.append(MoleculeInspector.details(rows));
     return plaque;
   }
 
@@ -192,7 +217,7 @@ export class MoleculeInspector {
     for (const ring of rings) {
       const line = document.createElement("p");
       line.className = "ring";
-      line.append(`Ring (${ring.size}): `);
+      line.append(`Ring (${ring.size}) ${ring.formula} `);
 
       const text = new SmilesText(ring.smiles);
       text.highlight(atoms.map((atom, position) => ({
@@ -224,6 +249,18 @@ export class MoleculeInspector {
 
   private static spanIn(ring: RingInfo, atom: number): Span | null {
     return ring.spans[ring.atoms.indexOf(atom)] ?? null;
+  }
+
+  private static details(rows: [string, string][]): HTMLElement {
+    const list = document.createElement("dl");
+    for (const [name, value] of rows) {
+      const term = document.createElement("dt");
+      term.textContent = name;
+      const description = document.createElement("dd");
+      description.textContent = value;
+      list.append(term, description);
+    }
+    return list;
   }
 
   private static plaque(title: string): HTMLElement {

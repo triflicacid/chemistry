@@ -6,7 +6,11 @@ import com.ruben.chemistry.core.Molecule;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.ruben.chemistry.util.Span;
+
 import java.util.Comparator;
+import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -191,6 +195,48 @@ class FragmentedFormulaTest
     }
 
     @Nested
+    class FragmentMembership
+    {
+        @Test
+        void gives_the_one_unit_every_fragment_when_not_grouping()
+        {
+            FragmentedFormula formula = FragmentedFormula.of(copperSulfatePentahydrate(), FragmentGrouping.NONE, BY_FORMULA);
+
+            assertThat(formula.fragmentsOf(0)).containsExactly(0, 1, 2, 3, 4, 5, 6);
+        }
+
+        @Test
+        void gives_each_unit_the_fragments_it_was_gathered_from()
+        {
+            FragmentedFormula formula = FragmentedFormula.of(copperSulfatePentahydrate(), FragmentGrouping.COMPONENTS, BY_FORMULA);
+
+            assertThat(formula.fragmentsOf(0)).containsExactly(0);
+            assertThat(formula.fragmentsOf(1)).containsExactly(1);
+            assertThat(formula.fragmentsOf(2)).containsExactly(2, 3, 4, 5, 6);
+        }
+
+        @Test
+        void names_every_ion_a_combined_unit_stands_for()
+        {
+            FragmentedFormula formula = FragmentedFormula.of(copperSulfatePentahydrate(), FragmentGrouping.NEUTRAL_UNITS, BY_FORMULA);
+
+            assertThat(formula.fragmentsOf(0)).containsExactly(0, 1);
+            assertThat(formula.fragmentsOf(1)).containsExactly(2, 3, 4, 5, 6);
+        }
+
+        @Test
+        void gives_a_gathered_unit_as_many_fragments_as_it_is_counted()
+        {
+            FragmentedFormula formula = FragmentedFormula.of(copperSulfatePentahydrate(), FragmentGrouping.COMPONENTS, BY_FORMULA);
+
+            for (int index = 0; index < formula.unitCount(); index++)
+            {
+                assertThat(formula.fragmentsOf(index)).hasSize(formula.units().get(index).count());
+            }
+        }
+    }
+
+    @Nested
     class Rendering
     {
         @Test
@@ -199,6 +245,37 @@ class FragmentedFormulaTest
             FragmentedFormula formula = FragmentedFormula.of(copperSulfatePentahydrate(), FragmentGrouping.NEUTRAL_UNITS, BY_FORMULA);
 
             assertThat(formula.toUnicode()).isEqualTo("CuSO₄·5H₂O");
+        }
+
+        @Test
+        void locates_each_unit_in_the_formula_it_wrote()
+        {
+            FragmentedFormula formula = FragmentedFormula.of(copperSulfatePentahydrate(), FragmentGrouping.NEUTRAL_UNITS, BY_FORMULA);
+
+            FragmentedFormula.Rendered rendered = formula.renderWithSpans(FormulaStyle.UNICODE, unit -> FormulaSettings.molecular());
+
+            assertThat(rendered.text()).isEqualTo("CuSO₄·5H₂O");
+            assertThat(rendered.unitSpans()).containsExactly(new Span(0, 5), new Span(6, 10));
+        }
+
+        @Test
+        void locates_the_one_unit_of_a_connected_molecule()
+        {
+            FragmentedFormula formula = FragmentedFormula.of(hydratedEthanol(), FragmentGrouping.NONE, BY_FORMULA);
+
+            FragmentedFormula.Rendered rendered = formula.renderWithSpans(FormulaStyle.PLAIN, unit -> FormulaSettings.molecular());
+
+            assertThat(rendered.text()).isEqualTo("C2H8O2");
+            assertThat(rendered.unitSpans()).containsExactly(new Span(0, 6));
+        }
+
+        @Test
+        void writes_the_same_text_whether_or_not_the_units_are_located()
+        {
+            FragmentedFormula formula = FragmentedFormula.of(copperSulfatePentahydrate(), FragmentGrouping.COMPONENTS, BY_FORMULA);
+
+            assertThat(formula.renderWithSpans(FormulaStyle.PLAIN, unit -> FormulaSettings.molecular()).text())
+                .isEqualTo(formula.render(FormulaStyle.PLAIN, unit -> FormulaSettings.molecular()));
         }
 
         @Test

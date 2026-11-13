@@ -1,6 +1,6 @@
 import { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import type { MoleculeId } from "../api/types";
+import type { MoleculeId, MoleculeMetadata } from "../api/types";
 import { ViewStore } from "../store";
 import { OptionsPanel } from "./OptionsPanel";
 import { ResultsView } from "./ResultsView";
@@ -72,10 +72,17 @@ export class App {
     this.form.setBusy(true);
     try {
       const created = await this.api.createMolecule(smiles);
-      const { svg, moleculeId } = await this.api.renderMolecule(created.id, this.options?.values() ?? {});
+
+      // fetching both at once keeps the card from growing a second time once the metadata lands
+      const [{ svg, moleculeId }, metadata] = await Promise.all([
+        this.api.renderMolecule(created.id, this.options?.values() ?? {}),
+        this.inspectionOf(created.id),
+      ]);
       this.store.rememberMolecule(moleculeId, created.smiles);
       this.results.showMolecule(svg, moleculeId, created.smiles, created.canonical_smiles);
-      void this.inspect(moleculeId);
+      if (metadata) {
+        this.results.inspect(metadata, moleculeId);
+      }
     } catch (error) {
       this.store.rememberSmiles(smiles);
       this.results.showError(App.describe(error));
@@ -84,15 +91,13 @@ export class App {
     }
   }
 
-  /** Fetches what hovering needs; the drawing is usable without it, so failing is not an error to show. */
-  private async inspect(moleculeId: MoleculeId): Promise<void> {
+  /** Fetches the formulae and what hovering needs; the drawing is usable without them, so failing is not an error to show. */
+  private async inspectionOf(moleculeId: MoleculeId): Promise<MoleculeMetadata | null> {
     try {
-      const metadata = await this.api.metadata(moleculeId);
-      if (this.store.moleculeId === moleculeId) {
-        this.results.inspect(metadata, moleculeId);
-      }
+      return await this.api.metadata(moleculeId);
     } catch (error) {
       console.warn("Could not load the molecule's metadata", error);
+      return null;
     }
   }
 

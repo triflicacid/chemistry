@@ -10,6 +10,7 @@ import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.notation.NotationSymbols;
 import com.ruben.chemistry.notation.StereoTracker;
 import com.ruben.chemistry.util.CallGuard;
+import com.ruben.chemistry.util.Span;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;

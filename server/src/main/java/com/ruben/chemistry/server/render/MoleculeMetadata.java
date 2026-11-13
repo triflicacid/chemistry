@@ -5,9 +5,14 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.formula.FormulaSettings;
+import com.ruben.chemistry.formula.FormulaStyle;
+import com.ruben.chemistry.formula.FragmentGrouping;
+import com.ruben.chemistry.formula.FragmentedFormula;
+import com.ruben.chemistry.formula.MolecularFormula;
 import com.ruben.chemistry.render.MoleculeSnapshot;
 import com.ruben.chemistry.smiles.SmilesWriter;
-import com.ruben.chemistry.smiles.Span;
+import com.ruben.chemistry.util.Span;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -19,11 +24,14 @@ import java.util.OptionalInt;
 /**
  * @param smiles the SMILES the molecule was parsed from; atoms' spans are positions in it
  * @param canonicalSmiles the molecule as canonical SMILES; atoms' canonical spans are positions in it
+ * @param formula the molecule's formulae
  * @param atoms one entry per atom, at its index in {@link Molecule#atoms()}
  * @param bonds one entry per bond, at its index in {@link Molecule#bonds()}
  * @param rings the rings of the molecule
+ * @param fragments one entry per connected fragment, at its index in {@link Molecule#fragments()}
  */
-public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomInfo> atoms, List<BondInfo> bonds, List<RingInfo> rings)
+public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInfo formula, List<AtomInfo> atoms,
+                               List<BondInfo> bonds, List<RingInfo> rings, List<FragmentInfo> fragments)
 {
     /**
      * @param index the atom's index in the molecule
@@ -76,9 +84,58 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomI
      * @param atoms the indices of its atoms
      * @param bonds the indices of its bonds
      * @param smiles the ring on its own, as canonical SMILES
+     * @param formula the ring on its own, as a molecular formula in Unicode
      * @param spans where each of {@code atoms} is written in {@code smiles}, in the same order
      */
-    public record RingInfo(int index, int size, List<Integer> atoms, List<Integer> bonds, String smiles, List<Span> spans)
+    public record RingInfo(int index, int size, List<Integer> atoms, List<Integer> bonds, String smiles, String formula,
+                           List<Span> spans)
+    {
+    }
+
+    /**
+     * A molecule's formulae, each written in Unicode.
+     *
+     * @param molecular every atom counted together, e.g. glucose's {@code C₆H₁₂O₆}
+     * @param empirical the molecular formula in its simplest whole-number ratio, e.g. glucose's {@code CH₂O}
+     * @param condensed the condensed structural formula, e.g. ethanol's {@code CH₃CH₂OH}
+     * @param components one unit per connected fragment, e.g. {@code Cu²⁺·SO₄²⁻·5H₂O}
+     * @param neutralUnits as {@code components}, every charged fragment combined into one uncharged unit, e.g. {@code CuSO₄·5H₂O}
+     */
+    public record FormulaInfo(String molecular, String empirical, String condensed, FragmentedInfo components,
+                              FragmentedInfo neutralUnits)
+    {
+    }
+
+    /**
+     * A formula written as units either side of a middle dot.
+     *
+     * @param text the formula
+     * @param units the units written in it, in the order they appear
+     */
+    public record FragmentedInfo(String text, List<UnitInfo> units)
+    {
+    }
+
+    /**
+     * One unit of a fragmented formula.
+     *
+     * @param span where the unit is written in its formula's text, its count included
+     * @param count how many of the unit there are
+     * @param fragments the indices (into {@link MoleculeMetadata#fragments()}) of the fragments the unit stands for
+     */
+    public record UnitInfo(Span span, int count, List<Integer> fragments)
+    {
+    }
+
+    /**
+     * @param index the fragment's position in {@link MoleculeMetadata#fragments()}
+     * @param atoms the indices of its atoms
+     * @param bonds the indices of its bonds
+     * @param smiles the fragment on its own, as canonical SMILES
+     * @param formula the fragment on its own, as a molecular formula in Unicode
+     * @param charge its net formal charge
+     */
+    public record FragmentInfo(int index, List<Integer> atoms, List<Integer> bonds, String smiles, String formula, int charge)
     {
     }
 
@@ -123,19 +180,14 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomI
         {
             int index = rings.size();
             List<Integer> atoms = ring.atoms().stream().map(indexOfAtom::get).toList();
-            // a ring's bonds are copies, but its atoms are the molecule's own, so find each original bond by its atoms
-            List<Integer> bonds = ring.bonds().stream()
-                    .map(copy -> molecule.bondsOf(copy.first()).stream()
-                            .filter(own -> own.getOther(copy.first()) == copy.second())
-                            .findFirst().orElseThrow())
-                    .map(indexOfBond::get)
-                    .toList();
+            List<Integer> bonds = bondIndices(molecule, indexOfBond, ring.bonds());
             atoms.forEach(atom -> ringsOfAtom.get(atom).add(index));
             bonds.forEach(bond -> ringsOfBond.get(bond).add(index));
             SmilesWriter writer = new SmilesWriter(ring).setRanker(new CanonicalRanker());
             String ringSmiles = writer.write();
             List<Span> spans = ring.atoms().stream().map(writer.atomSpans()::get).toList();
-            rings.add(new RingInfo(index, atoms.size(), atoms, bonds, ringSmiles, spans));
+            rings.add(new RingInfo(index, atoms.size(), atoms, bonds, ringSmiles,
+                    MolecularFormula.of(ring).toUnicode(), spans));
         }
 
         List<AtomInfo> atoms = new ArrayList<>();
@@ -165,7 +217,96 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, List<AtomI
                     source.bondSpans().getOrDefault(bond, List.of()),
                     canonical.bondSpans().getOrDefault(bond, List.of())));
         }
-        return new MoleculeMetadata(source.smiles(), canonical.smiles(), atoms, bonds, rings);
+        return new MoleculeMetadata(source.smiles(), canonical.smiles(), formulaOf(molecule), atoms, bonds, rings,
+                fragmentsOf(molecule, snapshot, canonical, indexOfAtom, indexOfBond));
+    }
+
+    /**
+     * Finds where a sub-molecule's bonds are in the molecule it came from.
+     *
+     * @param molecule the molecule the sub-molecule came from
+     * @param indexOfBond each of the molecule's bonds' indices
+     * @param bonds a sub-molecule's bonds
+     * @return the indices of the molecule's own bonds between the same atoms, in the same order
+     */
+    private static List<Integer> bondIndices(Molecule molecule, Map<Bond, Integer> indexOfBond, List<Bond> bonds)
+    {
+        return bonds.stream()
+                .map(copy -> molecule.bondsOf(copy.first()).stream()
+                        .filter(own -> own.getOther(copy.first()) == copy.second())
+                        .findFirst().orElseThrow())
+                .map(indexOfBond::get)
+                .toList();
+    }
+
+    /**
+     * @param molecule a molecule
+     * @return formulae for that molecule
+     */
+    private static FormulaInfo formulaOf(Molecule molecule)
+    {
+        MolecularFormula molecular = MolecularFormula.of(molecule);
+        return new FormulaInfo(
+                molecular.toUnicode(),
+                molecular.empirical().toUnicode(),
+                FormulaSettings.condensed().withStyle(FormulaStyle.UNICODE).write(molecule),
+                fragmentedOf(molecule, FragmentGrouping.COMPONENTS),
+                fragmentedOf(molecule, FragmentGrouping.NEUTRAL_UNITS));
+    }
+
+    /**
+     * @param molecule a molecule
+     * @param grouping how to gather its fragments into units
+     * @return the fragmented formula
+     */
+    private static FragmentedInfo fragmentedOf(Molecule molecule, FragmentGrouping grouping)
+    {
+        FragmentedFormula formula = FragmentedFormula.of(molecule, grouping);
+        FragmentedFormula.Rendered rendered = formula.renderWithSpans(FormulaStyle.UNICODE, unit -> FormulaSettings.molecular());
+
+        List<UnitInfo> units = new ArrayList<>();
+        for (int index = 0; index < formula.unitCount(); index++)
+        {
+            units.add(new UnitInfo(rendered.unitSpans().get(index), formula.units().get(index).count(), formula.fragmentsOf(index)));
+        }
+        return new FragmentedInfo(rendered.text(), units);
+    }
+
+    /**
+     * @param molecule the molecule its fragments came from
+     * @param snapshot the molecule, with its fragments to hand
+     * @param canonical the molecule as canonical SMILES
+     * @param indexOfAtom each of the molecule's atoms' indices
+     * @param indexOfBond each of the molecule's bonds' indices
+     * @return the metadata of every connected fragment, in the order the molecule holds them
+     */
+    private static List<FragmentInfo> fragmentsOf(
+            Molecule molecule,
+            MoleculeSnapshot snapshot,
+            Notation canonical,
+            Map<Atom, Integer> indexOfAtom,
+            Map<Bond, Integer> indexOfBond)
+    {
+        int count = snapshot.getFragmentCount();
+        List<FragmentInfo> fragments = new ArrayList<>();
+        for (int index = 0; index < count; index++)
+        {
+            Molecule fragment = snapshot.getFragment(index);
+            MolecularFormula formula = MolecularFormula.of(fragment);
+
+            // a molecule of one fragment is that fragment, whose canonical SMILES is written already
+            String smiles = count == 1
+                    ? canonical.smiles()
+                    : new SmilesWriter(fragment).setRanker(new CanonicalRanker()).write();
+            fragments.add(new FragmentInfo(
+                    index,
+                    fragment.atoms().stream().map(indexOfAtom::get).toList(),
+                    bondIndices(molecule, indexOfBond, fragment.bonds()),
+                    smiles,
+                    formula.toUnicode(),
+                    formula.charge()));
+        }
+        return fragments;
     }
 
     private static List<List<Integer>> emptyLists(int count)

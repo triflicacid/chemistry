@@ -12,6 +12,7 @@ import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.util.IdentitySet;
+import com.ruben.chemistry.util.Span;
 
 import java.util.ArrayList;
 import java.util.Collections;

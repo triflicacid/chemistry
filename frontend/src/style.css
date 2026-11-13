@@ -126,6 +126,36 @@ button.small {
   color: #57606a;
 }
 
+.card .formulae {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .15rem 1.1rem;
+  margin-bottom: .5rem;
+}
+
+/* a fragmented formula is longer and interactive, so it takes a line of its own */
+.card .formula.wide {
+  flex-basis: 100%;
+}
+
+.card .formula {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+}
+
+.card .formula-label {
+  font-size: .75rem;
+  color: #57606a;
+}
+
+/* a formula is not code, and proportional fonts carry the subscripts better than monospace ones */
+.card .formula-text {
+  font-family: inherit;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
 .smiles-highlight {
   background: #ffd33d;
   border-radius: 2px;

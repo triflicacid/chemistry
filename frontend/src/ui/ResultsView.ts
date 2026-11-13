@@ -1,11 +1,13 @@
 import type { MoleculeId, MoleculeMetadata } from "../api/types";
 import { sanitiseSvg } from "../svg";
+import { FormulaView } from "./FormulaView";
 import { MoleculeInspector } from "./MoleculeInspector";
 import { SmilesText } from "./SmilesText";
 
 /** The molecule currently shown. */
 interface Shown {
   moleculeId: MoleculeId;
+  card: HTMLElement;
   svg: SVGSVGElement;
   smiles: SmilesText;
   canonical: SmilesText;
@@ -16,6 +18,7 @@ export class ResultsView {
   readonly element = document.createElement("section");
   private shown: Shown | null = null;
   private inspector: MoleculeInspector | null = null;
+  private formula: FormulaView | null = null;
 
   constructor() {
     this.element.className = "results";
@@ -41,16 +44,19 @@ export class ResultsView {
     card.dataset.molecule = moleculeId;
     card.append(ResultsView.label("SMILES"), text.element, ResultsView.label("Canonical SMILES"), canonical.element, drawing);
     this.element.replaceChildren(card);
-    this.shown = { moleculeId, svg: drawing, smiles: text, canonical };
+    this.shown = { moleculeId, card, svg: drawing, smiles: text, canonical };
   }
 
-  /** Makes the molecule shown inspectable, unless it is no longer the one being shown. */
   inspect(metadata: MoleculeMetadata, moleculeId: MoleculeId): void {
     if (this.shown?.moleculeId !== moleculeId) {
       return;
     }
     this.inspector?.detach();
-    this.inspector = new MoleculeInspector(this.shown.svg, this.shown.smiles, this.shown.canonical, metadata);
+    this.formula?.element.remove();
+
+    this.formula = new FormulaView(metadata.formula, metadata.fragments.length);
+    this.shown.card.insertBefore(this.formula.element, this.shown.svg);
+    this.inspector = new MoleculeInspector(this.shown.svg, this.shown.smiles, this.shown.canonical, this.formula, metadata);
   }
 
   private static label(text: string): HTMLElement {
@@ -71,6 +77,7 @@ export class ResultsView {
   private reset(): void {
     this.inspector?.detach();
     this.inspector = null;
+    this.formula = null;
     this.shown = null;
   }
 }

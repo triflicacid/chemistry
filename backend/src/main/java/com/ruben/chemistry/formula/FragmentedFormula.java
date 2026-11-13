@@ -4,12 +4,13 @@ import com.ruben.chemistry.canonical.MoleculeComparator;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.util.Span;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * A {@link Molecule}'s fragments gathered into the units written either side of a {@code .} in a
@@ -21,13 +22,15 @@ import java.util.stream.Collectors;
 public final class FragmentedFormula
 {
     private final List<FormulaUnit> units;
+    private final List<List<Integer>> fragmentsOfUnit;
 
     /**
-     * @param units the units, in the order they are to be written
+     * @param gathered the units, in the order they are to be written
      */
-    private FragmentedFormula(List<FormulaUnit> units)
+    private FragmentedFormula(List<Gathered> gathered)
     {
-        this.units = units;
+        this.units = gathered.stream().map(Gathered::unit).toList();
+        this.fragmentsOfUnit = gathered.stream().map(Gathered::fragments).toList();
     }
 
     /**
@@ -45,16 +48,10 @@ public final class FragmentedFormula
 
     /**
      * Gathers a molecule's fragments into units.
-     * <p>
-     * Fragments the comparator finds no difference between are gathered into one unit with a
-     * count, so five waters give a single unit counted five times. Units are written in the order
-     * their first fragment appears in the molecule.
      *
      * @param molecule the molecule to gather
      * @param grouping how to gather the fragments into units
-     * @param structureComparator decides whether two fragments are the same structure, comparing
-     *     them equal exactly when they are, or {@code null} to compare by the default
-     *     {@link MoleculeComparator}
+     * @param structureComparator decides whether two fragments are the same structure
      * @return the fragmented formula
      */
     public static FragmentedFormula of(
@@ -64,7 +61,8 @@ public final class FragmentedFormula
     {
         if (grouping == FragmentGrouping.NONE)
         {
-            return new FragmentedFormula(List.of(new FormulaUnit(molecule, 1)));
+            FormulaUnit whole = new FormulaUnit(molecule, 1);
+            return new FragmentedFormula(List.of(new Gathered(whole, indices(molecule.fragmentCount()))));
         }
 
         List<Molecule> fragments = molecule.fragments();
@@ -73,19 +71,44 @@ public final class FragmentedFormula
             return new FragmentedFormula(List.of());
         }
 
-        List<FormulaUnit> units = new ArrayList<>();
+        List<Gathered> gathered = new ArrayList<>();
+        List<Integer> remaining = indices(fragments.size());
         if (grouping == FragmentGrouping.NEUTRAL_UNITS)
         {
-            List<Molecule> ions = fragments.stream().filter(FragmentedFormula::isCharged).toList();
+            List<Integer> ions = new ArrayList<>();
+            List<Integer> neutral = new ArrayList<>();
+            for (int position : remaining)
+            {
+                if (isCharged(fragments.get(position)))
+                {
+                    ions.add(position);
+                }
+                else
+                {
+                    neutral.add(position);
+                }
+            }
             if (!ions.isEmpty())
             {
-                units.add(new FormulaUnit(combine(ions), 1));
-                fragments = fragments.stream().filter(fragment -> !isCharged(fragment)).toList();
+                FormulaUnit unit = new FormulaUnit(combine(ions.stream().map(fragments::get).toList()), 1);
+                gathered.add(new Gathered(unit, List.copyOf(ions)));
+
+                // the ions are written as the one unit, so only the uncharged fragments are left to gather
+                remaining = neutral;
             }
         }
-        units.addAll(gatherIdentical(fragments, structureComparator));
+        gathered.addAll(gatherIdentical(fragments, remaining, structureComparator));
 
-        return new FragmentedFormula(List.copyOf(units));
+        return new FragmentedFormula(gathered);
+    }
+
+    /**
+     * @param count how many indices to list
+     * @return the indices {@code 0} to {@code count - 1}
+     */
+    private static List<Integer> indices(int count)
+    {
+        return IntStream.range(0, count).boxed().toList();
     }
 
     /**
@@ -137,36 +160,42 @@ public final class FragmentedFormula
     /**
      * Gathers fragments the comparator finds no difference between into a single counted unit.
      *
-     * @param fragments the fragments to gather
+     * @param fragments every one of the molecule's fragments, indexed as the molecule holds them
+     * @param positions the indices of the fragments to gather, which may be some of {@code fragments} only
      * @param structureComparator decides whether two fragments are the same structure.
-     * @return one unit per distinct structure
+     * @return one unit per distinct structure, each with the fragments it was gathered from
      */
-    private static List<FormulaUnit> gatherIdentical(List<Molecule> fragments, Comparator<Molecule> structureComparator)
+    private static List<Gathered> gatherIdentical(
+        List<Molecule> fragments,
+        List<Integer> positions,
+        Comparator<Molecule> structureComparator)
     {
         Comparator<Molecule> structure = structureComparator == null ? new MoleculeComparator() : structureComparator;
 
         List<Molecule> representatives = new ArrayList<>();
-        List<Integer> counts = new ArrayList<>();
-        for (Molecule fragment : fragments)
+        List<List<Integer>> members = new ArrayList<>();
+        for (int position : positions)
         {
+            Molecule fragment = fragments.get(position);
             int index = indexOfMatching(representatives, fragment, structure);
             if (index == -1)
             {
                 representatives.add(fragment);
-                counts.add(1);
+                members.add(new ArrayList<>(List.of(position)));
             }
             else
             {
-                counts.set(index, counts.get(index) + 1);
+                members.get(index).add(position);
             }
         }
 
-        List<FormulaUnit> units = new ArrayList<>();
+        List<Gathered> gathered = new ArrayList<>();
         for (int index = 0; index < representatives.size(); index++)
         {
-            units.add(new FormulaUnit(representatives.get(index), counts.get(index)));
+            List<Integer> gatheredFrom = List.copyOf(members.get(index));
+            gathered.add(new Gathered(new FormulaUnit(representatives.get(index), gatheredFrom.size()), gatheredFrom));
         }
-        return units;
+        return gathered;
     }
 
     /**
@@ -204,6 +233,32 @@ public final class FragmentedFormula
     }
 
     /**
+     * Says which of the molecule's fragments a unit was gathered from, a fragment's index being
+     * its position in {@link Molecule#fragments()}. Every fragment belongs to exactly one unit.
+     * <p>
+     * A unit counted more than once returns each fragment it stands for, so the {@code 5H2O} of
+     * copper(II) sulfate pentahydrate returns all five waters.
+     *
+     * @param unitIndex a unit's position in {@link #units()}
+     * @return the indices of the fragments the unit was gathered from
+     * @throws IndexOutOfBoundsException if there is no such unit
+     */
+    public List<Integer> fragmentsOf(int unitIndex)
+    {
+        return fragmentsOfUnit.get(unitIndex);
+    }
+
+    /**
+     * A fragmented formula as text, with each of its units located in it.
+     *
+     * @param text the formula
+     * @param unitSpans where each unit is written in {@code text}, one per unit, in the order they are written
+     */
+    public record Rendered(String text, List<Span> unitSpans)
+    {
+    }
+
+    /**
      * Writes the units, separated by a {@code .}, or by a middle dot where the style is Unicode.
      * Each unit is written by the settings {@code renderers} chooses for it.
      * <p>
@@ -215,10 +270,33 @@ public final class FragmentedFormula
      */
     public String render(FormulaStyle style, Function<FormulaUnit, FormulaSettings> renderers)
     {
+        return renderWithSpans(style, renderers).text();
+    }
+
+    /**
+     * Writes the formula as {@link #render} does, reporting where each unit landed in it.
+     *
+     * @param style the choices made about the formula as a whole
+     * @param renderers how to write each unit, chosen per unit
+     * @return the formula as text, and each unit's position in it
+     */
+    public Rendered renderWithSpans(FormulaStyle style, Function<FormulaUnit, FormulaSettings> renderers)
+    {
         String separator = style.unicode() ? String.valueOf(Unicode.MIDDLE_DOT) : ".";
-        return units.stream()
-            .map(unit -> unit.render(inStyle(renderers.apply(unit), style)))
-            .collect(Collectors.joining(separator));
+        StringBuilder text = new StringBuilder();
+        List<Span> spans = new ArrayList<>();
+        for (int index = 0; index < units.size(); index++)
+        {
+            if (index > 0)
+            {
+                text.append(separator);
+            }
+            int start = text.length();
+            FormulaUnit unit = units.get(index);
+            text.append(unit.render(inStyle(renderers.apply(unit), style)));
+            spans.add(new Span(start, text.length()));
+        }
+        return new Rendered(text.toString(), List.copyOf(spans));
     }
 
     /**
@@ -246,5 +324,15 @@ public final class FragmentedFormula
     public String toUnicode()
     {
         return render(FormulaStyle.UNICODE, unit -> FormulaSettings.molecular());
+    }
+
+    /**
+     * One unit of a fragmented formula, paired with the fragments it was gathered from.
+     *
+     * @param unit the unit
+     * @param fragments the indices of the fragments it was gathered from
+     */
+    private record Gathered(FormulaUnit unit, List<Integer> fragments)
+    {
     }
 }

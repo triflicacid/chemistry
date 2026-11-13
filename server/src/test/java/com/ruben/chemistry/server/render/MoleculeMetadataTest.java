@@ -4,7 +4,7 @@ import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.smiles.SmilesWriter;
-import com.ruben.chemistry.smiles.Span;
+import com.ruben.chemistry.util.Span;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -13,6 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class MoleculeMetadataTest
 {
+    private static final String COPPER_SULFATE_PENTAHYDRATE = "[Cu+2].[O-]S(=O)(=O)[O-].O.O.O.O.O";
+
     private static MoleculeMetadata of(String smiles)
     {
         SmilesParser parser = new SmilesParser(smiles);
@@ -149,6 +151,85 @@ class MoleculeMetadataTest
         {
             assertThat(metadata.canonicalSmiles().substring(span.start(), span.end())).isEqualTo("1");
         }
+    }
+
+    @Test
+    void should_write_the_molecular_and_empirical_formulae()
+    {
+        MoleculeMetadata.FormulaInfo formula = of("c1ccccc1").formula();
+
+        assertThat(formula.molecular()).isEqualTo("C₆H₆");
+        assertThat(formula.empirical()).isEqualTo("CH");
+    }
+
+    @Test
+    void should_write_the_condensed_structural_formula()
+    {
+        assertThat(of("CCO").formula().condensed()).isEqualTo("CH₃CH₂OH");
+        assertThat(of("CCCCCC").formula().condensed()).isEqualTo("CH₃(CH₂)₄CH₃");
+    }
+
+    @Test
+    void should_group_fragments_into_components_and_neutral_units()
+    {
+        MoleculeMetadata.FormulaInfo formula = of(COPPER_SULFATE_PENTAHYDRATE).formula();
+
+        assertThat(formula.molecular()).isEqualTo("CuH₁₀SO₉");
+        assertThat(formula.components().text()).isEqualTo("Cu²⁺·SO₄²⁻·5H₂O");
+        assertThat(formula.neutralUnits().text()).isEqualTo("CuSO₄·5H₂O");
+    }
+
+    @Test
+    void should_locate_each_unit_in_a_fragmented_formula()
+    {
+        MoleculeMetadata.FragmentedInfo fragmented = of(COPPER_SULFATE_PENTAHYDRATE).formula().neutralUnits();
+
+        assertThat(fragmented.units()).hasSize(2);
+        for (MoleculeMetadata.UnitInfo unit : fragmented.units())
+        {
+            assertThat(fragmented.text().substring(unit.span().start(), unit.span().end())).isNotBlank();
+        }
+        MoleculeMetadata.UnitInfo water = fragmented.units().get(1);
+        assertThat(fragmented.text().substring(water.span().start(), water.span().end())).isEqualTo("5H₂O");
+    }
+
+    @Test
+    void should_say_which_fragments_each_unit_stands_for()
+    {
+        MoleculeMetadata.FormulaInfo formula = of(COPPER_SULFATE_PENTAHYDRATE).formula();
+
+        MoleculeMetadata.UnitInfo salt = formula.neutralUnits().units().getFirst();
+        assertThat(salt.count()).isEqualTo(1);
+        assertThat(salt.fragments()).containsExactly(0, 1);
+
+        MoleculeMetadata.UnitInfo water = formula.neutralUnits().units().get(1);
+        assertThat(water.count()).isEqualTo(5);
+        assertThat(water.fragments()).containsExactly(2, 3, 4, 5, 6);
+    }
+
+    @Test
+    void should_describe_each_connected_fragment()
+    {
+        MoleculeMetadata metadata = of(COPPER_SULFATE_PENTAHYDRATE);
+
+        assertThat(metadata.fragments()).hasSize(7);
+        assertThat(metadata.fragments()).extracting(MoleculeMetadata.FragmentInfo::charge)
+            .containsExactly(2, -2, 0, 0, 0, 0, 0);
+        assertThat(metadata.fragments()).extracting(MoleculeMetadata.FragmentInfo::formula)
+            .containsExactly("Cu²⁺", "SO₄²⁻", "H₂O", "H₂O", "H₂O", "H₂O", "H₂O");
+
+        MoleculeMetadata.FragmentInfo sulfate = metadata.fragments().get(1);
+        assertThat(sulfate.atoms()).containsExactly(1, 2, 3, 4, 5);
+        assertThat(sulfate.bonds()).containsExactly(0, 1, 2, 3);
+        assertThat(metadata.fragments().get(2).smiles()).isEqualTo("O");
+    }
+
+    @Test
+    void should_write_a_ring_formula_as_if_the_ring_stood_alone()
+    {
+        MoleculeMetadata metadata = of("c1ccccc1C");
+
+        assertThat(metadata.rings().getFirst().formula()).isEqualTo("C₆H₆");
     }
 
     @Test

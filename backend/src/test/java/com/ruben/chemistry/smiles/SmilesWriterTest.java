@@ -8,6 +8,7 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.util.Span;
 
 import java.util.List;
 import org.junit.jupiter.api.Nested;

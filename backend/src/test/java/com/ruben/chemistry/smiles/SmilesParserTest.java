@@ -7,6 +7,7 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
+import com.ruben.chemistry.util.Span;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
