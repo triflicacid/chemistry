@@ -11,6 +11,8 @@ interface Control {
 export class OptionsPanel {
   readonly element = document.createElement("section");
   readonly toggle: HTMLButtonElement;
+  /** Called whenever a control changes. */
+  onChange: () => void = () => {};
   private readonly controls = new Map<string, { descriptor: OptionDescriptor; control: Control }>();
 
   constructor(descriptors: OptionDescriptor[]) {
@@ -60,6 +62,15 @@ export class OptionsPanel {
     return values;
   }
 
+  /** Every option, with defaults filled in. */
+  resolved(): OptionValues {
+    const values: OptionValues = {};
+    for (const [name, { descriptor, control }] of this.controls) {
+      values[name] = control.read() ?? descriptor.default_value;
+    }
+    return values;
+  }
+
   private reset(): void {
     this.controls.forEach(({ control }) => control.reset());
     this.refresh();
@@ -67,6 +78,7 @@ export class OptionsPanel {
 
   /** Disables options that have no effect given the others. */
   private refresh(): void {
+    this.onChange();
     for (const { descriptor, control } of this.controls.values()) {
       const rule = descriptor.ignored_when;
       const other = rule ? this.controls.get(rule.option) : undefined;

@@ -81,9 +81,9 @@ public final class OptionSchema
     }
 
     /**
-     * @return the options a client may set, in the order to show them
+     * @return the options a client may set for a 2D drawing, in the order to show them
      */
-    public static List<Option> options()
+    public static List<Option> options2d()
     {
         RenderStyle style = RenderStyle.defaults();
         String hydrogens = DepictionOptions.defaults().hydrogens().name().toLowerCase(Locale.ROOT);
@@ -113,5 +113,59 @@ public final class OptionSchema
                 new Option("bond_gradient", "Bond gradient",
                         "Whether a bond runs between the colours of the atoms at its ends",
                         "boolean", style.bondGradient(), null, null, null, null, null));
+    }
+
+    static final List<Choice> STYLES_3D = List.of(
+            new Choice("ball_and_stick", "Ball and stick"),
+            new Choice("sticks", "Sticks"),
+            new Choice("wireframe", "Wireframe"),
+            new Choice("spacefill", "Spacefill"));
+
+    static final double MAX_CONFORMERS = 20;
+    static final double MAX_DEBUG_THRESHOLD = 10;
+
+    /**
+     * @return the options a client may set for a 3D view, in the order to show them. Only {@code conformers} changes
+     *     what the server sends; the rest are applied by the client, so changing them needs no request.
+     */
+    public static List<Option> options3d()
+    {
+        return List.of(
+                new Option("style", "Style",
+                        "How atoms and bonds are drawn",
+                        "choice", "ball_and_stick", null, null, null, STYLES_3D, null),
+                new Option("hydrogens", "Hydrogens",
+                        "Whether hydrogens are drawn",
+                        "boolean", true, null, null, null, null, null),
+                new Option("charges", "Charges",
+                        "Whether a formal charge is labelled beside its atom",
+                        "boolean", true, null, null, null, null, null),
+                new Option("conformers", "Shapes",
+                        "How many different shapes to search for; the least strained is shown",
+                        "number", 1, "shapes", 1.0, MAX_CONFORMERS, null, null),
+                new Option("axes", "Axes",
+                        "Whether to draw the x (red), y (green) and z (blue) axes from the origin",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_bonds", "Bond lengths",
+                        "Mark bonds whose length strays from ideal",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_angles", "Angles",
+                        "Mark angles that stray from ideal",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_torsions", "Torsions",
+                        "Mark torsions that stray from ideal",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_clashes", "Clashes",
+                        "Join atoms that are too close",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_strain", "Strain",
+                        "Tint atoms red by how strained they are",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_lone_pairs", "Lone pairs",
+                        "Show where lone pairs point",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_threshold", "Debug threshold",
+                        "How many times the usual tolerances a term must stray before it is shown; 0 shows every term",
+                        "number", 1, "x", 0.0, MAX_DEBUG_THRESHOLD, null, null));
     }
 }

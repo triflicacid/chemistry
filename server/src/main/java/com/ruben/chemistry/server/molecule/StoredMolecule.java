@@ -7,7 +7,10 @@ import com.ruben.chemistry.server.render.MoleculeRenderer;
 import com.ruben.chemistry.server.render.Rendering;
 import com.ruben.chemistry.smiles.SmilesWriter;
 
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 public final class StoredMolecule
 {
@@ -17,6 +20,7 @@ public final class StoredMolecule
     private final Molecule molecule;
     private volatile Rendering latest;
     private volatile MoleculeMetadata metadata;
+    private final Map<String, Map<String, Object>> structures = new ConcurrentHashMap<>();
 
     StoredMolecule(String id, MoleculeRenderer.Parsed parsed)
     {
@@ -67,5 +71,11 @@ public final class StoredMolecule
     public void setLatest(Rendering rendering)
     {
         this.latest = rendering;
+    }
+
+    /** The 3D structure for these settings, worked out the first time and kept, so the shape does not change between requests. */
+    public Map<String, Object> structure3d(String settings, Supplier<Map<String, Object>> compute)
+    {
+        return structures.computeIfAbsent(settings, key -> compute.get());
     }
 }

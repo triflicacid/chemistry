@@ -15,11 +15,17 @@ public final class OptionsEndpoint extends Endpoint
     @Override
     public void registerHandlers(EndpointRegistry registry)
     {
-        registry.register(HttpMethod.GET, "/api/options", this::options);
+        registry.register(HttpMethod.GET, "/api/options/2d", this::options2d);
+        registry.register(HttpMethod.GET, "/api/options/3d", this::options3d);
     }
 
-    private void options(Request request, ResponseContext responseContext) throws IOException
+    private void options2d(Request request, ResponseContext responseContext) throws IOException
     {
-        responseContext.respond(200, Map.of("options", OptionSchema.options()));
+        responseContext.respond(200, Map.of("options", OptionSchema.options2d()));
+    }
+
+    private void options3d(Request request, ResponseContext responseContext) throws IOException
+    {
+        responseContext.respond(200, Map.of("options", OptionSchema.options3d()));
     }
 }

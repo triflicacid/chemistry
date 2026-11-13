@@ -1,6 +1,7 @@
 package com.ruben.chemistry.server.resource;
 
-import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.space.Embedder;
+import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.server.http.Endpoint;
 import com.ruben.chemistry.server.http.EndpointRegistry;
 import com.ruben.chemistry.server.http.HttpException;
@@ -14,6 +15,7 @@ import com.ruben.chemistry.server.render.RenderException;
 import com.ruben.chemistry.server.render.RenderOptions;
 import com.ruben.chemistry.server.render.Rendering;
 import com.ruben.chemistry.server.render.SceneJson;
+import com.ruben.chemistry.server.render.Structure3DJson;
 
 import java.io.IOException;
 import java.util.Map;
@@ -43,11 +45,12 @@ public final class MoleculeEndpoint extends Endpoint
     public void registerHandlers(EndpointRegistry registry)
     {
         registry.register(HttpMethod.POST, "/api/molecules", this::create);
-        registry.register(HttpMethod.POST, "/api/molecules/:id/render", this::render);
-        registry.register(HttpMethod.GET, "/api/molecules/:id/svg", this::svg);
-        registry.register(HttpMethod.POST, "/api/molecules/:id/scene", this::renderScene);
-        registry.register(HttpMethod.GET, "/api/molecules/:id/scene", this::scene);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/render/2d", this::render);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/svg/2d", this::svg);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/structure/2d", this::renderScene);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/structure/2d", this::scene);
         registry.register(HttpMethod.GET, "/api/molecules/:id/metadata", this::metadata);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/structure/3d", this::structure3d);
     }
 
     private void create(Request request, ResponseContext responseContext) throws IOException
@@ -123,6 +126,57 @@ public final class MoleculeEndpoint extends Endpoint
         StoredMolecule stored = find(request);
         responseContext.header(MOLECULE_ID_HEADER, stored.id());
         responseContext.respond(200, stored.metadata());
+    }
+
+    /** The molecule in 3D, for a client that draws it and moves the camera itself. */
+    private void structure3d(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        int conformers = (int) number(request, "conformers", 1, 1, 20);
+        Long seed = request.queryParameter("seed").isPresent() ? (Long) number(request, "seed", 0, Long.MIN_VALUE, Long.MAX_VALUE) : null;
+
+        Embedder.Options options = Embedder.Options.DEFAULT.withConformers(conformers);
+        if (seed != null)
+        {
+            options = options.withSeed(seed);
+        }
+        Embedder.Options chosen = options;
+
+        try
+        {
+            Map<String, Object> json = stored.structure3d(conformers + "/" + seed, () -> {
+                Structure3D structure = Embedder.embed(stored.molecule(), chosen);
+                return Structure3DJson.of(stored.molecule(), structure);
+            });
+            responseContext.header(MOLECULE_ID_HEADER, stored.id());
+            responseContext.respond(200, json);
+        }
+        catch (IllegalArgumentException | IllegalStateException failure)
+        {
+            throw new HttpException(422, "EMBEDDING_FAILED", failure.getMessage());
+        }
+    }
+
+    private static long number(Request request, String name, long fallback, long least, long most)
+    {
+        String text = request.queryParameter(name).orElse(null);
+        if (text == null)
+        {
+            return fallback;
+        }
+        try
+        {
+            long value = Long.parseLong(text);
+            if (value < least || value > most)
+            {
+                throw new HttpException(400, "INVALID_QUERY", name + ": must be from " + least + " to " + most + ", but was " + value);
+            }
+            return value;
+        }
+        catch (NumberFormatException invalid)
+        {
+            throw new HttpException(400, "INVALID_QUERY", name + ": must be a whole number, but was '" + text + "'");
+        }
     }
 
     private Rendering latest(StoredMolecule stored)

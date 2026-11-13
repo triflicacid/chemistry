@@ -1,5 +1,5 @@
 import { ApiError, HttpClient } from "./http";
-import type { MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, Scene, StoredMolecule } from "./types";
+import type { MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, Scene, StoredMolecule, Structure3D } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
@@ -22,10 +22,24 @@ export class ChemistryApi {
     await this.http.send("GET", "/api/health");
   }
 
-  /** The options the user may set. */
-  async options(): Promise<OptionDescriptor[]> {
-    const body = await this.http.json<{ options: OptionDescriptor[] }>("GET", "/api/options");
+  /** The options the user may set for a 2D drawing. */
+  options2d(): Promise<OptionDescriptor[]> {
+    return this.optionsAt("/api/options/2d");
+  }
+
+  /** The options the user may set for a 3D view. */
+  options3d(): Promise<OptionDescriptor[]> {
+    return this.optionsAt("/api/options/3d");
+  }
+
+  private async optionsAt(path: string): Promise<OptionDescriptor[]> {
+    const body = await this.http.json<{ options: OptionDescriptor[] }>("GET", path);
     return body.options;
+  }
+
+  /** A stored molecule in 3D. The server keeps the shape it found, so the same `conformers` gives the same shape. */
+  structure3d(id: MoleculeId, conformers: number): Promise<Structure3D> {
+    return this.http.json<Structure3D>("GET", `/api/molecules/${encodeURIComponent(id)}/structure/3d?conformers=${conformers}`);
   }
 
   /** Stores a molecule. */
@@ -40,22 +54,22 @@ export class ChemistryApi {
 
   /** Draws a stored molecule. */
   renderMolecule(id: MoleculeId, options: OptionValues): Promise<SvgResponse> {
-    return this.svg("POST", `/api/molecules/${encodeURIComponent(id)}/render`, { json: { options } });
+    return this.svg("POST", `/api/molecules/${encodeURIComponent(id)}/render/2d`, { json: { options } });
   }
 
   /** The latest SVG the server drew for a stored molecule. */
   moleculeSvg(id: MoleculeId): Promise<SvgResponse> {
-    return this.svg("GET", `/api/molecules/${encodeURIComponent(id)}/svg`);
+    return this.svg("GET", `/api/molecules/${encodeURIComponent(id)}/svg/2d`);
   }
 
   /** Draws a stored molecule as a scene. */
-  async renderScene(id: MoleculeId, options: OptionValues): Promise<SceneResponse> {
-    return this.scene("POST", `/api/molecules/${encodeURIComponent(id)}/scene`, { json: { options } });
+  async structure2d(id: MoleculeId, options: OptionValues): Promise<SceneResponse> {
+    return this.scene("POST", `/api/molecules/${encodeURIComponent(id)}/structure/2d`, { json: { options } });
   }
 
   /** The latest scene the server drew for a stored molecule. */
-  moleculeScene(id: MoleculeId): Promise<SceneResponse> {
-    return this.scene("GET", `/api/molecules/${encodeURIComponent(id)}/scene`);
+  storedStructure2d(id: MoleculeId): Promise<SceneResponse> {
+    return this.scene("GET", `/api/molecules/${encodeURIComponent(id)}/structure/2d`);
   }
 
   private async scene(method: string, path: string, options: { json?: unknown } = {}): Promise<SceneResponse> {

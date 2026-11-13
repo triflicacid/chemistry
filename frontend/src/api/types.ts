@@ -1,4 +1,4 @@
-/** One option as described by `GET /api/options`. */
+/** One option as described by `GET /api/options/2d` or `/api/options/3d`. */
 export interface OptionDescriptor {
   name: string;
   label: string;
@@ -157,4 +157,62 @@ export interface Scene {
   attributes: SceneAttributes;
   gradients: SceneGradient[];
   elements: SceneElement[];
+}
+
+/** An atom of a 3D structure. `index` is its place in `Structure3D.sites`. */
+export interface Site3D {
+  index: number;
+  element: string;
+  isotope: number;
+  /** The molecule atom this is (data-atom), or the atom an implied hydrogen hangs off. */
+  atom: number;
+  implied: boolean;
+  charge: number;
+  /** Hex colour. */
+  colour: string;
+  /** Van der Waals radius in angstroms. */
+  radius: number;
+}
+
+export interface Connection3D {
+  first: number;
+  second: number;
+  order: "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE" | "AROMATIC";
+  /** The molecule bond this is (data-bond), or -1 for the bond to an implied hydrogen. */
+  bond: number;
+}
+
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** What a conformer's geometry says about itself. Angles are degrees, lengths angstroms. */
+export interface Diagnostics3D {
+  strain: number;
+  lengths: { first: number; second: number; actual: number; ideal: number }[];
+  angles: { first: number; middle: number; second: number; actual: number; ideal: number }[];
+  torsions: { first: number; second: number; third: number; fourth: number; actual: number; ideal: number }[];
+  clashes: { first: number; second: number; distance: number; contact: number }[];
+  lone_pairs: { node: number; tip: Vec3 }[];
+  /** Each site's share of the deviation; 1 is one term at its tolerance. */
+  atom_strain: number[];
+}
+
+export interface Conformer3D {
+  strain: number;
+  /** [x, y, z] in angstroms for each site, centred on the origin. */
+  positions: [number, number, number][];
+  diagnostics: Diagnostics3D;
+}
+
+/** A molecule in 3D, as sent by `GET /api/molecules/:id/structure/3d`. */
+export interface Structure3D {
+  sites: Site3D[];
+  connections: Connection3D[];
+  /** How far a term may stray from ideal before it counts as strained. */
+  tolerances: { length: number; angle: number; torsion: number; clash: number };
+  /** The shapes found, least strained first. */
+  conformers: Conformer3D[];
 }

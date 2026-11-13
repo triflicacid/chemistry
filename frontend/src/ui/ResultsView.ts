@@ -1,7 +1,6 @@
-import type { MoleculeId, MoleculeMetadata, Scene } from "../api/types";
+import type { MoleculeId, MoleculeMetadata } from "../api/types";
 import { Selection } from "../store";
 import type { MoleculeView } from "../view/MoleculeView";
-import { SvgView } from "../view/SvgView";
 import { FormulaView } from "./FormulaView";
 import { MoleculeInspector } from "./MoleculeInspector";
 import { SmilesText } from "./SmilesText";
@@ -37,11 +36,9 @@ export class ResultsView {
   }
 
   /** Shows a rendered molecule and its SMILES. */
-  showMolecule(scene: Scene, moleculeId: MoleculeId, smiles: string, canonicalSmiles: string): void {
+  showMolecule(view: MoleculeView, moleculeId: MoleculeId, smiles: string, canonicalSmiles: string): void {
     this.reset();
 
-    const view = new SvgView();
-    view.setScene(scene);
     this.selection.clear();
     const unsubscribe = this.selection.subscribe(() => view.setSelection(this.selection));
     const text = new SmilesText(smiles);
