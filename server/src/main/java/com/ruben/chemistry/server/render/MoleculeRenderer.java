@@ -55,15 +55,15 @@ public final class MoleculeRenderer
      * @return the drawing, with the snapshot it was laid out from
      * @throws RenderException if an option is invalid or the molecule cannot be laid out
      */
-    public Rendering render(Molecule molecule, RenderOptions options)
+    public Render2d render2d(Molecule molecule, Render2dOptions options)
     {
-        OptionsMapper.Settings settings = OptionsMapper.map(options);
+        Render2dOptionsMapper.Settings settings = Render2dOptionsMapper.map(options);
 
         try
         {
             Structure2D layout = MoleculeLayout.layout(molecule, settings.depiction());
-            Scene scene = SceneRenderer.render(layout, settings.style());
-            return new Rendering(scene, SvgWriter.write(scene), layout);
+            Scene scene = Scenerenderer.render2d(layout, settings.style());
+            return new Render2d(scene, SvgWriter.write(scene), layout);
         }
         catch (IllegalArgumentException | IllegalStateException unsupported)
         {

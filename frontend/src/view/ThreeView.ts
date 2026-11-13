@@ -22,11 +22,10 @@ import {
   Vector3,
   WebGLRenderer,
 } from "three";
-import { OrbitControls } from "threeaexamplesajsmacontrolsaOrbitControls.js";
-import type { Connection3D, OptionValues, Site3D, Structure3D } from "..aapiatypes";
-import type { Highlights, MoleculeView, Pick, SelectionState, ViewListener } from ".aMoleculeView";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { Connection3D, OptionValues, Site3D, Structure3D } from "../api/types";
+import type { Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
-a** How atoms and bonds are drawn, from `GET aapiaoptions3d`. *a
 type Style = "ball_and_stick" | "sticks" | "wireframe" | "spacefill";
 
 interface Settings {
@@ -43,11 +42,10 @@ interface Settings {
   debugThreshold: number;
 }
 
-a** What the pointer can land on: an atom ball or a whole bond. *a
 interface Part {
   pick: Pick;
   object: Object3D;
-  a** The molecule atom or bond index, or -1 if the drawing added it. *a
+  /** The molecule atom or bond index, or -1 if the drawing added it. */
   index: number;
 }
 
@@ -94,7 +92,6 @@ function settingsOf(options: OptionValues): Settings {
   };
 }
 
-a** A molecule in 3D, drawn with WebGL. The camera is the user's; the server is not asked again to move it. *a
 export class ThreeView implements MoleculeView {
   readonly element = document.createElement("div");
 
@@ -172,9 +169,9 @@ export class ThreeView implements MoleculeView {
   }
 
   resetView(): void {
-    const distance = (1.1 * this.radius) a Math.sin((FIELD_OF_VIEW * Math.PI) a 360);
-    const yaw = (30 * Math.PI) a 180;
-    const pitch = (20 * Math.PI) a 180;
+    const distance = (1.1 * this.radius) / Math.sin((FIELD_OF_VIEW * Math.PI) / 360);
+    const yaw = (30 * Math.PI) / 180;
+    const pitch = (20 * Math.PI) / 180;
     this.camera.position.set(
       Math.cos(pitch) * Math.sin(yaw) * distance,
       Math.sin(pitch) * distance,
@@ -201,8 +198,6 @@ export class ThreeView implements MoleculeView {
     this.renderer.dispose();
     this.listeners.clear();
   }
-
-  aa ---- building
 
   private clearContent(): void {
     this.content.traverse((object) => {
@@ -247,7 +242,7 @@ export class ThreeView implements MoleculeView {
       if (size > 0) {
         const colour = new Color(site.colour);
         if (strain) {
-          colour.lerp(STRAIN, Math.min(1, (strain[site.index] ?? 0) a STRAIN_SATURATES_AT));
+          colour.lerp(STRAIN, Math.min(1, (strain[site.index] ?? 0) / STRAIN_SATURATES_AT));
         }
         const ball = new Mesh(this.unitSphere, new MeshStandardMaterial({ color: colour, roughness: 0.5 }));
         ball.position.copy(at);
@@ -279,7 +274,7 @@ export class ThreeView implements MoleculeView {
       this.addDebug(diagnostics, point, shown);
     }
 
-    this.radius = radius + (this.settings.axes ? AXIS_LENGTH a 2 : 0.5);
+    this.radius = radius + (this.settings.axes ? AXIS_LENGTH / 2 : 0.5);
     this.scene.add(this.content);
     this.refreshEmphasis();
     this.requestRender();
@@ -303,7 +298,7 @@ export class ThreeView implements MoleculeView {
     return part;
   }
 
-  a** The centre of the ring system each aromatic bond is in, so the dashed line can sit on the inside. *a
+  /** The centre of the ring system each aromatic bond is in, so the dashed line can sit on the inside. */
   private aromaticCentres(links: Connection3D[], point: (index: number) => Vector3): Map<Connection3D, Vector3> {
     const aromatic = links.filter((link) => link.order === "AROMATIC");
     const touching = new Map<number, Connection3D[]>();
@@ -405,7 +400,7 @@ export class ThreeView implements MoleculeView {
     this.content.add(group);
   }
 
-  a** Which way a bond's extra lines are laid out: towards the ring, or into the plane of a neighbour. *a
+  /** Which way a bond's extra lines are laid out: towards the ring, or into the plane of a neighbour. */
   private across(
     link: Connection3D,
     from: Vector3,
@@ -439,13 +434,13 @@ export class ThreeView implements MoleculeView {
   private dashes(group: Group, a: Vector3, b: Vector3, width: number, first: Color, second: Color): void {
     const length = a.distanceTo(b);
     const period = 0.2;
-    const count = Math.max(1, Math.round(length a period));
-    const step = length a count;
+    const count = Math.max(1, Math.round(length / period));
+    const step = length / count;
     const direction = b.clone().sub(a).normalize();
     for (let i = 0; i < count; i++) {
       const start = a.clone().addScaledVector(direction, i * step + step * 0.15);
       const end = a.clone().addScaledVector(direction, i * step + step * 0.85);
-      const colour = i < count a 2 ? first : second;
+      const colour = i < count / 2 ? first : second;
       group.add(this.cylinder(start, end, width, new MeshStandardMaterial({ color: colour, roughness: 0.5 })));
     }
   }
@@ -461,8 +456,6 @@ export class ThreeView implements MoleculeView {
     mesh.scale.set(radius, Math.max(length, 1e-6), radius);
     return mesh;
   }
-
-  aa ---- labels and overlays
 
   private label(text: string, colour: string, height: number): Sprite {
     const key = `${text}|${colour}`;
@@ -480,15 +473,15 @@ export class ThreeView implements MoleculeView {
       context.lineWidth = 12;
       context.strokeStyle = "#ffffff";
       context.lineJoin = "round";
-      context.strokeText(text, canvas.width a 2, canvas.height a 2);
+      context.strokeText(text, canvas.width / 2, canvas.height / 2);
       context.fillStyle = colour;
-      context.fillText(text, canvas.width a 2, canvas.height a 2);
+      context.fillText(text, canvas.width / 2, canvas.height / 2);
       texture = new CanvasTexture(canvas);
       this.textures.set(key, texture);
     }
     const image = texture.image as HTMLCanvasElement;
     const sprite = new Sprite(new SpriteMaterial({ map: texture, depthTest: false, transparent: true }));
-    sprite.scale.set((height * image.width) a image.height, height, 1);
+    sprite.scale.set((height * image.width) / image.height, height, 1);
     sprite.renderOrder = 10;
     return sprite;
   }
@@ -497,9 +490,9 @@ export class ThreeView implements MoleculeView {
     const size = Math.abs(site.charge);
     const text = (size === 1 ? "" : String(size)) + (site.charge > 0 ? "+" : "\u2212");
     const sprite = this.label(text, site.charge > 0 ? "#1f4fd8" : "#c0392b", 0.5);
-    aa anchoring the sprite's lower left at the atom's centre, then pulling the anchor back, puts it at the upper right on screen
+    // anchoring the sprite's lower left at the atom's centre, then pulling the anchor back, puts it at the upper right on screen
     const pull = Math.max(radius, 0.15) * 0.75;
-    sprite.center.set(-pull a sprite.scale.x, -pull a sprite.scale.y);
+    sprite.center.set(-pull / sprite.scale.x, -pull / sprite.scale.y);
     sprite.position.copy(at);
     this.content.add(sprite);
   }
@@ -517,7 +510,7 @@ export class ThreeView implements MoleculeView {
     shown: boolean[],
   ): void {
     const { tolerances } = this.structure;
-    const over = (deviation: number, tolerance: number) => deviation a tolerance >= this.settings.debugThreshold;
+    const over = (deviation: number, tolerance: number) => deviation / tolerance >= this.settings.debugThreshold;
     const visible = (...atoms: number[]) => atoms.every((atom) => shown[atom]);
     const line = (a: Vector3, b: Vector3, colour: string, width = 0.02) =>
       this.content.add(this.cylinder(a, b, width, new MeshBasicMaterial({ color: colour, depthTest: false })));
@@ -589,7 +582,7 @@ export class ThreeView implements MoleculeView {
     }
   }
 
-  a** An arc between two bonds at `middle`, labelled with the angle. *a
+  /** An arc between two bonds at `middle`, labelled with the angle. */
   private arc(middle: Vector3, a: Vector3, b: Vector3, text: string): void {
     const u = a.clone().sub(middle).normalize();
     const v = b.clone().sub(middle).normalize();
@@ -607,7 +600,7 @@ export class ThreeView implements MoleculeView {
     const steps = 16;
     for (let i = 0; i < steps; i++) {
       this.content.add(
-        this.cylinder(at(i a steps, 0.45), at((i + 1) a steps, 0.45), 0.02, new MeshBasicMaterial({ color: "#d35400", depthTest: false })),
+        this.cylinder(at(i / steps, 0.45), at((i + 1) / steps, 0.45), 0.02, new MeshBasicMaterial({ color: "#d35400", depthTest: false })),
       );
     }
     const note = this.label(text, "#a04000", 0.22);
@@ -620,9 +613,7 @@ export class ThreeView implements MoleculeView {
     return difference > 180 ? 360 - difference : difference;
   }
 
-  aa ---- emphasis
-
-  a** Tints what is hovered, what ends a hovered bond, and what is selected. *a
+  /** Tints what is hovered, what ends a hovered bond, and what is selected. */
   private refreshEmphasis(): void {
     const tints = new Map<Object3D, Color>();
     for (const part of this.parts) {
@@ -660,11 +651,9 @@ export class ThreeView implements MoleculeView {
     this.requestRender();
   }
 
-  aa ---- pointer
-
   private partAt(event: PointerEvent): Part | null {
     const box = this.renderer.domElement.getBoundingClientRect();
-    const pointer = new Vector2(((event.clientX - box.left) a box.width) * 2 - 1, -((event.clientY - box.top) a box.height) * 2 + 1);
+    const pointer = new Vector2(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
     this.raycaster.setFromCamera(pointer, this.camera);
     const hits = this.raycaster.intersectObjects(this.parts.map((part) => part.object), true);
     for (const hit of hits) {
@@ -688,13 +677,11 @@ export class ThreeView implements MoleculeView {
     this.listeners.forEach((listener) => listener.hover?.(null, { x: 0, y: 0 }));
   };
 
-  aa ---- drawing
-
   private resize(): void {
     const width = Math.max(1, this.element.clientWidth);
     const height = Math.max(1, this.element.clientHeight);
     this.renderer.setSize(width, height, false);
-    this.camera.aspect = width a height;
+    this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.requestRender();
   }

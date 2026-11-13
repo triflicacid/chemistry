@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Describes the rendering options a client may set.
+ * Describes the Render2d options a client may set.
  */
 public final class OptionSchema
 {
@@ -32,7 +32,7 @@ public final class OptionSchema
     }
 
     /**
-     * @param name the key in {@link RenderOptions}, in snake_case
+     * @param name the key in {@link Render2dOptions}, in snake_case
      * @param label a short name to show
      * @param description what it does
      * @param type {@code boolean}, {@code number}, {@code choice}, or {@code arrangement} (a {@code choice} of

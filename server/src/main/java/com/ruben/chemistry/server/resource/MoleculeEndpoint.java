@@ -12,10 +12,10 @@ import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.render.MoleculeRenderer;
 import com.ruben.chemistry.server.render.RenderException;
-import com.ruben.chemistry.server.render.RenderOptions;
-import com.ruben.chemistry.server.render.Rendering;
-import com.ruben.chemistry.server.render.SceneJson;
-import com.ruben.chemistry.server.render.Structure3DJson;
+import com.ruben.chemistry.server.render.Render2dOptions;
+import com.ruben.chemistry.server.render.Render2d;
+import com.ruben.chemistry.server.render.Render2dJson;
+import com.ruben.chemistry.server.render.Render3dJson;
 
 import java.io.IOException;
 import java.util.Map;
@@ -32,7 +32,7 @@ public final class MoleculeEndpoint extends Endpoint
     /**
      * @param options how to draw it (optional)
      */
-    public record RenderRequest(RenderOptions options)
+    public record Render2dRequest(Render2dOptions options)
     {
     }
 
@@ -45,12 +45,13 @@ public final class MoleculeEndpoint extends Endpoint
     public void registerHandlers(EndpointRegistry registry)
     {
         registry.register(HttpMethod.POST, "/api/molecules", this::create);
-        registry.register(HttpMethod.POST, "/api/molecules/:id/render/2d", this::render);
-        registry.register(HttpMethod.GET, "/api/molecules/:id/svg/2d", this::svg);
-        registry.register(HttpMethod.POST, "/api/molecules/:id/structure/2d", this::renderScene);
-        registry.register(HttpMethod.GET, "/api/molecules/:id/structure/2d", this::scene);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/render/2d", this::render2d);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/svg/2d", this::svg2d);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/structure/2d", this::generateStructure2d);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/structure/2d", this::getStructure2d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/metadata", this::metadata);
-        registry.register(HttpMethod.GET, "/api/molecules/:id/structure/3d", this::structure3d);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/structure/3d", this::generateStructure3d);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/structure/3d", this::getStructure3d);
     }
 
     private void create(Request request, ResponseContext responseContext) throws IOException
@@ -76,37 +77,37 @@ public final class MoleculeEndpoint extends Endpoint
         }
     }
 
-    private void render(Request request, ResponseContext responseContext) throws IOException
+    private void render2d(Request request, ResponseContext responseContext) throws IOException
     {
-        Rendering rendering = draw(request, responseContext);
-        responseContext.respond(200, "image/svg+xml", rendering.svg());
+        Render2d Render2d = draw(request, responseContext);
+        responseContext.respond(200, "image/svg+xml", Render2d.svg());
     }
 
-    private void renderScene(Request request, ResponseContext responseContext) throws IOException
+    private void generateStructure2d(Request request, ResponseContext responseContext) throws IOException
     {
-        Rendering rendering = draw(request, responseContext);
-        responseContext.respond(200, SceneJson.of(rendering.scene()));
+        Render2d Render2d = draw(request, responseContext);
+        responseContext.respond(200, Render2dJson.of(Render2d.scene()));
     }
 
-    private void scene(Request request, ResponseContext responseContext) throws IOException
+    private void getStructure2d(Request request, ResponseContext responseContext) throws IOException
     {
         StoredMolecule stored = find(request);
         responseContext.header(MOLECULE_ID_HEADER, stored.id());
-        responseContext.respond(200, SceneJson.of(latest(stored).scene()));
+        responseContext.respond(200, Render2dJson.of(latest(stored).scene()));
     }
 
     /** Draws the molecule in the request's path with the request's options, and makes it the molecule's latest. */
-    private Rendering draw(Request request, ResponseContext responseContext)
+    private Render2d draw(Request request, ResponseContext responseContext)
     {
         StoredMolecule stored = find(request);
-        RenderOptions options = request.hasBody() ? request.body(RenderRequest.class).options() : null;
+        Render2dOptions options = request.hasBody() ? request.body(Render2dRequest.class).options() : null;
 
         try
         {
-            Rendering rendering = renderer.render(stored.molecule(), options == null ? RenderOptions.defaults() : options);
-            stored.setLatest(rendering);
+            Render2d Render2d = renderer.render2d(stored.molecule(), options == null ? Render2dOptions.defaults() : options);
+            stored.setLatest2d(Render2d);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
-            return rendering;
+            return Render2d;
         }
         catch (RenderException failure)
         {
@@ -114,7 +115,7 @@ public final class MoleculeEndpoint extends Endpoint
         }
     }
 
-    private void svg(Request request, ResponseContext responseContext) throws IOException
+    private void svg2d(Request request, ResponseContext responseContext) throws IOException
     {
         StoredMolecule stored = find(request);
         responseContext.header(MOLECULE_ID_HEADER, stored.id());
@@ -128,8 +129,16 @@ public final class MoleculeEndpoint extends Endpoint
         responseContext.respond(200, stored.metadata());
     }
 
-    /** The molecule in 3D, for a client that draws it and moves the camera itself. */
-    private void structure3d(Request request, ResponseContext responseContext) throws IOException
+    private void getStructure3d(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        Map<String, Object> json = stored.latestStructure3d()
+                .orElseThrow(() -> new HttpException(404, "NOT_GENERATED", "The molecule has no 3D structure yet"));
+        responseContext.header(MOLECULE_ID_HEADER, stored.id());
+        responseContext.respond(200, json);
+    }
+
+    private void generateStructure3d(Request request, ResponseContext responseContext) throws IOException
     {
         StoredMolecule stored = find(request);
         int conformers = (int) number(request, "conformers", 1, 1, 20);
@@ -144,10 +153,9 @@ public final class MoleculeEndpoint extends Endpoint
 
         try
         {
-            Map<String, Object> json = stored.structure3d(conformers + "/" + seed, () -> {
-                Structure3D structure = Embedder.embed(stored.molecule(), chosen);
-                return Structure3DJson.of(stored.molecule(), structure);
-            });
+            Structure3D structure = Embedder.embed(stored.molecule(), chosen);
+            Map<String, Object> json = Render3dJson.of(stored.molecule(), structure);
+            stored.setLatestStructure3d(json);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
             responseContext.respond(200, json);
         }
@@ -179,7 +187,7 @@ public final class MoleculeEndpoint extends Endpoint
         }
     }
 
-    private Rendering latest(StoredMolecule stored)
+    private Render2d latest(StoredMolecule stored)
     {
         return stored.latest()
                 .orElseThrow(() -> new HttpException(404, "NOT_RENDERED", "The molecule has not been rendered yet"));

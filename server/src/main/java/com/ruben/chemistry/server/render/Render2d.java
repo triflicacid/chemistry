@@ -12,7 +12,7 @@ import com.ruben.chemistry.render.scene.Scene;
  * @param svg the scene written as an SVG document
  * @param layout the layout the scene was drawn from
  */
-public record Rendering(Scene scene, String svg, Structure2D layout)
+public record Render2d(Scene scene, String svg, Structure2D layout)
 {
     /**
      * @return the snapshot the layout's indices refer to

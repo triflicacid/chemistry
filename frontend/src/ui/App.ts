@@ -1,6 +1,6 @@
-import { ChemistryApi } from "../api/ChemistryApi";
+import { ChemistryApi, type SceneResponse } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import type { MoleculeId, MoleculeMetadata } from "../api/types";
+import type { MoleculeId, MoleculeMetadata, Structure3D } from "../api/types";
 import { ViewStore } from "../store";
 import { ResultsView } from "./ResultsView";
 import { SmilesForm } from "./SmilesForm";
@@ -81,7 +81,7 @@ export class App {
     this.form.setBusy(true);
     try {
       const metadata = await this.api.metadata(id);
-      await this.display(id, metadata.smiles, metadata.canonical_smiles, metadata);
+      await this.display(id, metadata.smiles, metadata.canonical_smiles, metadata, true);
     } catch (error) {
       this.store.rememberSmiles(smiles);
       this.results.showError(`Could not load the last molecule: ${App.describe(error)}`);
@@ -125,15 +125,15 @@ export class App {
   }
 
   /** Draws the molecule in the current mode. */
-  private async display(id: MoleculeId, smiles: string, canonical: string, known: MoleculeMetadata | null): Promise<void> {
+  private async display(id: MoleculeId, smiles: string, canonical: string, known: MoleculeMetadata | null, cached = false): Promise<void> {
     this.three = null;
     const rendering = this.mode === "2d"
-      ? this.api.renderScene(id, this.options2d?.values() ?? {}).then(({ scene, moleculeId }) => {
+      ? this.structure2d(id, cached).then(({ scene, moleculeId }) => {
           const view = new SvgView();
           view.setScene(scene);
           return { view, moleculeId };
         })
-      : this.api.structure3d(id, this.conformerCount()).then((structure) => {
+      : this.structure3d(id, cached).then((structure) => {
           this.conformers = this.options3d?.resolved().conformers;
           const view = new ThreeView(structure, this.options3d?.resolved() ?? {});
           this.three = view;
@@ -148,6 +148,33 @@ export class App {
     if (metadata) {
       this.results.inspect(metadata, moleculeId);
     }
+  }
+
+  /** Prefers the server's cached drawing when asked, drawing afresh if it has none. */
+  private async structure2d(id: MoleculeId, cached: boolean): Promise<SceneResponse> {
+    if (cached) {
+      try {
+        return await this.api.cachedStructure2d(id);
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === "NOT_RENDERED")) {
+          throw error;
+        }
+      }
+    }
+    return this.api.structure2d(id, this.options2d?.values() ?? {});
+  }
+
+  private async structure3d(id: MoleculeId, cached: boolean): Promise<Structure3D> {
+    if (cached) {
+      try {
+        return await this.api.cachedStructure3d(id);
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === "NOT_GENERATED")) {
+          throw error;
+        }
+      }
+    }
+    return this.api.structure3d(id, this.conformerCount());
   }
 
   private conformerCount(): number {

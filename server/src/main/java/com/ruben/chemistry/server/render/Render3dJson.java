@@ -15,9 +15,9 @@ import java.util.Map;
 /**
  * Turns a {@link Structure3D} into plain values to write as JSON.
  */
-public final class Structure3DJson
+public final class Render3dJson
 {
-    private Structure3DJson()
+    private Render3dJson()
     {
     }
 
@@ -60,7 +60,7 @@ public final class Structure3DJson
             Structure3D.Conformer conformer = structure.conformers().get(i);
             Map<String, Object> json = new LinkedHashMap<>();
             json.put("strain", conformer.strain());
-            json.put("positions", conformer.positions().stream().map(Structure3DJson::point).toList());
+            json.put("positions", conformer.positions().stream().map(Render3dJson::point).toList());
             json.put("diagnostics", Diagnostics.of(molecule, structure, i));
             conformers.add(json);
         }

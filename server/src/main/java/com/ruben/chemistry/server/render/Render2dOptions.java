@@ -13,7 +13,7 @@ package com.ruben.chemistry.server.render;
  * @param fontSize how many pixels tall a symbol is written
  * @param bondGradient whether a bond runs between the colours of the atoms at its ends
  */
-public record RenderOptions(
+public record Render2dOptions(
         String style,
         String layout,
         String hydrogens,
@@ -26,8 +26,8 @@ public record RenderOptions(
     /**
      * @return options that change nothing
      */
-    public static RenderOptions defaults()
+    public static Render2dOptions defaults()
     {
-        return new RenderOptions(null, null, null, null, null, null, null, null);
+        return new Render2dOptions(null, null, null, null, null, null, null, null);
     }
 }

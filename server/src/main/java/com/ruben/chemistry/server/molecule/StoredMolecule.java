@@ -4,13 +4,11 @@ import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.server.render.MoleculeMetadata;
 import com.ruben.chemistry.server.render.MoleculeRenderer;
-import com.ruben.chemistry.server.render.Rendering;
+import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.smiles.SmilesWriter;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 
 public final class StoredMolecule
 {
@@ -18,9 +16,9 @@ public final class StoredMolecule
     private final MoleculeMetadata.Notation source;
     private final MoleculeMetadata.Notation canonical;
     private final Molecule molecule;
-    private volatile Rendering latest;
+    private volatile Render2d latest2d;
     private volatile MoleculeMetadata metadata;
-    private final Map<String, Map<String, Object>> structures = new ConcurrentHashMap<>();
+    private volatile Map<String, Object> latestStructure3d;
 
     StoredMolecule(String id, MoleculeRenderer.Parsed parsed)
     {
@@ -63,19 +61,24 @@ public final class StoredMolecule
         return result;
     }
 
-    public Optional<Rendering> latest()
+    public Optional<Render2d> latest()
     {
-        return Optional.ofNullable(latest);
+        return Optional.ofNullable(latest2d);
     }
 
-    public void setLatest(Rendering rendering)
+    public void setLatest2d(Render2d Render2d)
     {
-        this.latest = rendering;
+        this.latest2d = Render2d;
     }
 
-    /** The 3D structure for these settings, worked out the first time and kept, so the shape does not change between requests. */
-    public Map<String, Object> structure3d(String settings, Supplier<Map<String, Object>> compute)
+    /** The most recently generated 3D structure, if any. */
+    public Optional<Map<String, Object>> latestStructure3d()
     {
-        return structures.computeIfAbsent(settings, key -> compute.get());
+        return Optional.ofNullable(latestStructure3d);
+    }
+
+    public void setLatestStructure3d(Map<String, Object> structure)
+    {
+        this.latestStructure3d = structure;
     }
 }

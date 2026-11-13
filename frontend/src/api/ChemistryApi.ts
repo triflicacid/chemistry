@@ -37,9 +37,14 @@ export class ChemistryApi {
     return body.options;
   }
 
-  /** A stored molecule in 3D. The server keeps the shape it found, so the same `conformers` gives the same shape. */
+  /** Generates a fresh 3D structure for a stored molecule; the server keeps it as the molecule's latest. */
   structure3d(id: MoleculeId, conformers: number): Promise<Structure3D> {
-    return this.http.json<Structure3D>("GET", `/api/molecules/${encodeURIComponent(id)}/structure/3d?conformers=${conformers}`);
+    return this.http.json<Structure3D>("POST", `/api/molecules/${encodeURIComponent(id)}/structure/3d?conformers=${conformers}`);
+  }
+
+  /** The latest 3D structure the server generated for a stored molecule; fails with `NOT_GENERATED` if there is none. */
+  cachedStructure3d(id: MoleculeId): Promise<Structure3D> {
+    return this.http.json<Structure3D>("GET", `/api/molecules/${encodeURIComponent(id)}/structure/3d`);
   }
 
   /** Stores a molecule. */
@@ -67,8 +72,8 @@ export class ChemistryApi {
     return this.scene("POST", `/api/molecules/${encodeURIComponent(id)}/structure/2d`, { json: { options } });
   }
 
-  /** The latest scene the server drew for a stored molecule. */
-  storedStructure2d(id: MoleculeId): Promise<SceneResponse> {
+  /** The latest scene the server drew for a stored molecule; fails with `NOT_RENDERED` if there is none. */
+  cachedStructure2d(id: MoleculeId): Promise<SceneResponse> {
     return this.scene("GET", `/api/molecules/${encodeURIComponent(id)}/structure/2d`);
   }
 

@@ -10,9 +10,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Turns {@link RenderOptions} into what the library draws with.
+ * Turns {@link Render2dOptions} into what the library draws with.
  */
-public final class OptionsMapper
+public final class Render2dOptionsMapper
 {
     /**
      * @param depiction how the molecule is laid out
@@ -22,7 +22,7 @@ public final class OptionsMapper
     {
     }
 
-    private OptionsMapper()
+    private Render2dOptionsMapper()
     {
     }
 
@@ -31,7 +31,7 @@ public final class OptionsMapper
      * @return what to draw with; atoms and bonds always carry their metadata
      * @throws RenderException {@code INVALID_OPTIONS} if a value is not allowed
      */
-    public static Settings map(RenderOptions options)
+    public static Settings map(Render2dOptions options)
     {
         String styleName = choice("style", options.style(), OptionSchema.STYLES);
         boolean skeletal = "skeletal".equals(styleName);

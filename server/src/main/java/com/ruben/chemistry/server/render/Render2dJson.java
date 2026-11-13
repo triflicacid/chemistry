@@ -14,9 +14,9 @@ import java.util.Map;
 /**
  * Turns a {@link Scene} into plain values to write as JSON.
  */
-public final class SceneJson
+public final class Render2dJson
 {
-    private SceneJson()
+    private Render2dJson()
     {
     }
 
@@ -31,8 +31,8 @@ public final class SceneJson
         json.put("height", scene.height());
         json.put("background", scene.background().map(colour -> colour.hex()).orElse(null));
         json.put("attributes", attributes(scene.attributes()));
-        json.put("gradients", scene.gradients().stream().map(SceneJson::gradient).toList());
-        json.put("elements", scene.elements().stream().map(SceneJson::element).toList());
+        json.put("gradients", scene.gradients().stream().map(Render2dJson::gradient).toList());
+        json.put("elements", scene.elements().stream().map(Render2dJson::element).toList());
         return json;
     }
 
@@ -79,7 +79,7 @@ public final class SceneJson
             case Element.Polygon polygon ->
             {
                 json.put("type", "polygon");
-                json.put("points", polygon.points().stream().map(SceneJson::point).toList());
+                json.put("points", polygon.points().stream().map(Render2dJson::point).toList());
             }
             case Element.Text text ->
             {
@@ -96,7 +96,7 @@ public final class SceneJson
             case Element.Group group ->
             {
                 json.put("type", "group");
-                json.put("children", group.children().stream().map(SceneJson::element).toList());
+                json.put("children", group.children().stream().map(Render2dJson::element).toList());
             }
             case Element.Title title ->
             {
