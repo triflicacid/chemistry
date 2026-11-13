@@ -1,365 +1,90 @@
-import { ChemistryApi, type SceneResponse } from "../api/ChemistryApi";
+import type { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import type { MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
 import { ViewStore } from "../store";
-import { ResultsView } from "./ResultsView";
+import { MoleculePanel, type Mode, type PanelHost } from "./MoleculePanel";
+import { OptionsPanel } from "./OptionsPanel";
 import { SmilesForm } from "./SmilesForm";
-import { SvgView } from "../view/SvgView";
-import { ThreeView } from "../view/ThreeView";
-import {OptionsPanel} from "./OptionsPanel";
 
-/** The whole ppge: title, SMILES form, options, results. */
-export class App {
-  private readonly results = new ResultsView();
+export class App implements PanelHost {
   private readonly store = new ViewStore();
-  private readonly form = new SmilesForm((smiles) => void this.render(smiles));
-  private options2d: OptionsPanel | null = null;
-  private options3d: OptionsPanel | null = null;
+  private readonly form = new SmilesForm((input) => void this.render(input));
+  private readonly results = document.createElement("section");
   private readonly optionsSlot = document.createElement("div");
-  private mode: "2d" | "3d" = this.store.mode;
-  /** The live views of the molecule on show */
-  private cache: { id: MoleculeId; two?: SvgView; three?: ThreeView; conformers?: unknown } | null = null;
-  private readonly modeInputs = new Map<"2d" | "3d", HTMLInputElement>();
-  private readonly projectActions = App.buildProjectActions((kind) => void this.project(kind));
-  private current: { id: MoleculeId; smiles: string; canonical: string } | null = null;
-  private three: ThreeView | null = null;
-  private conformers: unknown = null;
+  private panels: MoleculePanel[] = [];
+  private mode: Mode = this.store.mode;
+  private panel2d: OptionsPanel | null = null;
+  private panel3d: OptionsPanel | null = null;
 
-  constructor(private readonly api: ChemistryApi) {}
-
-  private static buildProjectActions(onChoose: (kind: "best" | "force") => void): HTMLElement {
-    const group = document.createElement("div");
-    group.className = "modes";
-    group.hidden = true;
-    for (const [kind, text, hint] of [
-      ["best", "Project (best)", "Draw the 3D structure flat from the direction that keeps atoms apart and bonds evenly long"],
-      ["force", "Project (as seen)", "Draw the 3D structure flat exactly as it is now seen, even if atoms overlap"],
-    ] as const) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "small";
-      button.textContent = text;
-      button.title = hint;
-      button.addEventListener("click", () => onChoose(kind));
-      group.append(button);
-    }
-    return group;
+  constructor(readonly api: ChemistryApi) {
+    this.results.className = "results";
   }
 
-  private buildModes(): HTMLElement {
-    const group = document.createElement("div");
-    group.className = "radios modes";
-    group.setAttribute("role", "radiogroup");
-    for (const [value, text] of [["2d", "2D"], ["3d", "3D"]] as const) {
-      const label = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = "radio";
-      input.name = "mode";
-      input.value = value;
-      input.checked = value === this.mode;
-      this.modeInputs.set(value, input);
-      input.addEventListener("change", () => {
-        this.setMode(value);
-        if (this.current) {
-          // showing what the server already has keeps a projection, or the 3D shape, from being redone
-          void this.display(this.current.id, this.current.smiles, this.current.canonical, null, true, true);
-        }
-      });
-      label.append(input, ` ${text}`);
-      group.append(label);
-    }
-    return group;
+  options2d(): OptionsPanel | null {
+    return this.panel2d;
   }
 
-  private setMode(mode: "2d" | "3d"): void {
+  options3d(): OptionsPanel | null {
+    return this.panel3d;
+  }
+
+  modeChosen(mode: Mode): void {
     this.mode = mode;
     this.store.rememberMode(mode);
-    const input = this.modeInputs.get(mode);
-    if (input) {
-      input.checked = true;
-    }
-    this.showOptions();
-  }
-
-  /** Shows the options panel for the current mode. */
-  private showOptions(): void {
-    this.projectActions.hidden = this.mode !== "3d";
-    for (const [panel, mode] of [[this.options2d, "2d"], [this.options3d, "3d"]] as const) {
-      if (panel) {
-        panel.toggle.hidden = mode !== this.mode;
-        panel.element.hidden = mode !== this.mode;
-      }
-    }
   }
 
   mount(root: HTMLElement): void {
-    this.results.showMessage("Enter a SMILES string and press RENDER.");
-    this.form.addAction(this.buildModes());
-    this.form.addAction(this.projectActions);
-    root.append(this.form.element, this.optionsSlot, this.results.element);
+    root.append(this.form.element, this.optionsSlot, this.results);
     void this.loadOptions();
 
-    const remembered = this.store.remembered;
-    if (remembered) {
-      this.form.setSmiles(remembered.smiles);
-      if (remembered.id !== null) {
-        void this.restore(remembered.id, remembered.smiles);
-      }
-    }
-  }
-
-  /** Shows the molecule left from the last visit. */
-  private async restore(id: MoleculeId, smiles: string): Promise<void> {
-    this.results.showMessage("Loading the last molecule...");
-    this.form.setBusy(true);
-    try {
-      const metadata = await this.api.metadata(id);
-      await this.display(id, metadata.smiles, metadata.canonical_smiles, metadata, true);
-    } catch (error) {
-      this.store.rememberSmiles(smiles);
-      this.results.showError(`Could not load the last molecule: ${App.describe(error)}`);
-    } finally {
-      this.form.setBusy(false);
+    const input = this.store.input;
+    if (input.trim()) {
+      this.form.setSmiles(input);
+      void this.render(input);
+    } else {
+      this.showMessage("Enter a SMILES string, or several on separate lines, and press RENDER.");
     }
   }
 
   private async loadOptions(): Promise<void> {
     try {
       const [descriptors2d, descriptors3d] = await Promise.all([this.api.options2d(), this.api.options3d()]);
-      this.options2d = new OptionsPanel(descriptors2d);
-      this.options3d = new OptionsPanel(descriptors3d);
-      this.options3d.onChange = () => void this.updateThree();
-      this.form.addAction(this.options2d.toggle);
-      this.form.addAction(this.options3d.toggle);
-      this.optionsSlot.replaceChildren(this.options2d.element, this.options3d.element);
-      this.showOptions();
+      this.panel2d = new OptionsPanel(descriptors2d);
+      this.panel3d = new OptionsPanel(descriptors3d);
+      this.panel3d.onChange = () => this.panels.forEach((panel) => void panel.updateThree());
+      this.panel2d.toggle.textContent = "2D options";
+      this.panel3d.toggle.textContent = "3D options";
+      this.form.addAction(this.panel2d.toggle);
+      this.form.addAction(this.panel3d.toggle);
+      this.optionsSlot.replaceChildren(this.panel2d.element, this.panel3d.element);
     } catch (error) {
-      this.optionsSlot.textContent = `Options unavailable: ${App.describe(error)}`;
+      this.optionsSlot.textContent = `Options unavailable: ${error instanceof ApiError ? error.message : String(error)}`;
     }
   }
 
-  private async render(smiles: string): Promise<void> {
-    if (!smiles) {
-      this.results.showError("Please enter a SMILES string.");
+  private showMessage(text: string): void {
+    const message = document.createElement("p");
+    message.className = "message";
+    message.textContent = text;
+    this.results.replaceChildren(message);
+  }
+
+  /** Draws a panel for each non-blank line. */
+  private async render(input: string): Promise<void> {
+    this.store.rememberInput(input);
+    const lines = input.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+    if (lines.length === 0) {
+      this.showMessage("Please enter a SMILES string.");
       return;
     }
 
     this.form.setBusy(true);
     try {
-      const created = await this.api.createMolecule(smiles);
-      this.dropCache();
-      await this.display(created.id, created.smiles, created.canonical_smiles, null);
-    } catch (error) {
-      this.store.rememberSmiles(smiles);
-      this.results.showError(App.describe(error));
+      this.panels.forEach((panel) => panel.dispose());
+      this.panels = lines.map(() => new MoleculePanel(this, this.mode));
+      this.results.replaceChildren(...this.panels.map((panel) => panel.element));
+      await Promise.all(this.panels.map((panel, index) => panel.load(lines[index]!)));
     } finally {
       this.form.setBusy(false);
     }
-  }
-
-  /** Draws the molecule in the current mode; with `reuse`, shows the view already made for this mode instead of fetching again. */
-  private async display(
-    id: MoleculeId,
-    smiles: string,
-    canonical: string,
-    known: MoleculeMetadata | null,
-    cached = false,
-    reuse = false,
-  ): Promise<void> {
-    this.three = null;
-    const kept = reuse && this.cache?.id === id ? this.cache : null;
-    let rendering: Promise<{ view: SvgView | ThreeView; moleculeId: MoleculeId }>;
-    if (this.mode === "2d") {
-      rendering = kept?.two
-        ? Promise.resolve({ view: kept.two, moleculeId: id })
-        : this.structure2d(id, cached).then(({ scene, moleculeId }) => {
-            const view = App.sceneView(scene);
-            this.keep(moleculeId, "two", view);
-            return { view, moleculeId };
-          });
-    } else if (kept?.three) {
-      this.conformers = kept.conformers;
-      this.three = kept.three;
-      rendering = Promise.resolve({ view: kept.three, moleculeId: id });
-    } else {
-      rendering = this.structure3d(id, cached).then((structure) => {
-        const conformers = this.options3d?.resolved().conformers;
-        const view = new ThreeView(structure, this.options3d?.resolved() ?? {});
-        this.conformers = conformers;
-        this.keep(id, "three", view, conformers);
-        this.three = view;
-        return { view, moleculeId: id };
-      });
-    }
-    await this.present(rendering, id, smiles, canonical, known);
-  }
-
-  /** Remembers a freshly made view, disposing the one it replaces and everything of a different molecule. */
-  private keep(id: MoleculeId, mode: "two" | "three", view: SvgView | ThreeView, conformers?: unknown): void {
-    if (this.cache?.id !== id) {
-      this.dropCache();
-      this.cache = { id };
-    }
-    const entry = this.cache as { id: MoleculeId; two?: SvgView; three?: ThreeView; conformers?: unknown };
-    const old = entry[mode];
-    if (old && old !== view) {
-      this.results.showMessage("Drawing...");
-      old.dispose();
-    }
-    if (mode === "two") {
-      entry.two = view as SvgView;
-    } else {
-      entry.three = view as ThreeView;
-      entry.conformers = conformers;
-    }
-  }
-
-  private dropCache(): void {
-    if (this.cache) {
-      // lets the results view clean up the views before they are disposed
-      this.results.showMessage("Drawing...");
-    }
-    this.cache?.two?.dispose();
-    this.cache?.three?.dispose();
-    this.cache = null;
-  }
-
-  /** The 2D options for a projection: the user's own 2D choices, with the look of the 3D view carried over. */
-  private projectionOptions(): OptionValues {
-    const own = this.options2d?.resolved() ?? {};
-    const seen = this.options3d?.resolved() ?? {};
-    const carried: OptionValues = {};
-
-    carried.style = seen.style === "sticks" || seen.style === "wireframe" ? "skeletal" : "circles";
-    if (seen.hydrogens === false) {
-      carried.hydrogens = "none";
-    } else if (own.hydrogens === "none") {
-      carried.hydrogens = "separate";
-    }
-    if (typeof seen.charges === "boolean") {
-      carried.charges = seen.charges;
-    }
-    return { ...own, ...carried };
-  }
-
-  /** Draws the current 3D structure flat, from its best direction or exactly as it is seen. */
-  private async project(kind: "best" | "force"): Promise<void> {
-    if (!this.three || !this.current) {
-      return;
-    }
-    const { id, smiles, canonical } = this.current;
-    const atoms = this.three.visibleAtoms();
-    if (atoms.length === 0) {
-      this.results.showError("Nothing is in view to project");
-      return;
-    }
-    const request: ProjectionRequest = {
-      mode: kind,
-      atoms,
-      options: this.projectionOptions(),
-      ...(kind === "force" ? { camera: this.three.cameraPose() } : {}),
-    };
-
-    this.form.setBusy(true);
-    try {
-      const rendering = this.api.project2d(id, request).then(({ scene, moleculeId }) => {
-        const view = App.sceneView(scene);
-        this.keep(moleculeId, "two", view);
-        return { view, moleculeId };
-      });
-      this.three = null;
-      await this.present(rendering, id, smiles, canonical, null);
-      this.setMode("2d");
-    } catch (error) {
-      this.results.showError(App.describe(error));
-    } finally {
-      this.form.setBusy(false);
-    }
-  }
-
-  private static sceneView(scene: Scene): SvgView {
-    const view = new SvgView();
-    view.setScene(scene);
-    return view;
-  }
-
-  private async present(
-    rendering: Promise<{ view: SvgView | ThreeView; moleculeId: MoleculeId }>,
-    id: MoleculeId,
-    smiles: string,
-    canonical: string,
-    known: MoleculeMetadata | null,
-  ): Promise<void> {
-    // fetching both at once keeps the card from growing a second time once the metadata lands
-    const [{ view, moleculeId }, metadata] = await Promise.all([rendering, known ?? this.inspectionOf(id)]);
-    this.current = { id: moleculeId, smiles, canonical };
-    this.store.rememberMolecule(moleculeId, smiles);
-    this.results.showMolecule(view, moleculeId, smiles, canonical);
-    if (metadata) {
-      this.results.inspect(metadata, moleculeId);
-    }
-  }
-
-  /** Prefers the server's cached drawing when asked, drawing afresh if it has none. */
-  private async structure2d(id: MoleculeId, cached: boolean): Promise<SceneResponse> {
-    if (cached) {
-      try {
-        return await this.api.cachedStructure2d(id);
-      } catch (error) {
-        if (!(error instanceof ApiError && error.code === "NOT_RENDERED")) {
-          throw error;
-        }
-      }
-    }
-    return this.api.structure2d(id, this.options2d?.values() ?? {});
-  }
-
-  private async structure3d(id: MoleculeId, cached: boolean): Promise<Structure3D> {
-    if (cached) {
-      try {
-        return await this.api.cachedStructure3d(id);
-      } catch (error) {
-        if (!(error instanceof ApiError && error.code === "NOT_GENERATED")) {
-          throw error;
-        }
-      }
-    }
-    return this.api.structure3d(id, this.conformerCount());
-  }
-
-  private conformerCount(): number {
-    const count = this.options3d?.resolved().conformers;
-    return typeof count === "number" ? count : 1;
-  }
-
-  /** Applies changed 3D options; only the number of conformers needs the server. */
-  private async updateThree(): Promise<void> {
-    if (!this.three || !this.current || !this.options3d) {
-      return;
-    }
-    if (this.options3d.resolved().conformers !== this.conformers) {
-      const { id, smiles, canonical } = this.current;
-      try {
-        await this.display(id, smiles, canonical, null);
-      } catch (error) {
-        this.results.showError(App.describe(error));
-      }
-      return;
-    }
-    this.three.setOptions(this.options3d.resolved());
-  }
-
-  /** Fetches the formula and what hovering needs; the drawing is usable without them, so failing is not an error to show. */
-  private async inspectionOf(moleculeId: MoleculeId): Promise<MoleculeMetadata | null> {
-    try {
-      return await this.api.metadata(moleculeId);
-    } catch (error) {
-      console.warn("Could not load the molecule's metadata", error);
-      return null;
-    }
-  }
-
-  private static describe(error: unknown): string {
-    return error instanceof ApiError ? error.message : String(error);
   }
 }

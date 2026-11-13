@@ -15,7 +15,7 @@ export class SmilesForm {
     label.htmlFor = this.input.id = "smiles";
 
     this.input.rows = 4;
-    this.input.placeholder = "e.g. CC(=O)Oc1ccccc1C(=O)O";
+    this.input.placeholder = "e.g. CC(=O)Oc1ccccc1C(=O)O (one SMILES per line)";
     this.input.spellcheck = false;
     this.input.autocomplete = "off";
 
@@ -28,7 +28,7 @@ export class SmilesForm {
     this.element.append(label, this.input, this.actions);
     this.element.addEventListener("submit", (event) => {
       event.preventDefault();
-      onSubmit(this.input.value.trim());
+        onSubmit(this.input.value);
     });
     // Ctrl/Cmd+Enter submits from the textarea
     this.input.addEventListener("keydown", (event) => {

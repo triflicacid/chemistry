@@ -1,12 +1,3 @@
-import type { MoleculeId } from "./api/types";
-
-/** A molecule remembered between visits. */
-export interface RememberedMolecule {
-  /** null if the server has no molecule for the SMILES. */
-  id: MoleculeId | null;
-  smiles: string;
-}
-
 /** The atoms and bonds the user has selected, by index. Not tied to how the molecule is drawn. */
 export class Selection {
   private atomSet = new Set<number>();
@@ -62,14 +53,14 @@ export class Selection {
 }
 
 /** localStorage key. */
-const KEY = "chemistry.molecule";
+const KEY = "chemistry.input";
 
 const MODE_KEY = "chemistry.mode";
 
 export type ViewMode = "2d" | "3d";
 
 export class ViewStore {
-  private molecule: RememberedMolecule | null = ViewStore.read();
+  private text = ViewStore.read();
   private viewMode: ViewMode = ViewStore.readMode();
 
   /** Whether the user last looked at the 2D or the 3D drawing. */
@@ -93,48 +84,24 @@ export class ViewStore {
     }
   }
 
-  get moleculeId(): MoleculeId | null {
-    return this.molecule?.id ?? null;
+  /** What the user last entered: one SMILES string per line. */
+  get input(): string {
+    return this.text;
   }
 
-  get remembered(): RememberedMolecule | null {
-    return this.molecule;
-  }
-
-  rememberMolecule(id: MoleculeId, smiles: string): void {
-    this.molecule = { id, smiles };
-    ViewStore.write(this.molecule);
-  }
-
-  rememberSmiles(smiles: string): void {
-    this.molecule = { id: null, smiles };
-    ViewStore.write(this.molecule);
-  }
-
-  private static read(): RememberedMolecule | null {
+  rememberInput(input: string): void {
+    this.text = input;
     try {
-      const stored = localStorage.getItem(KEY);
-      if (!stored) {
-        return null;
-      }
-      const molecule = JSON.parse(stored) as Partial<RememberedMolecule>;
-      if (typeof molecule.smiles !== "string") {
-        return null;
-      }
-      return { id: typeof molecule.id === "string" ? molecule.id : null, smiles: molecule.smiles };
+      localStorage.setItem(KEY, input);
     } catch {
-      return null;
     }
   }
 
-  private static write(molecule: RememberedMolecule | null): void {
+  private static read(): string {
     try {
-      if (molecule) {
-        localStorage.setItem(KEY, JSON.stringify(molecule));
-      } else {
-        localStorage.removeItem(KEY);
-      }
+      return localStorage.getItem(KEY) ?? "";
     } catch {
+      return "";
     }
   }
 }
