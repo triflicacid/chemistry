@@ -1,4 +1,4 @@
-import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, Span } from "../api/types";
+import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, Span, SystemInfo } from "../api/types";
 import { FormulaView } from "./FormulaView";
 import { SmilesText } from "./SmilesText";
 import type { Highlight } from "./SmilesText";
@@ -72,10 +72,8 @@ export class MoleculeInspector {
     const fragment = atoms[0]?.fragment;
     this.formula.highlightFragment(fragment ?? null);
 
-    this.plaques.replaceChildren(this.describe(target, atom, bond, atoms));
-    if (rings.length > 0) {
-      this.plaques.append(this.describeRings(target.kind, atoms, rings, firstColour));
-    }
+    this.plaques.replaceChildren(this.describe(target, atom, bond, atoms, rings.length));
+    rings.forEach((ring) => this.plaques.append(this.describeRing(ring, atoms, firstColour)));
     // a molecule of one fragment is the fragment, so naming it would say nothing
     if (fragment !== undefined && this.metadata.fragments.length > 1) {
       this.plaques.append(this.describeFragment(fragment));
@@ -111,7 +109,7 @@ export class MoleculeInspector {
     this.plaques.style.top = `${Math.max(0, top)}px`;
   }
 
-  private describe(target: Target, atom?: AtomInfo, bond?: BondInfo, ends: AtomInfo[] = []): HTMLElement {
+  private describe(target: Target, atom?: AtomInfo, bond?: BondInfo, ends: AtomInfo[] = [], rings = 0): HTMLElement {
     const rows: [string, string][] = [];
     let title: string;
 
@@ -128,6 +126,9 @@ export class MoleculeInspector {
       if (atom.aromatic) {
         rows.push(["Aromatic", "yes"]);
       }
+      if (rings > 0) {
+        rows.push(["Rings", String(rings)]);
+      }
       rows.push(["Fragment", `${atom.fragment + 1} (of ${this.metadata.fragments.length})`]);
     } else if (bond) {
       title = `Bond ${bond.index}`;
@@ -136,6 +137,9 @@ export class MoleculeInspector {
         ["Between", ends.map((end) => `${end.element} ${end.index}`).join(" - ")],
         ["Written", this.written(bond)],
       );
+      if (rings > 0) {
+        rows.push(["Rings", String(rings)]);
+      }
     } else {
       // untraceable element
       const data = target.data;
@@ -189,26 +193,49 @@ export class MoleculeInspector {
       : bond.spans.map((span) => this.metadata.smiles.slice(span.start, span.end)).join(" + ");
   }
 
-  private describeRings(kind: Target["kind"], atoms: AtomInfo[], rings: RingInfo[], firstColour: number): HTMLElement {
-    const subject = kind === "atom" ? "atom" : "bond";
-    const plaque = MoleculeInspector.plaque(
-      rings.length === 1 ? `This ${subject} is in a ring` : `This ${subject} is in ${rings.length} rings`,
-    );
+  /** One ring the hovered part is in: what it is made of, how it is written, and what it amounts to. */
+  private describeRing(ring: RingInfo, atoms: AtomInfo[], firstColour: number): HTMLElement {
+    const plaque = MoleculeInspector.plaque(`Ring ${ring.index} (${ring.size} atoms)`);
 
-    for (const ring of rings) {
-      const line = document.createElement("p");
-      line.className = "ring";
-      line.append(`Ring (${ring.size}) ${ring.formula} `);
+    const line = document.createElement("p");
+    line.className = "ring";
+    line.append(`${ring.formula} `);
+    const text = new SmilesText(ring.smiles);
+    text.highlight(atoms.map((atom, position) => ({
+      span: MoleculeInspector.spanIn(ring, atom.index),
+      colour: firstColour + position,
+    })));
+    line.append(text.element);
+    plaque.append(line);
 
-      const text = new SmilesText(ring.smiles);
-      text.highlight(atoms.map((atom, position) => ({
-        span: MoleculeInspector.spanIn(ring, atom.index),
-        colour: firstColour + position,
-      })));
-      line.append(text.element);
-      plaque.append(line);
+    const system = ring.system === null ? undefined : this.metadata.systems[ring.system];
+    const rows: [string, string][] = [["Written", MoleculeInspector.notationOf(ring)]];
+    if (system) {
+      rows.push(["Aromaticity", system.aromaticity], ["Pi electrons", MoleculeInspector.electronsOf(system)]);
+    } else {
+      rows.push(["Aromaticity", "none (its atoms cannot all join a π system)"]);
     }
+    plaque.append(MoleculeInspector.details(rows));
     return plaque;
+  }
+
+  /** How a ring's bonds are written, which is not what the ring is: benzene reads the same either way. */
+  private static notationOf(ring: RingInfo): string {
+    if (ring.notation === "aromatic") {
+      return "aromatic";
+    }
+    if (ring.notation === "mixed") {
+      return "mixed (some bonds aromatic, some not)";
+    }
+    // a ring written without aromatic bonds is a Kekulé structure only where it is a pi system at all
+    return ring.system === null ? "plain" : "Kekulé";
+  }
+
+  /** A system's electrons, saying where they are shared with the rings it is fused with. */
+  private static electronsOf(system: SystemInfo): string {
+    return system.ring_count > 1
+      ? `${system.pi_electrons} over a system of ${system.ring_count} fused rings`
+      : String(system.pi_electrons);
   }
 
   private static highlights(bond: Span[] | undefined, members: (Span | null)[], firstColour: number): Highlight[] {
