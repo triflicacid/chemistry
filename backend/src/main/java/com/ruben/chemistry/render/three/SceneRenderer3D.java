@@ -1,14 +1,22 @@
 package com.ruben.chemistry.render.three;
 
 import com.ruben.chemistry.core.BondOrder;
+import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.render.Colour;
 import com.ruben.chemistry.render.ElementColours;
 import com.ruben.chemistry.render.Point;
+import com.ruben.chemistry.render.annotate.Annotations;
+import com.ruben.chemistry.render.annotate.AtomLook;
+import com.ruben.chemistry.render.annotate.BondLook;
+import com.ruben.chemistry.render.annotate.Halo;
+import com.ruben.chemistry.render.scene.AnnotationLayer;
+import com.ruben.chemistry.render.scene.Looks;
 import com.ruben.chemistry.render.scene.Scene;
 import com.ruben.chemistry.render.scene.SceneBuilder;
 import com.ruben.chemistry.space.Camera;
 import com.ruben.chemistry.space.ElementData;
 import com.ruben.chemistry.space.Projection;
+import com.ruben.chemistry.space.Structure3D;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -27,6 +36,11 @@ public final class SceneRenderer3D
     private static final double DEPTH_FADE = 0.45;
     private static final double BALL_FRACTION = 0.25;
     private static final double LONE_ATOM_RADIUS = 0.2;
+
+    /** How thick a halo around a bond is at least, in angstroms. */
+    private static final double HALO_UNIT = 0.2;
+    private static final double HALO_GROWTH = 1.3;
+    private static final double HALO_PADDING = 0.8;
 
     private SceneRenderer3D()
     {
@@ -43,7 +57,22 @@ public final class SceneRenderer3D
      */
     public static Scene render(Projection layout, RenderStyle3D style)
     {
+        return render(layout, style, Annotations.none(), null);
+    }
+
+    /**
+     * @param layout what to draw
+     * @param style how to draw it
+     * @param annotations how to restyle the atoms and bonds of {@code molecule}
+     * @param molecule the molecule the layout's structure was embedded from, which {@code annotations} refer to
+     * @return the scene
+     * @throws IllegalArgumentException if the layout has no diagnostics but debug overlays are asked for
+     */
+    public static Scene render(Projection layout, RenderStyle3D style, Annotations annotations, Molecule molecule)
+    {
         List<Projection.Node> nodes = layout.nodes();
+        AtomLook[] atomLooks = atomLooks(nodes, annotations, molecule);
+        Map<Projection.Edge, BondLook> bondLooks = bondLooks(layout.edges(), nodes, atomLooks, annotations, molecule);
         if (!style.debug().isEmpty() && layout.diagnostics() == null)
         {
             throw new IllegalArgumentException("Debug overlays need a layout built with diagnostics");
@@ -70,7 +99,15 @@ public final class SceneRenderer3D
 
         double ppa = style.pixelsPerAngstrom();
         boolean balls = style.mode() == RenderStyle3D.Mode.BALL_AND_STICK || style.mode() == RenderStyle3D.Mode.SPACEFILL;
+        double lineWidth = switch (style.mode())
+        {
+            case BALL_AND_STICK -> 0.14 * ppa;
+            case STICKS -> 0.3 * ppa;
+            default -> 1.5;
+        };
+        double haloUnit = Math.max(lineWidth, HALO_UNIT * ppa);
         double[] radius = new double[nodes.size()];
+        double[] haloRadius = new double[nodes.size()];
         double minX = Double.POSITIVE_INFINITY;
         double maxX = Double.NEGATIVE_INFINITY;
         double minY = Double.POSITIVE_INFINITY;
@@ -93,10 +130,16 @@ public final class SceneRenderer3D
                 default -> bonded[i] ? 0 : LONE_ATOM_RADIUS;
             };
             radius[i] = angstroms * node.scale() * ppa;
-            minX = Math.min(minX, node.x() * ppa - radius[i]);
-            maxX = Math.max(maxX, node.x() * ppa + radius[i]);
-            minY = Math.min(minY, node.y() * ppa - radius[i]);
-            maxY = Math.max(maxY, node.y() * ppa + radius[i]);
+            double extent = radius[i];
+            if (atomLooks[i].halo().isPresent())
+            {
+                haloRadius[i] = Math.max(radius[i], 0.75 * haloUnit * node.scale()) * HALO_GROWTH;
+                extent = Math.max(extent, haloRadius[i] * atomLooks[i].halo().get().radiusScale());
+            }
+            minX = Math.min(minX, node.x() * ppa - extent);
+            maxX = Math.max(maxX, node.x() * ppa + extent);
+            minY = Math.min(minY, node.y() * ppa - extent);
+            maxY = Math.max(maxY, node.y() * ppa + extent);
             minDepth = Math.min(minDepth, node.depth());
             maxDepth = Math.max(maxDepth, node.depth());
             if (style.charges() && node.site().charge() != 0)
@@ -128,12 +171,6 @@ public final class SceneRenderer3D
             minX = maxX = minY = maxY = minDepth = maxDepth = 0;
         }
 
-        double lineWidth = switch (style.mode())
-        {
-            case BALL_AND_STICK -> 0.14 * ppa;
-            case STICKS -> 0.3 * ppa;
-            default -> 1.5;
-        };
         double margin = style.margin() + (style.mode() == RenderStyle3D.Mode.WIREFRAME ? lineWidth : lineWidth / 2);
         double width = maxX - minX + 2 * margin;
         double height = maxY - minY + 2 * margin;
@@ -159,6 +196,7 @@ public final class SceneRenderer3D
         }
 
         List<Part> parts = new ArrayList<>();
+        AnnotationLayer halos = new AnnotationLayer(builder, annotations.style());
         Map<Projection.Edge, Point> inward = inward(edges, nodes, frame, ppa);
         if (style.mode() != RenderStyle3D.Mode.SPACEFILL)
         {
@@ -166,7 +204,12 @@ public final class SceneRenderer3D
             {
                 Projection.Node a = nodes.get(edge.first());
                 Projection.Node b = nodes.get(edge.second());
-                parts.add(new Part((a.depth() + b.depth()) / 2 - 1e-6, scene -> bond(scene, edge, a, b, style, frame, lineWidth, inward.get(edge))));
+                BondLook look = bondLooks.get(edge);
+                double depth = (a.depth() + b.depth()) / 2 - 1e-6;
+                double thickness = lineWidth * look.widthScale().orElse(1);
+                parts.add(new Part(depth, scene -> bond(scene, edge, a, b, style, frame, thickness, inward.get(edge), look)));
+                look.halo().ifPresent(halo -> parts.add(new Part(depth + 1e-7, scene ->
+                    halos.bondHalo(frame.point(a, ppa), frame.point(b, ppa), spanOf(edge.order(), thickness) + HALO_PADDING * haloUnit, halo))));
             }
         }
         for (int i = 0; i < nodes.size(); i++)
@@ -175,7 +218,18 @@ public final class SceneRenderer3D
             {
                 Projection.Node node = nodes.get(i);
                 double r = radius[i];
-                parts.add(new Part(node.depth(), scene -> atom(scene, node, r, style, frame, balls, heat[node.site().index()])));
+                AtomLook look = atomLooks[i];
+                parts.add(new Part(node.depth(), scene -> atom(scene, node, r, style, frame, balls, heat[node.site().index()], look)));
+            }
+            if (shown[i] && haloRadius[i] > 0)
+            {
+                Projection.Node node = nodes.get(i);
+                double reach = haloRadius[i] * atomLooks[i].halo().get().radiusScale();
+                // a sphere's halo is as deep as its far side, so bonds to atoms behind it are drawn over it
+                double depth = node.depth() + reach / (ppa * node.scale());
+                Point centre = frame.point(node, ppa);
+                Halo halo = atomLooks[i].halo().get();
+                parts.add(new Part(depth, scene -> halos.atomHalo(centre, haloRadius[node.site().index()], halo)));
             }
         }
 
@@ -203,11 +257,115 @@ public final class SceneRenderer3D
             }
         }
         DebugOverlay.draw(builder, layout, style, frame, shown);
+        badges(builder, annotations, nodes, edges, atomLooks, bondLooks, shown, haloRadius, haloUnit, frame, ppa);
         if (style.cameraInfo())
         {
             CameraInfo.draw(builder, layout.camera(), 0, height - CameraInfo.STRIP);
         }
         return builder.build();
+    }
+
+    private static AtomLook[] atomLooks(List<Projection.Node> nodes, Annotations annotations, Molecule molecule)
+    {
+        AtomLook[] looks = new AtomLook[nodes.size()];
+        for (int i = 0; i < looks.length; i++)
+        {
+            Structure3D.Site site = nodes.get(i).site();
+            if (molecule == null)
+            {
+                looks[i] = AtomLook.NONE;
+                continue;
+            }
+
+            AtomLook look = annotations.lookOf(molecule.atoms().get(site.atom()));
+            looks[i] = site.implied()
+                ? new AtomLook(look.fill(), look.outline(), look.opacity(), look.saturation(), look.halo(), Optional.empty())
+                : look;
+        }
+        return looks;
+    }
+
+    /** A bond to a hydrogen the molecule did not write takes on only the opacity of the hydrogen. */
+    private static Map<Projection.Edge, BondLook> bondLooks(
+            List<Projection.Edge> edges,
+            List<Projection.Node> nodes,
+            AtomLook[] atomLooks,
+            Annotations annotations,
+            Molecule molecule)
+    {
+        Map<Projection.Edge, BondLook> looks = new HashMap<>();
+        for (Projection.Edge edge : edges)
+        {
+            BondLook look = BondLook.NONE;
+            if (molecule != null && edge.bond() >= 0)
+            {
+                look = annotations.lookOf(molecule.bonds().get(edge.bond()));
+            }
+            else if (molecule != null)
+            {
+                int hydrogen = nodes.get(edge.first()).site().implied() ? edge.first() : edge.second();
+                if (atomLooks[hydrogen].opacity().isPresent())
+                {
+                    look = look.withOpacity(atomLooks[hydrogen].opacity().getAsDouble());
+                }
+            }
+            looks.put(edge, look);
+        }
+        return looks;
+    }
+
+    /** @return how wide the lines of a bond of this order are drawn across, in pixels */
+    private static double spanOf(BondOrder order, double lineWidth)
+    {
+        int lines = linesOf(order);
+        return lines > 1 ? (lines - 1) * Math.max(lineWidth * 1.7, 3) + lineWidth * 0.6 : lineWidth;
+    }
+
+    private static int linesOf(BondOrder order)
+    {
+        return switch (order)
+        {
+            case SINGLE -> 1;
+            case DOUBLE, AROMATIC -> 2;
+            case TRIPLE -> 3;
+            case QUADRUPLE -> 4;
+        };
+    }
+
+    /** Draws badges over everything else: an atom's at its upper right, and a bond's at its middle. */
+    private static void badges(
+            SceneBuilder builder,
+            Annotations annotations,
+            List<Projection.Node> nodes,
+            List<Projection.Edge> edges,
+            AtomLook[] atomLooks,
+            Map<Projection.Edge, BondLook> bondLooks,
+            boolean[] shown,
+            double[] haloRadius,
+            double haloUnit,
+            Frame frame,
+            double ppa)
+    {
+        AnnotationLayer layer = new AnnotationLayer(builder, annotations.style());
+        for (Projection.Edge edge : edges)
+        {
+            bondLooks.get(edge).badge().ifPresent(badge ->
+            {
+                Point from = frame.point(nodes.get(edge.first()), ppa);
+                Point to = frame.point(nodes.get(edge.second()), ppa);
+                layer.badge(new Point((from.x() + to.x()) / 2, (from.y() + to.y()) / 2), badge);
+            });
+        }
+        for (int i = 0; i < nodes.size(); i++)
+        {
+            if (shown[i] && atomLooks[i].badge().isPresent())
+            {
+                double reach = Math.max(haloRadius[i], 0.75 * haloUnit * nodes.get(i).scale());
+                double offset = reach * 0.75 + annotations.style().badgeFontSize() / 2;
+                Point centre = frame.point(nodes.get(i), ppa);
+                layer.badge(new Point(centre.x() + offset, centre.y() - offset), atomLooks[i].badge().get());
+            }
+        }
     }
 
     private static double chargeFont(double ppa)
@@ -305,11 +463,11 @@ public final class SceneRenderer3D
         return depth;
     }
 
-    private static void atom(SceneBuilder scene, Projection.Node node, double radius, RenderStyle3D style, Frame frame, boolean balls, double heat)
+    private static void atom(SceneBuilder scene, Projection.Node node, double radius, RenderStyle3D style, Frame frame, boolean balls, double heat, AtomLook look)
     {
         Point centre = frame.point(node, style.pixelsPerAngstrom());
-        Colour colour = DebugOverlay.tinted(frame.tint(ElementColours.of(node.site().element()), node.depth()), heat);
-        var group = scene.group().cssClass("atom");
+        Colour colour = DebugOverlay.tinted(frame.tint(Looks.fill(look, ElementColours.of(node.site().element())), node.depth()), heat);
+        var group = Looks.apply(scene.group().cssClass("atom"), look);
         if (style.metadata())
         {
             if (node.site().implied())
@@ -321,7 +479,7 @@ public final class SceneRenderer3D
                 group.attribute("data-atom", String.valueOf(node.site().atom()));
             }
         }
-        scene.circle(centre, radius).fill(colour).stroke(OUTLINE).strokeWidth(balls ? 1 : 0.8);
+        scene.circle(centre, radius).fill(colour).stroke(Looks.outline(look, OUTLINE)).strokeWidth(balls ? 1 : 0.8);
         if (balls)
         {
             Point shine = new Point(centre.x() - radius * 0.3, centre.y() - radius * 0.3);
@@ -330,20 +488,14 @@ public final class SceneRenderer3D
         scene.close();
     }
 
-    private static void bond(SceneBuilder scene, Projection.Edge edge, Projection.Node a, Projection.Node b, RenderStyle3D style, Frame frame, double lineWidth, Point inward)
+    private static void bond(SceneBuilder scene, Projection.Edge edge, Projection.Node a, Projection.Node b, RenderStyle3D style, Frame frame, double lineWidth, Point inward, BondLook look)
     {
         double ppa = style.pixelsPerAngstrom();
         Point from = frame.point(a, ppa);
         Point to = frame.point(b, ppa);
         Point middle = new Point((from.x() + to.x()) / 2, (from.y() + to.y()) / 2);
 
-        int lines = switch (edge.order())
-        {
-            case SINGLE -> 1;
-            case DOUBLE, AROMATIC -> 2;
-            case TRIPLE -> 3;
-            case QUADRUPLE -> 4;
-        };
+        int lines = linesOf(edge.order());
         double each = lines > 1 ? lineWidth * 0.6 : lineWidth;
         double spacing = Math.max(lineWidth * 1.7, 3);
         double dx = to.x() - from.x();
@@ -352,7 +504,7 @@ public final class SceneRenderer3D
         double nx = length < 1e-9 ? 0 : -dy / length;
         double ny = length < 1e-9 ? 1 : dx / length;
 
-        var group = scene.group().cssClass("bond");
+        var group = Looks.apply(scene.group().cssClass("bond"), look);
         if (style.metadata())
         {
             if (edge.bond() >= 0)
@@ -365,8 +517,8 @@ public final class SceneRenderer3D
             }
         }
 
-        Colour first = frame.tint(ElementColours.of(a.site().element()), a.depth());
-        Colour second = frame.tint(ElementColours.of(b.site().element()), b.depth());
+        Colour first = frame.tint(Looks.stroke(look, ElementColours.of(a.site().element())), a.depth());
+        Colour second = frame.tint(Looks.stroke(look, ElementColours.of(b.site().element())), b.depth());
         if (edge.order() == BondOrder.AROMATIC && length > 1e-9)
         {
             // the solid line is the bond itself; the dashed one sits on the ring side, so it never swaps places

@@ -1,7 +1,6 @@
 package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.render.scene.Scene;
 import com.ruben.chemistry.render.three.SceneRenderer3D;
 import com.ruben.chemistry.render.three.CameraInfo;
 import com.ruben.chemistry.render.three.RenderStyle3D;
@@ -21,7 +20,6 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalLong;
 import java.util.Set;
 
 /**
@@ -37,10 +35,10 @@ import java.util.Set;
  */
 final class DepictSpace
 {
-    private static final String STANDARD_OUTPUT = "-";
+    static final String STANDARD_OUTPUT = "-";
     private static final double FIT_PADDING = 1.5;
 
-    private static final CliOption<String> OUT = CliOption.string(
+    static final CliOption<String> OUT = CliOption.string(
             "out", "path", "where to write the document, or - for standard output", STANDARD_OUTPUT);
 
     private static final CliOption<RenderStyle3D.Mode> STYLE = CliOption.choice(
@@ -131,7 +129,7 @@ final class DepictSpace
             OUT, STYLE, HYDROGENS, SCALE, DEPTH_CUE, CAMERA, LOOK_AT, UP, FOV, YAW, PITCH, DISTANCE,
             CONFORMERS, CONFORMER, SEED, CHARGES, AXES, CAMERA_INFO, DEBUG, DEBUG_THRESHOLD);
 
-    private static final List<CliOption<?>> DEFINITIONS = allDefinitions();
+    static final List<CliOption<?>> DEFINITIONS = allDefinitions();
 
     private static final String USAGE = CliParser.usage("Usage: depict3d <smiles> [options]", DEFINITIONS);
 
@@ -191,7 +189,24 @@ final class DepictSpace
 
     static String render(String smiles, CliOptions options)
     {
-        Molecule molecule = Molecule.fromSmiles(smiles);
+        View view = prepare(Molecule.fromSmiles(smiles), options);
+        return SvgWriter.write(SceneRenderer3D.render(view.layout(), view.style()));
+    }
+
+    /** A molecule embedded and seen by a camera, ready to be drawn. */
+    record View(Projection layout, RenderStyle3D style)
+    {
+    }
+
+    /**
+     * Embeds a molecule and works out how it is seen, printing any debug report or camera readout to standard error.
+     *
+     * @param molecule the molecule to embed
+     * @param options the parsed options, which {@link #DEFINITIONS} understands
+     * @return what to draw, and how
+     */
+    static View prepare(Molecule molecule, CliOptions options)
+    {
         Embedder.Options embedding = Embedder.Options.DEFAULT.withConformers(options.get(CONFORMERS));
         if (options.get(SEED) != null)
         {
@@ -235,8 +250,7 @@ final class DepictSpace
                 .withDebug(debug.overlays())
                 .withDebugScale(options.get(DEBUG_THRESHOLD))
                 .withMetadata(options.get(CommandOptions.METADATA));
-        Scene scene = SceneRenderer3D.render(layout, style);
-        return SvgWriter.write(scene);
+        return new View(layout, style);
     }
 
     private static Camera camera(CliOptions options, Structure3D.Conformer conformer)

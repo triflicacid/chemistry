@@ -42,6 +42,13 @@ tasks.register<JavaExec>("match") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
+tasks.register<JavaExec>("match3d") {
+    group = "chemistry"
+    description = "Draws a SMILES string in 3D with the matches of a SMARTS pattern highlighted, e.g. --args=\"CCO CO --out=ethanol.svg\"."
+    mainClass = "com.ruben.chemistry.cli.DepictMatch3d"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
 tasks.register<JavaExec>("gallery") {
     group = "chemistry"
     description = "Draws every molecule in a name,smiles file into out/, with a contact sheet."
