@@ -5,6 +5,17 @@ package com.ruben.chemistry.space;
  */
 final class Minimiser
 {
+    /** A function of the coordinates, with its slope. */
+    interface Objective
+    {
+        /**
+         * @param x the coordinates
+         * @param gradient receives the slope with respect to each coordinate, if not {@code null}
+         * @return the value
+         */
+        double evaluate(double[] x, double[] gradient);
+    }
+
     private static final int MEMORY = 8;
 
     /** The furthest, in angstroms, any one coordinate may move in a single step. */
@@ -20,7 +31,7 @@ final class Minimiser
      * @param iterations the most steps to take
      * @return the strain at the result
      */
-    static double minimise(Strain strain, double[] x, int iterations)
+    static double minimise(Objective strain, double[] x, int iterations)
     {
         int size = x.length;
         double[] gradient = new double[size];

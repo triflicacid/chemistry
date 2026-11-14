@@ -283,7 +283,7 @@ public final class Embedder
     /**
      * @return whether every declared tetrahedral centre and double bond is as declared
      */
-    private static boolean respectsStereochemistry(Topology topology, List<Vec3> positions)
+    static boolean respectsStereochemistry(Topology topology, List<Vec3> positions)
     {
         for (Topology.Centre centre : topology.centres)
         {

@@ -7,7 +7,7 @@ package com.ruben.chemistry.space;
  * Coordinates are laid out node by node, {@code dimensions} numbers each. A fourth dimension
  * gives a centre room to turn itself inside out, and is penalised until it flattens away.
  */
-final class Strain
+final class Strain implements Minimiser.Objective
 {
     private static final double CHIRAL_WEIGHT = 10;
 
@@ -108,7 +108,8 @@ final class Strain
      * @param gradient receives the slope of the strain with respect to each coordinate, if not {@code null}
      * @return the strain
      */
-    double evaluate(double[] x, double[] gradient)
+    @Override
+    public double evaluate(double[] x, double[] gradient)
     {
         if (gradient != null)
         {
