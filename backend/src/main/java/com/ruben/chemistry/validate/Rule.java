@@ -14,8 +14,23 @@ public enum Rule
     /** A molecule with no atoms at all. */
     STRUCTURE_EMPTY("structure.empty", Severity.ERROR, Category.STRUCTURE),
 
+    /** More than one connected fragment, e.g. {@code CCO.O}. */
+    STRUCTURE_DISCONNECTED("structure.disconnected", Severity.INFO, Category.STRUCTURE, false),
+
+    /** An uncharged hydrogen written as a heavy atom with no bonds, e.g. {@code [H]}. */
+    STRUCTURE_LONE_HYDROGEN("structure.lone-hydrogen", Severity.WARNING, Category.STRUCTURE),
+
     /** A mass number below the element's proton count, e.g. {@code [1C]}. */
     ISOTOPE_BELOW_ATOMIC_NUMBER("isotope.below-atomic-number", Severity.ERROR, Category.ELEMENT),
+
+    /** A query wildcard used where a real structure is meant, e.g. {@code *CO}. */
+    ELEMENT_WILDCARD_IN_MOLECULE("element.wildcard-in-molecule", Severity.WARNING, Category.ELEMENT),
+
+    /** A mass number on a wildcard, which has no element to weigh, e.g. {@code [13*]}. */
+    ISOTOPE_ON_WILDCARD("isotope.on-wildcard", Severity.WARNING, Category.ELEMENT),
+
+    /** A hydrogen isotope label beyond tritium, e.g. {@code [C]([4H])}. */
+    ISOTOPE_HYDROGEN_IMPLAUSIBLE("isotope.hydrogen-implausible", Severity.WARNING, Category.ELEMENT),
 
     /** Bonds and hydrogens beyond every valence the element and charge allow, e.g. {@code [CH5]}. */
     VALENCE_EXCEEDED("valence.exceeded", Severity.ERROR, Category.VALENCE),
@@ -32,6 +47,15 @@ public enum Rule
     /** A formal charge past what the element's outer shell can carry, e.g. {@code [C+5]}. */
     CHARGE_IMPLAUSIBLE("charge.implausible", Severity.WARNING, Category.CHARGE),
 
+    /** A charge on a wildcard, which has no electrons to lose, e.g. {@code [*+]}. */
+    CHARGE_ON_WILDCARD("charge.on-wildcard", Severity.WARNING, Category.CHARGE),
+
+    /** A hydrogen count on a wildcard, which has no valence to fill, e.g. {@code [*H3]}. */
+    HYDROGENS_ON_WILDCARD("hydrogens.on-wildcard", Severity.WARNING, Category.VALENCE),
+
+    /** The molecule carries a net charge, as a free ion legitimately does. */
+    CHARGE_UNCOMPENSATED("charge.uncompensated", Severity.INFO, Category.CHARGE, false),
+
     /** An odd electron count, i.e. a radical, e.g. {@code [CH3]}. */
     ELECTRONS_ODD("electrons.odd", Severity.INFO, Category.CHARGE),
 
@@ -46,6 +70,21 @@ public enum Rule
 
     /** A lone ring written aromatic whose electrons come to 4n, e.g. {@code c1ccc1}. */
     AROMATIC_SYSTEM_ANTIAROMATIC("aromatic.system.antiaromatic", Severity.WARNING, Category.AROMATICITY),
+
+    /** One ring written part aromatic, part alternating. */
+    AROMATIC_RING_MIXED_NOTATION("aromatic.ring.mixed-notation", Severity.WARNING, Category.AROMATICITY),
+
+    /** A ring atom carrying two double bonds in a ring too small to hold them, e.g. {@code C1=C=CC=C1}. */
+    RING_CUMULATED_DOUBLE_BONDS("ring.cumulated-double-bonds", Severity.ERROR, Category.RING),
+
+    /** A triple bond in a ring of six atoms or fewer, e.g. {@code C1CC#CC1}. */
+    RING_TRIPLE_BOND_IN_SMALL_RING("ring.triple-bond-in-small-ring", Severity.ERROR, Category.RING),
+
+    /** A triple bond in a ring of seven atoms, which is a real transient rather than an impossibility. */
+    RING_TRIPLE_BOND_STRAINED("ring.triple-bond-strained", Severity.WARNING, Category.RING),
+
+    /** A three- or four-membered ring: real, but strained. */
+    RING_STRAINED("ring.strained", Severity.INFO, Category.RING),
 
     /** A chirality marker on an atom with fewer than three neighbours. */
     STEREO_CENTRE_TOO_FEW_NEIGHBOURS("stereo.centre.too-few-neighbours", Severity.ERROR, Category.STEREOCHEMISTRY);

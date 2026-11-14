@@ -20,6 +20,9 @@ public enum Category
     /** Aromaticity and the rings it is counted over. */
     AROMATICITY,
 
+    /** A ring's size, and what its size leaves room for. */
+    RING,
+
     /** Declared and undeclared stereochemistry. */
     STEREOCHEMISTRY,
 

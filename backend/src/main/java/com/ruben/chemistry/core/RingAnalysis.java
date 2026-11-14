@@ -39,12 +39,36 @@ public record RingAnalysis(Notation notation, Optional<PiSystem> system)
     public static RingAnalysis of(Molecule molecule, Collection<Atom> ring)
     {
         Set<Atom> members = IdentitySet.copyOf(ring);
-        Optional<PiSystem> system = members.isEmpty()
-            ? Optional.empty()
-            : molecule.piSystems().stream()
-                .filter(candidate -> members.stream().allMatch(candidate::contains))
-                .findFirst();
-        return new RingAnalysis(notationOf(molecule, members), system);
+        return new RingAnalysis(notationOf(molecule, members), systemHolding(molecule, members));
+    }
+
+    /**
+     * Finds the π system a whole ring belongs to.
+     *
+     * @param molecule the molecule the ring belongs to
+     * @param ring the ring's atoms
+     * @return the one π system holding all of them, or empty if there is none
+     */
+    private static Optional<PiSystem> systemHolding(Molecule molecule, Set<Atom> ring)
+    {
+        Optional<PiSystem> holding = Optional.empty();
+        for (Atom atom : ring)
+        {
+            Optional<PiSystem> system = molecule.piSystemOf(atom);
+            if (system.isEmpty())
+            {
+                return Optional.empty();
+            }
+            if (holding.isEmpty())
+            {
+                holding = system;
+            }
+            else if (holding.get() != system.get())
+            {
+                return Optional.empty();
+            }
+        }
+        return holding;
     }
 
     /**

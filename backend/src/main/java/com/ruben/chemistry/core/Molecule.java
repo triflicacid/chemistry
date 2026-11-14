@@ -59,6 +59,8 @@ public final class Molecule
     private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
     private final CachedValue<List<PiSystem>> piSystems = new CachedValue<>(() -> PiSystem.of(this));
+    private final CachedValue<Map<Atom, PiSystem>> piSystemByAtom = new CachedValue<>(this::buildPiSystemByAtom);
+    private final Function<Molecule, RingAnalysis> ringAnalyses = CachedFunction.byIdentity(this::computeRingAnalysis);
     private final CachedValue<List<Molecule>> fragments = new CachedValue<>(() -> MoleculeFragmenter.fragment(this));
     private final CachedValue<CycleFinder.Cycles> cycles = new CachedValue<>(() -> CycleFinder.analyse(this));
 
@@ -501,7 +503,39 @@ public final class Molecule
      */
     public Optional<PiSystem> piSystemOf(Atom atom)
     {
-        return piSystems().stream().filter(system -> system.contains(atom)).findFirst();
+        return Optional.ofNullable(piSystemByAtom.get().get(atom));
+    }
+
+    /**
+     * @return the π system each of this molecule's atoms belongs to, by reference identity, with no
+     *     entry for an atom in none
+     */
+    private Map<Atom, PiSystem> buildPiSystemByAtom()
+    {
+        Map<Atom, PiSystem> byAtom = new IdentityHashMap<>();
+        // putIfAbsent, so that an atom somehow reached by two systems keeps the first of them
+        piSystems().forEach(system -> system.atoms().forEach(atom -> byAtom.putIfAbsent(atom, system)));
+        return byAtom;
+    }
+
+    /**
+     * Analyses one of this molecule's own rings, keeping the answer.
+     *
+     * @param ring a ring of this molecule, by reference identity, as {@link #rings()} returned it
+     * @return how the ring is written and what π system it belongs to
+     */
+    public RingAnalysis ringAnalysisOf(Molecule ring)
+    {
+        return ringAnalyses.apply(ring);
+    }
+
+    /**
+     * @param ring a ring of this molecule
+     * @return how the ring is written and what π system it belongs to
+     */
+    private RingAnalysis computeRingAnalysis(Molecule ring)
+    {
+        return RingAnalysis.of(this, ring.atoms());
     }
 
     /**

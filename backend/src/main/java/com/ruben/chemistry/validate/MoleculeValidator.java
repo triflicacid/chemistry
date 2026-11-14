@@ -4,14 +4,19 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.validate.checks.AromaticAtomNotInRingCheck;
 import com.ruben.chemistry.validate.checks.AromaticBondNotInRingCheck;
+import com.ruben.chemistry.validate.checks.ChargeAndIsotopeChecks;
 import com.ruben.chemistry.validate.checks.ChargeBeyondElectronCountCheck;
 import com.ruben.chemistry.validate.checks.EmptyStructureCheck;
 import com.ruben.chemistry.validate.checks.ImplausibleChargeCheck;
 import com.ruben.chemistry.validate.checks.IsotopeBelowAtomicNumberCheck;
+import com.ruben.chemistry.validate.checks.MixedNotationCheck;
 import com.ruben.chemistry.validate.checks.OddElectronCountCheck;
+import com.ruben.chemistry.validate.checks.RingGeometryChecks;
 import com.ruben.chemistry.validate.checks.StereoCentreNeighbourCheck;
+import com.ruben.chemistry.validate.checks.StructureChecks;
 import com.ruben.chemistry.validate.checks.SystemAromaticityCheck;
 import com.ruben.chemistry.validate.checks.ValenceCheck;
+import com.ruben.chemistry.validate.checks.WildcardCheck;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -27,7 +32,10 @@ public final class MoleculeValidator
     /** Every check there is, in the order their findings are reported for one position. */
     private static final List<Check> CHECKS = List.of(
         new EmptyStructureCheck(),
+        new StructureChecks(),
+        new WildcardCheck(),
         new IsotopeBelowAtomicNumberCheck(),
+        new ChargeAndIsotopeChecks(),
         new ValenceCheck(),
         new ChargeBeyondElectronCountCheck(),
         new ImplausibleChargeCheck(),
@@ -35,7 +43,9 @@ public final class MoleculeValidator
         new AromaticBondNotInRingCheck(),
         new AromaticAtomNotInRingCheck(),
         new SystemAromaticityCheck(),
-        new StereoCentreNeighbourCheck());
+        new RingGeometryChecks(),
+        new StereoCentreNeighbourCheck(),
+        new MixedNotationCheck());
 
     private final ValidationOptions options;
 

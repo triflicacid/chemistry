@@ -51,7 +51,7 @@ public final class SystemAromaticityCheck implements Check
 
         for (Molecule ring : molecule.rings())
         {
-            RingAnalysis analysis = RingAnalysis.of(molecule, ring.atoms());
+            RingAnalysis analysis = molecule.ringAnalysisOf(ring);
             // a ring whose atoms cannot all join a system is in none of them, so no system above has spoken for it
             if (analysis.notation() == RingAnalysis.Notation.AROMATIC && analysis.system().isEmpty())
             {

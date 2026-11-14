@@ -226,7 +226,7 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
             SmilesWriter writer = new SmilesWriter(ring).setRanker(new CanonicalRanker());
             String ringSmiles = writer.write();
             List<Span> spans = ring.atoms().stream().map(writer.atomSpans()::get).toList();
-            RingAnalysis analysis = RingAnalysis.of(molecule, ring.atoms());
+            RingAnalysis analysis = molecule.ringAnalysisOf(ring);
             Integer system = analysis.system().map(indexOfSystem::get).orElse(null);
             if (system != null)
             {
