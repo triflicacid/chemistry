@@ -595,3 +595,106 @@ button.small {
 .library-dialog .tabs {
   border-bottom: 1px solid #8884;
 }
+
+/* What validation found, each finding coloured by how much it ought to stop you. */
+.validation {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.validation[hidden] {
+  display: none;
+}
+
+.validation-summary {
+  margin: 0;
+  font-weight: 600;
+  font-size: .9rem;
+}
+
+.validation-summary.clean {
+  color: #1a7f37;
+}
+
+.validation-summary.error {
+  color: #cf222e;
+}
+
+.validation-summary.warning {
+  color: #9a6700;
+}
+
+.validation-summary.info {
+  color: #0969da;
+}
+
+.validation-findings {
+  list-style: none;
+  margin: .5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+
+.validation-findings:empty {
+  display: none;
+}
+
+.finding {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .4rem .5rem;
+  border-left: 3px solid;
+  border-radius: 3px;
+  font-size: .85rem;
+}
+
+.finding.error {
+  border-color: #cf222e;
+  background: #fff1f0;
+}
+
+.finding.warning {
+  border-color: #9a6700;
+  background: #fff8e5;
+}
+
+.finding.info {
+  border-color: #0969da;
+  background: #f0f6ff;
+}
+
+.finding-severity {
+  text-transform: uppercase;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.finding.error .finding-severity {
+  color: #cf222e;
+}
+
+.finding.warning .finding-severity {
+  color: #9a6700;
+}
+
+.finding.info .finding-severity {
+  color: #0969da;
+}
+
+.finding-rule {
+  font-size: .75rem;
+  color: #57606a;
+  white-space: nowrap;
+}
+
+.finding-smiles {
+  grid-column: 2 / -1;
+  font-size: .8rem;
+}

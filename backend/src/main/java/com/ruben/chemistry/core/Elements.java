@@ -144,4 +144,61 @@ public final class Elements
         }
         return Map.copyOf(lookup);
     }
+
+    /**
+     * @param atomicNumber an atomic number, or 0 if unknown
+     * @return the periodic table period, or 0 if unknown
+     */
+    public static int periodOf(int atomicNumber)
+    {
+        if (atomicNumber < 1)
+        {
+            return 0;
+        }
+        int[] ends = {2, 10, 18, 36, 54, 86, 118};
+        for (int period = 0; period < ends.length; period++)
+        {
+            if (atomicNumber <= ends[period])
+            {
+                return period + 1;
+            }
+        }
+        return ends.length;
+    }
+
+    /**
+     * @param atomicNumber an atomic number, or 0 if unknown
+     * @return the number of valence electrons of a main-group element, or -1 for the transition,
+     *     lanthanide, actinide and unknown elements, which have no one such count
+     */
+    public static int valenceElectronsOf(int atomicNumber)
+    {
+        if (atomicNumber < 1)
+        {
+            return -1;
+        }
+        if (atomicNumber <= 2)
+        {
+            return atomicNumber;
+        }
+        // each period's first two elements are its s block and its last six are its p block
+        int[][] blocks = {{3, 10}, {11, 18}, {19, 36}, {37, 54}, {55, 86}, {87, 118}};
+        for (int[] block : blocks)
+        {
+            if (atomicNumber < block[0] || atomicNumber > block[1])
+            {
+                continue;
+            }
+            int offset = atomicNumber - block[0];
+            if (offset < 2)
+            {
+                return offset + 1;
+            }
+            int width = block[1] - block[0] + 1;
+            // the final six elements of the period are its p block
+            int fromEnd = width - 1 - offset;
+            return fromEnd < 6 ? 8 - fromEnd : -1;
+        }
+        return -1;
+    }
 }

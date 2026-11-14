@@ -1,5 +1,5 @@
 import { ApiError, HttpClient } from "./http";
-import type { LibraryEntry, MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, QueryEntry, Scene, StoredMolecule, Structure3D } from "./types";
+import type { LibraryEntry, MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, QueryEntry, Scene, StoredMolecule, Structure3D, ValidationReport } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
@@ -105,6 +105,11 @@ export class ChemistryApi {
   /** Fetches a molecule's metadata. */
   metadata(id: MoleculeId): Promise<MoleculeMetadata> {
     return this.http.json<MoleculeMetadata>("GET", `/api/molecules/${encodeURIComponent(id)}/metadata`);
+  }
+
+  /** Checks a stored molecule, placing what was found in the SMILES it came from. */
+  validate(id: MoleculeId): Promise<ValidationReport> {
+    return this.http.json<ValidationReport>("GET", `/api/molecules/${encodeURIComponent(id)}/validate`);
   }
 
   /** Draws a stored molecule. */

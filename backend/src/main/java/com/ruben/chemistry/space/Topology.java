@@ -5,6 +5,7 @@ import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
+import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.StereoDeclaration;
 
@@ -262,7 +263,7 @@ final class Topology
     {
         int bonds = neighbours[node].length;
         int number = atomicNumber[node];
-        int electrons = ElementData.valenceElectrons(number);
+        int electrons = Elements.valenceElectronsOf(number);
         if (source != null && electrons >= 0)
         {
             lonePairs[node] = Math.max(0, (electrons - source.charge() - molecule.valence(source)) / 2);
@@ -274,7 +275,7 @@ final class Topology
 
         boolean aromatic = source != null && source.aromatic();
         int domains = bonds + lonePairs[node];
-        int period = ElementData.period(number);
+        int period = Elements.periodOf(number);
 
         // a lone pair on nitrogen or oxygen next to a multiple bond is shared with it, which flattens the atom
         if (!aromatic && electrons >= 0 && period == 2 && lonePairs[node] > 0 && domains == 4 && bonds <= 3

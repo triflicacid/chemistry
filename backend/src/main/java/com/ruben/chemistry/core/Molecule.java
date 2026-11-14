@@ -14,11 +14,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 /**
  * An immutable set of {@link Atom}s joined by {@link Bond}s, with any declared stereochemistry, built through {@link Builder}.
@@ -44,21 +44,6 @@ public final class Molecule
         return new SmilesParser(smiles).parse();
     }
 
-    /**
-     * The default valences of the SMILES organic subset elements.
-     */
-    private static final Map<String, int[]> ORGANIC_SUBSET_VALENCES = Map.of(
-        "B", new int[] {3},
-        "C", new int[] {4},
-        "N", new int[] {3, 5},
-        "O", new int[] {2},
-        "P", new int[] {3, 5},
-        "S", new int[] {2, 4, 6},
-        "F", new int[] {1},
-        "Cl", new int[] {1},
-        "Br", new int[] {1},
-        "I", new int[] {1});
-
     private final List<Atom> atoms;
     private final List<Bond> bonds;
     private final CachedValue<Map<Atom, List<Bond>>> incidentBonds;
@@ -73,6 +58,7 @@ public final class Molecule
     private final CachedValue<Set<Bond>> bridges = new CachedValue<>(this::computeBridges);
     private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
+    private final CachedValue<List<PiSystem>> piSystems = new CachedValue<>(() -> PiSystem.of(this));
     private final CachedValue<List<Molecule>> fragments = new CachedValue<>(() -> MoleculeFragmenter.fragment(this));
     private final CachedValue<CycleFinder.Cycles> cycles = new CachedValue<>(() -> CycleFinder.analyse(this));
 
@@ -248,25 +234,15 @@ public final class Molecule
             return 0;
         }
 
-        // only ever reached for an organic-subset atom
-        int[] valences = ORGANIC_SUBSET_VALENCES.get(atom.element());
-        if (valences == null)
+        BondContribution bonding = bondContributionOf(atom);
+        OptionalInt valence = Valences.toFill(atom.element(), bonding.explicitSum());
+        if (valence.isEmpty())
         {
             return 0;
         }
 
-        BondContribution bonding = bondContributionOf(atom);
-
-        // escalate to a higher default valence only when required
-        // e.g., nitrogen is trivalent until its bonds demand more than that, and only then pentavalent
-        int requiredValence = bonding.explicitSum();
-        int chosenValence = IntStream.of(valences)
-            .filter(valence -> valence >= requiredValence)
-            .findFirst()
-            .orElse(valences[valences.length - 1]);
-
         // the aromatic weighting only ever spends the valence already chosen above
-        int remainingAfterExplicitBonds = chosenValence - bonding.explicitSum();
+        int remainingAfterExplicitBonds = valence.getAsInt() - bonding.explicitSum();
         return Math.max(0, remainingAfterExplicitBonds - bonding.aromaticContribution());
     }
 
@@ -505,6 +481,27 @@ public final class Molecule
     public List<Molecule> rings()
     {
         return rings.get();
+    }
+
+    /**
+     * Finds this molecule's conjugated π systems, each a ring or a set of rings fused into one plane.
+     *
+     * @return this molecule's π systems, unmodifiable and empty if it has no rings
+     */
+    public List<PiSystem> piSystems()
+    {
+        return piSystems.get();
+    }
+
+    /**
+     * Finds the π system an atom belongs to.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return the π system containing {@code atom}, or empty if it is in none
+     */
+    public Optional<PiSystem> piSystemOf(Atom atom)
+    {
+        return piSystems().stream().filter(system -> system.contains(atom)).findFirst();
     }
 
     /**

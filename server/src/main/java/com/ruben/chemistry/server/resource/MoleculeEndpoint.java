@@ -123,6 +123,7 @@ public final class MoleculeEndpoint extends Endpoint
         registry.register(HttpMethod.POST, "/api/molecules/:id/structure/2d", this::generateStructure2d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/structure/2d", this::getStructure2d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/metadata", this::metadata);
+        registry.register(HttpMethod.GET, "/api/molecules/:id/validate", this::validate);
         registry.register(HttpMethod.POST, "/api/molecules/:id/structure/3d", this::generateStructure3d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/structure/3d", this::getStructure3d);
         registry.register(HttpMethod.POST, "/api/molecules/:id/projection/2d", this::projectStructure2d);
@@ -278,6 +279,13 @@ public final class MoleculeEndpoint extends Endpoint
         StoredMolecule stored = find(request);
         responseContext.header(MOLECULE_ID_HEADER, stored.id());
         responseContext.respond(200, stored.metadata());
+    }
+
+    private void validate(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        responseContext.header(MOLECULE_ID_HEADER, stored.id());
+        responseContext.respond(200, stored.validation());
     }
 
     private void getStructure3d(Request request, ResponseContext responseContext) throws IOException
