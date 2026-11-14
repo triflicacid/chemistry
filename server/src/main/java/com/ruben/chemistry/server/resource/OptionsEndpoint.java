@@ -5,7 +5,7 @@ import com.ruben.chemistry.server.http.Endpoint;
 import com.ruben.chemistry.server.http.EndpointRegistry;
 import com.ruben.chemistry.server.http.HttpMethod;
 import com.ruben.chemistry.server.http.Request;
-import com.ruben.chemistry.server.render.OptionSchema;
+import com.ruben.chemistry.server.options.OptionSchema;
 
 import java.io.IOException;
 import java.util.Map;

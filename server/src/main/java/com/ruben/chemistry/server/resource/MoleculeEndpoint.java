@@ -13,13 +13,16 @@ import com.ruben.chemistry.server.http.HttpException;
 import com.ruben.chemistry.server.http.HttpMethod;
 import com.ruben.chemistry.server.http.Request;
 import com.ruben.chemistry.server.http.ResponseContext;
+import com.ruben.chemistry.server.match.Match3dData;
+import com.ruben.chemistry.server.match.MatchOptions;
+import com.ruben.chemistry.server.match.MatchResult;
+import com.ruben.chemistry.server.match.MoleculeMatcher;
+import com.ruben.chemistry.server.molecule.MoleculeException;
+import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
-import com.ruben.chemistry.server.render.MatchOptions;
 import com.ruben.chemistry.server.render.Match2dRender;
-import com.ruben.chemistry.server.render.Match3dData;
-import com.ruben.chemistry.server.render.MoleculeRenderer;
-import com.ruben.chemistry.server.render.RenderException;
+import com.ruben.chemistry.server.render.MoleculeRenderer2d;
 import com.ruben.chemistry.server.render.Render2dOptions;
 import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.server.render.Render2dJson;
@@ -104,7 +107,9 @@ public final class MoleculeEndpoint extends Endpoint
     private static final String MOLECULE_ID_HEADER = "X-Molecule-Id";
 
     private final MoleculeStore store = new MoleculeStore();
-    private final MoleculeRenderer renderer = new MoleculeRenderer();
+    private final MoleculeParser parser = new MoleculeParser();
+    private final MoleculeMatcher matcher = new MoleculeMatcher();
+    private final MoleculeRenderer2d renderer = new MoleculeRenderer2d();
 
     @Override
     public void registerHandlers(EndpointRegistry registry)
@@ -133,13 +138,13 @@ public final class MoleculeEndpoint extends Endpoint
 
         try
         {
-            StoredMolecule stored = store.add(renderer.parse(smiles));
+            StoredMolecule stored = store.add(parser.parse(smiles));
             responseContext.respond(201, Map.of(
                     "id", stored.id(),
                     "smiles", stored.smiles(),
                     "canonical_smiles", stored.canonicalSmiles()));
         }
-        catch (RenderException failure)
+        catch (MoleculeException failure)
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }
@@ -159,11 +164,14 @@ public final class MoleculeEndpoint extends Endpoint
 
         try
         {
-            Match2dRender render = renderer.renderMatches2d(
+            MatchResult result = matcher.find(
                     stored.molecule(),
                     smarts,
-                    body.options() == null ? Render2dOptions.defaults() : body.options(),
                     body.match() == null ? MatchOptions.defaults() : body.match());
+            Match2dRender render = renderer.renderMatches2d(
+                    stored.molecule(),
+                    result,
+                    body.options() == null ? Render2dOptions.defaults() : body.options());
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
             responseContext.respond(200, Map.of(
                     "merged", render.merged(),
@@ -171,7 +179,7 @@ public final class MoleculeEndpoint extends Endpoint
                     "shown", render.shown(),
                     "scenes", render.scenes().stream().map(Render2dJson::of).toList()));
         }
-        catch (RenderException failure)
+        catch (MoleculeException failure)
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }
@@ -186,14 +194,15 @@ public final class MoleculeEndpoint extends Endpoint
 
         try
         {
-            Match3dData render = renderer.findMatches3d(
+            MatchResult result = matcher.find(
                     stored.molecule(),
                     smarts,
                     body.match() == null ? MatchOptions.defaults() : body.match());
+            Match3dData data = matcher.describe3d(stored.molecule(), result);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
-            responseContext.respond(200, render);
+            responseContext.respond(200, data);
         }
-        catch (RenderException failure)
+        catch (MoleculeException failure)
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }
@@ -210,9 +219,9 @@ public final class MoleculeEndpoint extends Endpoint
         {
             throw new HttpException(400, "INVALID_BODY", "smarts: is required");
         }
-        if (smarts.length() > MoleculeRenderer.MAX_SMILES_LENGTH)
+        if (smarts.length() > MoleculeParser.MAX_SMILES_LENGTH)
         {
-            throw new HttpException(400, "SMARTS_TOO_LONG", "The SMARTS pattern is longer than " + MoleculeRenderer.MAX_SMILES_LENGTH + " characters");
+            throw new HttpException(400, "SMARTS_TOO_LONG", "The SMARTS pattern is longer than " + MoleculeParser.MAX_SMILES_LENGTH + " characters");
         }
         return smarts.trim();
     }
@@ -243,7 +252,7 @@ public final class MoleculeEndpoint extends Endpoint
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
             return render;
         }
-        catch (RenderException failure)
+        catch (MoleculeException failure)
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }
@@ -316,7 +325,7 @@ public final class MoleculeEndpoint extends Endpoint
             json.put("generated", generatedNotation(stored, structure, conformer, only));
             responseContext.respond(200, json);
         }
-        catch (RenderException failure)
+        catch (MoleculeException failure)
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }

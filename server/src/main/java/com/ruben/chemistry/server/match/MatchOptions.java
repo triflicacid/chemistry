@@ -1,4 +1,6 @@
-package com.ruben.chemistry.server.render;
+package com.ruben.chemistry.server.match;
+
+import com.ruben.chemistry.server.options.OptionSchema;
 
 /**
  * The options a client may set on how a SMARTS pattern's matches are shown. A {@code null} component means "use the default".

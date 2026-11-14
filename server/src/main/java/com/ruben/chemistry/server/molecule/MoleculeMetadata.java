@@ -1,4 +1,4 @@
-package com.ruben.chemistry.server.render;
+package com.ruben.chemistry.server.molecule;
 
 import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Atom;

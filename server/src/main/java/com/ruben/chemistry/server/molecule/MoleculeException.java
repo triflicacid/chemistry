@@ -1,9 +1,9 @@
-package com.ruben.chemistry.server.render;
+package com.ruben.chemistry.server.molecule;
 
 /**
- * A molecule could not be drawn.
+ * A request about a molecule could not be carried out: it could not be read, matched or drawn, or an option was invalid.
  */
-public final class RenderException extends RuntimeException
+public final class MoleculeException extends RuntimeException
 {
     private final String code;
 
@@ -11,7 +11,7 @@ public final class RenderException extends RuntimeException
      * @param code a short machine-readable reason
      * @param message a human-readable explanation
      */
-    public RenderException(String code, String message)
+    public MoleculeException(String code, String message)
     {
         super(message);
         this.code = code;

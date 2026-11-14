@@ -2,10 +2,8 @@ package com.ruben.chemistry.server.molecule;
 
 import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.server.render.MoleculeMetadata;
-import com.ruben.chemistry.server.render.MoleculeRenderer;
-import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.smiles.SmilesWriter;
+import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.space.Structure3D;
 
 import java.util.Map;
@@ -21,7 +19,7 @@ public final class StoredMolecule
     private volatile MoleculeMetadata metadata;
     private volatile Structure3D latestStructure3d;
 
-    StoredMolecule(String id, MoleculeRenderer.Parsed parsed)
+    StoredMolecule(String id, ParsedMolecule parsed)
     {
         this.id = id;
         this.source = parsed.source();

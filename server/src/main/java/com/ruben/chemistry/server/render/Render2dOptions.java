@@ -1,5 +1,7 @@
 package com.ruben.chemistry.server.render;
 
+import com.ruben.chemistry.server.options.OptionSchema;
+
 /**
  * The options a client may set on a render. A {@code null} component means "use the default".
  * The matching schema is {@link OptionSchema}.

@@ -1,7 +1,8 @@
-package com.ruben.chemistry.server.render;
+package com.ruben.chemistry.server.options;
 
 import com.ruben.chemistry.render.DepictionOptions;
 import com.ruben.chemistry.render.RenderStyle;
+import com.ruben.chemistry.server.render.Render2dOptions;
 
 import java.util.List;
 import java.util.Locale;
@@ -58,7 +59,7 @@ public final class OptionSchema
     {
     }
 
-    static final List<Choice> STYLES = List.of(
+    public static final List<Choice> STYLES = List.of(
             new Choice("text", "Symbols"),
             new Choice("circles", "Circles"),
             new Choice("skeletal", "Skeletal"));
@@ -67,14 +68,14 @@ public final class OptionSchema
             new Choice("row", "Row"),
             new Choice("column", "Column"));
 
-    static final List<Choice> HYDROGENS = List.of(
+    public static final List<Choice> HYDROGENS = List.of(
             new Choice("separate", "Separate"),
             new Choice("condensed", "Condensed"),
             new Choice("none", "None"));
 
-    static final double FRAGMENT_GAP_MAX = 500;
-    static final double FONT_SIZE_MIN = 4;
-    static final double FONT_SIZE_MAX = 96;
+    public static final double FRAGMENT_GAP_MAX = 500;
+    public static final double FONT_SIZE_MIN = 4;
+    public static final double FONT_SIZE_MAX = 96;
 
     private OptionSchema()
     {
@@ -118,12 +119,12 @@ public final class OptionSchema
                         "boolean", false, null, null, null, null, null));
     }
 
-    static final List<Choice> VIEWS = List.of(
+    public static final List<Choice> VIEWS = List.of(
             new Choice("each", "One per match"),
             new Choice("merged", "Merged"));
 
-    static final int DEFAULT_MAX_MATCHES = 10;
-    static final int MAX_MATCHES = 100;
+    public static final int DEFAULT_MAX_MATCHES = 10;
+    public static final int MAX_MATCHES = 100;
 
     /**
      * @return the options a client may set for how a SMARTS pattern's matches are shown, in the order to show them.
