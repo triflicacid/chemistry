@@ -20,12 +20,12 @@ import java.util.stream.Stream;
  * <p>
  * Run it through Gradle, e.g.
  * <pre>{@code
- * ./gradlew :backend:depict --args="CCO --out=ethanol.svg"
- * ./gradlew :backend:depict --args="N[C@@H](C)C(=O)O --style=circles --bond-length=70"
+ * ./gradlew :backend:render2d --args="CCO --out=ethanol.svg"
+ * ./gradlew :backend:render2d --args="N[C@@H](C)C(=O)O --style=circles --bond-length=70"
  * }</pre>
  * Without an {@code --out} the document goes to standard output.
  */
-final class DepictSmiles
+final class Render2d
 {
     /** What to give {@code --out} to write to standard output rather than to a file. */
     private static final String STANDARD_OUTPUT = "-";
@@ -61,20 +61,20 @@ final class DepictSmiles
             },
             () -> 1
     ).withRequirement(
-            options -> options.get(DepictSmiles.ALTERNATIVES) <= 1 || options.get(CommandOptions.PROJECT_CAGES),
+            options -> options.get(Render2d.ALTERNATIVES) <= 1 || options.get(CommandOptions.PROJECT_CAGES),
             "--ring-alternatives above 1 needs --project-cages, since other drawings are other views of the 3D structure"
     ).withRequirement(
-            options -> options.get(DepictSmiles.ALTERNATIVES) <= 1 || options.get(CommandOptions.RING_REFINEMENT).isEnabled(),
+            options -> options.get(Render2d.ALTERNATIVES) <= 1 || options.get(CommandOptions.RING_REFINEMENT).isEnabled(),
             "--ring-alternatives above 1 cannot be had with --ring-refinement=none"
     );
 
     static final List<CliOption<?>> OPTIONS = Stream.concat(Stream.of(OUT, ALTERNATIVES), CommandOptions.DRAWING_OPTIONS.stream()).toList();
 
     private static final String USAGE = CliParser.usage(
-            "Usage: depict <smiles> [options]",
+            "Usage: render2d <smiles> [options]",
             OPTIONS);
 
-    private DepictSmiles()
+    private Render2d()
     {
     }
 

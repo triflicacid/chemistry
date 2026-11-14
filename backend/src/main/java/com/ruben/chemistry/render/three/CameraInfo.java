@@ -45,7 +45,7 @@ public final class CameraInfo
 
     /**
      * @param camera a camera
-     * @return the depict3d arguments that reproduce its view
+     * @return the render3d arguments that reproduce its view
      */
     public static String command(Camera camera)
     {

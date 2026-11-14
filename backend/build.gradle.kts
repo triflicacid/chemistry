@@ -21,17 +21,17 @@ tasks.test {
     useJUnitPlatform()
 }
 
-tasks.register<JavaExec>("depict") {
+tasks.register<JavaExec>("render2d") {
     group = "chemistry"
     description = "Draws a SMILES string as an SVG document, e.g. --args=\"CCO --out=ethanol.svg\"."
-    mainClass = "com.ruben.chemistry.cli.DepictSmiles"
+    mainClass = "com.ruben.chemistry.cli.Render2d"
     classpath = sourceSets["main"].runtimeClasspath
 }
 
-tasks.register<JavaExec>("depict3d") {
+tasks.register<JavaExec>("render3d") {
     group = "chemistry"
     description = "Draws a SMILES string in 3D as an SVG document, e.g. --args=\"C1CC2CCC1CC2 --out=bicyclo.svg --yaw=40\"."
-    mainClass = "com.ruben.chemistry.cli.DepictSpace"
+    mainClass = "com.ruben.chemistry.cli.Render3d"
     classpath = sourceSets["main"].runtimeClasspath
 }
 

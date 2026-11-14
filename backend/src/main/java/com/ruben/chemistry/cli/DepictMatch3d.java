@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 
 /**
  * Draws a molecule written in SMILES in three dimensions with the matches of a SMARTS pattern highlighted, as an SVG
- * document. It takes the options of both {@code match} and {@code depict3d}.
+ * document. It takes the options of both {@code match} and {@code render3d}.
  * <p>
  * Run it through Gradle, e.g.
  * <pre>{@code
@@ -30,7 +30,7 @@ import java.util.stream.Stream;
  */
 final class DepictMatch3d
 {
-    static final List<CliOption<?>> OPTIONS = Stream.concat(DepictSpace.DEFINITIONS.stream(), MatchOptions.ALL.stream()).toList();
+    static final List<CliOption<?>> OPTIONS = Stream.concat(Render3d.DEFINITIONS.stream(), MatchOptions.ALL.stream()).toList();
 
     private static final String USAGE = CliParser.usage("Usage: match3d <smiles> <smarts> [options]", OPTIONS);
 
@@ -56,7 +56,7 @@ final class DepictMatch3d
                 System.exit(0);
             }
 
-            destination = options.get(DepictSpace.OUT);
+            destination = options.get(Render3d.OUT);
             document = render(options);
         }
         catch (IllegalArgumentException wrong)
@@ -68,7 +68,7 @@ final class DepictMatch3d
             return;
         }
 
-        if (destination.equals(DepictSpace.STANDARD_OUTPUT))
+        if (destination.equals(Render3d.STANDARD_OUTPUT))
         {
             System.out.print(document);
         }
@@ -101,7 +101,7 @@ final class DepictMatch3d
         Molecule molecule = found.molecule();
         List<Match> matches = found.matches();
         MatchStyle matchStyle = MatchOptions.style(options);
-        DepictSpace.View view = DepictSpace.prepare(molecule, options);
+        Render3d.View view = Render3d.prepare(molecule, options);
 
         if (options.get(MatchOptions.VIEW) == MatchOptions.View.MERGED)
         {
@@ -116,7 +116,7 @@ final class DepictMatch3d
         return SvgPanels.row(panels);
     }
 
-    private static String draw(DepictSpace.View view, Annotations annotations, Molecule molecule)
+    private static String draw(Render3d.View view, Annotations annotations, Molecule molecule)
     {
         return SvgWriter.write(SceneRenderer3D.render(view.layout(), view.style(), annotations, molecule));
     }

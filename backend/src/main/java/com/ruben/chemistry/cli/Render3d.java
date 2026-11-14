@@ -27,13 +27,13 @@ import java.util.Set;
  * <p>
  * Run it through Gradle, e.g.
  * <pre>{@code
- * ./gradlew :backend:depict3d --args="C1CC2CCC1CC2 --out=bicyclo.svg"
- * ./gradlew :backend:depict3d --args="CCO --style=spacefill --yaw=90 --pitch=0"
- * ./gradlew :backend:depict3d --args="CCO --camera=5,5,5 --look-at=0,0,0 --fov=0"
+ * ./gradlew :backend:render3d --args="C1CC2CCC1CC2 --out=bicyclo.svg"
+ * ./gradlew :backend:render3d --args="CCO --style=spacefill --yaw=90 --pitch=0"
+ * ./gradlew :backend:render3d --args="CCO --camera=5,5,5 --look-at=0,0,0 --fov=0"
  * }</pre>
  * Without an {@code --out} the document goes to standard output.
  */
-final class DepictSpace
+final class Render3d
 {
     static final String STANDARD_OUTPUT = "-";
     private static final double FIT_PADDING = 1.5;
@@ -59,15 +59,15 @@ final class DepictSpace
 
     private static final CliOption<Vec3> CAMERA = CliOption.parsed(
             "camera", "x,y,z", "where the camera is, instead of orbiting with --yaw, --pitch and --distance",
-            DepictSpace::vector, null);
+            Render3d::vector, null);
 
     private static final CliOption<Vec3> LOOK_AT = CliOption.parsed(
             "look-at", "x,y,z", "the point the camera looks at",
-            DepictSpace::vector, () -> new Vec3(0, 0, 0)).withDefaultText("0,0,0");
+            Render3d::vector, () -> new Vec3(0, 0, 0)).withDefaultText("0,0,0");
 
     private static final CliOption<Vec3> UP = CliOption.parsed(
             "up", "x,y,z", "the direction that is up on the picture; needs --camera",
-            DepictSpace::vector, () -> new Vec3(0, 1, 0)).withDefaultText("0,1,0")
+            Render3d::vector, () -> new Vec3(0, 1, 0)).withDefaultText("0,1,0")
             .withRequirement(options -> !options.has("up") || options.has("camera"), "--up needs --camera");
 
     private static final CliOption<Double> FOV = CliOption.number(
@@ -119,7 +119,7 @@ final class DepictSpace
             "debug", "list",
             "what to show of the geometry, comma separated: bonds, angles, torsions, clashes, strain, lone-pairs "
                     + "(or all of those), and report to print every term past its tolerance to standard error",
-            DepictSpace::debug, () -> new DebugChoice(Set.of(), false)).withDefaultText("none");
+            Render3d::debug, () -> new DebugChoice(Set.of(), false)).withDefaultText("none");
 
     private static final CliOption<Double> DEBUG_THRESHOLD = CliOption.number(
             "debug-threshold", "factor",
@@ -131,9 +131,9 @@ final class DepictSpace
 
     static final List<CliOption<?>> DEFINITIONS = allDefinitions();
 
-    private static final String USAGE = CliParser.usage("Usage: depict3d <smiles> [options]", DEFINITIONS);
+    private static final String USAGE = CliParser.usage("Usage: render3d <smiles> [options]", DEFINITIONS);
 
-    private DepictSpace()
+    private Render3d()
     {
     }
 
