@@ -98,9 +98,17 @@ button:disabled {
 }
 
 .card svg {
+  display: block;
+  margin: 0 auto;
   max-width: 100%;
   height: auto;
   cursor: default;
+}
+
+.download-row {
+  display: flex;
+  justify-content: center;
+  margin-top: .5rem;
 }
 
 .message.error {

@@ -229,6 +229,16 @@ export class ThreeView implements MoleculeView {
     return [...seen];
   }
 
+  readonly imageExtension = "png";
+
+  exportImage(): Promise<Blob> {
+    // drawn just before reading, as the canvas is cleared once presented
+    this.renderer.render(this.scene, this.camera);
+    return new Promise((resolve, reject) => {
+      this.renderer.domElement.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not make an image"))), "image/png");
+    });
+  }
+
   resetView(): void {
     const distance = (1.1 * this.radius) / Math.sin((FIELD_OF_VIEW * Math.PI) / 360);
     const yaw = (30 * Math.PI) / 180;

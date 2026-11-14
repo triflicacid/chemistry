@@ -70,6 +70,7 @@ export class ResultsView {
       ResultsView.label("Canonical SMILES"),
       new SmilesField(canonical, this.edit).element,
       view.element,
+      ResultsView.downloadButton(view, canonicalSmiles),
     );
     this.element.replaceChildren(card);
     this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
@@ -93,6 +94,26 @@ export class ResultsView {
     this.formula = new FormulaView(metadata.formula, metadata.fragments.length);
     this.shown.card.insertBefore(this.formula.element,     this.shown.view.element);
         this.inspector = new MoleculeInspector(this.shown.view, this.selection, this.shown.smiles, this.shown.canonical, this.formula, metadata);
+  }
+
+  private static downloadButton(view: MoleculeView, name: string): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "download-row";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "small";
+    button.textContent = `Download ${view.imageExtension.toUpperCase()}`;
+    button.addEventListener("click", () => {
+      void view.exportImage().then((blob) => {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${name.replace(/[^\w.+-]+/g, "_").slice(0, 60) || "molecule"}.${view.imageExtension}`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }).catch((error) => console.warn("Could not download the image", error));
+    });
+    row.append(button);
+    return row;
   }
 
   private static label(text: string): HTMLElement {

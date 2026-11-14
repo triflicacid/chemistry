@@ -46,6 +46,12 @@ export interface MoleculeView {
   /** Replaces the highlights. */
   setHighlights(highlights: Highlights): void;
 
+  /** The file type of `exportImage`. */
+  readonly imageExtension: "svg" | "png";
+
+  /** The view as an image file. */
+  exportImage(): Promise<Blob>;
+
   /** Puts the camera back where it started. */
   resetView(): void;
 

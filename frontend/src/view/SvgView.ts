@@ -161,6 +161,17 @@ export class SvgView implements MoleculeView {
     }
   }
 
+  readonly imageExtension = "svg";
+
+  async exportImage(): Promise<Blob> {
+    const copy = this.element.cloneNode(true) as SVGSVGElement;
+    copy.setAttribute("xmlns", NS);
+    copy.querySelectorAll(".hover, .selected, [class*='hover-end']").forEach((node) => {
+      node.classList.remove("hover", "hover-end-1", "hover-end-2", "selected");
+    });
+    return new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" });
+  }
+
   resetView(): void {
     this.scale = 1;
     this.x = 0;
