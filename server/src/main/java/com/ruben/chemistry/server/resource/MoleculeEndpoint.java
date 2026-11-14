@@ -184,7 +184,8 @@ public final class MoleculeEndpoint extends Endpoint
                     "merged", render.merged(),
                     "total", render.total(),
                     "shown", render.shown(),
-                    "scenes", render.scenes().stream().map(Render2dJson::of).toList()));
+                    "scenes", render.scenes().stream().map(Render2dJson::of).toList(),
+                    "smiles", matcher.smiles(result)));
         }
         catch (MoleculeException failure)
         {

@@ -22,8 +22,9 @@ public record Match3dData(boolean merged, int total, int shown, double dim, bool
      * @param bonds the bonds between those atoms
      * @param atomLabels the labels of the atoms, when labels are wanted
      * @param bondLabels the labels of the bonds, when labels are wanted
+     * @param smiles the SMILES of the fragment the match covers, or null if it cannot be written
      */
-    public record Highlight(String colour, List<Integer> atoms, List<Integer> bonds, List<Label> atomLabels, List<Label> bondLabels)
+    public record Highlight(String colour, List<Integer> atoms, List<Integer> bonds, List<Label> atomLabels, List<Label> bondLabels, String smiles)
     {
     }
 

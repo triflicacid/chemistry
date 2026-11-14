@@ -9,6 +9,7 @@ import com.ruben.chemistry.query.MatchLabels;
 import com.ruben.chemistry.query.Query;
 import com.ruben.chemistry.query.SubstructureMatcher;
 import com.ruben.chemistry.render.match.MatchStyle;
+import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.server.molecule.MoleculeException;
 
 import java.util.ArrayList;
@@ -46,6 +47,32 @@ public final class MoleculeMatcher
         SubstructureMatcher matcher = new SubstructureMatcher(molecule);
         List<Match> found = matching.allMatches() ? matcher.findMatches(query) : matcher.findDistinctMatches(query);
         return new MatchResult(matching, found.size(), found.subList(0, Math.min(found.size(), matching.maxMatches())));
+    }
+
+    /**
+     * @param result the matches in a molecule
+     * @return the SMILES of the fragment each shown match covers, in order; null where it cannot be written
+     */
+    public List<String> smiles(MatchResult result)
+    {
+        List<String> smiles = new ArrayList<>();
+        for (Match each : result.shown())
+        {
+            smiles.add(smilesOf(each));
+        }
+        return smiles;
+    }
+
+    private static String smilesOf(Match match)
+    {
+        try
+        {
+            return new SmilesWriter(match.substructure()).write();
+        }
+        catch (RuntimeException unwritable)
+        {
+            return null;
+        }
     }
 
     /**
@@ -95,7 +122,8 @@ public final class MoleculeMatcher
                     atoms.stream().map(atomIndices::get).sorted().toList(),
                     bonds,
                     atomLabels,
-                    bondLabels));
+                    bondLabels,
+                    smilesOf(each)));
         }
         return new Match3dData(
                 result.matching().merged(),

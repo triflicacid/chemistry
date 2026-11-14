@@ -201,6 +201,7 @@ export interface MatchHighlight {
   bonds: number[];
   atom_labels: { index: number; text: string }[];
   bond_labels: { index: number; text: string }[];
+  smiles: string | null;
 }
 
 /** SMARTS match data for a molecule (3D) */
@@ -226,6 +227,8 @@ export interface MatchResult {
   /** How many of them were drawn. */
   shown: number;
   scenes: Scene[];
+  /** SMILES of the fragment each drawn match covers, in order; null where it could not be written. */
+  smiles: (string | null)[];
 }
 
 /** An atom of a 3D structure. `index` is its place in `Structure3D.sites`. */

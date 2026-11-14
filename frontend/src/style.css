@@ -71,6 +71,15 @@ form > input[type=text] {
   height: auto;
 }
 
+.match-smiles {
+  margin: 0.25rem 0 0;
+  font-family: monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .option input[type=text] {
   width: 9rem;
 }

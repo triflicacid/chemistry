@@ -331,12 +331,21 @@ export class MoleculePanel {
           this.matches.append(MoleculePanel.matchNote(MoleculePanel.matchSummary(smarts, result), false));
           const row = document.createElement("div");
           row.className = "match-row";
-          for (const scene of result.scenes) {
+          result.scenes.forEach((scene, index) => {
             const view = MoleculePanel.sceneView(scene);
             this.matchViews.push(view);
-            row.append(view.element);
-          }
+            const cell = document.createElement("div");
+            cell.className = "match-cell";
+            cell.append(view.element);
+            if (!result.merged) {
+              cell.append(MoleculePanel.smilesLine([result.smiles[index] ?? null]));
+            }
+            row.append(cell);
+          });
           this.matches.append(row);
+          if (result.merged) {
+            this.matches.append(MoleculePanel.smilesLine(result.smiles));
+          }
         }
       } else {
         const data = await this.host.api.matches3d(id, smarts, options.values());
@@ -368,16 +377,20 @@ export class MoleculePanel {
    * pressing the one that is highlighted takes the highlights off.
    */
   private showMatches3d(view: ThreeView, data: MatchData): void {
+    const smiles = document.createElement("div");
     const show = (chosen: number | null) => {
       if (chosen === null) {
         view.setMatches(null);
+        smiles.replaceChildren();
         return;
       }
       const matches = data.merged ? data.matches : data.matches.slice(chosen, chosen + 1);
       view.setMatches({ matches, merged: data.merged, dim: data.dim, recolour: data.recolour, labels: data.labels });
+      smiles.replaceChildren(MoleculePanel.smilesLine(matches.map((match) => match.smiles)));
     };
     show(0);
     if (data.merged) {
+      this.matches.append(smiles);
       return;
     }
 
@@ -399,7 +412,7 @@ export class MoleculePanel {
     });
     chips[0]?.classList.add("active");
     row.append(...chips);
-    this.matches.append(row);
+    this.matches.append(row, smiles);
   }
 
   private static matchSummary(smarts: string, result: { total: number; shown: number; merged: boolean }): string {
@@ -417,6 +430,14 @@ export class MoleculePanel {
     this.matchViews = [];
     this.matches.replaceChildren();
     this.matches.hidden = true;
+  }
+
+  /** The SMILES of matched fragments as plain text, one per line. */
+  private static smilesLine(smiles: (string | null)[]): HTMLElement {
+    const text = document.createElement("p");
+    text.className = "match-smiles";
+    text.textContent = smiles.filter((each): each is string => each !== null).join("\n");
+    return text;
   }
 
   private static matchNote(text: string, error: boolean): HTMLElement {
