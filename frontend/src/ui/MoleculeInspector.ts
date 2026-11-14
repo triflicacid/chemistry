@@ -133,7 +133,7 @@ export class MoleculeInspector {
       title = `Bond ${bond.index}`;
       rows.push(
         ["Order", bond.order],
-        ["Between", ends.map((end) => `${end.element} ${end.index}`).join(" – ")],
+        ["Between", ends.map((end) => `${end.element} ${end.index}`).join(" - ")],
         ["Written", this.written(bond)],
       );
     } else {
@@ -151,6 +151,7 @@ export class MoleculeInspector {
     }
 
     const plaque = MoleculeInspector.plaque(title);
+    rows.push(...this.view.describe(target));
     if (target.data.match) {
       rows.push(["SMARTS", target.data.match]);
     }

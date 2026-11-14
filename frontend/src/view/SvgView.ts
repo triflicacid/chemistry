@@ -177,6 +177,11 @@ export class SvgView implements MoleculeView {
     }
   }
 
+  /** A drawing the server made knows nothing of the molecule beyond what its metadata says. */
+  describe(): [string, string][] {
+    return [];
+  }
+
   readonly imageExtension = "svg";
 
   async exportImage(): Promise<Blob> {

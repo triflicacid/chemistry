@@ -25,7 +25,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { CameraPose, Conjugation3D, Connection3D, MatchHighlight, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
+import type { CameraPose, Conjugation3D, Connection3D, Diagnostics3D, MatchHighlight, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
 import type { FaultSeverity, FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
 /** The matches of a SMARTS pattern to show in a view. */
@@ -158,6 +158,10 @@ export class ThreeView implements MoleculeView {
   private centre = new Vector3();
   /** Every drawn atom, by site index, with the molecule atom it is or belongs to. */
   private sitePoints = new Map<number, { atom: number; at: Vector3 }>();
+  /** The structure site each picked atom stands for, so the hover plaque can look its geometry up. */
+  private siteOf = new Map<unknown, number>();
+  /** The connection each picked bond stands for, likewise. */
+  private linkOf = new Map<unknown, Connection3D>();
   private rightDown: { x: number; y: number } | null = null;
   private axes: Group | null = null;
   private readonly textures = new Map<string, CanvasTexture>();
@@ -231,6 +235,133 @@ export class ThreeView implements MoleculeView {
   setFaults(faults: FaultState | null): void {
     this.faults = faults;
     this.refreshEmphasis();
+  }
+
+  /** What the geometry says about the atom or bond under the pointer */
+  describe(target: Pick): [string, string][] {
+    const diagnostics = this.structure.conformers[this.conformer]?.diagnostics;
+    if (!diagnostics) {
+      return [];
+    }
+    return target.kind === "atom" ? this.describeAtom(diagnostics, target) : this.describeBond(diagnostics, target);
+  }
+
+  /** The strain, worst angle, worst clash, lone pairs and pi electrons of the atom under the pointer. */
+  private describeAtom(diagnostics: Diagnostics3D, target: Pick): [string, string][] {
+    const site = this.siteOf.get(target.handle);
+    if (site === undefined) {
+      return [];
+    }
+
+    const rows: [string, string][] = [];
+    if (this.settings.debugStrain) {
+      // strain sums squared deviations, so its root is back in the tolerances the report counts in
+      rows.push(["Strain", `${Math.sqrt(diagnostics.atom_strain[site] ?? 0).toFixed(1)}× tolerance`]);
+    }
+    if (this.settings.debugAngles) {
+      const worst = ThreeView.worst(
+        diagnostics.angles.filter((angle) => angle.middle === site),
+        (angle) => Math.abs(angle.actual - angle.ideal),
+      );
+      if (worst) {
+        const at = [worst.first, site, worst.second].map((each) => this.siteName(each)).join(" - ");
+        rows.push([
+          "Worst angle",
+          `${worst.actual.toFixed(1)}° at ${at}, ideal ${worst.ideal.toFixed(1)}° ${ThreeView.gap(worst.actual, worst.ideal, 1, "°")}`,
+        ]);
+      }
+    }
+    if (this.settings.debugClashes) {
+      const clashes = diagnostics.clashes.filter((clash) => clash.first === site || clash.second === site);
+      const worst = ThreeView.worst(clashes, (clash) => clash.contact - clash.distance);
+      if (worst) {
+        const other = worst.first === site ? worst.second : worst.first;
+        rows.push([
+          "Worst clash",
+          `${worst.distance.toFixed(2)} Å to ${this.siteName(other)}, contact ${worst.contact.toFixed(2)} Å `
+            + `(${(worst.contact - worst.distance).toFixed(2)} Å inside)`,
+        ]);
+      }
+    }
+    if (this.settings.debugLonePairs) {
+      rows.push(["Lone pairs", String(diagnostics.lone_pairs.filter((pair) => pair.node === site).length)]);
+    }
+    if (this.settings.debugPiSystems || this.settings.debugPiOrbitals) {
+      for (const system of diagnostics.conjugations) {
+        const orbital = system.orbitals.find((each) => each.node === site);
+        if (orbital) {
+          rows.push(["Pi electrons lent", String(orbital.electrons)], ["Pi system", ThreeView.systemName(system)]);
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** The length, worst torsion and pi system of the bond under the pointer. */
+  private describeBond(diagnostics: Diagnostics3D, target: Pick): [string, string][] {
+    const link = this.linkOf.get(target.handle);
+    if (!link) {
+      return [];
+    }
+    const ends = (first: number, second: number) =>
+      (first === link.first && second === link.second) || (first === link.second && second === link.first);
+
+    const rows: [string, string][] = [];
+    if (this.settings.debugBonds) {
+      const length = diagnostics.lengths.find((each) => ends(each.first, each.second));
+      if (length) {
+        rows.push([
+          "Length",
+          `${length.actual.toFixed(3)} Å, ideal ${length.ideal.toFixed(3)} Å ${ThreeView.gap(length.actual, length.ideal, 3, " Å")}`,
+        ]);
+      }
+    }
+    if (this.settings.debugTorsions) {
+      const worst = ThreeView.worst(
+        diagnostics.torsions.filter((torsion) => ends(torsion.second, torsion.third)),
+        (torsion) => ThreeView.turn(torsion.actual - torsion.ideal),
+      );
+      if (worst) {
+        // a torsion runs round a circle, so it is only ever so many degrees off, never over or under
+        rows.push([
+          "Worst torsion",
+          `${worst.actual.toFixed(1)}° at ${this.siteName(worst.first)} - ${this.siteName(worst.fourth)}, `
+            + `ideal ${worst.ideal.toFixed(0)}° (${ThreeView.turn(worst.actual - worst.ideal).toFixed(1)}° off)`,
+        ]);
+      }
+    }
+    if (this.settings.debugPiSystems || this.settings.debugPiOrbitals) {
+      for (const system of diagnostics.conjugations) {
+        if (system.clouds.some((cloud) => ends(cloud.first, cloud.second))) {
+          rows.push(["Pi system", ThreeView.systemName(system)]);
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** What a site is called in the plaque: its element, and the molecule atom it is where it is one. */
+  private siteName(site: number): string {
+    const found = this.structure.sites[site];
+    if (!found) {
+      return "?";
+    }
+    return found.implied ? found.element : `${found.element} ${found.atom}`;
+  }
+
+  private static systemName(system: Conjugation3D): string {
+    return `${system.aromaticity.toLowerCase()} · ${system.pi_electrons} π`;
+  }
+
+  /** How far a measurement sits from its ideal, as "(22.8° over)" or "(0.112 Å under)". */
+  private static gap(actual: number, ideal: number, digits: number, unit: string): string {
+    const difference = actual - ideal;
+    return `(${Math.abs(difference).toFixed(digits)}${unit} ${difference < 0 ? "under" : "over"})`;
+  }
+
+  /** The item the measure is largest for, or null if there are none. */
+  private static worst<T>(items: T[], measure: (item: T) => number): T | null {
+    return items.reduce<T | null>((best, item) => (!best || measure(item) > measure(best) ? item : best), null);
   }
 
   /** Where the camera is now, so the server can draw what it sees. */
@@ -316,6 +447,8 @@ export class ThreeView implements MoleculeView {
     this.content = new Group();
     this.parts = [];
     this.atomParts = new Map();
+    this.siteOf = new Map();
+    this.linkOf = new Map();
 
     const { sites, connections } = this.structure;
     const positions = this.structure.conformers[this.conformer]?.positions ?? [];
@@ -376,6 +509,7 @@ export class ThreeView implements MoleculeView {
         ball.scale.setScalar(size);
         this.fade(ball, dimmed(owners));
         const part = this.addPart("atom", site.implied ? null : site.atom, { element: site.element, ...this.matchNote(owners) }, ball);
+        this.siteOf.set(part.pick.handle, site.index);
         this.atomParts.set(site.index, part);
         this.content.add(ball);
       }
@@ -601,6 +735,7 @@ export class ThreeView implements MoleculeView {
     }
 
     const part = this.addPart("bond", link.bond >= 0 ? link.bond : null, { order: link.order.toLowerCase(), ...note }, group);
+    this.linkOf.set(part.pick.handle, link);
     group.traverse((object) => {
       object.userData.part = part;
     });

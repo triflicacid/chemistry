@@ -57,6 +57,9 @@ export interface MoleculeView {
   /** Marks the atoms and bonds of one validation finding, or clears the marks with null. */
   setFaults(faults: FaultState | null): void;
 
+  /** Rows for the hover plaque about what the view knows and the molecule's metadata does not. */
+  describe(target: Pick): [string, string][];
+
   /** The file type of `exportImage`. */
   readonly imageExtension: "svg" | "png";
 
