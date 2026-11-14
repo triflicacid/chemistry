@@ -205,6 +205,12 @@ public final class OptionSchema
                 new Option("debug_lone_pairs", "Lone pairs",
                         "Show where lone pairs point",
                         "boolean", false, null, null, null, null, null),
+                new Option("debug_pi_systems", "Pi systems",
+                        "Show the pi cloud lying either side of each conjugated system, labelled with what it amounts to",
+                        "boolean", false, null, null, null, null, null),
+                new Option("debug_pi_orbitals", "Pi orbitals",
+                        "Show the p orbital standing on each atom of a conjugated system, drawn by what it lends",
+                        "boolean", false, null, null, null, null, null),
                 new Option("debug_threshold", "Debug threshold",
                         "How many times the usual tolerances a term must stray before it is shown; 0 shows every term",
                         "number", 1, "x", 0.0, MAX_DEBUG_THRESHOLD, null, null));

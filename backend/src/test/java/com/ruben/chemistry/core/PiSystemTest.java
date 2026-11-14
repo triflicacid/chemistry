@@ -212,6 +212,24 @@ class PiSystemTest
         }
 
         @Test
+        void counts_what_one_atom_lends_on_its_own()
+        {
+            // pyrrole: the nitrogen lends its pair, each carbon the one p electron
+            assertThat(lentBy("c1cc[nH]c1")).containsExactly(1, 1, 1, 2, 1);
+            // pyridine's nitrogen keeps its pair in the plane, so it lends a p electron like the carbons
+            assertThat(lentBy("c1ccncc1")).containsExactly(1, 1, 1, 1, 1, 1);
+            // 2H-pyran-2-one: the carbonyl carbon is trigonal but its pair is held outside the ring
+            assertThat(lentBy("O=C1C=CC=CO1")).containsExactly(null, 0, 1, 1, 1, 1, 2);
+        }
+
+        @Test
+        void counts_nothing_for_an_atom_no_system_could_run_through()
+        {
+            Molecule methane = Molecule.fromSmiles("C");
+            assertThat(PiSystem.piElectronsOf(methane, methane.atoms().getFirst())).isEmpty();
+        }
+
+        @Test
         void holds_the_atoms_and_bonds_of_the_system()
         {
             Molecule molecule = Molecule.fromSmiles("c1ccc2ccccc2c1");
@@ -268,5 +286,19 @@ class PiSystemTest
     private static List<PiSystem.Aromaticity> verdictsOf(String smiles)
     {
         return systemsOf(smiles).stream().map(PiSystem::aromaticity).toList();
+    }
+
+    /**
+     * @param smiles a molecule as SMILES
+     * @return what each of its atoms lends a π system, in the molecule's own order, and null for
+     *     an atom that could join none
+     */
+    private static List<Integer> lentBy(String smiles)
+    {
+        Molecule molecule = Molecule.fromSmiles(smiles);
+        return molecule.atoms().stream()
+            .map(atom -> PiSystem.piElectronsOf(molecule, atom))
+            .map(lent -> lent.isPresent() ? lent.getAsInt() : null)
+            .toList();
     }
 }

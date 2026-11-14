@@ -1,7 +1,10 @@
 package com.ruben.chemistry.space;
 
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.PiSystem;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -57,6 +60,75 @@ class DiagnosticsTest
         {
             assertTrue(pair.tip().minus(oxygen).dot(hydrogens) < 0);
         }
+    }
+
+    @Test
+    void should_stand_a_pi_orbital_on_every_atom_of_a_system()
+    {
+        Diagnostics benzene = of("c1ccccc1");
+        assertEquals(1, benzene.conjugations().size());
+
+        Diagnostics.Conjugation system = benzene.conjugations().getFirst();
+        assertEquals(6, system.orbitals().size());
+        assertEquals(6, system.piElectrons());
+        assertEquals(PiSystem.Aromaticity.AROMATIC, system.aromaticity());
+
+        // naphthalene's two rings are one system, so its orbitals run over all ten atoms
+        assertEquals(10, of("c1ccc2ccccc2c1").conjugations().getFirst().orbitals().size());
+        assertTrue(of("CCO").conjugations().isEmpty());
+    }
+
+    @Test
+    void should_lay_a_cloud_over_every_bond_of_a_system()
+    {
+        Molecule benzene = Molecule.fromSmiles("c1ccccc1");
+        Structure3D structure = Embedder.embed(benzene, Embedder.Options.DEFAULT.withSeed(1));
+        List<Vec3> at = structure.conformers().get(0).positions();
+        Diagnostics.Conjugation system = Diagnostics.of(benzene, structure, 0).conjugations().getFirst();
+
+        assertEquals(6, system.clouds().size());
+        Vec3 normal = at.get(1).minus(at.get(0)).cross(at.get(2).minus(at.get(0))).normalised();
+        for (Diagnostics.PiCloud cloud : system.clouds())
+        {
+            Vec3 middle = at.get(cloud.first()).plus(at.get(cloud.second())).times(0.5);
+            // the two lozenges lie either side of the bond, as far one way as the other
+            assertTrue(cloud.above().minus(middle).dot(normal) * cloud.below().minus(middle).dot(normal) < 0);
+            assertEquals(cloud.above().distanceTo(middle), cloud.below().distanceTo(middle), 1e-9);
+            // and square over the bond, not off to one side of it
+            assertEquals(0, cloud.above().minus(middle).dot(at.get(cloud.second()).minus(at.get(cloud.first()))), 1e-6);
+        }
+    }
+
+    @Test
+    void should_point_every_pi_lobe_across_the_plane_of_its_system()
+    {
+        Molecule benzene = Molecule.fromSmiles("c1ccccc1");
+        Structure3D structure = Embedder.embed(benzene, Embedder.Options.DEFAULT.withSeed(1));
+        List<Vec3> at = structure.conformers().get(0).positions();
+        Diagnostics diagnostics = Diagnostics.of(benzene, structure, 0);
+
+        Vec3 normal = at.get(1).minus(at.get(0)).cross(at.get(2).minus(at.get(0))).normalised();
+        double first = 0;
+        for (Diagnostics.PiOrbital orbital : diagnostics.conjugations().getFirst().orbitals())
+        {
+            Vec3 axis = orbital.above().minus(orbital.below()).normalised();
+            // the lobes stand either side of the ring, so the axis between them is the ring's normal
+            assertEquals(1, Math.abs(axis.dot(normal)), 0.05);
+
+            // which side is above is arbitrary, but it is the same side for the whole system
+            double side = orbital.above().minus(at.get(orbital.node())).dot(normal);
+            first = first == 0 ? side : first;
+            assertTrue(side * first > 0);
+        }
+    }
+
+    @Test
+    void should_count_what_each_atom_lends_its_system()
+    {
+        // pyrrole's nitrogen lends the pair that brings the system to six; each carbon lends one
+        Diagnostics.Conjugation pyrrole = of("c1cc[nH]c1").conjugations().getFirst();
+        assertEquals(6, pyrrole.piElectrons());
+        assertEquals(List.of(1, 1, 1, 2, 1), pyrrole.orbitals().stream().map(Diagnostics.PiOrbital::electrons).toList());
     }
 
     @Test
