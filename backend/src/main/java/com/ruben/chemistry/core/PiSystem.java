@@ -459,16 +459,20 @@ public record PiSystem(List<Atom> atoms, List<Bond> bonds, int rings, int piElec
     }
 
     /**
-     * Counts what one ring atom lends to a π system running through it.
+     * Counts what one atom lends to a π system running through it: two for a lone pair, one for a
+     * p electron, and none for an atom that is planar but has nothing to give.
      * <p>
      * A double bond counts towards the system when it is itself a ring bond, which is what makes a
      * Kekulé fusion bond part of the system it lies in rather than something hanging off it.
+     * <p>
+     * What this counts is what the atom would lend; the atom need not be in a ring, nor in a system.
+     * Summed over a system's own atoms, it is that system's {@link #piElectrons()}.
      *
      * @param molecule the molecule the atom belongs to
-     * @param atom a ring atom of it
+     * @param atom an atom of it, by reference identity
      * @return the number of π electrons it lends, or empty if it cannot join a π system at all
      */
-    private static OptionalInt piElectronsOf(Molecule molecule, Atom atom)
+    public static OptionalInt piElectronsOf(Molecule molecule, Atom atom)
     {
         Set<Bond> ringBonds = molecule.ringBonds();
         int doubleBondsInRings = 0;

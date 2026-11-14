@@ -117,8 +117,9 @@ final class Render3d
 
     private static final CliOption<DebugChoice> DEBUG = CliOption.parsed(
             "debug", "list",
-            "what to show of the geometry, comma separated: bonds, angles, torsions, clashes, strain, lone-pairs "
-                    + "(or all of those), and report to print every term past its tolerance to standard error",
+            "what to show of the geometry, comma separated: bonds, angles, torsions, clashes, strain, lone-pairs, "
+                    + "pi-systems, pi-orbitals (or all of those), and report to print every term past its tolerance "
+                    + "to standard error",
             Render3d::debug, () -> new DebugChoice(Set.of(), false)).withDefaultText("none");
 
     private static final CliOption<Double> DEBUG_THRESHOLD = CliOption.number(
@@ -312,7 +313,7 @@ final class Render3d
                     catch (IllegalArgumentException unknown)
                     {
                         throw new IllegalArgumentException("--debug does not know '" + word + "'; use bonds, angles, torsions, "
-                                + "clashes, strain, lone-pairs, all or report");
+                                + "clashes, strain, lone-pairs, pi-systems, pi-orbitals, all or report");
                     }
                 }
             }

@@ -8,6 +8,7 @@ import {
   CylinderGeometry,
   DirectionalLight,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -24,7 +25,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { CameraPose, Connection3D, MatchHighlight, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
+import type { CameraPose, Conjugation3D, Connection3D, MatchHighlight, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
 import type { FaultSeverity, FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
 /** The matches of a SMARTS pattern to show in a view. */
@@ -55,6 +56,8 @@ interface Settings {
   debugClashes: boolean;
   debugStrain: boolean;
   debugLonePairs: boolean;
+  debugPiSystems: boolean;
+  debugPiOrbitals: boolean;
   debugThreshold: number;
 }
 
@@ -79,6 +82,15 @@ const FAULT_COLOURS: Record<FaultSeverity, Color> = {
   info: new Color("#0969da"),
 };
 const STRAIN = new Color("#e02020");
+const PI = "#16a085";
+/** How wide a pi lobe is drawn, and how much wider each electron it holds draws it, in angstroms. */
+const PI_LOBE_RADIUS = 0.08;
+const PI_LOBE_PER_ELECTRON = 0.04;
+/** How far along the way to its tip a lobe starts, leaving the nucleus clear. */
+const PI_LOBE_START = 0.15;
+/** How wide and how thick the lozenge of a pi cloud is drawn, in angstroms. */
+const PI_CLOUD_WIDTH = 0.22;
+const PI_CLOUD_THICKNESS = 0.1;
 const STRAIN_SATURATES_AT = 6;
 const UP = new Vector3(0, 1, 0);
 
@@ -93,6 +105,8 @@ const DEFAULTS: Settings = {
   debugClashes: false,
   debugStrain: false,
   debugLonePairs: false,
+  debugPiSystems: false,
+  debugPiOrbitals: false,
   debugThreshold: 1,
 };
 
@@ -110,6 +124,8 @@ function settingsOf(options: OptionValues): Settings {
     debugClashes: flag("debug_clashes", false),
     debugStrain: flag("debug_strain", false),
     debugLonePairs: flag("debug_lone_pairs", false),
+    debugPiSystems: flag("debug_pi_systems", false),
+    debugPiOrbitals: flag("debug_pi_orbitals", false),
     debugThreshold: typeof options.debug_threshold === "number" ? options.debug_threshold : DEFAULTS.debugThreshold,
   };
 }
@@ -793,6 +809,99 @@ export class ThreeView implements MoleculeView {
         }
       }
     }
+
+    if (this.settings.debugPiSystems || this.settings.debugPiOrbitals) {
+      for (const system of diagnostics.conjugations) {
+        if (this.settings.debugPiSystems) {
+          this.addPiCloud(system, point, shown);
+        }
+        if (this.settings.debugPiOrbitals) {
+          this.addPiOrbitals(system, point, shown);
+        }
+        this.addPiLabel(system, point, shown);
+      }
+    }
+  }
+
+  /** Draws a system's pi cloud: a lozenge lying over every bond of it, on each face of the system. */
+  private addPiCloud(system: Conjugation3D, point: (index: number) => Vector3, shown: boolean[]): void {
+    for (const cloud of system.clouds) {
+      if (!shown[cloud.first] || !shown[cloud.second]) {
+        continue;
+      }
+      const above = new Vector3(cloud.above.x, cloud.above.y, cloud.above.z);
+      const below = new Vector3(cloud.below.x, cloud.below.y, cloud.below.z);
+      // the lozenge runs the length of its bond, so one meets the next around a ring
+      const along = point(cloud.second).clone().sub(point(cloud.first)).multiplyScalar(0.5);
+      const normal = above.clone().sub(below);
+      for (const face of [above, below]) {
+        this.content.add(this.blob(face, along, normal, PI_CLOUD_WIDTH, PI_CLOUD_THICKNESS));
+      }
+    }
+  }
+
+  /**
+   * Draws the p orbital standing on each atom of a system, as a lobe either side of the plane it
+   * lies in. A lobe is wider the more electrons its atom lends, so pyrrole's nitrogen, which lends
+   * its pair, is told apart from the carbons that lend one each.
+   */
+  private addPiOrbitals(system: Conjugation3D, point: (index: number) => Vector3, shown: boolean[]): void {
+    for (const orbital of system.orbitals) {
+      if (!shown[orbital.node]) {
+        continue;
+      }
+      const nucleus = point(orbital.node);
+      const width = PI_LOBE_RADIUS + PI_LOBE_PER_ELECTRON * orbital.electrons;
+      for (const tip of [orbital.above, orbital.below]) {
+        const reach = new Vector3(tip.x, tip.y, tip.z).sub(nucleus);
+        const along = reach.clone().multiplyScalar((1 - PI_LOBE_START) / 2);
+        const centre = nucleus.clone().addScaledVector(reach, PI_LOBE_START).add(along);
+        this.content.add(this.blob(centre, along, null, width, width));
+      }
+    }
+  }
+
+  /** Labels a system with what it amounts to, in the middle of its atoms. */
+  private addPiLabel(system: Conjugation3D, point: (index: number) => Vector3, shown: boolean[]): void {
+    const nodes = system.orbitals.filter((orbital) => shown[orbital.node]);
+    if (nodes.length === 0) {
+      return;
+    }
+    const middle = new Vector3();
+    nodes.forEach((orbital) => middle.add(point(orbital.node)));
+
+    const note = this.label(`${system.aromaticity.toLowerCase()} · ${system.pi_electrons} π`, PI, 0.26, true);
+    note.position.copy(middle.divideScalar(nodes.length));
+    this.content.add(note);
+  }
+
+  /**
+   * An ellipsoid for a pi overlay: `along` is half its long axis, `width` half the short axis
+   * across that, and `thickness` half the one along `normal`, which is flattened out of the plane.
+   * A round lobe passes no normal.
+   */
+  private blob(centre: Vector3, along: Vector3, normal: Vector3 | null, width: number, thickness: number): Mesh {
+    const mesh = new Mesh(this.unitSphere, new MeshBasicMaterial({ color: PI, transparent: true, opacity: 0.3, depthWrite: false }));
+    const length = along.length();
+    mesh.position.copy(centre);
+    if (length > 1e-9) {
+      const y = along.clone().normalize();
+      const z = (normal ?? ThreeView.sideways(y)).clone().addScaledVector(y, -(normal ?? ThreeView.sideways(y)).dot(y));
+      if (z.lengthSq() > 1e-12) {
+        z.normalize();
+        mesh.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(new Vector3().crossVectors(y, z), y, z));
+      } else {
+        mesh.quaternion.copy(new Quaternion().setFromUnitVectors(UP, y));
+      }
+    }
+    mesh.scale.set(width, Math.max(length, 1e-6), thickness);
+    return mesh;
+  }
+
+  /** Any direction at right angles to `axis`. */
+  private static sideways(axis: Vector3): Vector3 {
+    const helper = Math.abs(axis.x) < 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
+    return new Vector3().crossVectors(axis, helper).normalize();
   }
 
   /** An arc between two bonds at `middle`, labelled with the angle. */

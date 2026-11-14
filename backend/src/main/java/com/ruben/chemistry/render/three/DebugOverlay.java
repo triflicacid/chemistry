@@ -7,6 +7,7 @@ import com.ruben.chemistry.render.scene.SceneBuilder;
 import com.ruben.chemistry.space.Camera;
 import com.ruben.chemistry.space.Diagnostics;
 import com.ruben.chemistry.space.Projection;
+import com.ruben.chemistry.space.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -21,6 +22,25 @@ final class DebugOverlay
     private static final Colour RED = Colour.of("#c0392b");
     private static final Colour LONE = Colour.of("#2980b9");
     private static final Colour HOT = Colour.of("#e41a1c");
+    private static final Colour PI = Colour.of("#16a085");
+
+    /** How wide a π lobe is drawn, in angstroms, before what it holds is counted. */
+    private static final double PI_LOBE_RADIUS = 0.08;
+
+    /** How much wider each π electron the lobe holds draws it, in angstroms. */
+    private static final double PI_LOBE_PER_ELECTRON = 0.04;
+
+    /** How wide the lozenge of a π cloud is drawn across its bond, in angstroms. */
+    private static final double PI_CLOUD_WIDTH = 0.22;
+
+    /** How thick it is out of the plane of its system, in angstroms. */
+    private static final double PI_CLOUD_THICKNESS = 0.1;
+
+    /** How far along the way to its tip a lobe starts, leaving the nucleus clear. */
+    private static final double PI_LOBE_START = 0.15;
+
+    /** How many corners an oval of the π overlays is drawn with. */
+    private static final int OVAL_CORNERS = 24;
 
     /** The strain at which an atom is tinted as red as it will go. */
     private static final double HOT_STRAIN = 6;
@@ -54,24 +74,63 @@ final class DebugOverlay
     }
 
     /**
-     * @return where each lone pair's tip lands in the layout's units, x then y, for the pairs on shown nodes
+     * @param layout what is being drawn
+     * @param style how it is drawn, which says which overlays are shown
+     * @param shown which nodes are drawn at all
+     * @return where each shown overlay's lobes land in the layout's units, x then y
      */
     static List<double[]> reach(Projection layout, RenderStyle3D style, boolean[] shown)
     {
         List<double[]> points = new ArrayList<>();
-        if (!style.debug().contains(RenderStyle3D.Debug.LONE_PAIRS) || layout.diagnostics() == null)
+        if (layout.diagnostics() == null)
         {
             return points;
         }
-        for (Diagnostics.LonePair pair : layout.diagnostics().lonePairs())
+        if (style.debug().contains(RenderStyle3D.Debug.LONE_PAIRS))
         {
-            Camera.Projected tip = layout.camera().project(pair.tip());
-            if (shown[pair.node()] && tip.visible())
+            for (Diagnostics.LonePair pair : layout.diagnostics().lonePairs())
             {
-                points.add(new double[] {tip.x(), tip.y()});
+                reached(points, layout, shown, pair.node(), pair.tip());
+            }
+        }
+        for (Diagnostics.Conjugation system : layout.diagnostics().conjugations())
+        {
+            if (style.debug().contains(RenderStyle3D.Debug.PI_ORBITALS))
+            {
+                for (Diagnostics.PiOrbital orbital : system.orbitals())
+                {
+                    reached(points, layout, shown, orbital.node(), orbital.above());
+                    reached(points, layout, shown, orbital.node(), orbital.below());
+                }
+            }
+            if (style.debug().contains(RenderStyle3D.Debug.PI_SYSTEMS))
+            {
+                for (Diagnostics.PiCloud cloud : system.clouds())
+                {
+                    reached(points, layout, shown, cloud.first(), cloud.above());
+                    reached(points, layout, shown, cloud.first(), cloud.below());
+                }
             }
         }
         return points;
+    }
+
+    /**
+     * Notes where one lobe tip lands, if it is drawn at all.
+     *
+     * @param points the points collected so far, which this adds to
+     * @param layout what is being drawn
+     * @param shown which nodes are drawn
+     * @param node the node the lobe sits on
+     * @param tip where the lobe reaches
+     */
+    private static void reached(List<double[]> points, Projection layout, boolean[] shown, int node, Vec3 tip)
+    {
+        Camera.Projected seen = layout.camera().project(tip);
+        if (shown[node] && seen.visible())
+        {
+            points.add(new double[] {seen.x(), seen.y()});
+        }
     }
 
     static void draw(SceneBuilder scene, Projection layout, RenderStyle3D style, SceneRenderer3D.Frame frame, boolean[] shown)
@@ -103,6 +162,18 @@ final class DebugOverlay
         if (style.debug().contains(RenderStyle3D.Debug.LONE_PAIRS))
         {
             lonePairs(scene, layout, style, frame, shown, diagnostics);
+        }
+        if (style.debug().contains(RenderStyle3D.Debug.PI_SYSTEMS))
+        {
+            piSystems(scene, layout, style, frame, shown, diagnostics);
+        }
+        if (style.debug().contains(RenderStyle3D.Debug.PI_ORBITALS))
+        {
+            piOrbitals(scene, layout, style, frame, shown, diagnostics);
+        }
+        if (style.debug().contains(RenderStyle3D.Debug.PI_SYSTEMS) || style.debug().contains(RenderStyle3D.Debug.PI_ORBITALS))
+        {
+            piLabels(scene, layout, style, frame, shown, diagnostics);
         }
         scene.close();
     }
@@ -258,6 +329,167 @@ final class DebugOverlay
             Element.Circle lobe = scene.circle(to, Math.max(3, 0.12 * ppa * seen.scale()));
             lobe.fill(LONE).opacity(0.35).stroke(LONE).strokeWidth(1);
         }
+    }
+
+    /**
+     * Draws the π cloud of each conjugated system.
+     *
+     * @param scene what is being drawn into
+     * @param layout what is being drawn
+     * @param style how it is drawn
+     * @param frame where the drawing's pixels lie
+     * @param shown which nodes are drawn
+     * @param diagnostics what the geometry says, which holds the systems
+     */
+    private static void piSystems(SceneBuilder scene, Projection layout, RenderStyle3D style, SceneRenderer3D.Frame frame, boolean[] shown, Diagnostics diagnostics)
+    {
+        double ppa = style.pixelsPerAngstrom();
+        for (Diagnostics.Conjugation system : diagnostics.conjugations())
+        {
+            for (Diagnostics.PiCloud cloud : system.clouds())
+            {
+                if (!shown[cloud.first()] || !shown[cloud.second()])
+                {
+                    continue;
+                }
+                Point from = at(layout, frame, style, cloud.first());
+                Point to = at(layout, frame, style, cloud.second());
+                // the lozenge runs the length of its bond, so one meets the next around a ring
+                Point along = new Point((to.x() - from.x()) / 2, (to.y() - from.y()) / 2);
+                double across = acrossAsSeen(layout, cloud);
+                for (Vec3 face : List.of(cloud.above(), cloud.below()))
+                {
+                    Camera.Projected seen = layout.camera().project(face);
+                    if (seen.visible())
+                    {
+                        oval(scene, frame.point(seen.x(), seen.y(), ppa), along, across * ppa * seen.scale());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @param layout what is being drawn
+     * @param cloud the cloud over one bond
+     * @return half the lozenge's short axis, in angstroms
+     */
+    private static double acrossAsSeen(Projection layout, Diagnostics.PiCloud cloud)
+    {
+        Camera.Projected top = layout.camera().project(cloud.above());
+        Camera.Projected bottom = layout.camera().project(cloud.below());
+        // how much of the system's normal lies in the picture plane rather than along the line of sight
+        double apart = Math.hypot(top.x() - bottom.x(), top.y() - bottom.y());
+        double edgeOn = Math.clamp(apart / cloud.above().distanceTo(cloud.below()), 0, 1);
+        return PI_CLOUD_WIDTH * (1 - edgeOn) + PI_CLOUD_THICKNESS * edgeOn;
+    }
+
+    /**
+     * Draws the p orbital standing on each atom of a conjugated system..
+     *
+     * @param scene what is being drawn into
+     * @param layout what is being drawn
+     * @param style how it is drawn
+     * @param frame where the drawing's pixels lie
+     * @param shown which nodes are drawn
+     * @param diagnostics what the geometry says, which holds the systems
+     */
+    private static void piOrbitals(SceneBuilder scene, Projection layout, RenderStyle3D style, SceneRenderer3D.Frame frame, boolean[] shown, Diagnostics diagnostics)
+    {
+        double ppa = style.pixelsPerAngstrom();
+        for (Diagnostics.Conjugation system : diagnostics.conjugations())
+        {
+            for (Diagnostics.PiOrbital orbital : system.orbitals())
+            {
+                if (!shown[orbital.node()])
+                {
+                    continue;
+                }
+                Point nucleus = at(layout, frame, style, orbital.node());
+                for (Vec3 tip : List.of(orbital.above(), orbital.below()))
+                {
+                    Camera.Projected seen = layout.camera().project(tip);
+                    if (seen.visible())
+                    {
+                        lobe(scene, nucleus, frame.point(seen.x(), seen.y(), ppa), orbital.electrons(), ppa * seen.scale());
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Labels each conjugated system with what it amounts to, in the middle of its atoms.
+     *
+     * @param scene what is being drawn into
+     * @param layout what is being drawn
+     * @param style how it is drawn
+     * @param frame where the drawing's pixels lie
+     * @param shown which nodes are drawn
+     * @param diagnostics what the geometry says, which holds the systems
+     */
+    private static void piLabels(SceneBuilder scene, Projection layout, RenderStyle3D style, SceneRenderer3D.Frame frame, boolean[] shown, Diagnostics diagnostics)
+    {
+        for (Diagnostics.Conjugation system : diagnostics.conjugations())
+        {
+            List<Point> centres = system.orbitals().stream()
+                .filter(orbital -> shown[orbital.node()])
+                .map(orbital -> at(layout, frame, style, orbital.node()))
+                .toList();
+            if (centres.isEmpty())
+            {
+                continue;
+            }
+            Point middle = new Point(centres.stream().mapToDouble(Point::x).average().orElseThrow(),
+                centres.stream().mapToDouble(Point::y).average().orElseThrow());
+            label(scene, middle, String.format(Locale.ROOT, "%s · %d π",
+                system.aromaticity().name().toLowerCase(Locale.ROOT), system.piElectrons()), PI);
+        }
+    }
+
+    /**
+     * Draws one lobe of a π orbital, as an oval standing clear of the nucleus.
+     *
+     * @param scene what is being drawn into
+     * @param nucleus where the atom the lobe stands on is drawn
+     * @param tip where the lobe reaches
+     * @param electrons how many π electrons that atom lends
+     * @param unit how many pixels an angstrom is at the lobe's depth
+     */
+    private static void lobe(SceneBuilder scene, Point nucleus, Point tip, int electrons, double unit)
+    {
+        double x = tip.x() - nucleus.x();
+        double y = tip.y() - nucleus.y();
+        Point along = new Point(x * (1 - PI_LOBE_START) / 2, y * (1 - PI_LOBE_START) / 2);
+        Point centre = new Point(nucleus.x() + x * PI_LOBE_START + along.x(), nucleus.y() + y * PI_LOBE_START + along.y());
+        oval(scene, centre, along, (PI_LOBE_RADIUS + PI_LOBE_PER_ELECTRON * electrons) * unit);
+    }
+
+    /**
+     * Draws an oval, as a polygon of the ellipse the two axes give.
+     *
+     * @param scene what is being drawn into
+     * @param centre the middle of the oval
+     * @param along half of its long axis, which is where it points
+     * @param width half of its short axis, in pixels
+     */
+    private static void oval(SceneBuilder scene, Point centre, Point along, double width)
+    {
+        double length = Math.hypot(along.x(), along.y());
+        if (length < 1e-9)
+        {
+            return;
+        }
+        Point across = new Point(-along.y() / length * width, along.x() / length * width);
+
+        List<Point> corners = new ArrayList<>(OVAL_CORNERS);
+        for (int corner = 0; corner < OVAL_CORNERS; corner++)
+        {
+            double turn = 2 * Math.PI * corner / OVAL_CORNERS;
+            corners.add(new Point(centre.x() + along.x() * Math.cos(turn) + across.x() * Math.sin(turn),
+                centre.y() + along.y() * Math.cos(turn) + across.y() * Math.sin(turn)));
+        }
+        scene.polygon(corners).fill(PI).opacity(0.3).stroke(PI).strokeWidth(1);
     }
 
     /** A vector of the given length at right angles to the line between two points. */

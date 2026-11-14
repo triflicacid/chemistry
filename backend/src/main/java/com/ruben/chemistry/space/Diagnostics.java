@@ -1,11 +1,16 @@
 package com.ruben.chemistry.space;
 
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.PiSystem;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * @param strain the embedder's total strain for this conformer
@@ -14,6 +19,7 @@ import java.util.Locale;
  * @param torsions the torsions about bonds outside rings between atoms whose ideal is known
  * @param clashes non-bonded pairs closer than their contact distance
  * @param lonePairs where the lone pairs point
+ * @param conjugations the π orbitals of each conjugated system, as this conformer holds them
  * @param atomStrain each node's share of the deviation, where 1 is one term at its tolerance
  */
 public record Diagnostics(
@@ -23,6 +29,7 @@ public record Diagnostics(
         List<Torsion> torsions,
         List<Clash> clashes,
         List<LonePair> lonePairs,
+        List<Conjugation> conjugations,
         List<Double> atomStrain)
 {
     /** How far a bond may stray from its ideal, in angstroms, before it counts as strained. */
@@ -43,6 +50,15 @@ public record Diagnostics(
     private static final double LOBE_LENGTH = 0.9;
     private static final double TETRAHEDRAL_HALF = Math.toRadians(54.74);
     private static final double CONE = Math.toRadians(70.53);
+
+    /** How far a π orbital's lobe reaches from its atom, in angstroms. */
+    private static final double PI_LOBE_LENGTH = 0.75;
+
+    /** How far off the plane of a π system its cloud lies, in angstroms. */
+    private static final double PI_CLOUD_OFFSET = 0.45;
+
+    /** The length below which a vector is taken to have no direction worth using. */
+    private static final double TINY = 1e-6;
 
     /** A bond, its length and the length it should be, in angstroms. */
     public record Length(int first, int second, double actual, double ideal)
@@ -87,6 +103,47 @@ public record Diagnostics(
 
     /** One lone pair on a node, pointing in the direction of {@code tip}, a point near the atom. */
     public record LonePair(int node, Vec3 tip)
+    {
+    }
+
+    /**
+     * One atom's π orbital: a lobe either side of the plane its σ bonds lie in.
+     *
+     * @param node the node the orbital sits on
+     * @param electrons how many π electrons the atom lends its system
+     * @param above where the lobe on one side of the plane reaches
+     * @param below where the lobe on the other side reaches
+     */
+    public record PiOrbital(int node, int electrons, Vec3 above, Vec3 below)
+    {
+    }
+
+    /**
+     * One bond's share of a π system's cloud: the lozenge lying over the bond, on each face of
+     * the system. It runs the length of the bond, which its ends give.
+     *
+     * @param first the node at one end of the bond
+     * @param second the node at the other
+     * @param above the middle of the lozenge on one face of the system
+     * @param below the middle of the one on the other face
+     */
+    public record PiCloud(int first, int second, Vec3 above, Vec3 below)
+    {
+    }
+
+    /**
+     * One conjugated π system, as the two pictures chemistry draws of one: the p orbital standing
+     * on each atom, and the cloud they overlap into.
+     *
+     * @param orbitals one π orbital per atom of the system, in the molecule's own order
+     * @param clouds the cloud over each of the system's bonds, in the molecule's own order; a bond
+     *     whose atoms give no plane to lie either side of is left out
+     * @param piElectrons the π electrons counted over the system's atoms
+     * @param aromaticity what the system amounts to as written
+     * @see PiSystem
+     */
+    public record Conjugation(List<PiOrbital> orbitals, List<PiCloud> clouds, int piElectrons,
+        PiSystem.Aromaticity aromaticity)
     {
     }
 
@@ -205,13 +262,19 @@ public record Diagnostics(
             lonePairs.addAll(lonePairsOf(topology, node, at));
         }
 
+        List<Conjugation> conjugations = new ArrayList<>();
+        for (PiSystem system : molecule.piSystems())
+        {
+            conjugations.add(conjugationOf(molecule, topology, system, at));
+        }
+
         List<Double> atomStrain = new ArrayList<>(topology.count);
         for (double value : share)
         {
             atomStrain.add(value);
         }
         return new Diagnostics(chosen.strain(), List.copyOf(lengths), List.copyOf(angles), List.copyOf(torsions),
-            List.copyOf(clashes), List.copyOf(lonePairs), List.copyOf(atomStrain));
+            List.copyOf(clashes), List.copyOf(lonePairs), List.copyOf(conjugations), List.copyOf(atomStrain));
     }
 
     /**
@@ -262,8 +325,9 @@ public record Diagnostics(
         findings.sort(Comparator.comparingDouble(Finding::severity).reversed());
 
         StringBuilder text = new StringBuilder();
-        text.append(String.format(Locale.ROOT, "Strain %.3f; %d bonds, %d angles, %d torsions, %d clashes, %d lone pairs%n",
-            strain, lengths.size(), angles.size(), torsions.size(), clashes.size(), lonePairs.size()));
+        text.append(String.format(Locale.ROOT,
+            "Strain %.3f; %d bonds, %d angles, %d torsions, %d clashes, %d lone pairs, %d pi systems%n",
+            strain, lengths.size(), angles.size(), torsions.size(), clashes.size(), lonePairs.size(), conjugations.size()));
         if (findings.isEmpty())
         {
             text.append("Nothing beyond tolerance.").append(System.lineSeparator());
@@ -450,6 +514,97 @@ public record Diagnostics(
             found.add(new LonePair(node, centre.plus(direction.normalised().times(LOBE_LENGTH))));
         }
         return found;
+    }
+
+    /**
+     * Stands one π system's orbitals up on the conformer.
+     * <p>
+     * A π orbital is the p orbital left over once an atom's σ bonds are accounted for, so it points
+     * along the normal of the plane those bonds lie in.
+     *
+     * @param molecule the molecule the system belongs to
+     * @param topology the molecule restated as nodes, whose written atoms are numbered as its own are
+     * @param system one of its π systems
+     * @param at where every node sits
+     * @return the system's orbitals and cloud, with its electron count and what it amounts to
+     */
+    private static Conjugation conjugationOf(Molecule molecule, Topology topology, PiSystem system, List<Vec3> at)
+    {
+        List<Atom> atoms = molecule.atoms();
+        Map<Atom, Integer> nodeOf = new IdentityHashMap<>();
+        for (int node = 0; node < atoms.size(); node++)
+        {
+            nodeOf.put(atoms.get(node), node);
+        }
+
+        Vec3 reference = Vec3.ZERO;
+        Map<Atom, Vec3> normals = new IdentityHashMap<>();
+        List<PiOrbital> orbitals = new ArrayList<>();
+        for (Atom atom : system.atoms())
+        {
+            int node = nodeOf.get(atom);
+            Vec3 normal = normalAt(topology, node, at);
+            if (normal.length() <= TINY)
+            {
+                continue;
+            }
+            if (reference.length() <= TINY)
+            {
+                reference = normal;
+            }
+            else if (normal.dot(reference) < 0)
+            {
+                // ensure they point the same way
+                normal = normal.times(-1);
+            }
+
+            Vec3 centre = at.get(node);
+            Vec3 lobe = normal.times(PI_LOBE_LENGTH);
+            int electrons = PiSystem.piElectronsOf(molecule, atom).orElse(0);
+            normals.put(atom, normal);
+            orbitals.add(new PiOrbital(node, electrons, centre.plus(lobe), centre.minus(lobe)));
+        }
+
+        List<PiCloud> clouds = new ArrayList<>();
+        for (Bond bond : system.bonds())
+        {
+            Vec3 first = normals.get(bond.first());
+            Vec3 second = normals.get(bond.second());
+            if (first == null || second == null)
+            {
+                continue;
+            }
+            Vec3 normal = first.plus(second).normalised();
+            Vec3 middle = at.get(nodeOf.get(bond.first())).plus(at.get(nodeOf.get(bond.second()))).times(0.5);
+            Vec3 offset = normal.times(PI_CLOUD_OFFSET);
+            clouds.add(new PiCloud(nodeOf.get(bond.first()), nodeOf.get(bond.second()),
+                middle.plus(offset), middle.minus(offset)));
+        }
+        return new Conjugation(List.copyOf(orbitals), List.copyOf(clouds), system.piElectrons(), system.aromaticity());
+    }
+
+    /**
+     * Fits a plane to the bonds at one atom and takes its normal.
+     *
+     * @param topology the molecule restated as nodes
+     * @param node the node to fit the plane at
+     * @param at where every node sits
+     * @return the unit normal, or {@link Vec3#ZERO} if its bonds give no plane
+     */
+    private static Vec3 normalAt(Topology topology, int node, List<Vec3> at)
+    {
+        int[] around = topology.neighbours[node];
+        Vec3 centre = at.get(node);
+        Vec3 normal = Vec3.ZERO;
+        for (int first = 0; first < around.length; first++)
+        {
+            for (int second = first + 1; second < around.length; second++)
+            {
+                Vec3 pair = at.get(around[first]).minus(centre).cross(at.get(around[second]).minus(centre));
+                normal = pair.dot(normal) < 0 ? normal.minus(pair) : normal.plus(pair);
+            }
+        }
+        return normal.length() > TINY ? normal.normalised() : Vec3.ZERO;
     }
 
     private static Vec3 perpendicular(Vec3 axis)

@@ -61,7 +61,11 @@ public record RenderStyle3D(
         /** Atoms tinted red by how strained they are. */
         STRAIN,
         /** Where lone pairs point. */
-        LONE_PAIRS
+        LONE_PAIRS,
+        /** The π cloud lying either side of each conjugated system, labelled with what it amounts to. */
+        PI_SYSTEMS,
+        /** The p orbital standing on each atom of a conjugated system, drawn by what it lends. */
+        PI_ORBITALS
     }
 
     public RenderStyle3D
