@@ -36,8 +36,8 @@ public final class SmilesParser
     /** Guards {@link #parse()} against being called more than once. */
     private final CallGuard parseGuard = new CallGuard();
 
-    /** The atoms branches were opened from, innermost last, to return to as each one closes. */
-    private final Deque<Atom> branchStack = new ArrayDeque<>();
+    /** The branches opened but not yet closed, innermost last. */
+    private final Deque<OpenBranch> branchStack = new ArrayDeque<>();
 
     /** Collects the double bonds and directional bonds parsed so far, and declares their stereo. */
     private final StereoTracker<Atom> stereo = new StereoTracker<>(builder::setDoubleBondStereo);
@@ -54,6 +54,9 @@ public final class SmilesParser
     /** A bond symbol read but not yet applied, since the atom it bonds to comes after it. */
     private String pendingBondSymbol;
     private int pendingBondPosition;
+
+    /** A disconnection dot read but not yet followed by the atom it must precede, or {@code null} if there is none. */
+    private Token pendingDot;
 
     /** Where each atom was written, by atom identity. */
     private final Map<Atom, Span> atomSpans = new IdentityHashMap<>();
@@ -123,6 +126,10 @@ public final class SmilesParser
         if (pendingBondSymbol != null)
         {
             throw new InvalidNotationException("Bond symbol not followed by an atom", source, pendingBondPosition);
+        }
+        if (pendingDot != null)
+        {
+            throw new InvalidNotationException("Dot not followed by an atom", source, pendingDot.position());
         }
         if (!openRingBonds.isEmpty())
         {
@@ -214,7 +221,7 @@ public final class SmilesParser
             case BOND -> parseBond(token);
             case BRANCH_OPEN -> parseBranchOpen(token);
             case BRANCH_CLOSE -> parseBranchClose(token);
-            case DOT -> parseDot();
+            case DOT -> parseDot(token);
             case RING_BOND -> parseRingBond(token);
             default -> throw new InvalidNotationException("Unexpected token '" + token.text() + "'", source, token.position());
         }
@@ -438,14 +445,15 @@ public final class SmilesParser
         }
 
         lexer.next();
-        branchStack.push(previousAtom);
+        branchStack.push(new OpenBranch(previousAtom, token.position(), atomSpans.size()));
     }
 
     /**
      * Consumes a branch-closing token, restoring the atom the branch was opened from.
      *
      * @param token the peeked {@link TokenType#BRANCH_CLOSE} token
-     * @throws InvalidNotationException if there is no open branch to close
+     * @throws InvalidNotationException if there is no open branch to close, the branch holds no
+     *     atom, or it ends on a dot
      */
     private void parseBranchClose(Token token)
     {
@@ -453,25 +461,41 @@ public final class SmilesParser
         {
             throw new InvalidNotationException("Unmatched ')'", source, token.position());
         }
+        if (pendingDot != null)
+        {
+            throw new InvalidNotationException("Dot not followed by an atom", source, pendingDot.position());
+        }
 
         lexer.next();
-        previousAtom = branchStack.pop();
+        OpenBranch branch = branchStack.pop();
+        // a branch stands for a chain hanging off its atom, and a chain is at least one atom
+        if (atomSpans.size() == branch.atomsBefore())
+        {
+            throw new InvalidNotationException("Branch holds no atom", source, branch.position());
+        }
+        previousAtom = branch.atom();
     }
 
     /**
      * Consumes a disconnection dot, clearing the preceding atom so the next atom begins a
      * new, unbonded fragment.
      *
-     * @throws InvalidNotationException if a bond symbol is pending
+     * @param token the peeked {@link TokenType#DOT} token
+     * @throws InvalidNotationException if a bond symbol is pending, or there is no preceding atom
      */
-    private void parseDot()
+    private void parseDot(Token token)
     {
-        lexer.next();
         if (pendingBondSymbol != null)
         {
             throw new InvalidNotationException("Bond symbol not followed by an atom", source, pendingBondPosition);
         }
+        if (previousAtom == null)
+        {
+            throw new InvalidNotationException("Dot not preceded by an atom", source, token.position());
+        }
 
+        lexer.next();
+        pendingDot = token;
         previousAtom = null;
     }
 
@@ -587,6 +611,17 @@ public final class SmilesParser
     }
 
     /**
+     * A branch opened but not yet closed.
+     *
+     * @param atom the atom the branch was opened from, to return to when it closes
+     * @param position the opening bracket's source position, for error reporting
+     * @param atomsBefore how many atoms had been parsed when it opened, to tell whether it holds any
+     */
+    private record OpenBranch(Atom atom, int position, int atomsBefore)
+    {
+    }
+
+    /**
      * An as-yet-unmatched ring-closure digit, recorded at the atom it was opened on.
      *
      * @param atom the atom the ring closure was opened on
@@ -651,6 +686,7 @@ public final class SmilesParser
         }
 
         pendingBondSymbol = null;
+        pendingDot = null;
         previousAtom = atom;
     }
 

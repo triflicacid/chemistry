@@ -199,11 +199,10 @@ class SmilesParserTest
         @Test
         void throws_when_a_bond_symbol_is_followed_by_an_empty_branch()
         {
-            // the branch opens and closes with no atom in between, so the pending '='
-            // is still dangling once the branch is closed and the input is exhausted
+            // the branch holds no atom for the pending '=' to bond to, and closing it says so first
             assertThatThrownBy(() -> parse("C=()"))
                 .isInstanceOf(InvalidNotationException.class)
-                .hasMessageContaining("Bond symbol not followed by an atom");
+                .hasMessageContaining("Branch holds no atom");
         }
     }
 
@@ -304,6 +303,22 @@ class SmilesParserTest
                 .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Unmatched '('");
         }
+
+        @Test
+        void throws_for_a_branch_holding_no_atom()
+        {
+            assertThatThrownBy(() -> parse("CC()"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("Branch holds no atom");
+        }
+
+        @Test
+        void throws_for_a_branch_holding_only_a_ring_closure()
+        {
+            assertThatThrownBy(() -> parse("C1CC(1)C"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("Branch holds no atom");
+        }
     }
 
     @Nested
@@ -335,6 +350,76 @@ class SmilesParserTest
             assertThatThrownBy(() -> parse("C=.C"))
                 .isInstanceOf(InvalidNotationException.class)
                 .hasMessageContaining("Bond symbol not followed by an atom");
+        }
+
+        @Test
+        void parses_a_dot_that_starts_a_branch()
+        {
+            Molecule molecule = parse("C(.C)C");
+
+            assertThat(molecule.atomCount()).isEqualTo(3);
+            assertThat(molecule.bondCount()).isEqualTo(1);
+            assertThat(molecule.fragmentCount()).isEqualTo(2);
+        }
+
+        @Test
+        void parses_a_dot_within_a_branch()
+        {
+            Molecule molecule = parse("C(C.C)C");
+
+            assertThat(molecule.atomCount()).isEqualTo(4);
+            assertThat(molecule.bondCount()).isEqualTo(2);
+            assertThat(molecule.fragmentCount()).isEqualTo(2);
+        }
+
+        @Test
+        void parses_a_counter_ion_written_inside_a_branch()
+        {
+            // the specification's own example: the sodium belongs with the alkoxide, not at the end of the string
+            Molecule molecule = parse("C1CC(.[Na+])CC1[O-]");
+
+            assertThat(molecule.atomCount()).isEqualTo(7);
+            assertThat(molecule.fragmentCount()).isEqualTo(2);
+        }
+
+        @Test
+        void throws_for_a_leading_dot()
+        {
+            assertThatThrownBy(() -> parse(".CCO"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("Dot not preceded by an atom");
+        }
+
+        @Test
+        void throws_for_a_trailing_dot()
+        {
+            assertThatThrownBy(() -> parse("CCO."))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("Dot not followed by an atom");
+        }
+
+        @Test
+        void throws_for_two_dots_in_a_row()
+        {
+            assertThatThrownBy(() -> parse("C..C"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("Dot not preceded by an atom");
+        }
+
+        @Test
+        void throws_for_a_dot_on_its_own()
+        {
+            assertThatThrownBy(() -> parse("."))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("Dot not preceded by an atom");
+        }
+
+        @Test
+        void throws_when_a_branch_ends_on_a_dot()
+        {
+            assertThatThrownBy(() -> parse("C(C.)C"))
+                .isInstanceOf(InvalidNotationException.class)
+                .hasMessageContaining("Dot not followed by an atom");
         }
     }
 
