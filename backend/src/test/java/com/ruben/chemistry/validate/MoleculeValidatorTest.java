@@ -217,8 +217,24 @@ class MoleculeValidatorTest
             assertThat(messagesOf("[CH3]")).anyMatch(message -> message.contains("9 electrons"));
             assertThat(rulesOf("[Fe+3].[Cl-].[Cl-].[Cl-]")).contains(Rule.ELECTRONS_ODD);
             assertThat(rulesOf("C")).doesNotContain(Rule.ELECTRONS_ODD);
-            // a wildcard leaves the molecule's electrons uncountable rather than odd
+            // a wildcard leaves the electrons uncountable rather than odd
             assertThat(rulesOf("*C")).doesNotContain(Rule.ELECTRONS_ODD);
+        }
+
+        @Test
+        void counts_each_fragment_on_its_own()
+        {
+            // electrons pair within a species, so two radicals are two findings and not one even total
+            assertThat(reported("[CH3].[CH3]", Rule.ELECTRONS_ODD))
+                .containsExactly(Rule.ELECTRONS_ODD, Rule.ELECTRONS_ODD);
+            assertThat(reported("[CH3].[CH3].[CH3]", Rule.ELECTRONS_ODD)).hasSize(3);
+            // ethane twice over is still ethane twice over
+            assertThat(reported("CC.CC", Rule.ELECTRONS_ODD)).isEmpty();
+            // only the iron is a radical here, the chlorides having taken their electron
+            assertThat(reported("[Fe+3].[Cl-].[Cl-].[Cl-]", Rule.ELECTRONS_ODD))
+                .containsExactly(Rule.ELECTRONS_ODD);
+            // a wildcard stops only its own fragment being counted
+            assertThat(reported("*C.[CH3]", Rule.ELECTRONS_ODD)).containsExactly(Rule.ELECTRONS_ODD);
         }
 
         @Test
