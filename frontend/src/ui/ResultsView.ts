@@ -20,6 +20,8 @@ interface Shown {
 export class ResultsView {
   readonly element = document.createElement("section");
   private shown: Shown | null = null;
+  /** The field a SMILES is being typed into, while no molecule is shown. */
+  private entry: SmilesField | null = null;
   private inspector: MoleculeInspector | null = null;
   private formula: FormulaView | null = null;
   private readonly selection = new Selection();
@@ -47,6 +49,7 @@ export class ResultsView {
     this.reset();
     const field = new SmilesField(new SmilesText(smiles), this.edit, true);
     field.setError(problem);
+    this.entry = field;
     const card = document.createElement("figure");
     card.className = "card";
     card.append(ResultsView.label("SMILES"), field.element);
@@ -74,6 +77,11 @@ export class ResultsView {
     );
     this.element.replaceChildren(card);
     this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
+  }
+
+  /** What has been typed into the SMILES field, or blank if there is nothing to type into. */
+  get entered(): string {
+    return this.entry?.entered ?? "";
   }
 
   /** Adds a line of text to the card being shown. */
@@ -132,6 +140,7 @@ export class ResultsView {
   }
 
   private reset(): void {
+    this.entry = null;
     this.inspector?.detach();
     this.inspector = null;
     this.formula = null;

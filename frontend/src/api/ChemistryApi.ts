@@ -1,5 +1,5 @@
 import { ApiError, HttpClient } from "./http";
-import type { LibraryEntry, MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, Scene, StoredMolecule, Structure3D } from "./types";
+import type { LibraryEntry, MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, QueryEntry, Scene, StoredMolecule, Structure3D } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
@@ -62,19 +62,34 @@ export class ChemistryApi {
     return this.http.json<Structure3D>("GET", `/api/molecules/${encodeURIComponent(id)}/structure/3d`);
   }
 
-  /** Searches the molecule library: names starting with `name`, in every one of `categories`. Sorted by name. */
-  searchLibrary(name: string, categories: string[]): Promise<LibraryEntry[]> {
+  /** Searches the molecule library: names containing `name`, in every one of `categories`. Sorted by name. */
+  searchMolecules(name: string, categories: string[]): Promise<LibraryEntry[]> {
+    return this.http.json<LibraryEntry[]>("GET", `/api/library/molecule/search?${ChemistryApi.filters(name, categories)}`);
+  }
+
+  /** Every category used in the molecule library. */
+  moleculeCategories(): Promise<string[]> {
+    return this.http.json<string[]>("GET", "/api/library/molecule/categories");
+  }
+
+  /** Searches the SMARTS library: names containing `name`, in every one of `categories`. Sorted by name. */
+  searchQueries(name: string, categories: string[]): Promise<QueryEntry[]> {
+    return this.http.json<QueryEntry[]>("GET", `/api/library/query/search?${ChemistryApi.filters(name, categories)}`);
+  }
+
+  /** Every category used in the SMARTS library. */
+  queryCategories(): Promise<string[]> {
+    return this.http.json<string[]>("GET", "/api/library/query/categories");
+  }
+
+  /** The query string a library search is narrowed by. */
+  private static filters(name: string, categories: string[]): URLSearchParams {
     const query = new URLSearchParams();
     if (name) {
       query.set("name", name);
     }
     categories.forEach((category) => query.append("category", category));
-    return this.http.json<LibraryEntry[]>("GET", `/api/library/search?${query}`);
-  }
-
-  /** Every category used in the molecule library. */
-  libraryCategories(): Promise<string[]> {
-    return this.http.json<string[]>("GET", "/api/library/categories");
+    return query;
   }
 
   /** Stores a molecule. */

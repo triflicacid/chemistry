@@ -2,6 +2,7 @@ import type { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
 import { ViewStore } from "../store";
 import { LibraryDialog } from "./LibraryDialog";
+import { moleculeTab, queryTab } from "./LibraryTabs";
 import { MoleculePanel, type Mode, type PanelHost } from "./MoleculePanel";
 import { OptionsPanel } from "./OptionsPanel";
 import { SearchForm } from "./SearchForm";
@@ -31,7 +32,10 @@ export class App implements PanelHost {
   private restoring = false;
 
   constructor(readonly api: ChemistryApi) {
-    this.library = new LibraryDialog(api, (smiles) => this.insertSmiles(smiles));
+    this.library = new LibraryDialog([
+      moleculeTab(api, (smiles) => this.insertSmiles(smiles)),
+      queryTab(api, (smarts) => this.applySmarts(smarts), (smiles) => this.insertSmiles(smiles)),
+    ]);
     this.results.className = "results";
     this.add.type = "button";
     this.add.className = "add-molecule";
@@ -107,6 +111,7 @@ export class App implements PanelHost {
 
   /** Adds a panel showing this SMILES. */
   private insertSmiles(smiles: string): Promise<void> {
+    this.panels.filter((panel) => panel.blank).forEach((panel) => this.removeRequested(panel));
     return this.addPanel().load(smiles);
   }
 
@@ -124,6 +129,13 @@ export class App implements PanelHost {
     }
     const smiles = this.panels.map((panel) => panel.smiles).filter((value): value is string => value !== null);
     this.store.rememberInput(smiles.join("\n"));
+  }
+
+  /** Searches every molecule shown for a pattern taken from the library. */
+  private applySmarts(smarts: string): void {
+    this.form.setSmarts(smarts);
+    this.search(smarts);
+    this.library.element.close();
   }
 
   private search(smarts: string): void {
