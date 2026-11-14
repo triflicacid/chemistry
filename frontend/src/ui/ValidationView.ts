@@ -6,8 +6,11 @@ export class ValidationView {
   readonly element = document.createElement("section");
   private readonly summary = document.createElement("p");
   private readonly list = document.createElement("ul");
+  private readonly point: (finding: FindingInfo | null) => void;
 
-  constructor() {
+  /** @param point hears which finding the reader is on, and null once they leave it */
+  constructor(point: (finding: FindingInfo | null) => void = () => {}) {
+    this.point = point;
     this.element.className = "validation";
     this.element.hidden = true;
     this.summary.className = "validation-summary";
@@ -17,6 +20,7 @@ export class ValidationView {
 
   /** Hides the list and forgets what it held. */
   clear(): void {
+    this.point(null);
     this.element.hidden = true;
     this.summary.textContent = "";
     this.summary.className = "validation-summary";
@@ -43,7 +47,7 @@ export class ValidationView {
     this.summary.className = `validation-summary ${ValidationView.worst(report)}`;
     this.summary.textContent = ValidationView.describe(report);
     for (const finding of report.findings) {
-      this.list.append(ValidationView.row(finding, smiles));
+      this.list.append(this.row(finding, smiles));
     }
   }
 
@@ -52,9 +56,17 @@ export class ValidationView {
    * @param smiles the SMILES its spans are positions in
    * @return the finding as a row of the list
    */
-  private static row(finding: FindingInfo, smiles: string): HTMLElement {
+  private row(finding: FindingInfo, smiles: string): HTMLElement {
     const row = document.createElement("li");
     row.className = `finding ${finding.severity}`;
+    // reachable by keyboard as well as pointer, since pointing at the molecule is how a finding is read
+    if (finding.atoms.length > 0 || finding.bonds.length > 0) {
+      row.tabIndex = 0;
+      row.addEventListener("mouseenter", () => this.point(finding));
+      row.addEventListener("focus", () => this.point(finding));
+      row.addEventListener("mouseleave", () => this.point(null));
+      row.addEventListener("blur", () => this.point(null));
+    }
 
     const label = document.createElement("span");
     label.className = "finding-severity";

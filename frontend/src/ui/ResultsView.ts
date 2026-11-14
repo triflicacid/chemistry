@@ -1,6 +1,6 @@
 import type { MoleculeId, MoleculeMetadata } from "../api/types";
 import { Selection } from "../store";
-import type { MoleculeView } from "../view/MoleculeView";
+import type { FaultState, MoleculeView } from "../view/MoleculeView";
 import { FormulaView } from "./FormulaView";
 import { MoleculeInspector } from "./MoleculeInspector";
 import { SmilesField } from "./SmilesField";
@@ -84,6 +84,11 @@ export class ResultsView {
     return this.entry?.entered ?? "";
   }
 
+  /** Marks the atoms and bonds of one validation finding in the molecule shown, or clears the marks with null. */
+  setFaults(faults: FaultState | null): void {
+    this.shown?.view.setFaults(faults);
+  }
+
   /** Adds a line of text to the card being shown. */
   note(text: string): void {
     const note = document.createElement("p");
@@ -149,6 +154,7 @@ export class ResultsView {
       this.shown.unsubscribe();
       this.shown.view.setSelection({ atoms: new Set(), bonds: new Set() });
       this.shown.view.setHighlights({ hover: null, ends: [] });
+      this.shown.view.setFaults(null);
     }
     this.shown = null;
   }

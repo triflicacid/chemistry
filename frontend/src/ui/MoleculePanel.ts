@@ -50,7 +50,9 @@ export class MoleculePanel {
   private readonly body = document.createElement("div");
   private readonly chevron = document.createElement("button");
   private readonly matches = document.createElement("section");
-  private readonly validation = new ValidationView();
+  private readonly validation = new ValidationView((finding) =>
+    this.results.setFaults(finding && { severity: finding.severity, atoms: new Set(finding.atoms), bonds: new Set(finding.bonds) }),
+  );
   /** Tells a slow validation request that the panel has moved on. */
   private validateRequest = 0;
   private matchViews: SvgView[] = [];

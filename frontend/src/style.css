@@ -381,6 +381,31 @@ button.small {
   stroke: rgba(255, 211, 61, .55);
 }
 
+/* What a validation finding is about, coloured as the findings list colours its severity. */
+.card svg .atom.fault-error > circle:first-of-type {
+  fill: rgba(207, 34, 46, .45);
+}
+
+.card svg .bond.fault-error > line:first-of-type {
+  stroke: rgba(207, 34, 46, .55);
+}
+
+.card svg .atom.fault-warning > circle:first-of-type {
+  fill: rgba(154, 103, 0, .45);
+}
+
+.card svg .bond.fault-warning > line:first-of-type {
+  stroke: rgba(154, 103, 0, .55);
+}
+
+.card svg .atom.fault-info > circle:first-of-type {
+  fill: rgba(9, 105, 218, .45);
+}
+
+.card svg .bond.fault-info > line:first-of-type {
+  stroke: rgba(9, 105, 218, .55);
+}
+
 .card svg .atom.selected > circle:first-of-type {
   fill: rgba(88, 166, 255, .4);
 }
@@ -686,6 +711,16 @@ button.small {
 
 .finding.info .finding-severity {
   color: #0969da;
+}
+
+.finding[tabindex] {
+  cursor: default;
+}
+
+.finding[tabindex]:hover,
+.finding[tabindex]:focus-visible {
+  outline: none;
+  filter: brightness(.97);
 }
 
 .finding-rule {
