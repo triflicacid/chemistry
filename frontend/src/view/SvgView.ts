@@ -1,5 +1,5 @@
 import type { Scene, SceneAttributes, SceneElement, ScenePoint } from "../api/types";
-import type { Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
+import type { FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -161,13 +161,29 @@ export class SvgView implements MoleculeView {
     }
   }
 
+  setFaults(faults: FaultState | null): void {
+    for (const node of this.element.querySelectorAll("[class*='fault-']")) {
+      node.classList.remove("fault-error", "fault-warning", "fault-info");
+    }
+    if (!faults) {
+      return;
+    }
+
+    const mark = `fault-${faults.severity}`;
+    for (const [kind, faulted] of [["atom", faults.atoms], ["bond", faults.bonds]] as const) {
+      for (const index of faulted) {
+        this.element.querySelector(`.${kind}[data-${kind}="${index}"]`)?.classList.add(mark);
+      }
+    }
+  }
+
   readonly imageExtension = "svg";
 
   async exportImage(): Promise<Blob> {
     const copy = this.element.cloneNode(true) as SVGSVGElement;
     copy.setAttribute("xmlns", NS);
-    copy.querySelectorAll(".hover, .selected, [class*='hover-end']").forEach((node) => {
-      node.classList.remove("hover", "hover-end-1", "hover-end-2", "selected");
+    copy.querySelectorAll(".hover, .selected, [class*='hover-end'], [class*='fault-']").forEach((node) => {
+      node.classList.remove("hover", "hover-end-1", "hover-end-2", "selected", "fault-error", "fault-warning", "fault-info");
     });
     return new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" });
   }

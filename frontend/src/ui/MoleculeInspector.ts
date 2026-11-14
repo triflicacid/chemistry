@@ -128,7 +128,7 @@ export class MoleculeInspector {
       if (atom.aromatic) {
         rows.push(["Aromatic", "yes"]);
       }
-      rows.push(["Fragment", `${atom.fragment} (of ${this.metadata.fragments.length})`]);
+      rows.push(["Fragment", `${atom.fragment + 1} (of ${this.metadata.fragments.length})`]);
     } else if (bond) {
       title = `Bond ${bond.index}`;
       rows.push(

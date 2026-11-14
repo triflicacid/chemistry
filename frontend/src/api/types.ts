@@ -84,6 +84,13 @@ export interface BondInfo {
 export interface RingInfo {
   index: number;
   size: number;
+  /** How the ring's bonds are written, which is independent of whether the ring is aromatic. */
+  notation: "aromatic" | "mixed" | "plain";
+  /**
+   * Index into MoleculeMetadata.systems of the pi system this ring belongs to, or null if its atoms
+   * cannot all join one. The ring is aromatic exactly when that system is.
+   */
+  system: number | null;
   /** Atom indices. */
   atoms: number[];
   bonds: number[];
@@ -91,6 +98,30 @@ export interface RingInfo {
   formula: string;
   /** Where each of atoms is written in smiles, in the same order. */
   spans: Span[];
+}
+
+/**
+ * One conjugated pi system: a ring, or a set of rings fused into a single plane.
+ *
+ * A system is aromatic when its bonds can be assigned as alternating single and double bonds,
+ * which is what `kekulisable` reports. An electron count is not what decides it: Huckel's 4n+2
+ * governs a lone ring and no more, and pyrene holds 16 pi electrons while being as aromatic as
+ * benzene. `pi_electrons` is still reported, and 4n is what makes a lone ring antiaromatic.
+ */
+export interface SystemInfo {
+  index: number;
+  aromaticity: "aromatic" | "antiaromatic" | "nonaromatic";
+  /** Whether the system's bonds can be assigned at all; false means it is not a readable structure. */
+  kekulisable: boolean;
+  /** The pi electrons counted over its atoms. */
+  pi_electrons: number;
+  /** How many of MoleculeMetadata.rings fused into it. */
+  ring_count: number;
+  /** Atom indices. */
+  atoms: number[];
+  bonds: number[];
+  /** Indices into MoleculeMetadata.rings. */
+  rings: number[];
 }
 
 /** One unit of a fragmented formula */
@@ -136,7 +167,37 @@ export interface MoleculeMetadata {
   atoms: AtomInfo[];
   bonds: BondInfo[];
   rings: RingInfo[];
+  systems: SystemInfo[];
   fragments: FragmentInfo[];
+}
+
+/** How much a finding ought to stop you using the molecule. */
+export type Severity = "error" | "warning" | "info";
+
+/** One thing the checks found in a molecule. */
+export interface FindingInfo {
+  /** The rule's stable identifier, e.g. "aromatic.system.not-kekulizable". */
+  rule: string;
+  severity: Severity;
+  /** What part of the molecule it is about, e.g. "aromaticity". */
+  category: string;
+  /** The finding in words. */
+  message: string;
+  /** What to change about the molecule, or null where the rule asks for no change. */
+  hint: string | null;
+  /** Atom indices. */
+  atoms: number[];
+  bonds: number[];
+  /** Where those atoms and bonds are written in MoleculeMetadata.smiles. */
+  spans: Span[];
+}
+
+/** What checking a molecule found, worst first. */
+export interface ValidationReport {
+  errors: number;
+  warnings: number;
+  infos: number;
+  findings: FindingInfo[];
 }
 
 /** A molecule of the server's library. */

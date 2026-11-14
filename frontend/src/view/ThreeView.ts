@@ -25,7 +25,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { CameraPose, Connection3D, MatchHighlight, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
-import type { Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
+import type { FaultSeverity, FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
 /** The matches of a SMARTS pattern to show in a view. */
 export interface MatchLook {
@@ -72,6 +72,12 @@ const FIELD_OF_VIEW = 30;
 const HOVER = new Color("#ffd33d");
 const END_COLOURS = [new Color("#ffd33d"), new Color("#79c0ff"), new Color("#ffa657")];
 const SELECTED = new Color("#58a6ff");
+/** The colours the findings list gives each severity, so a mark in the drawing matches the row it came from. */
+const FAULT_COLOURS: Record<FaultSeverity, Color> = {
+  error: new Color("#cf222e"),
+  warning: new Color("#9a6700"),
+  info: new Color("#0969da"),
+};
 const STRAIN = new Color("#e02020");
 const STRAIN_SATURATES_AT = 6;
 const UP = new Vector3(0, 1, 0);
@@ -128,6 +134,7 @@ export class ThreeView implements MoleculeView {
   private listeners = new Set<ViewListener>();
   private selection: SelectionState = { atoms: new Set(), bonds: new Set() };
   private highlights: Highlights = { hover: null, ends: [] };
+  private faults: FaultState | null = null;
   private matchLook: MatchLook | null = null;
   private frame = 0;
   private radius = 3;
@@ -202,6 +209,11 @@ export class ThreeView implements MoleculeView {
 
   setHighlights(highlights: Highlights): void {
     this.highlights = highlights;
+    this.refreshEmphasis();
+  }
+
+  setFaults(faults: FaultState | null): void {
+    this.faults = faults;
     this.refreshEmphasis();
   }
 
@@ -817,6 +829,16 @@ export class ThreeView implements MoleculeView {
   /** Tints what is hovered, what ends a hovered bond, and what is selected. */
   private refreshEmphasis(): void {
     const tints = new Map<Object3D, Color>();
+    // laid down first, so that hovering or selecting a part at fault still tints it as usual
+    if (this.faults) {
+      const fault = FAULT_COLOURS[this.faults.severity];
+      for (const part of this.parts) {
+        const faulted = part.index >= 0 && (part.pick.kind === "atom" ? this.faults.atoms : this.faults.bonds).has(part.index);
+        if (faulted) {
+          tints.set(part.object, fault);
+        }
+      }
+    }
     for (const part of this.parts) {
       const selected = part.index >= 0 && (part.pick.kind === "atom" ? this.selection.atoms : this.selection.bonds).has(part.index);
       if (selected) {

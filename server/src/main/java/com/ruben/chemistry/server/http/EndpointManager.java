@@ -130,7 +130,9 @@ final class EndpointManager implements EndpointRegistry
                     context.error(failure.status(), failure.code(), failure.getMessage());
                 }
             }
-            catch (Exception failure)
+            // Throwable, not Exception: a handler can fail with an Error as well, and one that gets
+            // past here leaves the request with no response at all rather than a 500
+            catch (Throwable failure)
             {
                 System.err.println("Unhandled error for " + exchange.getRequestMethod() + " " + exchange.getRequestURI());
                 failure.printStackTrace();

@@ -53,6 +53,14 @@ class EndpointManagerTest
         endpoint.register(HttpMethod.GET, "/silent", (request, context) ->
         {
         });
+        endpoint.register(HttpMethod.GET, "/error", (request, context) ->
+        {
+            throw new NoClassDefFoundError("missing");
+        });
+        endpoint.register(HttpMethod.GET, "/deep", (request, context) ->
+        {
+            throw new StackOverflowError();
+        });
 
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         endpoint.attach(server);
@@ -156,6 +164,24 @@ class EndpointManagerTest
     {
         assertThat(send("GET", "/crash", null).statusCode()).isEqualTo(500);
         assertThat(send("GET", "/silent", null).statusCode()).isEqualTo(500);
+    }
+
+    @Test
+    void should_answer_500_when_a_handler_fails_with_an_error() throws Exception
+    {
+        assertThat(send("GET", "/error", null).statusCode()).isEqualTo(500);
+        assertThat(send("GET", "/deep", null).statusCode()).isEqualTo(500);
+    }
+
+    @Test
+    void should_keep_serving_after_a_handler_fails_with_an_error() throws Exception
+    {
+        for (int attempt = 0; attempt < 12; attempt++)
+        {
+            assertThat(send("GET", "/error", null).statusCode()).isEqualTo(500);
+        }
+
+        assertThat(send("GET", "/ping", null).statusCode()).isEqualTo(204);
     }
 
     @Test

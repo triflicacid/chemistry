@@ -14,11 +14,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 /**
  * An immutable set of {@link Atom}s joined by {@link Bond}s, with any declared stereochemistry, built through {@link Builder}.
@@ -44,21 +44,6 @@ public final class Molecule
         return new SmilesParser(smiles).parse();
     }
 
-    /**
-     * The default valences of the SMILES organic subset elements.
-     */
-    private static final Map<String, int[]> ORGANIC_SUBSET_VALENCES = Map.of(
-        "B", new int[] {3},
-        "C", new int[] {4},
-        "N", new int[] {3, 5},
-        "O", new int[] {2},
-        "P", new int[] {3, 5},
-        "S", new int[] {2, 4, 6},
-        "F", new int[] {1},
-        "Cl", new int[] {1},
-        "Br", new int[] {1},
-        "I", new int[] {1});
-
     private final List<Atom> atoms;
     private final List<Bond> bonds;
     private final CachedValue<Map<Atom, List<Bond>>> incidentBonds;
@@ -73,6 +58,9 @@ public final class Molecule
     private final CachedValue<Set<Bond>> bridges = new CachedValue<>(this::computeBridges);
     private final CachedValue<Stereochemistry> stereochemistry = new CachedValue<>(() -> Stereochemistry.of(this));
     private final CachedValue<List<Molecule>> rings = new CachedValue<>(this::computeRings);
+    private final CachedValue<List<PiSystem>> piSystems = new CachedValue<>(() -> PiSystem.of(this));
+    private final CachedValue<Map<Atom, PiSystem>> piSystemByAtom = new CachedValue<>(this::buildPiSystemByAtom);
+    private final Function<Molecule, RingAnalysis> ringAnalyses = CachedFunction.byIdentity(this::computeRingAnalysis);
     private final CachedValue<List<Molecule>> fragments = new CachedValue<>(() -> MoleculeFragmenter.fragment(this));
     private final CachedValue<CycleFinder.Cycles> cycles = new CachedValue<>(() -> CycleFinder.analyse(this));
 
@@ -236,6 +224,29 @@ public final class Molecule
     }
 
     /**
+     * Returns the hydrogen count an atom would carry if it were left to be inferred, whether or not
+     * it was written. Where a written count equals this, writing it said nothing.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return the count filling {@code atom}'s valence, or 0 if no valence is known for its element
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    public int hydrogensToFillValence(Atom atom)
+    {
+        requireAtom(atom);
+        BondContribution bonding = bondContributionOf(atom);
+        OptionalInt valence = Valences.toFill(atom.element(), bonding.explicitSum());
+        if (valence.isEmpty())
+        {
+            return 0;
+        }
+
+        // the aromatic weighting only ever spends the valence already chosen above
+        int remainingAfterExplicitBonds = valence.getAsInt() - bonding.explicitSum();
+        return Math.max(0, remainingAfterExplicitBonds - bonding.aromaticContribution());
+    }
+
+    /**
      * @param atom an atom of this molecule, by reference identity
      * @return {@code atom}'s inferred hydrogen count
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
@@ -243,31 +254,8 @@ public final class Molecule
     private int computeImplicitHydrogenCount(Atom atom)
     {
         requireAtom(atom);
-        if (atom.hydrogenCount().isPresent())
-        {
-            return 0;
-        }
-
-        // only ever reached for an organic-subset atom
-        int[] valences = ORGANIC_SUBSET_VALENCES.get(atom.element());
-        if (valences == null)
-        {
-            return 0;
-        }
-
-        BondContribution bonding = bondContributionOf(atom);
-
-        // escalate to a higher default valence only when required
-        // e.g., nitrogen is trivalent until its bonds demand more than that, and only then pentavalent
-        int requiredValence = bonding.explicitSum();
-        int chosenValence = IntStream.of(valences)
-            .filter(valence -> valence >= requiredValence)
-            .findFirst()
-            .orElse(valences[valences.length - 1]);
-
-        // the aromatic weighting only ever spends the valence already chosen above
-        int remainingAfterExplicitBonds = chosenValence - bonding.explicitSum();
-        return Math.max(0, remainingAfterExplicitBonds - bonding.aromaticContribution());
+        // a written count is not an inferred one, however much it may agree with what would be inferred
+        return atom.hydrogenCount().isPresent() ? 0 : hydrogensToFillValence(atom);
     }
 
     /**
@@ -505,6 +493,59 @@ public final class Molecule
     public List<Molecule> rings()
     {
         return rings.get();
+    }
+
+    /**
+     * Finds this molecule's conjugated π systems, each a ring or a set of rings fused into one plane.
+     *
+     * @return this molecule's π systems, unmodifiable and empty if it has no rings
+     */
+    public List<PiSystem> piSystems()
+    {
+        return piSystems.get();
+    }
+
+    /**
+     * Finds the π system an atom belongs to.
+     *
+     * @param atom an atom of this molecule, by reference identity
+     * @return the π system containing {@code atom}, or empty if it is in none
+     */
+    public Optional<PiSystem> piSystemOf(Atom atom)
+    {
+        return Optional.ofNullable(piSystemByAtom.get().get(atom));
+    }
+
+    /**
+     * @return the π system each of this molecule's atoms belongs to, by reference identity, with no
+     *     entry for an atom in none
+     */
+    private Map<Atom, PiSystem> buildPiSystemByAtom()
+    {
+        Map<Atom, PiSystem> byAtom = new IdentityHashMap<>();
+        // putIfAbsent, so that an atom somehow reached by two systems keeps the first of them
+        piSystems().forEach(system -> system.atoms().forEach(atom -> byAtom.putIfAbsent(atom, system)));
+        return byAtom;
+    }
+
+    /**
+     * Analyses one of this molecule's own rings, keeping the answer.
+     *
+     * @param ring a ring of this molecule, by reference identity, as {@link #rings()} returned it
+     * @return how the ring is written and what π system it belongs to
+     */
+    public RingAnalysis ringAnalysisOf(Molecule ring)
+    {
+        return ringAnalyses.apply(ring);
+    }
+
+    /**
+     * @param ring a ring of this molecule
+     * @return how the ring is written and what π system it belongs to
+     */
+    private RingAnalysis computeRingAnalysis(Molecule ring)
+    {
+        return RingAnalysis.of(this, ring.atoms());
     }
 
     /**

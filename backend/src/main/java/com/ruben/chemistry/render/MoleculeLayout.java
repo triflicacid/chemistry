@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.RingAnalysis;
 import com.ruben.chemistry.core.StereoDeclaration;
 import com.ruben.chemistry.render.rings.LayoutQuality;
 import com.ruben.chemistry.render.rings.RingDrawer;
@@ -390,13 +391,13 @@ public final class MoleculeLayout
         for (List<Atom> ring : systemRings)
         {
             List<Integer> members = new ArrayList<>();
-            boolean aromatic = true;
-            for (int atom = 0; atom < ring.size(); atom++)
+            for (Atom atom : ring)
             {
-                members.add(placementOfAtom[indexOf(ring.get(atom))]);
-                Bond bond = molecule.bondBetween(ring.get(atom), ring.get((atom + 1) % ring.size())).orElseThrow();
-                aromatic &= bond.order() == BondOrder.AROMATIC;
+                members.add(placementOfAtom[indexOf(atom)]);
             }
+            // a Kekulé ring draws its double bonds itself, so only a ring written aromatic needs a circle to stand for them
+            RingAnalysis analysis = RingAnalysis.of(molecule, ring);
+            boolean aromatic = analysis.notation() == RingAnalysis.Notation.AROMATIC && analysis.isAromatic();
             ringPlacements.add(new RingPlacement(members, aromatic && options.style() == DepictionStyle.SKELETAL));
         }
 

@@ -6,6 +6,7 @@ import { SvgView } from "../view/SvgView";
 import { ThreeView } from "../view/ThreeView";
 import type { OptionsPanel } from "./OptionsPanel";
 import { ResultsView } from "./ResultsView";
+import { ValidationView } from "./ValidationView";
 
 export type Mode = "2d" | "3d";
 
@@ -49,10 +50,16 @@ export class MoleculePanel {
   private readonly body = document.createElement("div");
   private readonly chevron = document.createElement("button");
   private readonly matches = document.createElement("section");
+  private readonly validation = new ValidationView((finding) =>
+    this.results.setFaults(finding && { severity: finding.severity, atoms: new Set(finding.atoms), bonds: new Set(finding.bonds) }),
+  );
+  /** Tells a slow validation request that the panel has moved on. */
+  private validateRequest = 0;
   private matchViews: SvgView[] = [];
   /** Tells a slow match request that a newer one has replaced it. */
   private matchRequest = 0;
   private readonly projectActions: HTMLElement;
+  private readonly validateAction: HTMLButtonElement;
   /** The tabs and projection buttons, shown once there is a molecule to act on. */
   private readonly toolbar = document.createElement("div");
   private readonly tabs = document.createElement("div");
@@ -71,6 +78,7 @@ export class MoleculePanel {
     this.element.className = "panel";
     this.projectActions = this.buildProjectActions();
     this.projectActions.hidden = mode !== "3d";
+    this.validateAction = this.buildValidateAction();
     this.toolbar.className = "toolbar";
     this.chevron.type = "button";
     this.chevron.className = "chevron";
@@ -94,11 +102,11 @@ export class MoleculePanel {
       this.tabs.append(tab);
     }
     this.markActive();
-    this.toolbar.append(this.chevron, this.tabs, this.projectActions, remove);
+    this.toolbar.append(this.chevron, this.tabs, this.projectActions, this.validateAction, remove);
     this.matches.className = "matches";
     this.matches.hidden = true;
     this.body.className = "panel-body";
-    this.body.append(this.results.element, this.matches);
+    this.body.append(this.results.element, this.validation.element, this.matches);
     this.element.append(this.toolbar, this.body);
   }
 
@@ -115,6 +123,42 @@ export class MoleculePanel {
   private showTools(on: boolean): void {
     this.tabs.hidden = !on;
     this.projectActions.hidden = !on || this.mode !== "3d";
+    this.validateAction.hidden = !on;
+  }
+
+  private buildValidateAction(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "small";
+    button.textContent = "Validate";
+    button.title = "Check the molecule for anything impossible, doubtful, or worth remarking on";
+    button.addEventListener("click", () => void this.validate());
+    return button;
+  }
+
+  /** Checks the molecule shown and lists what was found. */
+  private async validate(): Promise<void> {
+    if (!this.current) {
+      return;
+    }
+    const { id, smiles } = this.current;
+    const request = ++this.validateRequest;
+    this.validateAction.disabled = true;
+    try {
+      const report = await this.host.api.validate(id);
+      // the panel may have moved on to another molecule while the server was answering
+      if (request === this.validateRequest) {
+        this.validation.show(report, smiles);
+      }
+    } catch (error) {
+      if (request === this.validateRequest) {
+        this.validation.showError(MoleculePanel.describe(error));
+      }
+    } finally {
+      if (request === this.validateRequest) {
+        this.validateAction.disabled = false;
+      }
+    }
   }
 
   /** The SMILES of the molecule shown, or null if there is none. */
@@ -227,6 +271,9 @@ export class MoleculePanel {
   /** Lets go of the molecule shown, and everything made from it. */
   private forget(): void {
     this.matchRequest++;
+    this.validateRequest++;
+    this.validation.clear();
+    this.validateAction.disabled = false;
     this.clearMatches();
     this.dropCache();
     this.projections.forEach((projection) => {

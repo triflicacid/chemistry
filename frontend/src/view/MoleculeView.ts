@@ -22,6 +22,14 @@ export interface Highlights {
   ends: { atom: number; colour: number }[];
 }
 
+export type FaultSeverity = "error" | "warning" | "info";
+
+export interface FaultState {
+  severity: FaultSeverity;
+  atoms: ReadonlySet<number>;
+  bonds: ReadonlySet<number>;
+}
+
 /** Which atoms and bonds are selected, by index. */
 export interface SelectionState {
   atoms: ReadonlySet<number>;
@@ -45,6 +53,9 @@ export interface MoleculeView {
 
   /** Replaces the highlights. */
   setHighlights(highlights: Highlights): void;
+
+  /** Marks the atoms and bonds of one validation finding, or clears the marks with null. */
+  setFaults(faults: FaultState | null): void;
 
   /** The file type of `exportImage`. */
   readonly imageExtension: "svg" | "png";

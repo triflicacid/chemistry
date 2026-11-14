@@ -5,11 +5,14 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.PiSystem;
+import com.ruben.chemistry.core.RingAnalysis;
 import com.ruben.chemistry.formula.FormulaSettings;
 import com.ruben.chemistry.formula.FormulaStyle;
 import com.ruben.chemistry.formula.FragmentGrouping;
 import com.ruben.chemistry.formula.FragmentedFormula;
 import com.ruben.chemistry.formula.MolecularFormula;
+import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.render.MoleculeSnapshot;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.util.Span;
@@ -28,10 +31,12 @@ import java.util.OptionalInt;
  * @param atoms one entry per atom, at its index in {@link Molecule#atoms()}
  * @param bonds one entry per bond, at its index in {@link Molecule#bonds()}
  * @param rings the rings of the molecule
+ * @param systems the conjugated pi systems of the molecule, each a ring or a set of fused rings
  * @param fragments one entry per connected fragment, at its index in {@link Molecule#fragments()}
  */
 public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInfo formula, List<AtomInfo> atoms,
-                               List<BondInfo> bonds, List<RingInfo> rings, List<FragmentInfo> fragments)
+                               List<BondInfo> bonds, List<RingInfo> rings, List<SystemInfo> systems,
+                               List<FragmentInfo> fragments)
 {
     /**
      * @param index the atom's index in the molecule
@@ -81,14 +86,42 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
     /**
      * @param index the ring's position in {@link MoleculeMetadata#rings()}
      * @param size how many atoms the ring has
+     * @param notation how the ring's bonds are written: {@code aromatic} for a ring written entirely with
+     *     aromatic bonds, {@code mixed} for one written partly with them, or {@code plain} for one written
+     *     without them
+     * @param system the index (into {@link MoleculeMetadata#systems()}) of the pi system the ring belongs
+     *     to, or null if its atoms cannot all join one; the ring is aromatic exactly when that system is
      * @param atoms the indices of its atoms
      * @param bonds the indices of its bonds
      * @param smiles the ring on its own, as canonical SMILES
      * @param formula the ring on its own, as a molecular formula in Unicode
      * @param spans where each of {@code atoms} is written in {@code smiles}, in the same order
      */
-    public record RingInfo(int index, int size, List<Integer> atoms, List<Integer> bonds, String smiles, String formula,
-                           List<Span> spans)
+    public record RingInfo(int index, int size, String notation, Integer system, List<Integer> atoms,
+                           List<Integer> bonds, String smiles, String formula, List<Span> spans)
+    {
+    }
+
+    /**
+     * One conjugated pi system: a ring, or a set of rings fused into a single plane.
+     * <p>
+     * A system is aromatic when its bonds can be assigned as alternating single and double bonds,
+     * which is what {@code kekulisable} reports. An electron count is not what decides it: Huckel's
+     * 4n+2 governs a lone ring and no more, and pyrene holds 16 pi electrons while being as aromatic
+     * as benzene. The count is still reported, and 4n is what makes a lone ring antiaromatic.
+     *
+     * @param index the system's position in {@link MoleculeMetadata#systems()}
+     * @param aromaticity what the system amounts to as written: {@code aromatic},
+     *     {@code antiaromatic}, or {@code nonaromatic}
+     * @param kekulisable whether its bonds can be assigned at all
+     * @param piElectrons the pi electrons counted over its atoms
+     * @param ringCount how many rings fused into it
+     * @param atoms the indices of its atoms
+     * @param bonds the indices of its bonds
+     * @param rings the indices (into {@link MoleculeMetadata#rings()}) of the rings it is made of
+     */
+    public record SystemInfo(int index, String aromaticity, boolean kekulisable, int piElectrons, int ringCount,
+                             List<Integer> atoms, List<Integer> bonds, List<Integer> rings)
     {
     }
 
@@ -140,17 +173,6 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
     }
 
     /**
-     * Where a molecule's atoms and bonds are written in one notation of it.
-     *
-     * @param smiles the notation
-     * @param atomSpans where each atom is written in it
-     * @param bondSpans where each bond is written in it
-     */
-    public record Notation(String smiles, Map<Atom, Span> atomSpans, Map<Bond, List<Span>> bondSpans)
-    {
-    }
-
-    /**
      * @param molecule a molecule
      * @param source the SMILES it was parsed from, and where its atoms and bonds are written in it
      * @param canonical the molecule as canonical SMILES, and where they are written in that
@@ -173,8 +195,16 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
             indexOfBond.put(moleculeBonds.get(index), index);
         }
 
+        List<PiSystem> moleculeSystems = molecule.piSystems();
+        Map<PiSystem, Integer> indexOfSystem = new IdentityHashMap<>();
+        for (int index = 0; index < moleculeSystems.size(); index++)
+        {
+            indexOfSystem.put(moleculeSystems.get(index), index);
+        }
+
         List<List<Integer>> ringsOfAtom = emptyLists(moleculeAtoms.size());
         List<List<Integer>> ringsOfBond = emptyLists(moleculeBonds.size());
+        List<List<Integer>> ringsOfSystem = emptyLists(moleculeSystems.size());
         List<RingInfo> rings = new ArrayList<>();
         for (Molecule ring : molecule.rings())
         {
@@ -186,8 +216,25 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
             SmilesWriter writer = new SmilesWriter(ring).setRanker(new CanonicalRanker());
             String ringSmiles = writer.write();
             List<Span> spans = ring.atoms().stream().map(writer.atomSpans()::get).toList();
-            rings.add(new RingInfo(index, atoms.size(), atoms, bonds, ringSmiles,
-                    MolecularFormula.of(ring).toUnicode(), spans));
+            RingAnalysis analysis = molecule.ringAnalysisOf(ring);
+            Integer system = analysis.system().map(indexOfSystem::get).orElse(null);
+            if (system != null)
+            {
+                ringsOfSystem.get(system).add(index);
+            }
+            rings.add(new RingInfo(index, atoms.size(), name(analysis.notation()), system,
+                    atoms, bonds, ringSmiles, MolecularFormula.of(ring).toUnicode(), spans));
+        }
+
+        List<SystemInfo> systems = new ArrayList<>();
+        for (int index = 0; index < moleculeSystems.size(); index++)
+        {
+            PiSystem system = moleculeSystems.get(index);
+            systems.add(new SystemInfo(index, name(system.aromaticity()), system.isKekulisable(),
+                    system.piElectrons(), system.rings(),
+                    system.atoms().stream().map(indexOfAtom::get).toList(),
+                    system.bonds().stream().map(indexOfBond::get).toList(),
+                    ringsOfSystem.get(index)));
         }
 
         List<AtomInfo> atoms = new ArrayList<>();
@@ -218,7 +265,7 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
                     canonical.bondSpans().getOrDefault(bond, List.of())));
         }
         return new MoleculeMetadata(source.smiles(), canonical.smiles(), formulaOf(molecule), atoms, bonds, rings,
-                fragmentsOf(molecule, snapshot, canonical, indexOfAtom, indexOfBond));
+                systems, fragmentsOf(molecule, snapshot, canonical, indexOfAtom, indexOfBond));
     }
 
     /**
@@ -334,5 +381,10 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
     private static Integer boxed(OptionalInt value)
     {
         return value.isPresent() ? value.getAsInt() : null;
+    }
+
+    private static String name(Enum<?> value)
+    {
+        return value.name().toLowerCase(Locale.ROOT);
     }
 }

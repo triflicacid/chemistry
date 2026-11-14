@@ -2,6 +2,7 @@ package com.ruben.chemistry.server.molecule;
 
 import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.smiles.SmilesParser;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.util.Span;
@@ -21,9 +22,9 @@ class MoleculeMetadataTest
         Molecule molecule = parser.parse();
         SmilesWriter writer = new SmilesWriter(molecule).setRanker(new CanonicalRanker());
         String canonical = writer.write();
-        MoleculeMetadata.Notation source = new MoleculeMetadata.Notation(smiles, parser.atomSpans(), parser.bondSpans());
+        Notation source = new Notation(smiles, parser.atomSpans(), parser.bondSpans());
         return MoleculeMetadata.of(molecule, source,
-            new MoleculeMetadata.Notation(canonical, writer.atomSpans(), writer.bondSpans()));
+            new Notation(canonical, writer.atomSpans(), writer.bondSpans()));
     }
 
     @Test

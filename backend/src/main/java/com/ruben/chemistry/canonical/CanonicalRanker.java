@@ -35,7 +35,7 @@ import java.util.function.Supplier;
 public final class CanonicalRanker implements Ranker, Canonicaliser
 {
     private boolean ignoreStereochemistry;
-    private Function<Molecule, Canonicalised> canonicalisations = canonicalisationCache(false);
+    private Function<Molecule, Canonicalisation> canonicalisations = canonicalisationCache(false);
 
     @Override
     public Ranking rank(Molecule molecule)
@@ -46,7 +46,19 @@ public final class CanonicalRanker implements Ranker, Canonicaliser
     @Override
     public CanonicalForm canonicalise(Molecule molecule)
     {
-        return canonicalisations.apply(molecule).form().get();
+        return canonicalisations.apply(molecule).form();
+    }
+
+    /**
+     * Classifies a molecule's atoms without ranking them, stopping where {@link #rank} goes on to
+     * break the ties refinement leaves. Those ties are what an {@link AtomClasses} is for.
+     *
+     * @param molecule the molecule to classify
+     * @return each atom's class, two atoms sharing one exactly when nothing tells them apart
+     */
+    public AtomClasses classify(Molecule molecule)
+    {
+        return canonicalisations.apply(molecule).classes();
     }
 
     /**
@@ -74,9 +86,9 @@ public final class CanonicalRanker implements Ranker, Canonicaliser
      * @param ignoreStereochemistry whether the cached canonicalisations are to leave stereochemistry out
      * @return a cache of the canonicalisations produced under that setting, empty of those produced under any other
      */
-    private static Function<Molecule, Canonicalised> canonicalisationCache(boolean ignoreStereochemistry)
+    private static Function<Molecule, Canonicalisation> canonicalisationCache(boolean ignoreStereochemistry)
     {
-        return CachedFunction.byIdentity(molecule -> new Canonicalisation(molecule, ignoreStereochemistry).canonicalise());
+        return CachedFunction.byIdentity(molecule -> new Canonicalisation(molecule, ignoreStereochemistry));
     }
 
     /**
@@ -99,6 +111,14 @@ public final class CanonicalRanker implements Ranker, Canonicaliser
         /** Only tie-breaking needs the molecule as a graph, and most molecules have no tie to break, hold off for now. */
         private final CachedValue<AtomGraph> graph;
 
+        /** The classes refinement settles on, which both the ranking and the atom classes start from. */
+        private final CachedValue<Partition> stable;
+
+        /** Breaking the remaining ties can search for symmetries, so a caller wanting only the classes does not pay for it. */
+        private final CachedValue<Canonicalised> labelling;
+
+        private final CachedValue<AtomClasses> classes;
+
         /**
          * @param molecule the molecule to rank
          * @param ignoreStereochemistry whether to leave the molecule's declared stereochemistry out of the ranking
@@ -118,6 +138,42 @@ public final class CanonicalRanker implements Ranker, Canonicaliser
             this.neighbours = new Neighbourhood(molecule, atoms, indexOf, stereo);
             this.initial = initialClasses(molecule, atoms, stereo);
             this.graph = new CachedValue<>(() -> new AtomGraph(molecule, atoms, indexOf, stereo));
+            this.stable = new CachedValue<>(() -> refineToStability(initial.partition()));
+            this.labelling = new CachedValue<>(this::canonicalise);
+            this.classes = new CachedValue<>(this::refinedClasses);
+        }
+
+        /**
+         * @return the molecule's canonical labelling as a ranking
+         */
+        private Ranking ranking()
+        {
+            return labelling.get().ranking();
+        }
+
+        /**
+         * @return the form the canonical labelling gives the molecule
+         */
+        private CanonicalForm form()
+        {
+            return labelling.get().form().get();
+        }
+
+        /**
+         * @return each atom's class as refinement leaves it, before any tie among them is broken
+         */
+        private AtomClasses classes()
+        {
+            return classes.get();
+        }
+
+        /**
+         * @return each atom's class as refinement leaves it, before any tie among them is broken
+         */
+        private AtomClasses refinedClasses()
+        {
+            Partition partition = stable.get();
+            return new AtomClasses(atoms, partition.classOf(), partition.classes());
         }
 
         /**
@@ -125,7 +181,7 @@ public final class CanonicalRanker implements Ranker, Canonicaliser
          */
         private Canonicalised canonicalise()
         {
-            Candidate canonical = breakTies(refineToStability(initial.partition()));
+            Candidate canonical = breakTies(stable.get());
             return new Canonicalised(new Ranking(ranksByAtom(canonical.classOf())), canonical.form());
         }
 
