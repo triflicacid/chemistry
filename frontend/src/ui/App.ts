@@ -1,6 +1,6 @@
 import type { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import { ViewStore } from "../store";
+import { ViewStore, type PanelState } from "../store";
 import { LibraryDialog } from "./LibraryDialog";
 import { moleculeTab, queryTab } from "./LibraryTabs";
 import { MoleculePanel, type Mode, type PanelHost } from "./MoleculePanel";
@@ -19,7 +19,7 @@ export class App implements PanelHost {
   private readonly optionsSlot = document.createElement("div");
   private panels: MoleculePanel[] = [];
   private readonly matchErrors = new Map<MoleculePanel, string>();
-  private mode: Mode = this.store.mode;
+  private mode: Mode = this.store.panels.at(-1)?.mode ?? "2d";
   private panel2d: OptionsPanel | null = null;
   private panel3d: OptionsPanel | null = null;
   private panelMatch: OptionsPanel | null = null;
@@ -61,7 +61,7 @@ export class App implements PanelHost {
 
   modeChosen(mode: Mode): void {
     this.mode = mode;
-    this.store.rememberMode(mode);
+    this.persist();
   }
 
   moleculeChanged(): void {
@@ -97,12 +97,12 @@ export class App implements PanelHost {
 
     this.smartsText = this.store.smarts;
     this.form.setSmarts(this.smartsText);
-    const lines = this.store.input.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
-    if (lines.length === 0) {
+    const stored = this.store.panels;
+    if (stored.length === 0) {
       this.addPanel().startEmpty();
     }
-    this.restoring = lines.length > 0;
-    const loading = lines.map((line) => this.addPanel().load(line));
+    this.restoring = stored.length > 0;
+    const loading = stored.map((state) => this.addPanel(state.mode).restore(state));
     void Promise.all(loading).finally(() => {
       this.restoring = false;
       this.persist();
@@ -115,20 +115,21 @@ export class App implements PanelHost {
     return this.addPanel().load(smiles);
   }
 
-  private addPanel(): MoleculePanel {
-    const panel = new MoleculePanel(this, this.mode);
+  /** @param mode the drawing it opens on, the one last switched to by default */
+  private addPanel(mode: Mode = this.mode): MoleculePanel {
+    const panel = new MoleculePanel(this, mode);
     this.panels.push(panel);
     this.results.append(panel.element);
     return panel;
   }
 
-  /** Remembers the molecules shown, so that they return when the page is reloaded. */
+  /** Remembers the molecules shown and how each is drawn, so that they return when the page is reloaded. */
   private persist(): void {
     if (this.restoring) {
       return;
     }
-    const smiles = this.panels.map((panel) => panel.smiles).filter((value): value is string => value !== null);
-    this.store.rememberInput(smiles.join("\n"));
+    const states = this.panels.map((panel) => panel.stored).filter((state): state is PanelState => state !== null);
+    this.store.rememberPanels(states);
   }
 
   /** Searches every molecule shown for a pattern taken from the library. */

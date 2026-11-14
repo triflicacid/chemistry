@@ -1,6 +1,7 @@
 import type { ChemistryApi, SceneResponse } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
 import type { GeneratedNotation, MatchData, MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
+import type { PanelState } from "../store";
 import { SvgView } from "../view/SvgView";
 import { ThreeView } from "../view/ThreeView";
 import type { OptionsPanel } from "./OptionsPanel";
@@ -16,6 +17,7 @@ export interface PanelHost {
   optionsMatch(): OptionsPanel | null;
   /** The SMARTS pattern to highlight, or blank. */
   smarts(): string;
+  /** The panel has switched to this mode. */
   modeChosen(mode: Mode): void;
   /** The panel now shows a different molecule. */
   moleculeChanged(): void;
@@ -87,10 +89,7 @@ export class MoleculePanel {
     for (const [value, text] of [["2d", "2D"], ["3d", "3D"]] as const) {
       const tab = document.createElement("div");
       tab.className = "tab";
-      tab.append(this.tabButton(text, () => {
-        this.host.modeChosen(value);
-        void this.setMode(value);
-      }));
+      tab.append(this.tabButton(text, () => void this.setMode(value)));
       this.modeTabs.set(value, tab);
       this.tabs.append(tab);
     }
@@ -121,6 +120,11 @@ export class MoleculePanel {
   /** The SMILES of the molecule shown, or null if there is none. */
   get smiles(): string | null {
     return this.current?.smiles ?? null;
+  }
+
+  /** What to keep so that this panel comes back as it is, or null while it holds no molecule. */
+  get stored(): PanelState | null {
+    return this.current === null ? null : { id: this.current.id, smiles: this.current.smiles, mode: this.mode };
   }
 
   /** True while the panel holds no molecule and nothing has been typed into it. */
@@ -163,6 +167,35 @@ export class MoleculePanel {
       this.showTools(false);
       this.results.showEntry(smiles, problem);
     }
+  }
+
+  /**
+   * Shows the molecule a panel was left holding, drawing it from the server's own copy where that is still there
+   * and making it again from its SMILES where it is not. A failure is shown in the panel rather than thrown.
+   *
+   * @param state what the panel was last storing
+   */
+  async restore(state: PanelState): Promise<void> {
+    this.results.showMessage(`Rendering ${state.smiles}...`);
+
+    let known;
+    try {
+      known = await this.host.api.metadata(state.id);
+    } catch {
+      // the server has forgotten the molecule, a restart being the usual reason
+      await this.load(state.smiles);
+      return;
+    }
+
+    this.forget();
+    try {
+      await this.display(state.id, known.smiles, known.canonical_smiles, known, true);
+    } catch (error) {
+      this.showTools(false);
+      this.results.showEntry(state.smiles, MoleculePanel.describe(error));
+      return;
+    }
+    this.showTools(true);
   }
 
   /**
@@ -216,6 +249,7 @@ export class MoleculePanel {
     this.mode = mode;
     this.active = mode;
     this.markActive();
+    this.host.modeChosen(mode);
     this.projectActions.hidden = mode !== "3d" || !this.current;
     if (!this.current) {
       return;

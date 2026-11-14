@@ -1,3 +1,5 @@
+import type { MoleculeId } from "./api/types";
+
 /** The atoms and bonds the user has selected, by index. Not tied to how the molecule is drawn. */
 export class Selection {
   private atomSet = new Set<number>();
@@ -53,43 +55,33 @@ export class Selection {
 }
 
 /** localStorage key. */
-const KEY = "chemistry.input";
-
-const MODE_KEY = "chemistry.mode";
+const PANELS_KEY = "chemistry.panels";
 
 const SMARTS_KEY = "chemistry.smarts";
 
 export type ViewMode = "2d" | "3d";
 
+export interface PanelState {
+  id: MoleculeId;
+  smiles: string;
+  mode: ViewMode;
+}
+
 export class ViewStore {
-  private text = ViewStore.read();
+  private states = ViewStore.readPanels();
   private pattern = ViewStore.readSmarts();
-  private viewMode: ViewMode = ViewStore.readMode();
 
-  /** Whether the user last looked at the 2D or the 3D drawing. */
-  get mode(): ViewMode {
-    return this.viewMode;
+  /** The panels the page last showed, in the order they were in. */
+  get panels(): PanelState[] {
+    return this.states;
   }
 
-  rememberMode(mode: ViewMode): void {
-    this.viewMode = mode;
+  rememberPanels(panels: PanelState[]): void {
+    this.states = panels;
     try {
-      localStorage.setItem(MODE_KEY, mode);
+      localStorage.setItem(PANELS_KEY, JSON.stringify(panels));
     } catch {
     }
-  }
-
-  private static readMode(): ViewMode {
-    try {
-      return localStorage.getItem(MODE_KEY) === "3d" ? "3d" : "2d";
-    } catch {
-      return "2d";
-    }
-  }
-
-  /** What the user last entered: one SMILES string per line. */
-  get input(): string {
-    return this.text;
   }
 
   /** The SMARTS pattern the user last entered, or blank. */
@@ -105,14 +97,6 @@ export class ViewStore {
     }
   }
 
-  rememberInput(input: string): void {
-    this.text = input;
-    try {
-      localStorage.setItem(KEY, input);
-    } catch {
-    }
-  }
-
   private static readSmarts(): string {
     try {
       return localStorage.getItem(SMARTS_KEY) ?? "";
@@ -121,11 +105,25 @@ export class ViewStore {
     }
   }
 
-  private static read(): string {
+  /** Reads back what was stored, keeping only the panels that are still described in full. */
+  private static readPanels(): PanelState[] {
+    let stored: unknown;
     try {
-      return localStorage.getItem(KEY) ?? "";
+      stored = JSON.parse(localStorage.getItem(PANELS_KEY) ?? "[]");
     } catch {
-      return "";
+      return [];
     }
+    return Array.isArray(stored) ? stored.filter(ViewStore.isPanelState) : [];
+  }
+
+  private static isPanelState(value: unknown): value is PanelState {
+    const state = value as Partial<PanelState> | null;
+    return (
+      typeof state?.id === "string" &&
+      state.id.length > 0 &&
+      typeof state.smiles === "string" &&
+      state.smiles.length > 0 &&
+      (state.mode === "2d" || state.mode === "3d")
+    );
   }
 }
