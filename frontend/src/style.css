@@ -729,6 +729,12 @@ button.small {
   white-space: nowrap;
 }
 
+.finding-hint {
+  grid-column: 2 / -1;
+  font-size: .8rem;
+  color: #57606a;
+}
+
 .finding-smiles {
   grid-column: 2 / -1;
   font-size: .8rem;

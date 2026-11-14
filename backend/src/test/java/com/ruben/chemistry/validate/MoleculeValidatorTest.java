@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -444,10 +445,22 @@ class MoleculeValidatorTest
             // the molecule records a configuration here, measured from one of two alike methyls
             assertThat(rulesOf("C/C(C)=C/C")).contains(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC);
             assertThat(messagesOf("C/C(C)=C/C"))
-                .anyMatch(message -> message.contains("nothing to tell its two sides apart"));
+                .anyMatch(message -> message.contains("two substituents nothing tells apart"));
             assertThat(rulesOf("C/C=C/C")).doesNotContain(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC);
             // an oxime's nitrogen is measured from its one substituent against its lone pair
             assertThat(rulesOf("C/C=N/O")).doesNotContain(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC);
+        }
+
+        @Test
+        void points_at_the_end_of_the_double_bond_that_is_at_fault()
+        {
+            Molecule molecule = Molecule.fromSmiles("C/C(C)=C/C");
+            List<Finding> findings = new MoleculeValidator(ValidationOptions.only(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC))
+                .validate(molecule);
+
+            // the first end carries the two methyls; the second has a hydrogen against a methyl and is sound
+            assertThat(findings).singleElement().satisfies(finding ->
+                assertThat(finding.atoms()).containsExactly(molecule.atoms().get(1)));
         }
 
         @Test
@@ -636,6 +649,54 @@ class MoleculeValidatorTest
             assertThat(findings).singleElement()
                 .satisfies(finding -> assertThat(finding.atoms()).containsExactly(molecule.atoms().get(2)));
         }
+    }
+
+    /** What to change about a faulted molecule, rather than what any finding says is wrong. */
+    @Nested
+    class Hinting
+    {
+        @Test
+        void tells_every_error_what_to_change()
+        {
+            for (Rule rule : Rule.values())
+            {
+                if (rule.severity() == Severity.ERROR)
+                {
+                    assertThat(Hints.forRule(rule)).as("hint for %s", rule.id()).isPresent();
+                }
+            }
+        }
+
+        @Test
+        void stays_quiet_where_nothing_is_wrong()
+        {
+            // a note remarks on something legitimate, so advising a change would be advising against the truth
+            for (Rule rule : Rule.values())
+            {
+                if (rule.severity() == Severity.INFO)
+                {
+                    assertThat(Hints.forRule(rule)).as("hint for %s", rule.id()).isEmpty();
+                }
+            }
+
+            // the two warnings that report something real rather than doubtful ask for nothing either
+            assertThat(Hints.forRule(Rule.RING_TRIPLE_BOND_STRAINED)).isEmpty();
+            assertThat(Hints.forRule(Rule.AROMATIC_SYSTEM_ANTIAROMATIC)).isEmpty();
+        }
+
+        @Test
+        void tells_every_other_warning_what_to_change()
+        {
+            Set<Rule> asking = Set.of(Rule.RING_TRIPLE_BOND_STRAINED, Rule.AROMATIC_SYSTEM_ANTIAROMATIC);
+            for (Rule rule : Rule.values())
+            {
+                if (rule.severity() == Severity.WARNING && !asking.contains(rule))
+                {
+                    assertThat(Hints.forRule(rule)).as("hint for %s", rule.id()).isPresent();
+                }
+            }
+        }
+
     }
 
     private static List<Rule> rulesOf(String smiles)

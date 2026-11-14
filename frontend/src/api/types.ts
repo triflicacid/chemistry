@@ -183,6 +183,8 @@ export interface FindingInfo {
   category: string;
   /** The finding in words. */
   message: string;
+  /** What to change about the molecule, or null where the rule asks for no change. */
+  hint: string | null;
   /** Atom indices. */
   atoms: number[];
   bonds: number[];

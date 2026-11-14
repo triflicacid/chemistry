@@ -15,6 +15,7 @@ import com.ruben.chemistry.validate.Rule;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -113,27 +114,32 @@ public final class StereochemistryChecks implements Check
      */
     private static void checkDoubleBond(Molecule molecule, AtomClasses classes, Bond bond, Consumer<Finding> findings)
     {
-        boolean sided = hasDistinctSides(molecule, classes, bond, bond.first())
-            && hasDistinctSides(molecule, classes, bond, bond.second());
+        Map<Atom, String> blind = new LinkedHashMap<>();
+        for (Atom end : List.of(bond.first(), bond.second()))
+        {
+            sidesAreAlike(molecule, classes, bond, end).ifPresent(reason -> blind.put(end, reason));
+        }
         Optional<Molecule> ring = Rings.smallestHolding(molecule, bond);
         boolean free = ring.map(Molecule::atomCount).orElse(Rings.UNRINGED) >= SMALLEST_RING_FOR_EITHER_GEOMETRY;
 
         if (molecule.doubleBondStereoOf(bond).isEmpty())
         {
-            if (sided && free)
+            if (blind.isEmpty() && free)
             {
-                findings.accept(Finding.atBond(Rule.STEREO_DOUBLE_BOND_MISSING, bond,
-                    "The double bond has two different substituents at each end but no geometry written, so this stands for both"));
+                findings.accept(Finding.atBond(Rule.STEREO_DOUBLE_BOND_MISSING, bond, "The double bond has two different substituents at each end but no geometry written"));
             }
             return;
         }
 
-        if (!sided)
+        if (!blind.isEmpty())
         {
-            findings.accept(Finding.atBond(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC, bond,
-                "The double bond is given a geometry, but one of its ends has nothing to tell its two sides apart"));
+            // reported against the end at fault rather than the bond, so that it is the end a reader is pointed at
+            blind.forEach((end, reason) -> findings.accept(new Finding(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC,
+                end.element() + " ends the double bond " + reason + ", so the geometry given to it is measured from nothing",
+                List.of(end),
+                List.of(bond))));
         }
-        else if (!free && ring.isPresent() && carriesRingToEitherSide(molecule, bond, ring.get()))
+        else if (!free && carriesRingToEitherSide(molecule, bond, ring.get()))
         {
             findings.accept(Finding.atBond(Rule.STEREO_DOUBLE_BOND_IN_SMALL_RING, bond,
                 "The double bond is given a geometry that carries its ring off to either side, which a ring of "
@@ -186,19 +192,25 @@ public final class StereochemistryChecks implements Check
      * @param classes its atoms' classes
      * @param bond the double bond
      * @param end the end of it to judge
-     * @return whether the end's two sides can be told apart
+     * @return why the end's sides cannot be told apart, or empty if they can
      */
-    private static boolean hasDistinctSides(Molecule molecule, AtomClasses classes, Bond bond, Atom end)
+    private static Optional<String> sidesAreAlike(Molecule molecule, AtomClasses classes, Bond bond, Atom end)
     {
         // a second double bond leaves the end straight, so it has no two sides at all
         if (molecule.bondsOf(end).stream().anyMatch(other -> other != bond && other.order() == BondOrder.DOUBLE))
         {
-            return false;
+            return Optional.of("straight, a second double bond leaving it no sides");
         }
 
         List<Integer> sides = ligandClasses(molecule, classes, end, Optional.of(bond.getOther(end)));
-        // one substituent against a lone pair is as much a pair of sides as two substituents are, as an oxime shows
-        return sides.size() == 1 ? hasLonePair(molecule, end) : sides.size() == 2 && areAllDifferent(sides);
+        if (sides.size() == 1)
+        {
+            // one substituent against a lone pair is as much a pair of sides as two substituents are, as an oxime shows
+            return hasLonePair(molecule, end) ? Optional.empty() : Optional.of("with one substituent and no lone pair opposite it");
+        }
+        return sides.size() == 2 && areAllDifferent(sides)
+            ? Optional.empty()
+            : Optional.of("with two substituents nothing tells apart");
     }
 
     /**

@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.util.Span;
 import com.ruben.chemistry.validate.Finding;
+import com.ruben.chemistry.validate.Hints;
 import com.ruben.chemistry.validate.MoleculeValidator;
 import com.ruben.chemistry.validate.Severity;
 
@@ -33,11 +34,20 @@ public record ValidationReport(int errors, int warnings, int infos, List<Finding
      * @param severity {@code error}, {@code warning} or {@code info}
      * @param category what part of the molecule it is about, e.g. {@code aromaticity}
      * @param message the finding in words
+     * @param hint what to change about the molecule, or null where the rule asks for no change
      * @param atoms the indices of the atoms it is about, in {@link MoleculeMetadata#atoms()}
      * @param bonds the indices of the bonds it is about, in {@link MoleculeMetadata#bonds()}
      * @param spans where those atoms and bonds are written in {@link MoleculeMetadata#smiles()}
      */
-    public record FindingInfo(String rule, String severity, String category, String message, List<Integer> atoms, List<Integer> bonds, List<Span> spans)
+    public record FindingInfo(
+        String rule,
+        String severity,
+        String category,
+        String message,
+        String hint,
+        List<Integer> atoms,
+        List<Integer> bonds,
+        List<Span> spans)
     {
     }
 
@@ -105,6 +115,7 @@ public record ValidationReport(int errors, int warnings, int infos, List<Finding
             name(finding.severity()),
             name(finding.category()),
             finding.message(),
+            Hints.forRule(finding.rule()).orElse(null),
             finding.atoms().stream().map(indexOfAtom::get).filter(Objects::nonNull).toList(),
             finding.bonds().stream().map(indexOfBond::get).filter(Objects::nonNull).toList(),
             List.copyOf(spans));

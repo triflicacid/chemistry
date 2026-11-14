@@ -79,9 +79,15 @@ export class ValidationView {
     const rule = document.createElement("code");
     rule.className = "finding-rule";
     rule.textContent = finding.rule;
-    rule.title = `${finding.category} · ${finding.rule}`;
+    rule.title = `${finding.category}: ${finding.rule}`;
 
     row.append(label, message, rule);
+    if (finding.hint) {
+      const hint = document.createElement("span");
+      hint.className = "finding-hint";
+      hint.textContent = finding.hint;
+      row.append(hint);
+    }
     if (finding.spans.length > 0) {
       const text = new SmilesText(smiles, "smiles finding-smiles");
       text.highlight(finding.spans.map((span) => ({ span, colour: 0 })));
