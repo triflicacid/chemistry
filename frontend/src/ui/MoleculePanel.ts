@@ -278,17 +278,25 @@ export class MoleculePanel {
     }
   }
 
-  /** Highlights the matches in a 3D view; unless they are merged, a button per match picks the one highlighted. */
+  /**
+   * Highlights the matches in a 3D view. Unless they are merged, a button per match picks the one highlighted, and
+   * pressing the one that is highlighted takes the highlights off.
+   */
   private showMatches3d(view: ThreeView, data: MatchData): void {
-    const show = (chosen: number) => {
+    const show = (chosen: number | null) => {
+      if (chosen === null) {
+        view.setMatches(null);
+        return;
+      }
       const matches = data.merged ? data.matches : data.matches.slice(chosen, chosen + 1);
-      view.setMatches({ matches, dim: data.dim, recolour: data.recolour, labels: data.labels });
+      view.setMatches({ matches, merged: data.merged, dim: data.dim, recolour: data.recolour, labels: data.labels });
     };
     show(0);
-    if (data.merged || data.matches.length < 2) {
+    if (data.merged) {
       return;
     }
 
+    let selected: number | null = 0;
     const row = document.createElement("div");
     row.className = "match-chips";
     const chips = data.matches.map((match, index) => {
@@ -298,8 +306,9 @@ export class MoleculePanel {
       chip.textContent = String(index + 1);
       chip.style.borderColor = match.colour;
       chip.addEventListener("click", () => {
-        chips.forEach((other, i) => other.classList.toggle("active", i === index));
-        show(index);
+        selected = selected === index ? null : index;
+        chips.forEach((other, i) => other.classList.toggle("active", i === selected));
+        show(selected);
       });
       return chip;
     });

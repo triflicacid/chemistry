@@ -30,6 +30,8 @@ import type { Highlights, MoleculeView, Pick, SelectionState, ViewListener } fro
 /** The matches of a SMARTS pattern to show in a view. */
 export interface MatchLook {
   matches: MatchHighlight[];
+  /** Whether the matches are all shown together, so an atom may be in several. */
+  merged: boolean;
   dim: number;
   recolour: boolean;
   labels: boolean;
@@ -335,7 +337,7 @@ export class ThreeView implements MoleculeView {
         ball.position.copy(at);
         ball.scale.setScalar(size);
         this.fade(ball, dimmed(owners));
-        const part = this.addPart("atom", site.implied ? null : site.atom, { element: site.element }, ball);
+        const part = this.addPart("atom", site.implied ? null : site.atom, { element: site.element, ...this.matchNote(owners) }, ball);
         this.atomParts.set(site.index, part);
         this.content.add(ball);
       }
@@ -345,7 +347,7 @@ export class ThreeView implements MoleculeView {
       const aromaticRings = this.aromaticCentres(links, point);
       for (const link of links) {
         const owners = bondSets.flatMap((set, i) => (ThreeView.bondMatched(link, sites, set, atomSets[i] ?? new Set()) ? [i] : []));
-        const group = this.addBond(link, sites, point, neighbours, aromaticRings.get(link));
+        const group = this.addBond(link, sites, point, neighbours, aromaticRings.get(link), this.matchNote(owners));
         if (group) {
           this.fade(group, dimmed(owners));
         }
@@ -394,6 +396,14 @@ export class ThreeView implements MoleculeView {
     const first = sites[link.first];
     const heavy = first?.implied ? sites[link.second] : first;
     return heavy !== undefined && atoms.has(heavy.atom);
+  }
+
+  /** What a hovered part says of the matches it is in: `match`, as "Matched", or with how many when all are shown together. */
+  private matchNote(owners: number[]): Record<string, string> {
+    if (owners.length === 0) {
+      return {};
+    }
+    return { match: this.matchLook?.merged ? `Matched (${owners.length})` : "Matched" };
   }
 
   private haloMaterial(colour: string): MeshBasicMaterial {
@@ -499,6 +509,7 @@ export class ThreeView implements MoleculeView {
     point: (index: number) => Vector3,
     neighbours: Map<number, number[]>,
     ringCentre: Vector3 | undefined,
+    note: Record<string, string>,
   ): Group | null {
     const from = point(link.first);
     const to = point(link.second);
@@ -551,7 +562,7 @@ export class ThreeView implements MoleculeView {
       }
     }
 
-    const part = this.addPart("bond", link.bond >= 0 ? link.bond : null, { order: link.order.toLowerCase() }, group);
+    const part = this.addPart("bond", link.bond >= 0 ? link.bond : null, { order: link.order.toLowerCase(), ...note }, group);
     group.traverse((object) => {
       object.userData.part = part;
     });

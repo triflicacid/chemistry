@@ -151,6 +151,9 @@ export class MoleculeInspector {
     }
 
     const plaque = MoleculeInspector.plaque(title);
+    if (target.data.match) {
+      rows.push(["SMARTS", target.data.match]);
+    }
     plaque.append(MoleculeInspector.details(rows));
     return plaque;
   }
