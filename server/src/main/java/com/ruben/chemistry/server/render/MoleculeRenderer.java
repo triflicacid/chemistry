@@ -18,8 +18,15 @@ import com.ruben.chemistry.query.Query;
 import com.ruben.chemistry.query.SubstructureMatcher;
 import com.ruben.chemistry.render.match.MatchAnnotator;
 
+import com.ruben.chemistry.core.Atom;
+import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.query.MatchLabels;
+import com.ruben.chemistry.render.match.MatchStyle;
+
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class MoleculeRenderer
@@ -97,21 +104,11 @@ public final class MoleculeRenderer
         Render2dOptionsMapper.Settings settings = Render2dOptionsMapper.map(options);
         Render2dOptionsMapper.Matching matching = Render2dOptionsMapper.map(match);
 
-        Query query;
-        try
-        {
-            query = Query.fromSmarts(smarts);
-        }
-        catch (InvalidNotationException invalid)
-        {
-            throw new RenderException("INVALID_SMARTS", invalid.getMessage());
-        }
+        Found found = find(molecule, smarts, matching);
 
         try
         {
-            SubstructureMatcher matcher = new SubstructureMatcher(molecule);
-            List<Match> found = matching.allMatches() ? matcher.findMatches(query) : matcher.findDistinctMatches(query);
-            List<Match> shown = found.subList(0, Math.min(found.size(), matching.maxMatches()));
+            List<Match> shown = found.shown();
             if (shown.isEmpty())
             {
                 return new Match2dRender(matching.merged(), 0, 0, List.of());
@@ -130,12 +127,93 @@ public final class MoleculeRenderer
                     scenes.add(SceneRenderer.render(layout, settings.style(), MatchAnnotator.annotate(each, molecule, matching.style())));
                 }
             }
-            return new Match2dRender(matching.merged(), found.size(), shown.size(), scenes);
+            return new Match2dRender(matching.merged(), found.total(), shown.size(), scenes);
         }
         catch (IllegalArgumentException | IllegalStateException unsupported)
         {
             throw new RenderException("CANNOT_RENDER", unsupported.getMessage());
         }
+    }
+
+    /**
+     * @param molecule the molecule to search
+     * @param smarts the pattern to find
+     * @param match how to find and show the matches
+     * @return where the pattern matches, for a client to highlight in a drawing of its own
+     * @throws RenderException if the pattern or an option is invalid
+     */
+    public Match3dData findMatches3d(Molecule molecule, String smarts, MatchOptions match)
+    {
+        Render2dOptionsMapper.Matching matching = Render2dOptionsMapper.map(match);
+        Found found = find(molecule, smarts, matching);
+        MatchStyle style = matching.style();
+
+        Map<Atom, Integer> atomIndices = new IdentityHashMap<>();
+        for (int i = 0; i < molecule.atoms().size(); i++)
+        {
+            atomIndices.put(molecule.atoms().get(i), i);
+        }
+        Map<Bond, Integer> bondIndices = new IdentityHashMap<>();
+        for (int i = 0; i < molecule.bonds().size(); i++)
+        {
+            bondIndices.put(molecule.bonds().get(i), i);
+        }
+
+        List<Match3dData.Highlight> highlights = new ArrayList<>();
+        for (int i = 0; i < found.shown().size(); i++)
+        {
+            Match each = found.shown().get(i);
+            Set<Atom> atoms = each.atoms();
+            List<Integer> bonds = new ArrayList<>();
+            for (Bond bond : molecule.bonds())
+            {
+                if (atoms.contains(bond.first()) && atoms.contains(bond.second()))
+                {
+                    bonds.add(bondIndices.get(bond));
+                }
+            }
+
+            List<Match3dData.Label> atomLabels = new ArrayList<>();
+            List<Match3dData.Label> bondLabels = new ArrayList<>();
+            if (style.labels())
+            {
+                MatchLabels labels = MatchLabels.of(each, molecule);
+                labels.atoms().forEach((atom, text) -> atomLabels.add(new Match3dData.Label(atomIndices.get(atom), text)));
+                labels.bonds().forEach((bond, text) -> bondLabels.add(new Match3dData.Label(bondIndices.get(bond), text)));
+            }
+            highlights.add(new Match3dData.Highlight(
+                    style.colourOfMatch(i).hex(),
+                    atoms.stream().map(atomIndices::get).sorted().toList(),
+                    bonds,
+                    atomLabels,
+                    bondLabels));
+        }
+        return new Match3dData(matching.merged(), found.total(), highlights.size(), style.dimRest(), style.recolour(), style.labels(), highlights);
+    }
+
+    /**
+     * @param total how many matches the pattern has
+     * @param shown the matches to show, the first of them
+     */
+    private record Found(int total, List<Match> shown)
+    {
+    }
+
+    private static Found find(Molecule molecule, String smarts, Render2dOptionsMapper.Matching matching)
+    {
+        Query query;
+        try
+        {
+            query = Query.fromSmarts(smarts);
+        }
+        catch (InvalidNotationException invalid)
+        {
+            throw new RenderException("INVALID_SMARTS", invalid.getMessage());
+        }
+
+        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+        List<Match> found = matching.allMatches() ? matcher.findMatches(query) : matcher.findDistinctMatches(query);
+        return new Found(found.size(), found.subList(0, Math.min(found.size(), matching.maxMatches())));
     }
 
     /**

@@ -47,6 +47,21 @@ form > input[type=text] {
   gap: 0.5rem;
 }
 
+.match-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.match-chips button {
+  border-width: 2px;
+}
+
+.match-chips button.active {
+  background: #ddf4ff;
+  font-weight: 600;
+}
+
 .match-row svg {
   max-width: 100%;
   height: auto;

@@ -1,5 +1,5 @@
 import { ApiError, HttpClient } from "./http";
-import type { MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, Scene, StoredMolecule, Structure3D } from "./types";
+import type { MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, Scene, StoredMolecule, Structure3D } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
@@ -40,6 +40,11 @@ export class ChemistryApi {
   /** Draws a stored molecule with the matches of a SMARTS pattern highlighted. */
   matches2d(id: MoleculeId, smarts: string, options: OptionValues, match: OptionValues): Promise<MatchResult> {
     return this.http.json<MatchResult>("POST", `/api/molecules/${encodeURIComponent(id)}/match/2d`, { json: { smarts, options, match } });
+  }
+
+  /** Finds where a SMARTS pattern matches a stored molecule, for a 3D view to highlight. */
+  matches3d(id: MoleculeId, smarts: string, match: OptionValues): Promise<MatchData> {
+    return this.http.json<MatchData>("POST", `/api/molecules/${encodeURIComponent(id)}/match/3d`, { json: { smarts, match } });
   }
 
   private async optionsAt(path: string): Promise<OptionDescriptor[]> {

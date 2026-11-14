@@ -1,6 +1,6 @@
 import type { ChemistryApi, SceneResponse } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import type { GeneratedNotation, MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
+import type { GeneratedNotation, MatchData, MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
 import { SvgView } from "../view/SvgView";
 import { ThreeView } from "../view/ThreeView";
 import type { OptionsPanel } from "./OptionsPanel";
@@ -216,41 +216,55 @@ export class MoleculePanel {
     void this.updateMatches();
   }
 
-  /** Shows where the SMARTS pattern matches in the 2D drawing: one drawing per match, or one with every match, as chosen. */
+  /**
+   * Shows where the SMARTS pattern matches: in 2D, a drawing per match or one with every match; in 3D, the matches
+   * highlighted in the view itself, one at a time or all together, as chosen.
+   */
   async updateMatches(): Promise<void> {
     const request = ++this.matchRequest;
     const smarts = this.host.smarts();
     const options = this.host.optionsMatch();
-    if (!this.current || this.mode !== "2d" || this.active !== this.mode || !smarts || !options) {
+    if (!this.current || this.active !== this.mode || !smarts || !options) {
       this.clearMatches();
+      this.clearHighlights();
       return;
     }
 
     try {
-      const result = await this.host.api.matches2d(
-        this.current.id,
-        smarts,
-        this.host.options2d()?.values() ?? {},
-        options.values(),
-      );
-      if (request !== this.matchRequest) {
-        return;
-      }
-      this.clearMatches();
-      if (result.total === 0) {
-        this.matches.append(MoleculePanel.matchNote(`${smarts} does not match`, false));
-      } else {
-        const noun = result.total === 1 ? "match" : "matches";
-        const counted = result.shown < result.total ? `${result.shown} of ${result.total} ${noun}` : `${result.total} ${noun}`;
-        this.matches.append(MoleculePanel.matchNote(`${smarts}: ${counted}${result.merged ? " (merged)" : ""}`, false));
-        const row = document.createElement("div");
-        row.className = "match-row";
-        for (const scene of result.scenes) {
-          const view = MoleculePanel.sceneView(scene);
-          this.matchViews.push(view);
-          row.append(view.element);
+      const { id } = this.current;
+      if (this.mode === "2d") {
+        const result = await this.host.api.matches2d(id, smarts, this.host.options2d()?.values() ?? {}, options.values());
+        if (request !== this.matchRequest) {
+          return;
         }
-        this.matches.append(row);
+        this.clearMatches();
+        this.clearHighlights();
+        if (result.total === 0) {
+          this.matches.append(MoleculePanel.matchNote(`${smarts} does not match`, false));
+        } else {
+          this.matches.append(MoleculePanel.matchNote(MoleculePanel.matchSummary(smarts, result), false));
+          const row = document.createElement("div");
+          row.className = "match-row";
+          for (const scene of result.scenes) {
+            const view = MoleculePanel.sceneView(scene);
+            this.matchViews.push(view);
+            row.append(view.element);
+          }
+          this.matches.append(row);
+        }
+      } else {
+        const data = await this.host.api.matches3d(id, smarts, options.values());
+        if (request !== this.matchRequest) {
+          return;
+        }
+        this.clearMatches();
+        if (!this.three || data.total === 0) {
+          this.clearHighlights();
+          this.matches.append(MoleculePanel.matchNote(`${smarts} does not match`, false));
+        } else {
+          this.matches.append(MoleculePanel.matchNote(MoleculePanel.matchSummary(smarts, data), false));
+          this.showMatches3d(this.three, data);
+        }
       }
       this.matches.hidden = false;
     } catch (error) {
@@ -258,11 +272,52 @@ export class MoleculePanel {
         return;
       }
       this.clearMatches();
+      this.clearHighlights();
       this.matches.append(MoleculePanel.matchNote(MoleculePanel.describe(error), true));
       this.matches.hidden = false;
     }
   }
 
+  /** Highlights the matches in a 3D view; unless they are merged, a button per match picks the one highlighted. */
+  private showMatches3d(view: ThreeView, data: MatchData): void {
+    const show = (chosen: number) => {
+      const matches = data.merged ? data.matches : data.matches.slice(chosen, chosen + 1);
+      view.setMatches({ matches, dim: data.dim, recolour: data.recolour, labels: data.labels });
+    };
+    show(0);
+    if (data.merged || data.matches.length < 2) {
+      return;
+    }
+
+    const row = document.createElement("div");
+    row.className = "match-chips";
+    const chips = data.matches.map((match, index) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "small";
+      chip.textContent = String(index + 1);
+      chip.style.borderColor = match.colour;
+      chip.addEventListener("click", () => {
+        chips.forEach((other, i) => other.classList.toggle("active", i === index));
+        show(index);
+      });
+      return chip;
+    });
+    chips[0]?.classList.add("active");
+    row.append(...chips);
+    this.matches.append(row);
+  }
+
+  private static matchSummary(smarts: string, result: { total: number; shown: number; merged: boolean }): string {
+    const noun = result.total === 1 ? "match" : "matches";
+    const counted = result.shown < result.total ? `${result.shown} of ${result.total} ${noun}` : `${result.total} ${noun}`;
+    return `${smarts}: ${counted}${result.merged ? " (merged)" : ""}`;
+  }
+
+  /** Takes the match highlights off the 3D view, which is kept while the panel is in 2D. */
+  private clearHighlights(): void {
+    this.cache?.three?.setMatches(null);
+  }
   private clearMatches(): void {
     this.matchViews.forEach((view) => view.dispose());
     this.matchViews = [];

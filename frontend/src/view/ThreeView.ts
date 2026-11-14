@@ -24,8 +24,21 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { CameraPose, Connection3D, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
+import type { CameraPose, Connection3D, MatchHighlight, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
 import type { Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
+
+/** The matches of a SMARTS pattern to show in a view. */
+export interface MatchLook {
+  matches: MatchHighlight[];
+  dim: number;
+  recolour: boolean;
+  labels: boolean;
+}
+
+const HALO_PADDING = 0.12;
+const HALO_GROWTH = 0.08;
+const BOND_HALO = 0.17;
+const HALO_OPACITY = 0.45;
 
 type Style = "ball_and_stick" | "sticks" | "wireframe" | "spacefill";
 
@@ -113,6 +126,7 @@ export class ThreeView implements MoleculeView {
   private listeners = new Set<ViewListener>();
   private selection: SelectionState = { atoms: new Set(), bonds: new Set() };
   private highlights: Highlights = { hover: null, ends: [] };
+  private matchLook: MatchLook | null = null;
   private frame = 0;
   private radius = 3;
   /** The middle of what is drawn, which the view starts out orbiting. */
@@ -168,6 +182,15 @@ export class ThreeView implements MoleculeView {
   listen(listener: ViewListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Highlights where a SMARTS pattern matches, or clears the highlights if `look` is null. */
+  setMatches(look: MatchLook | null): void {
+    if (!look && !this.matchLook) {
+      return;
+    }
+    this.matchLook = look;
+    this.build();
   }
 
   setSelection(selection: SelectionState): void {
@@ -275,6 +298,11 @@ export class ThreeView implements MoleculeView {
       neighbours.set(link.second, [...(neighbours.get(link.second) ?? []), link.first]);
     }
 
+    const look = this.matchLook;
+    const atomSets = look?.matches.map((match) => new Set(match.atoms)) ?? [];
+    const bondSets = look?.matches.map((match) => new Set(match.bonds)) ?? [];
+    const dimmed = (owners: number[]) => (look && look.dim > 0 && owners.length === 0 ? 1 - look.dim : 1);
+
     let radius = 1;
     const strain = this.settings.debugStrain && diagnostics ? diagnostics.atom_strain : null;
     for (const site of sites) {
@@ -284,14 +312,29 @@ export class ThreeView implements MoleculeView {
       const size = this.ballRadius(site, bonded.has(site.index));
       const at = point(site.index);
       radius = Math.max(radius, at.distanceTo(this.centre) + Math.max(size, this.settings.style === "spacefill" ? 0 : 0.3));
+      // an implied hydrogen is highlighted with the atom it hangs off
+      const owners = atomSets.flatMap((set, i) => (set.has(site.atom) ? [i] : []));
+      owners.forEach((owner, order) => {
+        const colour = look?.matches[owner]?.colour ?? "#ffd43b";
+        const halo = new Mesh(this.unitSphere, this.haloMaterial(colour));
+        halo.position.copy(at);
+        halo.scale.setScalar(Math.max(size, LONE_ATOM_RADIUS) + HALO_PADDING + HALO_GROWTH * order);
+        halo.renderOrder = -1;
+        this.content.add(halo);
+      });
       if (size > 0) {
         const colour = new Color(site.colour);
         if (strain) {
           colour.lerp(STRAIN, Math.min(1, (strain[site.index] ?? 0) / STRAIN_SATURATES_AT));
         }
+        const first = owners[0];
+        if (look?.recolour && first !== undefined) {
+          colour.set(look.matches[first]?.colour ?? site.colour);
+        }
         const ball = new Mesh(this.unitSphere, new MeshStandardMaterial({ color: colour, roughness: 0.5 }));
         ball.position.copy(at);
         ball.scale.setScalar(size);
+        this.fade(ball, dimmed(owners));
         const part = this.addPart("atom", site.implied ? null : site.atom, { element: site.element }, ball);
         this.atomParts.set(site.index, part);
         this.content.add(ball);
@@ -301,8 +344,26 @@ export class ThreeView implements MoleculeView {
     if (this.settings.style !== "spacefill") {
       const aromaticRings = this.aromaticCentres(links, point);
       for (const link of links) {
-        this.addBond(link, sites, point, neighbours, aromaticRings.get(link));
+        const owners = bondSets.flatMap((set, i) => (ThreeView.bondMatched(link, sites, set, atomSets[i] ?? new Set()) ? [i] : []));
+        const group = this.addBond(link, sites, point, neighbours, aromaticRings.get(link));
+        if (group) {
+          this.fade(group, dimmed(owners));
+        }
+        owners.forEach((owner, order) => {
+          const halo = this.cylinder(
+            point(link.first),
+            point(link.second),
+            BOND_HALO + HALO_GROWTH * order,
+            this.haloMaterial(look?.matches[owner]?.colour ?? "#ffd43b"),
+          );
+          halo.renderOrder = -1;
+          this.content.add(halo);
+        });
       }
+    }
+
+    if (look?.labels) {
+      this.addMatchLabels(look, sites, links, point);
     }
 
     if (this.settings.charges) {
@@ -323,6 +384,58 @@ export class ThreeView implements MoleculeView {
     this.scene.add(this.content);
     this.refreshEmphasis();
     this.requestRender();
+  }
+
+  /** Whether a bond is in a match: the bond to an implied hydrogen is in it if the atom the hydrogen hangs off is. */
+  private static bondMatched(link: Connection3D, sites: Site3D[], bonds: Set<number>, atoms: Set<number>): boolean {
+    if (link.bond >= 0) {
+      return bonds.has(link.bond);
+    }
+    const first = sites[link.first];
+    const heavy = first?.implied ? sites[link.second] : first;
+    return heavy !== undefined && atoms.has(heavy.atom);
+  }
+
+  private haloMaterial(colour: string): MeshBasicMaterial {
+    return new MeshBasicMaterial({ color: colour, transparent: true, opacity: HALO_OPACITY, depthWrite: false });
+  }
+
+  /** Makes everything in `object` see-through, if `opacity` is below 1. */
+  private fade(object: Object3D, opacity: number): void {
+    if (opacity >= 1) {
+      return;
+    }
+    object.traverse((each) => {
+      if (each instanceof Mesh && each.material instanceof MeshStandardMaterial) {
+        each.material.transparent = true;
+        each.material.opacity = opacity;
+      }
+    });
+  }
+
+  /** Numbers the atoms and bonds of the matches, as the 2D drawing does. */
+  private addMatchLabels(look: MatchLook, sites: Site3D[], links: Connection3D[], point: (index: number) => Vector3): void {
+    const atomSites = new Map(sites.filter((site) => !site.implied).map((site) => [site.atom, site.index]));
+    const bondLinks = new Map(links.filter((link) => link.bond >= 0).map((link) => [link.bond, link]));
+    const add = (text: string, at: Vector3) => {
+      const sprite = this.label(text, "#1a1a1a", 0.32);
+      sprite.position.copy(at);
+      this.content.add(sprite);
+    };
+    for (const match of look.matches) {
+      for (const { index, text } of match.atom_labels) {
+        const site = atomSites.get(index);
+        if (site !== undefined && this.sitePoints.has(site)) {
+          add(text, point(site));
+        }
+      }
+      for (const { index, text } of match.bond_labels) {
+        const link = bondLinks.get(index);
+        if (link) {
+          add(text, point(link.first).add(point(link.second)).multiplyScalar(0.5));
+        }
+      }
+    }
   }
 
   private ballRadius(site: Site3D, bonded: boolean): number {
@@ -386,12 +499,12 @@ export class ThreeView implements MoleculeView {
     point: (index: number) => Vector3,
     neighbours: Map<number, number[]>,
     ringCentre: Vector3 | undefined,
-  ): void {
+  ): Group | null {
     const from = point(link.first);
     const to = point(link.second);
     const along = to.clone().sub(from);
     if (along.lengthSq() < 1e-12) {
-      return;
+      return null;
     }
     along.normalize();
 
@@ -443,6 +556,7 @@ export class ThreeView implements MoleculeView {
       object.userData.part = part;
     });
     this.content.add(group);
+    return group;
   }
 
   /** Which way a bond's extra lines are laid out: towards the ring, or into the plane of a neighbour. */

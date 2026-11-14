@@ -17,6 +17,7 @@ import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.render.MatchOptions;
 import com.ruben.chemistry.server.render.Match2dRender;
+import com.ruben.chemistry.server.render.Match3dData;
 import com.ruben.chemistry.server.render.MoleculeRenderer;
 import com.ruben.chemistry.server.render.RenderException;
 import com.ruben.chemistry.server.render.Render2dOptions;
@@ -52,6 +53,14 @@ public final class MoleculeEndpoint extends Endpoint
      * @param match how to show the matches (optional)
      */
     public record MatchRequest(String smarts, Render2dOptions options, MatchOptions match)
+    {
+    }
+
+    /**
+     * @param smarts the pattern to find
+     * @param match how to show the matches (optional)
+     */
+    public record Match3dRequest(String smarts, MatchOptions match)
     {
     }
 
@@ -103,6 +112,7 @@ public final class MoleculeEndpoint extends Endpoint
         registry.register(HttpMethod.POST, "/api/molecules", this::create);
         registry.register(HttpMethod.POST, "/api/molecules/:id/render/2d", this::render2d);
         registry.register(HttpMethod.POST, "/api/molecules/:id/match/2d", this::match2d);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/match/3d", this::match3d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/svg/2d", this::svg2d);
         registry.register(HttpMethod.POST, "/api/molecules/:id/structure/2d", this::generateStructure2d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/structure/2d", this::getStructure2d);
@@ -145,20 +155,13 @@ public final class MoleculeEndpoint extends Endpoint
     {
         StoredMolecule stored = find(request);
         MatchRequest body = request.body(MatchRequest.class);
-        if (body.smarts() == null || body.smarts().isBlank())
-        {
-            throw new HttpException(400, "INVALID_BODY", "smarts: is required");
-        }
-        if (body.smarts().length() > MoleculeRenderer.MAX_SMILES_LENGTH)
-        {
-            throw new HttpException(400, "SMARTS_TOO_LONG", "The SMARTS pattern is longer than " + MoleculeRenderer.MAX_SMILES_LENGTH + " characters");
-        }
+        String smarts = validSmarts(body);
 
         try
         {
             Match2dRender render = renderer.renderMatches2d(
                     stored.molecule(),
-                    body.smarts().trim(),
+                    smarts,
                     body.options() == null ? Render2dOptions.defaults() : body.options(),
                     body.match() == null ? MatchOptions.defaults() : body.match());
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
@@ -172,6 +175,46 @@ public final class MoleculeEndpoint extends Endpoint
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }
+    }
+
+    /** Finds where a pattern matches, for the client to highlight in its own 3D view; it needs no 3D structure. */
+    private void match3d(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        Match3dRequest body = request.body(Match3dRequest.class);
+        String smarts = validSmarts(body.smarts());
+
+        try
+        {
+            Match3dData render = renderer.findMatches3d(
+                    stored.molecule(),
+                    smarts,
+                    body.match() == null ? MatchOptions.defaults() : body.match());
+            responseContext.header(MOLECULE_ID_HEADER, stored.id());
+            responseContext.respond(200, render);
+        }
+        catch (RenderException failure)
+        {
+            throw new HttpException(400, failure.code(), failure.getMessage());
+        }
+    }
+
+    private static String validSmarts(MatchRequest body)
+    {
+        return validSmarts(body.smarts());
+    }
+
+    private static String validSmarts(String smarts)
+    {
+        if (smarts == null || smarts.isBlank())
+        {
+            throw new HttpException(400, "INVALID_BODY", "smarts: is required");
+        }
+        if (smarts.length() > MoleculeRenderer.MAX_SMILES_LENGTH)
+        {
+            throw new HttpException(400, "SMARTS_TOO_LONG", "The SMARTS pattern is longer than " + MoleculeRenderer.MAX_SMILES_LENGTH + " characters");
+        }
+        return smarts.trim();
     }
 
     private void generateStructure2d(Request request, ResponseContext responseContext) throws IOException
