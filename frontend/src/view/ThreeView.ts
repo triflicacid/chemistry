@@ -870,7 +870,7 @@ export class ThreeView implements MoleculeView {
     const middle = new Vector3();
     nodes.forEach((orbital) => middle.add(point(orbital.node)));
 
-    const note = this.label(`${system.aromaticity.toLowerCase()} · ${system.pi_electrons} π`, PI, 0.26);
+    const note = this.label(`${system.aromaticity.toLowerCase()} · ${system.pi_electrons} π`, PI, 0.26, true);
     note.position.copy(middle.divideScalar(nodes.length));
     this.content.add(note);
   }
