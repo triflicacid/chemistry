@@ -738,3 +738,13 @@ osmium-tetroxide,O=[Os](=O)(=O)=O,inorganic;oxide;organometallic
 chromyl-chloride,Cl[Cr](Cl)(=O)=O,inorganic;halogen;organometallic
 cisplatin,N[Pt](N)(Cl)Cl,inorganic;drug;halogen;organometallic
 ferrocene,[Fe+2].c1cc[cH-]c1.c1cc[cH-]c1,organometallic;aromatic;ionic;fragments;charged
+
+# --- large and complex molecules ---
+dna-trinucleotide,C1C(C(OC1N)COP(=O)(O)OC2CC(OC2COP(=O)(O)OC3CC(OC3CO)N)N)O,nucleotide;phosphate;biomolecule;ring;long
+buckminsterfullerene,C12=C3C4=C5C6=C1C7=C8C9=C1C%10=C%11C(=C29)C3=C2C3=C4C4=C5C5=C9C6=C7C6=C7C8=C1C1=C8C%10=C%10C%11=C2C2=C3C3=C4C4=C5C5=C%11C%12=C(C6=C95)C7=C1C1=C%12C5=C%11C4=C3C3=C5C(=C81)C%10=C23,fullerene;caged;fused;ring;long
+strychnine,C1CN2CC3=CCOC4CC(=O)N5C6C4C3CC2C61C7=CC=CC=C75,drug;alkaloid;heterocycle;aromatic;bridged;fused;ring
+erythromycin,CCC1C(C(C(C(=O)C(CC(C(C(C(C(C(=O)O1)C)OC2CC(C(C(O2)C)O)(C)OC)C)OC3C(C(CC(O3)C)N(C)C)O)(C)O)C)C)O)(C)O,drug;antibiotic;macrocycle;ring;long
+cholic-acid,CC(CCC(=O)O)C1CCC2C1(C(CC3C2C(CC4C3(CCC(C4)O)C)O)O)C,steroid;carboxylic-acid;alcohol;fused;ring
+colchicine,CC(=O)NC1CCC2=CC(=C(C(=C2C3=CC=C(C(=O)C=C13)OC)OC)OC)OC,drug;alkaloid;amide;aromatic;fused;ring
+tetrodotoxin,C(C1(C2C3C(N=C(NC34C(C1OC(C4O)(O2)O)O)N)O)O)O,toxin;guanidine;bridged;caged;ring
+camptothecin,CCC1(C2=C(COC1=O)C(=O)N3CC4=CC5=CC=CC=C5N=C4C3=C2)O,drug;alkaloid;lactone;heterocycle;aromatic;fused;ring
