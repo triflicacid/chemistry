@@ -26,7 +26,7 @@ public final class CachedValue<T> implements Supplier<T>
      * @return the cached value. If no value is cached, gets it from the supplier.
      */
     @Override
-    public T get()
+    public synchronized T get()
     {
         if (!computed)
         {

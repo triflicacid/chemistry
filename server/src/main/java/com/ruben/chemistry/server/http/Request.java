@@ -5,11 +5,11 @@ import com.ruben.chemistry.server.json.JsonNames;
 import com.ruben.chemistry.server.json.RecordConverter;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.function.Function;
 
 public final class Request
 {
@@ -17,6 +17,7 @@ public final class Request
     private final String path;
     private final Map<String, String> pathParameters;
     private final Map<String, String> query;
+    private final Map<String, List<String>> queryValues;
     private final Map<String, List<String>> headers;
     private final Map<String, Object> body;
     private final boolean hasBody;
@@ -25,14 +26,22 @@ public final class Request
             HttpMethod method,
             String path,
             Map<String, String> pathParameters,
-            Map<String, String> query,
+            Map<String, List<String>> queryValues,
             Map<String, List<String>> headers,
             Map<String, Object> body)
     {
         this.method = method;
         this.path = path;
         this.pathParameters = Collections.unmodifiableMap(pathParameters);
-        this.query = Collections.unmodifiableMap(query);
+        Map<String, String> first = new LinkedHashMap<>();
+        Map<String, List<String>> all = new LinkedHashMap<>();
+        queryValues.forEach((name, values) ->
+        {
+            first.put(name, values.getFirst());
+            all.put(name, List.copyOf(values));
+        });
+        this.query = Collections.unmodifiableMap(first);
+        this.queryValues = Collections.unmodifiableMap(all);
         this.headers = caseInsensitive(headers);
         this.hasBody = body != null;
         this.body = body;
@@ -99,6 +108,15 @@ public final class Request
     public Optional<String> queryParameter(String name)
     {
         return Optional.ofNullable(query.get(name));
+    }
+
+    /**
+     * @param name a query parameter, which may be repeated ({@code ?x=a&x=b})
+     * @return every value given for it, in order, or empty if not given
+     */
+    public List<String> queryParameters(String name)
+    {
+        return queryValues.getOrDefault(name, List.of());
     }
 
     /**

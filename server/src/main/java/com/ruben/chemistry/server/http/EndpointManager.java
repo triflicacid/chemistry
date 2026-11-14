@@ -252,9 +252,9 @@ final class EndpointManager implements EndpointRegistry
         return decoded.toString();
     }
 
-    private static Map<String, String> parseQuery(String rawQuery)
+    private static Map<String, List<String>> parseQuery(String rawQuery)
     {
-        Map<String, String> query = new LinkedHashMap<>();
+        Map<String, List<String>> query = new LinkedHashMap<>();
         if (rawQuery == null || rawQuery.isEmpty())
         {
             return query;
@@ -270,7 +270,7 @@ final class EndpointManager implements EndpointRegistry
             int equals = pair.indexOf('=');
             String name = decode(equals < 0 ? pair : pair.substring(0, equals));
             String value = equals < 0 ? "" : decode(pair.substring(equals + 1));
-            query.putIfAbsent(name, value);
+            query.computeIfAbsent(name, key -> new ArrayList<>()).add(value);
         }
         return query;
     }
