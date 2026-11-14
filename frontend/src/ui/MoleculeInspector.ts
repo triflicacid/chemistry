@@ -129,7 +129,9 @@ export class MoleculeInspector {
       if (rings > 0) {
         rows.push(["Rings", String(rings)]);
       }
-      rows.push(["Fragment", `${atom.fragment + 1} (of ${this.metadata.fragments.length})`]);
+      if (this.metadata.fragments.length > 1) {
+        rows.push(["Fragment", `${atom.fragment + 1} (of ${this.metadata.fragments.length})`]);
+      }
     } else if (bond) {
       title = `Bond ${bond.index}`;
       rows.push(
@@ -167,7 +169,7 @@ export class MoleculeInspector {
   private describeFragment(index: number): HTMLElement {
     const fragment = this.metadata.fragments[index];
     if (!fragment) {
-      return MoleculeInspector.plaque(`Fragment ${index}`);
+      return MoleculeInspector.plaque(`Fragment ${index + 1}`);
     }
 
     const rows: [string, string][] = [
@@ -181,7 +183,7 @@ export class MoleculeInspector {
       rows.push(["In unit", `${units.text.slice(unit.span.start, unit.span.end)} — one of ${unit.count}`]);
     }
 
-    const plaque = MoleculeInspector.plaque(`Fragment ${index} (of ${this.metadata.fragments.length})`);
+    const plaque = MoleculeInspector.plaque(`Fragment ${index + 1} (of ${this.metadata.fragments.length})`);
     plaque.append(MoleculeInspector.details(rows));
     return plaque;
   }
