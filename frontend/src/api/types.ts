@@ -174,6 +174,14 @@ export type SceneElement =
   | (SceneBase & { type: "group"; children: SceneElement[] })
   | (SceneBase & { type: "title" | "description"; text: string });
 
+export interface GeneratedNotation {
+  smiles: string;
+  canonical_smiles: string;
+  /** Whether the canonical SMILES is the stored molecule's, so its metadata applies to it. */
+  matches_source: boolean;
+  issues: string[];
+}
+
 export interface Scene {
   width: number;
   height: number;
@@ -181,6 +189,8 @@ export interface Scene {
   attributes: SceneAttributes;
   gradients: SceneGradient[];
   elements: SceneElement[];
+  /** Only a projection has this: the SMILES read back from the 3D structure, or null if it could not be read. */
+  generated?: GeneratedNotation | null;
 }
 
 /** An atom of a 3D structure. `index` is its place in `Structure3D.sites`. */

@@ -51,6 +51,14 @@ export class ResultsView {
         this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
   }
 
+  /** Adds a line of text to the card being shown. */
+  note(text: string): void {
+    const note = document.createElement("p");
+    note.className = "message";
+    note.textContent = text;
+    this.shown?.card.append(note);
+  }
+
   inspect(metadata: MoleculeMetadata, moleculeId: MoleculeId): void {
     if (this.shown?.moleculeId !== moleculeId) {
       return;

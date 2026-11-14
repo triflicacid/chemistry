@@ -2,7 +2,11 @@ package com.ruben.chemistry.space;
 
 import com.ruben.chemistry.core.BondOrder;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A molecule in three dimensions.
@@ -13,6 +17,80 @@ import java.util.List;
  */
 public record Structure3D(List<Site> sites, List<Connection> connections, List<Conformer> conformers)
 {
+    /**
+     * @param atoms indices of molecule atoms
+     * @return this, keeping only the connected parts that hold any of the atoms; nodes are renumbered in order
+     * @throws IllegalArgumentException if none of the atoms is in the structure
+     */
+    public Structure3D restrictedTo(Set<Integer> atoms)
+    {
+        int count = sites.size();
+        List<List<Integer>> adjacent = new ArrayList<>();
+        for (int i = 0; i < count; i++)
+        {
+            adjacent.add(new ArrayList<>());
+        }
+        for (Connection connection : connections)
+        {
+            adjacent.get(connection.first()).add(connection.second());
+            adjacent.get(connection.second()).add(connection.first());
+        }
+        boolean[] kept = new boolean[count];
+        Deque<Integer> pending = new ArrayDeque<>();
+        for (Site site : sites)
+        {
+            if (!site.implied() && atoms.contains(site.atom()) && !kept[site.index()])
+            {
+                kept[site.index()] = true;
+                pending.add(site.index());
+            }
+        }
+        if (pending.isEmpty())
+        {
+            throw new IllegalArgumentException("None of the atoms is in the structure");
+        }
+        while (!pending.isEmpty())
+        {
+            for (int next : adjacent.get(pending.poll()))
+            {
+                if (!kept[next])
+                {
+                    kept[next] = true;
+                    pending.add(next);
+                }
+            }
+        }
+
+        int[] renumbered = new int[count];
+        List<Site> keptSites = new ArrayList<>();
+        for (Site site : sites)
+        {
+            if (kept[site.index()])
+            {
+                renumbered[site.index()] = keptSites.size();
+                keptSites.add(new Site(keptSites.size(), site.element(), site.isotope(), site.atom(), site.implied(), site.charge()));
+            }
+        }
+        List<Connection> keptConnections = connections.stream()
+                .filter(connection -> kept[connection.first()] && kept[connection.second()])
+                .map(connection -> new Connection(renumbered[connection.first()], renumbered[connection.second()], connection.order(), connection.bond()))
+                .toList();
+        List<Conformer> keptConformers = new ArrayList<>();
+        for (Conformer conformer : conformers)
+        {
+            List<Vec3> positions = new ArrayList<>();
+            for (int i = 0; i < count; i++)
+            {
+                if (kept[i])
+                {
+                    positions.add(conformer.positions().get(i));
+                }
+            }
+            keptConformers.add(new Conformer(conformer.strain(), positions));
+        }
+        return new Structure3D(keptSites, keptConnections, keptConformers);
+    }
+
     /**
      * @param index the node's index, which the positions of every conformer are listed by
      * @param element the element symbol

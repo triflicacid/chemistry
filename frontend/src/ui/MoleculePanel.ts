@@ -1,6 +1,6 @@
 import type { ChemistryApi, SceneResponse } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import type { MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
+import type { GeneratedNotation, MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
 import { SvgView } from "../view/SvgView";
 import { ThreeView } from "../view/ThreeView";
 import type { OptionsPanel } from "./OptionsPanel";
@@ -28,6 +28,7 @@ interface Projection {
   readonly number: number;
   readonly moleculeId: MoleculeId;
   readonly view: SvgView;
+  readonly generated: GeneratedNotation | null;
   readonly tab: HTMLElement;
 }
 
@@ -276,6 +277,7 @@ export class MoleculePanel {
         number,
         moleculeId,
         view: MoleculePanel.sceneView(scene),
+        generated: scene.generated ?? null,
         tab: this.buildProjectionTab(number),
       };
       this.projections.push(projection);
@@ -317,9 +319,17 @@ export class MoleculePanel {
     this.markActive();
     this.projectActions.hidden = true;
     this.three = null;
-    const { id, smiles, canonical } = this.current;
+    const { id } = this.current;
+    const { generated } = projection;
+    // the stored molecule's metadata only describes the SMILES it was entered as, so it is only used where the reading agrees
+    const smiles = generated?.smiles ?? this.current.smiles;
+    const canonical = generated?.canonical_smiles ?? this.current.canonical;
+    const inspect = generated === null || generated.matches_source;
     try {
-      await this.present(Promise.resolve({ view: projection.view, moleculeId: projection.moleculeId }), id, smiles, canonical, null, false);
+      await this.present(Promise.resolve({ view: projection.view, moleculeId: projection.moleculeId }), id, smiles, canonical, null, false, inspect);
+      if (generated && generated.issues.length > 0) {
+        this.results.note(`Stereochemistry left unspecified: ${generated.issues.join("; ")}`);
+      }
     } catch (error) {
       this.results.showError(MoleculePanel.describe(error));
     }
@@ -353,9 +363,10 @@ export class MoleculePanel {
     canonical: string,
     known: MoleculeMetadata | null,
     track = true,
+    inspect = true,
   ): Promise<void> {
     // fetching both at once keeps the card from growing a second time once the metadata lands
-    const [{ view, moleculeId }, metadata] = await Promise.all([rendering, known ?? this.inspectionOf(id)]);
+    const [{ view, moleculeId }, metadata] = await Promise.all([rendering, known ?? (inspect ? this.inspectionOf(id) : null)]);
     if (track) {
       this.current = { id: moleculeId, smiles, canonical };
     }

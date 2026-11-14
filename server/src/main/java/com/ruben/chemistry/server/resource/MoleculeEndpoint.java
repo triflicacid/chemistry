@@ -1,8 +1,11 @@
 package com.ruben.chemistry.server.resource;
 
+import com.ruben.chemistry.canonical.CanonicalRanker;
+import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.Camera;
 import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Structure3D;
+import com.ruben.chemistry.space.StructureReader;
 import com.ruben.chemistry.space.Vec3;
 import com.ruben.chemistry.server.http.Endpoint;
 import com.ruben.chemistry.server.http.EndpointRegistry;
@@ -221,12 +224,36 @@ public final class MoleculeEndpoint extends Endpoint
                     body.options() == null ? Render2dOptions.defaults() : body.options(), only);
             stored.setLatest2d(render);
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
-            responseContext.respond(200, Render2dJson.of(render.scene()));
+            Map<String, Object> json = Render2dJson.of(render.scene());
+            json.put("generated", generatedNotation(stored, structure, conformer, only));
+            responseContext.respond(200, json);
         }
         catch (RenderException failure)
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }
+    }
+
+    private static Map<String, Object> generatedNotation(StoredMolecule stored, Structure3D structure, int conformer, Set<Integer> only)
+    {
+        Structure3D shown = only == null ? structure : structure.restrictedTo(only);
+        StructureReader.Reading reading;
+        try
+        {
+            reading = StructureReader.read(shown, conformer);
+        }
+        catch (RuntimeException unreadable)
+        {
+            return null;
+        }
+        String canonical = new SmilesWriter(reading.molecule()).setRanker(new CanonicalRanker()).write();
+
+        return Map.of(
+                "smiles", SmilesWriter.write(reading.molecule()),
+                "canonical_smiles", canonical,
+                "matches_source", canonical.equals(stored.canonicalSmiles()),
+                "issues", reading.issues().stream().map(StructureReader.Issue::message).toList()
+        );
     }
 
     private void generateStructure3d(Request request, ResponseContext responseContext) throws IOException

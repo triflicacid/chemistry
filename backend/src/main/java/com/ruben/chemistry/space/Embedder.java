@@ -26,7 +26,7 @@ public final class Embedder
     private static final int MAXIMUM_ITERATIONS = 700;
 
     /** How handed a centre must be, as the triple product of its unit ligand directions. */
-    private static final double MINIMUM_HANDEDNESS = 0.2;
+    private static final double MINIMUM_HANDEDNESS = 0.4;
 
     private Embedder()
     {
