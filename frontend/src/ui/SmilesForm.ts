@@ -1,6 +1,7 @@
 export class SmilesForm {
   readonly element = document.createElement("form");
   private readonly input = document.createElement("textarea");
+  private readonly smarts = document.createElement("input");
   private readonly button = document.createElement("button");
   private readonly actions = document.createElement("div");
 
@@ -9,7 +10,7 @@ export class SmilesForm {
     this.actions.append(control);
   }
 
-  constructor(onSubmit: (smiles: string) => void) {
+  constructor(onSubmit: (smiles: string, smarts: string) => void) {
     const label = document.createElement("label");
     label.textContent = "SMILES";
     label.htmlFor = this.input.id = "smiles";
@@ -19,16 +20,25 @@ export class SmilesForm {
     this.input.spellcheck = false;
     this.input.autocomplete = "off";
 
+    const smartsLabel = document.createElement("label");
+    smartsLabel.textContent = "SMARTS (optional)";
+    smartsLabel.htmlFor = this.smarts.id = "smarts";
+
+    this.smarts.type = "text";
+    this.smarts.placeholder = "SMARTS, e.g. C(=O)O";
+    this.smarts.spellcheck = false;
+    this.smarts.autocomplete = "off";
+
     this.button.type = "submit";
     this.button.textContent = "RENDER";
 
     this.actions.className = "actions";
     this.actions.append(this.button);
 
-    this.element.append(label, this.input, this.actions);
+    this.element.append(label, this.input, smartsLabel, this.smarts, this.actions);
     this.element.addEventListener("submit", (event) => {
       event.preventDefault();
-        onSubmit(this.input.value);
+      onSubmit(this.input.value, this.smarts.value.trim());
     });
     // Ctrl/Cmd+Enter submits from the textarea
     this.input.addEventListener("keydown", (event) => {
@@ -37,6 +47,11 @@ export class SmilesForm {
         this.element.requestSubmit();
       }
     });
+  }
+
+  /** Replaces what is in the SMARTS input. */
+  setSmarts(smarts: string): void {
+    this.smarts.value = smarts;
   }
 
   /** Replaces what is in the input. */

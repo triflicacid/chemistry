@@ -3,7 +3,7 @@ export interface OptionDescriptor {
   name: string;
   label: string;
   description: string;
-  type: "boolean" | "number" | "choice" | "arrangement";
+  type: "boolean" | "number" | "text" | "choice" | "arrangement";
   default_value: boolean | number | string;
   unit: string | null;
   min: number | null;
@@ -191,6 +191,17 @@ export interface Scene {
   elements: SceneElement[];
   /** Only a projection has this: the SMILES read back from the 3D structure, or null if it could not be read. */
   generated?: GeneratedNotation | null;
+}
+
+/** What `POST /api/molecules/:id/match/2d` draws. */
+export interface MatchResult {
+  /** Whether `scenes` is one drawing with every match highlighted, rather than one per match. */
+  merged: boolean;
+  /** How many matches the pattern has; 0 if it does not match. */
+  total: number;
+  /** How many of them were drawn. */
+  shown: number;
+  scenes: Scene[];
 }
 
 /** An atom of a 3D structure. `index` is its place in `Structure3D.sites`. */

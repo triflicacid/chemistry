@@ -17,6 +17,12 @@ public final class OptionsEndpoint extends Endpoint
     {
         registry.register(HttpMethod.GET, "/api/options/2d", this::options2d);
         registry.register(HttpMethod.GET, "/api/options/3d", this::options3d);
+        registry.register(HttpMethod.GET, "/api/options/match", this::optionsMatch);
+    }
+
+    private void optionsMatch(Request request, ResponseContext responseContext) throws IOException
+    {
+        responseContext.respond(200, Map.of("options", OptionSchema.optionsMatch()));
     }
 
     private void options2d(Request request, ResponseContext responseContext) throws IOException

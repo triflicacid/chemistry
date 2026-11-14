@@ -35,7 +35,7 @@ public final class OptionSchema
      * @param name the key in {@link Render2dOptions}, in snake_case
      * @param label a short name to show
      * @param description what it does
-     * @param type {@code boolean}, {@code number}, {@code choice}, or {@code arrangement} (a {@code choice} of
+     * @param type {@code boolean}, {@code number}, {@code text}, {@code choice}, or {@code arrangement} (a {@code choice} of
      *     lines, optionally followed by {@code :<n>} fragments per line)
      * @param defaultValue what is used if the client does not set it
      * @param unit what a number counts, or {@code null}
@@ -116,6 +116,43 @@ public final class OptionSchema
                 new Option("depth_bonds", "Depth bonds",
                         "Whether a 2D projection of a 3D structure draws bonds that point towards the viewer as wedges and away as hashes",
                         "boolean", false, null, null, null, null, null));
+    }
+
+    static final List<Choice> VIEWS = List.of(
+            new Choice("each", "One per match"),
+            new Choice("merged", "Merged"));
+
+    static final int DEFAULT_MAX_MATCHES = 10;
+    static final int MAX_MATCHES = 100;
+
+    /**
+     * @return the options a client may set for how a SMARTS pattern's matches are shown, in the order to show them.
+     *     A {@code text} option is free text; here {@code match_colour} is a hex colour, or blank for a colour per match.
+     */
+    public static List<Option> optionsMatch()
+    {
+        return List.of(
+                new Option("view", "View",
+                        "Whether each match gets its own drawing of the molecule, or all are highlighted on one",
+                        "choice", "each", null, null, null, VIEWS, null),
+                new Option("all_matches", "All matches",
+                        "Whether matches covering the same atoms in another order count as matches of their own",
+                        "boolean", false, null, null, null, null, null),
+                new Option("max_matches", "Most matches",
+                        "The most matches to draw",
+                        "number", DEFAULT_MAX_MATCHES, "matches", 1.0, (double) MAX_MATCHES, null, null),
+                new Option("dim", "Dim the rest",
+                        "How much everything outside a match is faded, from 0 (not at all) to 1 (invisible)",
+                        "number", 0, null, 0.0, 1.0, null, null),
+                new Option("labels", "Labels",
+                        "Whether matched atoms and the bonds between them are numbered",
+                        "boolean", false, null, null, null, null, null),
+                new Option("recolour", "Recolour",
+                        "Whether matched atoms are filled with the colour of their match",
+                        "boolean", false, null, null, null, null, null),
+                new Option("match_colour", "Match colour",
+                        "A hex colour to highlight every match in, such as #ff8800; blank gives each match a colour of its own",
+                        "text", "", null, null, null, null, null));
     }
 
     static final List<Choice> STYLES_3D = List.of(

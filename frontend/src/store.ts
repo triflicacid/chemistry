@@ -57,10 +57,13 @@ const KEY = "chemistry.input";
 
 const MODE_KEY = "chemistry.mode";
 
+const SMARTS_KEY = "chemistry.smarts";
+
 export type ViewMode = "2d" | "3d";
 
 export class ViewStore {
   private text = ViewStore.read();
+  private pattern = ViewStore.readSmarts();
   private viewMode: ViewMode = ViewStore.readMode();
 
   /** Whether the user last looked at the 2D or the 3D drawing. */
@@ -89,11 +92,32 @@ export class ViewStore {
     return this.text;
   }
 
+  /** The SMARTS pattern the user last entered, or blank. */
+  get smarts(): string {
+    return this.pattern;
+  }
+
+  rememberSmarts(smarts: string): void {
+    this.pattern = smarts;
+    try {
+      localStorage.setItem(SMARTS_KEY, smarts);
+    } catch {
+    }
+  }
+
   rememberInput(input: string): void {
     this.text = input;
     try {
       localStorage.setItem(KEY, input);
     } catch {
+    }
+  }
+
+  private static readSmarts(): string {
+    try {
+      return localStorage.getItem(SMARTS_KEY) ?? "";
+    } catch {
+      return "";
     }
   }
 

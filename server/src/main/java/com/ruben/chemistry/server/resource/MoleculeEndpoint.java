@@ -15,6 +15,8 @@ import com.ruben.chemistry.server.http.Request;
 import com.ruben.chemistry.server.http.ResponseContext;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.render.MatchOptions;
+import com.ruben.chemistry.server.render.Match2dRender;
 import com.ruben.chemistry.server.render.MoleculeRenderer;
 import com.ruben.chemistry.server.render.RenderException;
 import com.ruben.chemistry.server.render.Render2dOptions;
@@ -41,6 +43,15 @@ public final class MoleculeEndpoint extends Endpoint
      * @param options how to draw it (optional)
      */
     public record Render2dRequest(Render2dOptions options)
+    {
+    }
+
+    /**
+     * @param smarts the pattern to find
+     * @param options how to draw the molecule (optional)
+     * @param match how to show the matches (optional)
+     */
+    public record MatchRequest(String smarts, Render2dOptions options, MatchOptions match)
     {
     }
 
@@ -91,6 +102,7 @@ public final class MoleculeEndpoint extends Endpoint
     {
         registry.register(HttpMethod.POST, "/api/molecules", this::create);
         registry.register(HttpMethod.POST, "/api/molecules/:id/render/2d", this::render2d);
+        registry.register(HttpMethod.POST, "/api/molecules/:id/match/2d", this::match2d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/svg/2d", this::svg2d);
         registry.register(HttpMethod.POST, "/api/molecules/:id/structure/2d", this::generateStructure2d);
         registry.register(HttpMethod.GET, "/api/molecules/:id/structure/2d", this::getStructure2d);
@@ -127,6 +139,39 @@ public final class MoleculeEndpoint extends Endpoint
     {
         Render2d render = draw(request, responseContext);
         responseContext.respond(200, "image/svg+xml", render.svg());
+    }
+
+    private void match2d(Request request, ResponseContext responseContext) throws IOException
+    {
+        StoredMolecule stored = find(request);
+        MatchRequest body = request.body(MatchRequest.class);
+        if (body.smarts() == null || body.smarts().isBlank())
+        {
+            throw new HttpException(400, "INVALID_BODY", "smarts: is required");
+        }
+        if (body.smarts().length() > MoleculeRenderer.MAX_SMILES_LENGTH)
+        {
+            throw new HttpException(400, "SMARTS_TOO_LONG", "The SMARTS pattern is longer than " + MoleculeRenderer.MAX_SMILES_LENGTH + " characters");
+        }
+
+        try
+        {
+            Match2dRender render = renderer.renderMatches2d(
+                    stored.molecule(),
+                    body.smarts().trim(),
+                    body.options() == null ? Render2dOptions.defaults() : body.options(),
+                    body.match() == null ? MatchOptions.defaults() : body.match());
+            responseContext.header(MOLECULE_ID_HEADER, stored.id());
+            responseContext.respond(200, Map.of(
+                    "merged", render.merged(),
+                    "total", render.total(),
+                    "shown", render.shown(),
+                    "scenes", render.scenes().stream().map(Render2dJson::of).toList()));
+        }
+        catch (RenderException failure)
+        {
+            throw new HttpException(400, failure.code(), failure.getMessage());
+        }
     }
 
     private void generateStructure2d(Request request, ResponseContext responseContext) throws IOException

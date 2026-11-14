@@ -13,6 +13,9 @@ export interface PanelHost {
   readonly api: ChemistryApi;
   options2d(): OptionsPanel | null;
   options3d(): OptionsPanel | null;
+  optionsMatch(): OptionsPanel | null;
+  /** The SMARTS pattern to highlight, or blank. */
+  smarts(): string;
   modeChosen(mode: Mode): void;
 }
 
@@ -35,6 +38,10 @@ interface Projection {
 export class MoleculePanel {
   readonly element = document.createElement("div");
   private readonly results = new ResultsView();
+  private readonly matches = document.createElement("section");
+  private matchViews: SvgView[] = [];
+  /** Tells a slow match request that a newer one has replaced it. */
+  private matchRequest = 0;
   private readonly projectActions: HTMLElement;
   /** The tabs and projection buttons, shown once there is a molecule to act on. */
   private readonly toolbar = document.createElement("div");
@@ -70,7 +77,9 @@ export class MoleculePanel {
     }
     this.markActive();
     this.toolbar.append(this.tabs, this.projectActions);
-    this.element.append(this.toolbar, this.results.element);
+    this.matches.className = "matches";
+    this.matches.hidden = true;
+    this.element.append(this.toolbar, this.results.element, this.matches);
   }
 
   private tabButton(text: string, onClick: () => void): HTMLButtonElement {
@@ -143,6 +152,8 @@ export class MoleculePanel {
   }
 
   dispose(): void {
+    this.matchRequest++;
+    this.clearMatches();
     this.dropCache();
     this.projections.forEach((projection) => projection.view.dispose());
     this.projections.length = 0;
@@ -202,6 +213,68 @@ export class MoleculePanel {
       });
     }
     await this.present(rendering, id, smiles, canonical, known);
+    void this.updateMatches();
+  }
+
+  /** Shows where the SMARTS pattern matches in the 2D drawing: one drawing per match, or one with every match, as chosen. */
+  async updateMatches(): Promise<void> {
+    const request = ++this.matchRequest;
+    const smarts = this.host.smarts();
+    const options = this.host.optionsMatch();
+    if (!this.current || this.mode !== "2d" || this.active !== this.mode || !smarts || !options) {
+      this.clearMatches();
+      return;
+    }
+
+    try {
+      const result = await this.host.api.matches2d(
+        this.current.id,
+        smarts,
+        this.host.options2d()?.values() ?? {},
+        options.values(),
+      );
+      if (request !== this.matchRequest) {
+        return;
+      }
+      this.clearMatches();
+      if (result.total === 0) {
+        this.matches.append(MoleculePanel.matchNote(`${smarts} does not match`, false));
+      } else {
+        const noun = result.total === 1 ? "match" : "matches";
+        const counted = result.shown < result.total ? `${result.shown} of ${result.total} ${noun}` : `${result.total} ${noun}`;
+        this.matches.append(MoleculePanel.matchNote(`${smarts}: ${counted}${result.merged ? " (merged)" : ""}`, false));
+        const row = document.createElement("div");
+        row.className = "match-row";
+        for (const scene of result.scenes) {
+          const view = MoleculePanel.sceneView(scene);
+          this.matchViews.push(view);
+          row.append(view.element);
+        }
+        this.matches.append(row);
+      }
+      this.matches.hidden = false;
+    } catch (error) {
+      if (request !== this.matchRequest) {
+        return;
+      }
+      this.clearMatches();
+      this.matches.append(MoleculePanel.matchNote(MoleculePanel.describe(error), true));
+      this.matches.hidden = false;
+    }
+  }
+
+  private clearMatches(): void {
+    this.matchViews.forEach((view) => view.dispose());
+    this.matchViews = [];
+    this.matches.replaceChildren();
+    this.matches.hidden = true;
+  }
+
+  private static matchNote(text: string, error: boolean): HTMLElement {
+    const note = document.createElement("p");
+    note.className = error ? "message error" : "message";
+    note.textContent = text;
+    return note;
   }
 
   /** Remembers a freshly made view, disposing the one it replaces and everything of a different molecule. */
@@ -316,6 +389,8 @@ export class MoleculePanel {
       return;
     }
     this.active = projection.number;
+    this.matchRequest++;
+    this.clearMatches();
     this.markActive();
     this.projectActions.hidden = true;
     this.three = null;

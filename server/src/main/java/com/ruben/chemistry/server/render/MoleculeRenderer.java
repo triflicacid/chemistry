@@ -13,6 +13,13 @@ import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.render.svg.SvgWriter;
 import com.ruben.chemistry.render.scene.Scene;
 
+import com.ruben.chemistry.query.Match;
+import com.ruben.chemistry.query.Query;
+import com.ruben.chemistry.query.SubstructureMatcher;
+import com.ruben.chemistry.render.match.MatchAnnotator;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 public final class MoleculeRenderer
@@ -70,6 +77,60 @@ public final class MoleculeRenderer
             Structure2D layout = MoleculeLayout.layout(molecule, settings.depiction());
             Scene scene = SceneRenderer.render(layout, settings.style());
             return new Render2d(scene, SvgWriter.write(scene), layout);
+        }
+        catch (IllegalArgumentException | IllegalStateException unsupported)
+        {
+            throw new RenderException("CANNOT_RENDER", unsupported.getMessage());
+        }
+    }
+
+    /**
+     * @param molecule the molecule to draw
+     * @param smarts the pattern whose matches to highlight
+     * @param options how to draw the molecule
+     * @param match how to show the matches
+     * @return the drawing, which has no scenes if the pattern does not match
+     * @throws RenderException if the pattern or an option is invalid, or the molecule cannot be laid out
+     */
+    public Match2dRender renderMatches2d(Molecule molecule, String smarts, Render2dOptions options, MatchOptions match)
+    {
+        Render2dOptionsMapper.Settings settings = Render2dOptionsMapper.map(options);
+        Render2dOptionsMapper.Matching matching = Render2dOptionsMapper.map(match);
+
+        Query query;
+        try
+        {
+            query = Query.fromSmarts(smarts);
+        }
+        catch (InvalidNotationException invalid)
+        {
+            throw new RenderException("INVALID_SMARTS", invalid.getMessage());
+        }
+
+        try
+        {
+            SubstructureMatcher matcher = new SubstructureMatcher(molecule);
+            List<Match> found = matching.allMatches() ? matcher.findMatches(query) : matcher.findDistinctMatches(query);
+            List<Match> shown = found.subList(0, Math.min(found.size(), matching.maxMatches()));
+            if (shown.isEmpty())
+            {
+                return new Match2dRender(matching.merged(), 0, 0, List.of());
+            }
+
+            Structure2D layout = MoleculeLayout.layout(molecule, settings.depiction());
+            List<Scene> scenes = new ArrayList<>();
+            if (matching.merged())
+            {
+                scenes.add(SceneRenderer.render(layout, settings.style(), MatchAnnotator.annotate(shown, molecule, matching.style())));
+            }
+            else
+            {
+                for (Match each : shown)
+                {
+                    scenes.add(SceneRenderer.render(layout, settings.style(), MatchAnnotator.annotate(each, molecule, matching.style())));
+                }
+            }
+            return new Match2dRender(matching.merged(), found.size(), shown.size(), scenes);
         }
         catch (IllegalArgumentException | IllegalStateException unsupported)
         {

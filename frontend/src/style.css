@@ -21,12 +21,39 @@ label {
   font-weight: 600;
 }
 
-textarea {
+textarea,
+form > input[type=text] {
   width: 100%;
   box-sizing: border-box;
   font-family: ui-monospace, monospace;
   font-size: 1rem;
   padding: 0.5rem;
+}
+
+.matches {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.matches[hidden] {
+  display: none;
+}
+
+.match-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.match-row svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.option input[type=text] {
+  width: 9rem;
 }
 
 button {

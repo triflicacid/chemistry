@@ -106,6 +106,8 @@ export class OptionsPanel {
         return OptionsPanel.checkbox(descriptor, onChange);
       case "number":
         return OptionsPanel.number(descriptor, onChange);
+      case "text":
+        return OptionsPanel.text(descriptor, onChange);
       case "choice":
         return OptionsPanel.radios(descriptor, onChange);
       case "arrangement":
@@ -142,6 +144,22 @@ export class OptionsPanel {
         const value = input.valueAsNumber;
         return Number.isNaN(value) || value === descriptor.default_value ? undefined : value;
       },
+      reset: () => (input.value = String(descriptor.default_value)),
+      setDisabled: (disabled) => (input.disabled = disabled),
+    };
+  }
+
+  private static text(descriptor: OptionDescriptor, onChange: () => void): Control {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = String(descriptor.default_value);
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.addEventListener("input", onChange);
+
+    return {
+      element: input,
+      read: () => (input.value.trim() === String(descriptor.default_value) ? undefined : input.value.trim()),
       reset: () => (input.value = String(descriptor.default_value)),
       setDisabled: (disabled) => (input.disabled = disabled),
     };
