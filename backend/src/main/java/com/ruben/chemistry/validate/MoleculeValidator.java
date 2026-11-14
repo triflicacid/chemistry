@@ -2,8 +2,10 @@ package com.ruben.chemistry.validate;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.validate.checks.AromaticAtomNotInRingCheck;
 import com.ruben.chemistry.validate.checks.AromaticBondNotInRingCheck;
+import com.ruben.chemistry.validate.checks.BracketCheck;
 import com.ruben.chemistry.validate.checks.ChargeAndIsotopeChecks;
 import com.ruben.chemistry.validate.checks.ChargeBeyondElectronCountCheck;
 import com.ruben.chemistry.validate.checks.EmptyStructureCheck;
@@ -17,12 +19,14 @@ import com.ruben.chemistry.validate.checks.StructureChecks;
 import com.ruben.chemistry.validate.checks.SystemAromaticityCheck;
 import com.ruben.chemistry.validate.checks.ValenceCheck;
 import com.ruben.chemistry.validate.checks.WildcardCheck;
+import com.ruben.chemistry.validate.checks.WrittenBondChecks;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Checks a molecule that was built permissively.
@@ -45,7 +49,9 @@ public final class MoleculeValidator
         new SystemAromaticityCheck(),
         new RingGeometryChecks(),
         new StereochemistryChecks(),
-        new MixedNotationCheck());
+        new MixedNotationCheck(),
+        new BracketCheck(),
+        new WrittenBondChecks());
 
     private final ValidationOptions options;
 
@@ -66,19 +72,39 @@ public final class MoleculeValidator
     }
 
     /**
-     * Checks a molecule against every rule this validator reports.
+     * Checks a molecule against every rule this validator reports, leaving out the rules that
+     * measure a molecule against how it was written.
      *
      * @param molecule the molecule to check
      * @return what was found, worst first, unmodifiable and empty if nothing was found
      */
     public List<Finding> validate(Molecule molecule)
     {
+        return validate(molecule, null);
+    }
+
+    /**
+     * @param molecule the molecule to check
+     * @param written how the molecule was written
+     * @return what was found, worst first
+     */
+    public List<Finding> validate(Molecule molecule, Notation written)
+    {
         List<Finding> findings = new ArrayList<>();
         for (Check check : CHECKS)
         {
             if (options.reportsAnyOf(check.rules()))
             {
-                check.check(molecule, finding -> collect(finding, findings));
+                Consumer<Finding> collect = finding -> collect(finding, findings);
+                // kept here so that no check is ever handed a notation that is not there
+                if (written == null)
+                {
+                    check.check(molecule, collect);
+                }
+                else
+                {
+                    check.check(molecule, written, collect);
+                }
             }
         }
         findings.sort(orderWithin(molecule));

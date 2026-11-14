@@ -3,6 +3,7 @@ package com.ruben.chemistry.validate;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.smiles.SmilesParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -485,6 +486,83 @@ class MoleculeValidatorTest
         }
     }
 
+    @Nested
+    class Notation
+    {
+        @Test
+        void remarks_on_brackets_a_bare_symbol_would_have_done()
+        {
+            assertThat(rulesOf("[CH3]C")).contains(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(messagesOf("[CH3]C")).anyMatch(message -> message.contains("'C' on its own"));
+            assertThat(rulesOf("[CH4]")).contains(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(rulesOf("[OH2]")).contains(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(rulesOf("CC")).isEmpty();
+        }
+
+        @Test
+        void keeps_the_brackets_that_are_carrying_something()
+        {
+            // a written count that differs from the inferred one is the whole reason for the brackets
+            assertThat(rulesOf("[CH2]C")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(rulesOf("[C]")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            // and so is anything else only brackets can say
+            assertThat(rulesOf("[13CH3]C")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(rulesOf("[CH3+]")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(rulesOf("[CH3:1]C")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(rulesOf("[C@H](C)(N)O")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(rulesOf("[Fe]")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+        }
+
+        @Test
+        void measures_an_aromatic_atom_against_its_own_lowercase_symbol()
+        {
+            assertThat(rulesOf("[cH]1ccccc1")).contains(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            assertThat(messagesOf("[cH]1ccccc1")).anyMatch(message -> message.contains("'c' on its own"));
+            // furan's oxygen carries no hydrogen either way round, so its brackets say nothing
+            assertThat(rulesOf("[o]1cccc1")).contains(Rule.NOTATION_UNNECESSARY_BRACKETS);
+            // but pyrrole's nitrogen must keep them, a bare aromatic n carrying no hydrogen at all
+            assertThat(rulesOf("[nH]1cccc1")).doesNotContain(Rule.NOTATION_UNNECESSARY_BRACKETS);
+        }
+
+        @Test
+        void remarks_on_a_bond_order_that_was_already_implied()
+        {
+            assertThat(rulesOf(written("C-C"))).contains(Rule.NOTATION_REDUNDANT_BOND_ORDER);
+            assertThat(rulesOf(written("CC"))).isEmpty();
+            // an order that changes what is read is not redundant
+            assertThat(rulesOf(written("C=C"))).doesNotContain(Rule.NOTATION_REDUNDANT_BOND_ORDER);
+            assertThat(rulesOf(written("C#C"))).doesNotContain(Rule.NOTATION_REDUNDANT_BOND_ORDER);
+        }
+
+        @Test
+        void keeps_the_single_bond_written_between_two_aromatic_atoms()
+        {
+            // two aromatic atoms side by side imply the aromatic bond, so biphenyl's dash is doing the work
+            assertThat(rulesOf(written("c1ccccc1-c1ccccc1"))).doesNotContain(Rule.NOTATION_REDUNDANT_BOND_ORDER);
+            assertThat(rulesOf(written("c1ccccc1c1ccccc1"))).isEmpty();
+        }
+
+        @Test
+        void reports_a_direction_written_beside_no_double_bond()
+        {
+            assertThat(rulesOf(written("C/C"))).contains(Rule.STEREO_DIRECTION_NOT_ON_DOUBLE_BOND);
+            assertThat(messagesOf(written("C/C"))).anyMatch(message -> message.contains("beside none"));
+            // a direction is written on the single bond next to the double one, which is where it belongs
+            assertThat(rulesOf(written("C/C=C/C"))).isEmpty();
+        }
+
+        @Test
+        void says_nothing_about_a_molecule_that_was_never_written()
+        {
+            Molecule molecule = Molecule.fromSmiles("C-C");
+
+            // the dash is gone from the graph, so a validator given no notation has nothing to go on
+            assertThat(rulesOf(molecule)).isEmpty();
+            assertThat(Rule.NOTATION_REDUNDANT_BOND_ORDER.category()).isEqualTo(Category.NOTATION);
+            assertThat(Rule.STEREO_DIRECTION_NOT_ON_DOUBLE_BOND.category()).isEqualTo(Category.NOTATION);
+        }
+    }
+
     /** How the findings are reported, rather than what any one of them says. */
     @Nested
     class Reporting
@@ -547,6 +625,37 @@ class MoleculeValidatorTest
     private static List<Rule> rulesOf(String smiles)
     {
         return rulesOf(Molecule.fromSmiles(smiles));
+    }
+
+    /**
+     * @param smiles a molecule as SMILES
+     * @return the molecule together with where each of its atoms and bonds is written in it
+     */
+    private static Written written(String smiles)
+    {
+        SmilesParser parser = new SmilesParser(smiles);
+        Molecule molecule = parser.parse();
+        return new Written(molecule, new com.ruben.chemistry.notation.Notation(smiles, parser.atomSpans(), parser.bondSpans()));
+    }
+
+    private static List<Rule> rulesOf(Written written)
+    {
+        return new MoleculeValidator().validate(written.molecule(), written.notation())
+            .stream().map(Finding::rule).toList();
+    }
+
+    private static List<String> messagesOf(Written written)
+    {
+        return new MoleculeValidator().validate(written.molecule(), written.notation())
+            .stream().map(Finding::message).toList();
+    }
+
+    /**
+     * @param molecule a parsed molecule
+     * @param notation the notation it was parsed from
+     */
+    private record Written(Molecule molecule, com.ruben.chemistry.notation.Notation notation)
+    {
     }
 
     private static List<Rule> rulesOf(Molecule molecule)

@@ -1,6 +1,7 @@
 package com.ruben.chemistry.validate;
 
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.notation.Notation;
 
 import java.util.Set;
 import java.util.function.Consumer;
@@ -19,8 +20,19 @@ public interface Check
      * Examines a molecule.
      *
      * @param molecule the molecule to examine
-     * @param findings receives each finding, in the order the check makes them; a check reports
-     *     only the rules it declares in {@link #rules()}
+     * @param findings receives each finding, in the order the check makes them
      */
     void check(Molecule molecule, Consumer<Finding> findings);
+
+    /**
+     * Examines a molecule together with the notation it was written as.
+     *
+     * @param molecule the molecule to examine
+     * @param written how the molecule was written
+     * @param findings receives each finding, in the order the check makes them
+     */
+    default void check(Molecule molecule, Notation written, Consumer<Finding> findings)
+    {
+        check(molecule, findings);
+    }
 }

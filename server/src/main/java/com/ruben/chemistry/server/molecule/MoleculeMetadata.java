@@ -12,6 +12,7 @@ import com.ruben.chemistry.formula.FormulaStyle;
 import com.ruben.chemistry.formula.FragmentGrouping;
 import com.ruben.chemistry.formula.FragmentedFormula;
 import com.ruben.chemistry.formula.MolecularFormula;
+import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.render.MoleculeSnapshot;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.util.Span;
@@ -168,17 +169,6 @@ public record MoleculeMetadata(String smiles, String canonicalSmiles, FormulaInf
      * @param charge its net formal charge
      */
     public record FragmentInfo(int index, List<Integer> atoms, List<Integer> bonds, String smiles, String formula, int charge)
-    {
-    }
-
-    /**
-     * Where a molecule's atoms and bonds are written in one notation of it.
-     *
-     * @param smiles the notation
-     * @param atomSpans where each atom is written in it
-     * @param bondSpans where each bond is written in it
-     */
-    public record Notation(String smiles, Map<Atom, Span> atomSpans, Map<Bond, List<Span>> bondSpans)
     {
     }
 

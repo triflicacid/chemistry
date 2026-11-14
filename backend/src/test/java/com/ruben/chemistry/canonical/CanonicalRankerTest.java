@@ -751,4 +751,69 @@ class CanonicalRankerTest
 
         return fingerprints;
     }
+
+    @Test
+    void classifies_atoms_nothing_tells_apart_into_one_class()
+    {
+        assertThat(classCountOf("c1ccccc1")).isEqualTo(1);
+        assertThat(classCountOf("C1CCCCC1")).isEqualTo(1);
+        // the three methyls are one class, the carbon they hang off another, then the oxygen
+        assertThat(classCountOf("CC(C)(C)O")).isEqualTo(3);
+        assertThat(classCountOf("CCCO")).isEqualTo(4);
+    }
+
+    @Test
+    void keeps_in_its_classes_the_tie_a_ranking_has_to_break()
+    {
+        Molecule benzene = Molecule.fromSmiles("c1ccccc1");
+        CanonicalRanker ranker = new CanonicalRanker();
+
+        // a ranking has to put the six carbons in some order, and so can no longer say they are alike
+        assertThat(ranker.rank(benzene).size()).isEqualTo(6);
+        assertThat(ranker.classify(benzene).classCount()).isEqualTo(1);
+    }
+
+    @Test
+    void finds_the_two_ends_of_a_symmetric_molecule_alike()
+    {
+        Molecule pentane = Molecule.fromSmiles("CCCCC");
+        AtomClasses classes = new CanonicalRanker().classify(pentane);
+        List<Atom> atoms = pentane.atoms();
+
+        assertThat(classes.classCount()).isEqualTo(3);
+        assertThat(classes.areAlike(atoms.get(0), atoms.get(4))).isTrue();
+        assertThat(classes.areAlike(atoms.get(1), atoms.get(3))).isTrue();
+        assertThat(classes.areAlike(atoms.get(0), atoms.get(2))).isFalse();
+    }
+
+    @Test
+    void throws_when_asked_to_classify_an_atom_outside_the_molecule()
+    {
+        AtomClasses classes = new CanonicalRanker().classify(Molecule.fromSmiles("CCO"));
+
+        assertThatThrownBy(() -> classes.classOf(Molecule.fromSmiles("CCO").atoms().getFirst()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("not part of the classified molecule");
+    }
+
+    @Test
+    void still_ranks_and_canonicalises_what_it_classifies()
+    {
+        Molecule molecule = Molecule.fromSmiles("CC(C)(C)O");
+        CanonicalRanker ranker = new CanonicalRanker();
+
+        // the classes come from a step on the way to the ranking, so asking for one must not spoil the other
+        assertThat(ranker.classify(molecule).classCount()).isEqualTo(3);
+        assertThat(ranker.rank(molecule).size()).isEqualTo(molecule.atomCount());
+        assertThat(ranker.canonicalise(molecule)).isEqualTo(new CanonicalRanker().canonicalise(molecule));
+    }
+
+    /**
+     * @param smiles a molecule as SMILES
+     * @return how many classes its atoms fall into
+     */
+    private static int classCountOf(String smiles)
+    {
+        return new CanonicalRanker().classify(Molecule.fromSmiles(smiles)).classCount();
+    }
 }

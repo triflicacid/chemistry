@@ -224,18 +224,16 @@ public final class Molecule
     }
 
     /**
+     * Returns the hydrogen count an atom would carry if it were left to be inferred, whether or not
+     * it was written. Where a written count equals this, writing it said nothing.
+     *
      * @param atom an atom of this molecule, by reference identity
-     * @return {@code atom}'s inferred hydrogen count
+     * @return the count filling {@code atom}'s valence, or 0 if no valence is known for its element
      * @throws IllegalArgumentException if {@code atom} is not part of this molecule
      */
-    private int computeImplicitHydrogenCount(Atom atom)
+    public int hydrogensToFillValence(Atom atom)
     {
         requireAtom(atom);
-        if (atom.hydrogenCount().isPresent())
-        {
-            return 0;
-        }
-
         BondContribution bonding = bondContributionOf(atom);
         OptionalInt valence = Valences.toFill(atom.element(), bonding.explicitSum());
         if (valence.isEmpty())
@@ -246,6 +244,18 @@ public final class Molecule
         // the aromatic weighting only ever spends the valence already chosen above
         int remainingAfterExplicitBonds = valence.getAsInt() - bonding.explicitSum();
         return Math.max(0, remainingAfterExplicitBonds - bonding.aromaticContribution());
+    }
+
+    /**
+     * @param atom an atom of this molecule, by reference identity
+     * @return {@code atom}'s inferred hydrogen count
+     * @throws IllegalArgumentException if {@code atom} is not part of this molecule
+     */
+    private int computeImplicitHydrogenCount(Atom atom)
+    {
+        requireAtom(atom);
+        // a written count is not an inferred one, however much it may agree with what would be inferred
+        return atom.hydrogenCount().isPresent() ? 0 : hydrogensToFillValence(atom);
     }
 
     /**

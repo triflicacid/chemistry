@@ -102,7 +102,16 @@ public enum Rule
     STEREO_DOUBLE_BOND_IN_SMALL_RING("stereo.double-bond.in-small-ring", Severity.WARNING, Category.STEREOCHEMISTRY),
 
     /** A declared configuration on a double bond with two alike substituents at one end, e.g. {@code C/C(C)=C/C}. */
-    STEREO_DOUBLE_BOND_NOT_STEREOGENIC("stereo.double-bond.not-stereogenic", Severity.WARNING, Category.STEREOCHEMISTRY);
+    STEREO_DOUBLE_BOND_NOT_STEREOGENIC("stereo.double-bond.not-stereogenic", Severity.WARNING, Category.STEREOCHEMISTRY),
+
+    /** A {@code /} or {@code \} written beside no double bond, so it places nothing, e.g. {@code C/C}. */
+    STEREO_DIRECTION_NOT_ON_DOUBLE_BOND("stereo.direction.not-on-double-bond", Severity.ERROR, Category.NOTATION),
+
+    /** A bond order written where the same bond was already implied, e.g. the {@code -} of {@code C-C}. */
+    NOTATION_REDUNDANT_BOND_ORDER("notation.redundant-bond-order", Severity.INFO, Category.NOTATION),
+
+    /** Brackets around an atom a bare element symbol would have written, e.g. {@code [CH3]C}. */
+    NOTATION_UNNECESSARY_BRACKETS("notation.unnecessary-brackets", Severity.INFO, Category.NOTATION);
 
     private static final Map<String, Rule> BY_ID = Stream.of(values())
         .collect(Collectors.toUnmodifiableMap(Rule::id, Function.identity()));

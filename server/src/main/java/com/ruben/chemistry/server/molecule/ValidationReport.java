@@ -3,6 +3,7 @@ package com.ruben.chemistry.server.molecule;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.util.Span;
 import com.ruben.chemistry.validate.Finding;
 import com.ruben.chemistry.validate.MoleculeValidator;
@@ -48,7 +49,7 @@ public record ValidationReport(int errors, int warnings, int infos, List<Finding
      * @param source where the molecule's atoms and bonds are written in the SMILES it came from
      * @return the report
      */
-    public static ValidationReport of(Molecule molecule, MoleculeValidator validator, MoleculeMetadata.Notation source)
+    public static ValidationReport of(Molecule molecule, MoleculeValidator validator, Notation source)
     {
         Map<Atom, Integer> indexOfAtom = new IdentityHashMap<>();
         List<Atom> atoms = molecule.atoms();
@@ -63,7 +64,7 @@ public record ValidationReport(int errors, int warnings, int infos, List<Finding
             indexOfBond.put(bonds.get(index), index);
         }
 
-        List<FindingInfo> reported = validator.validate(molecule).stream()
+        List<FindingInfo> reported = validator.validate(molecule, source).stream()
             .map(finding -> describe(finding, indexOfAtom, indexOfBond, source))
             .toList();
         return new ValidationReport(
@@ -91,7 +92,7 @@ public record ValidationReport(int errors, int warnings, int infos, List<Finding
      * @param source where the molecule's atoms and bonds are written
      * @return the finding as a client sees it
      */
-    private static FindingInfo describe(Finding finding, Map<Atom, Integer> indexOfAtom, Map<Bond, Integer> indexOfBond, MoleculeMetadata.Notation source)
+    private static FindingInfo describe(Finding finding, Map<Atom, Integer> indexOfAtom, Map<Bond, Integer> indexOfBond, Notation source)
     {
         List<Span> spans = new ArrayList<>();
         finding.atoms().stream().map(source.atomSpans()::get).filter(Objects::nonNull).forEach(spans::add);

@@ -2,8 +2,9 @@ package com.ruben.chemistry.server.molecule;
 
 import com.ruben.chemistry.canonical.CanonicalRanker;
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.smiles.SmilesWriter;
+import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.server.render.Render2d;
+import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.validate.MoleculeValidator;
 
@@ -16,8 +17,8 @@ public final class StoredMolecule
     private static final MoleculeValidator VALIDATOR = new MoleculeValidator();
 
     private final String id;
-    private final MoleculeMetadata.Notation source;
-    private final MoleculeMetadata.Notation canonical;
+    private final Notation source;
+    private final Notation canonical;
     private final Molecule molecule;
     private volatile Render2d latest2d;
     private volatile MoleculeMetadata metadata;
@@ -31,7 +32,7 @@ public final class StoredMolecule
         this.molecule = parsed.molecule();
         SmilesWriter writer = new SmilesWriter(molecule).setRanker(new CanonicalRanker());
         String written = writer.write();
-        this.canonical = new MoleculeMetadata.Notation(written, writer.atomSpans(), writer.bondSpans());
+        this.canonical = new Notation(written, writer.atomSpans(), writer.bondSpans());
     }
 
     public String id()

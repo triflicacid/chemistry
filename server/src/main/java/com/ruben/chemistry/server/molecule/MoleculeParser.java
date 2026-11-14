@@ -2,6 +2,7 @@ package com.ruben.chemistry.server.molecule;
 
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.InvalidNotationException;
+import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.smiles.SmilesParser;
 
 /**
@@ -28,7 +29,7 @@ public final class MoleculeParser
         {
             SmilesParser parser = new SmilesParser(smiles);
             Molecule molecule = parser.parse();
-            return new ParsedMolecule(molecule, new MoleculeMetadata.Notation(smiles, parser.atomSpans(), parser.bondSpans()));
+            return new ParsedMolecule(molecule, new Notation(smiles, parser.atomSpans(), parser.bondSpans()));
         }
         catch (InvalidNotationException invalid)
         {
