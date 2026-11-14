@@ -111,6 +111,7 @@ export class App implements PanelHost {
 
   /** Adds a panel showing this SMILES. */
   private insertSmiles(smiles: string): Promise<void> {
+    this.panels.filter((panel) => panel.blank).forEach((panel) => this.removeRequested(panel));
     return this.addPanel().load(smiles);
   }
 

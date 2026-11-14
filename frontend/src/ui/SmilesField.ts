@@ -60,6 +60,11 @@ export class SmilesField {
     }
   }
 
+  /** What has been typed in. */
+  get entered(): string {
+    return this.input.value.trim();
+  }
+
   /** Shows why the last SMILES was not taken. */
   setError(message: string | null): void {
     this.error.textContent = message ?? "";

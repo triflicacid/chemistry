@@ -123,6 +123,11 @@ export class MoleculePanel {
     return this.current?.smiles ?? null;
   }
 
+  /** True while the panel holds no molecule and nothing has been typed into it. */
+  get blank(): boolean {
+    return this.current === null && this.results.entered === "";
+  }
+
   /** Shows an empty panel for a SMILES to be typed into. */
   startEmpty(): void {
     this.results.showEntry("", null);
