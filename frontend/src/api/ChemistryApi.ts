@@ -1,5 +1,5 @@
 import { ApiError, HttpClient } from "./http";
-import type { MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, Scene, StoredMolecule, Structure3D } from "./types";
+import type { LibraryEntry, MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, Scene, StoredMolecule, Structure3D } from "./types";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";
@@ -60,6 +60,21 @@ export class ChemistryApi {
   /** The latest 3D structure the server generated for a stored molecule; fails with `NOT_GENERATED` if there is none. */
   cachedStructure3d(id: MoleculeId): Promise<Structure3D> {
     return this.http.json<Structure3D>("GET", `/api/molecules/${encodeURIComponent(id)}/structure/3d`);
+  }
+
+  /** Searches the molecule library: names starting with `name`, in every one of `categories`. Sorted by name. */
+  searchLibrary(name: string, categories: string[]): Promise<LibraryEntry[]> {
+    const query = new URLSearchParams();
+    if (name) {
+      query.set("name", name);
+    }
+    categories.forEach((category) => query.append("category", category));
+    return this.http.json<LibraryEntry[]>("GET", `/api/library/search?${query}`);
+  }
+
+  /** Every category used in the molecule library. */
+  libraryCategories(): Promise<string[]> {
+    return this.http.json<string[]>("GET", "/api/library/categories");
   }
 
   /** Stores a molecule. */
