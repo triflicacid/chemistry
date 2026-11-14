@@ -3,11 +3,14 @@ package com.ruben.chemistry.validate.checks;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.PiSystem;
 import com.ruben.chemistry.core.ValenceTable;
 import com.ruben.chemistry.validate.Check;
 import com.ruben.chemistry.validate.Finding;
 import com.ruben.chemistry.validate.Rule;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -43,7 +46,7 @@ public final class ValenceCheck implements Check
                 continue;
             }
 
-            int valence = leastValenceOf(molecule, atom);
+            int valence = valenceOf(molecule, atom);
             if (valence <= largest.getAsInt())
             {
                 continue;
@@ -61,20 +64,34 @@ public final class ValenceCheck implements Check
      * @param atom an atom of it
      * @return the valence it holds at least
      */
-    private static int leastValenceOf(Molecule molecule, Atom atom)
+    private static int valenceOf(Molecule molecule, Atom atom)
     {
+        List<Bond> doubled = molecule.piSystemOf(atom)
+            .flatMap(PiSystem::kekule)
+            .orElse(List.of());
         int bonded = 0;
         for (Bond bond : molecule.bondsOf(atom))
         {
             bonded += switch (bond.order())
             {
-                case SINGLE, AROMATIC -> 1;
+                case SINGLE -> 1;
+                case AROMATIC -> doubles(doubled, bond) ? 2 : 1;
                 case DOUBLE -> 2;
                 case TRIPLE -> 3;
                 case QUADRUPLE -> 4;
             };
         }
         return bonded + molecule.totalHydrogenCount(atom);
+    }
+
+    /**
+     * @param doubled the bonds an assignment makes double
+     * @param bond one of an atom's bonds
+     * @return whether the assignment made it double
+     */
+    private static boolean doubles(List<Bond> doubled, Bond bond)
+    {
+        return doubled.stream().anyMatch(member -> member == bond);
     }
 
     /**

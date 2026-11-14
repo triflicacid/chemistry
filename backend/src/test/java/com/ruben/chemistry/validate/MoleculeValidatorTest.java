@@ -141,6 +141,39 @@ class MoleculeValidatorTest
         }
 
         @Test
+        void counts_an_aromatic_atom_by_the_double_bond_its_assignment_gives_it()
+        {
+            // [cH2] holds two aromatic bonds and two hydrogens. Counting an aromatic bond as one
+            // apiece puts it at four, which carbon allows; the assignment gives it one of the ring's
+            // double bonds, which puts it at five, which carbon does not
+            assertThat(rulesOf("[cH2]1ccccc1")).contains(Rule.VALENCE_EXCEEDED);
+            assertThat(messagesOf("[cH2]1ccccc1"))
+                .anyMatch(message -> message.contains("valence of 5, beyond the 4 it allows"));
+            assertThat(rulesOf("c1cc[cH2]cc1")).contains(Rule.VALENCE_EXCEEDED);
+
+            // an atom lending a lone pair takes no part in the assignment and so holds no π bond
+            assertThat(rulesOf("c1cc[nH]c1")).isEmpty();
+            assertThat(rulesOf("c1ccoc1")).isEmpty();
+            assertThat(rulesOf("c1ccsc1")).isEmpty();
+            // and one lending nothing likewise, charge or no charge
+            assertThat(rulesOf("[cH+]1cccccc1")).isEmpty();
+            assertThat(rulesOf("[cH-]1cccc1")).isEmpty();
+            // the fusion carbons of a benzenoid come to exactly four
+            assertThat(rulesOf("c1ccc2ccccc2c1")).isEmpty();
+            assertThat(rulesOf("c1cc2ccc3cccc4ccc(c1)c2c34")).isEmpty();
+        }
+
+        @Test
+        void counts_an_aromatic_atom_at_a_floor_where_its_system_has_no_assignment()
+        {
+            // the seven-membered ring has no assignment to read a double bond off, so its atoms are
+            // counted at one per aromatic bond; the ring is reported for that failure on its own
+            assertThat(rulesOf("c1cccccc1"))
+                .contains(Rule.AROMATIC_SYSTEM_NOT_KEKULIZABLE)
+                .doesNotContain(Rule.VALENCE_EXCEEDED);
+        }
+
+        @Test
         void keeps_the_hypervalence_the_third_period_really_reaches()
         {
             assertThat(rulesOf("OS(=O)(=O)O")).isEmpty();
