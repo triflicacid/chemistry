@@ -1,6 +1,7 @@
 import type { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
 import { ViewStore } from "../store";
+import { LibraryDialog } from "./LibraryDialog";
 import { MoleculePanel, type Mode, type PanelHost } from "./MoleculePanel";
 import { OptionsPanel } from "./OptionsPanel";
 import { SearchForm } from "./SearchForm";
@@ -10,6 +11,7 @@ export class App implements PanelHost {
   private readonly form = new SearchForm((smarts) => this.search(smarts));
   private readonly results = document.createElement("section");
   private readonly add = document.createElement("button");
+  private readonly library: LibraryDialog;
   private readonly optionsSlot = document.createElement("div");
   private panels: MoleculePanel[] = [];
   private readonly matchErrors = new Map<MoleculePanel, string>();
@@ -23,6 +25,7 @@ export class App implements PanelHost {
   private restoring = false;
 
   constructor(readonly api: ChemistryApi) {
+    this.library = new LibraryDialog(api, (smiles) => this.insertSmiles(smiles));
     this.results.className = "results";
     this.add.type = "button";
     this.add.className = "add-molecule";
@@ -73,7 +76,13 @@ export class App implements PanelHost {
   }
 
   mount(root: HTMLElement): void {
-    root.append(this.form.element, this.optionsSlot, this.results, this.add);
+    root.append(this.form.element, this.optionsSlot, this.results, this.add, this.library.element);
+    const libraryButton = document.createElement("button");
+    libraryButton.type = "button";
+    libraryButton.className = "small";
+    libraryButton.textContent = "Library";
+    libraryButton.addEventListener("click", () => this.library.open());
+    this.form.addAction(libraryButton);
     void this.loadOptions();
 
     this.smartsText = this.store.smarts;
@@ -88,6 +97,11 @@ export class App implements PanelHost {
       this.restoring = false;
       this.persist();
     });
+  }
+
+  /** Adds a panel showing this SMILES. */
+  private insertSmiles(smiles: string): Promise<void> {
+    return this.addPanel().load(smiles);
   }
 
   private addPanel(): MoleculePanel {

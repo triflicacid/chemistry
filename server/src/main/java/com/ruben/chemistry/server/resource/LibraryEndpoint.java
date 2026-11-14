@@ -21,7 +21,19 @@ public final class LibraryEndpoint extends Endpoint
     @Override
     public void registerHandlers(EndpointRegistry registry)
     {
+        registry.register(HttpMethod.GET, "/api/library", this::all);
         registry.register(HttpMethod.GET, "/api/library/search", this::search);
+        registry.register(HttpMethod.GET, "/api/library/categories", this::categories);
+    }
+
+    private void all(Request request, ResponseContext responseContext) throws IOException
+    {
+        responseContext.respond(200, library.get().all());
+    }
+
+    private void categories(Request request, ResponseContext responseContext) throws IOException
+    {
+        responseContext.respond(200, library.get().categories());
     }
 
     private void search(Request request, ResponseContext responseContext) throws IOException

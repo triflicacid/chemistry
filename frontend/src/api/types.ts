@@ -139,6 +139,13 @@ export interface MoleculeMetadata {
   fragments: FragmentInfo[];
 }
 
+/** A molecule of the server's library. */
+export interface LibraryEntry {
+  name: string;
+  smiles: string;
+  classes: string[];
+}
+
 /** A molecule the server has stored. */
 export interface StoredMolecule {
   id: MoleculeId;

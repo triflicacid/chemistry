@@ -148,6 +148,14 @@ public final class MoleculeLibrary
     }
 
     /**
+     * @return all entries in the library ordered by name
+     */
+    public List<LibraryEntry> all()
+    {
+        return List.copyOf(byName.values());
+    }
+
+    /**
      * Finds molecules, narrowing by each criterion given.
      *
      * @param namePrefix if not blank, only molecules whose name starts with this, ignoring case
