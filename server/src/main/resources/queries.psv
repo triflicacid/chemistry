@@ -139,9 +139,9 @@ conjugated diene|C=CC=C|functional-group;hydrocarbon;diene|Two double bonds with
 
 # --- patterns inside patterns ---
 amide nitrogen|[NX3;$(NC=O)]|recursive;nitrogen;amide|A nitrogen next to a carbonyl. A bracketed dollar term is a pattern of its own, read as starting from the atom being tested.|CC(=O)N
-amine but not amide|[NX3;!$(NC=O);!$(N=*)]|recursive;nitrogen;amine|An amine nitrogen with amides and imines ruled out. Negating a nested pattern is how an exception is written.|CCN
+amine but not amide|[NX3;!$(NC=O);!$(N=*)]|recursive;nitrogen;amine|An amine nitrogen with amides and imines ruled out. Negating a nested pattern is how an exception is written.|CCN.CC(=O)NC
 carbonyl carbon|[$(C=O)]|recursive;carbonyl|Any atom that is a carbon doubly bonded to an oxygen.|CC=O
-alcohol but not acid|[OX2H1;!$(OC=O)]|recursive;oxygen;alcohol|A hydroxyl that is not the one in a carboxylic acid or an ester.|CCO
+alcohol but not acid|[OX2H1;!$(OC=O)]|recursive;oxygen;alcohol|A hydroxyl that is not the one in a carboxylic acid or an ester.|CCO,C(=O)O
 carbon beside a nitrogen|[#6;$(*[NX3])]|recursive|A carbon with a nitrogen for a neighbour. The wildcard inside the nested pattern stands for the atom being tested.|CCN
 
 # --- stereochemistry ---
