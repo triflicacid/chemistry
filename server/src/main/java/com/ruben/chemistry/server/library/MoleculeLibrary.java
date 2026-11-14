@@ -19,6 +19,9 @@ import java.util.TreeMap;
 
 /**
  * The library of molecules, indexed for searching by name and by category.
+ * <p>
+ * Categories are looked up exactly in a balanced tree ({@link TreeMap}) and the smallest chosen category supplies
+ * the molecules to check. Names are matched as a substring, which a tree cannot narrow, so they are scanned.
  */
 public final class MoleculeLibrary
 {
@@ -158,11 +161,11 @@ public final class MoleculeLibrary
     /**
      * Finds molecules, narrowing by each criterion given.
      *
-     * @param namePrefix if not blank, only molecules whose name starts with this, ignoring case
+     * @param namePart if not blank, only molecules whose name contains this anywhere, ignoring case
      * @param categories only molecules belonging to all of these categories, ignoring case; may be empty
      * @return the matches ordered by name
      */
-    public List<LibraryEntry> search(String namePrefix, Collection<String> categories)
+    public List<LibraryEntry> search(String namePart, Collection<String> categories)
     {
         List<String> wanted = categories.stream()
                 .map(category -> category.trim().toLowerCase(Locale.ROOT))
@@ -179,12 +182,8 @@ public final class MoleculeLibrary
         }
 
         Collection<LibraryEntry> candidates;
-        String prefix = namePrefix == null ? "" : namePrefix.trim().toLowerCase(Locale.ROOT);
-        if (!prefix.isEmpty())
-        {
-            candidates = byName.subMap(prefix, prefix + Character.MAX_VALUE).values();
-        }
-        else if (!wanted.isEmpty())
+        String fragment = namePart == null ? "" : namePart.trim().toLowerCase(Locale.ROOT);
+        if (!wanted.isEmpty())
         {
             candidates = wanted.stream()
                     .map(byCategory::get)
@@ -199,7 +198,7 @@ public final class MoleculeLibrary
         List<LibraryEntry> found = new ArrayList<>();
         for (LibraryEntry entry : candidates)
         {
-            if (new HashSet<>(entry.classes()).containsAll(wanted))
+            if (entry.name().toLowerCase(Locale.ROOT).contains(fragment) && new HashSet<>(entry.classes()).containsAll(wanted))
             {
                 found.add(entry);
             }
