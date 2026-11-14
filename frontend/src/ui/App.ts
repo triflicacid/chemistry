@@ -6,6 +6,9 @@ import { MoleculePanel, type Mode, type PanelHost } from "./MoleculePanel";
 import { OptionsPanel } from "./OptionsPanel";
 import { SearchForm } from "./SearchForm";
 
+/** 2D options that only show in a projection of a 3D structure, so changing one redraws nothing. */
+const PROJECTION_ONLY_2D = new Set(["depth_bonds"]);
+
 export class App implements PanelHost {
   private readonly store = new ViewStore();
   private readonly form = new SearchForm((smarts) => this.search(smarts));
@@ -20,6 +23,9 @@ export class App implements PanelHost {
   private panel3d: OptionsPanel | null = null;
   private panelMatch: OptionsPanel | null = null;
   private smartsText = "";
+  private renderTimer: number | undefined;
+  /** The 2D options the drawings on screen were made with, so that a change making no difference to them is ignored. */
+  private rendered2d = "";
   private matchTimer: number | undefined;
   /** True while stored molecules are loading, when the panels do not yet hold them all. */
   private restoring = false;
@@ -136,6 +142,8 @@ export class App implements PanelHost {
       this.panel2d = new OptionsPanel(descriptors2d);
       this.panel3d = new OptionsPanel(descriptors3d);
       this.panelMatch = new OptionsPanel(descriptorsMatch);
+      this.rendered2d = App.signature(this.panel2d);
+      this.panel2d.onChange = () => this.render2dChanged();
       this.panel3d.onChange = () => this.panels.forEach((panel) => void panel.updateThree());
       this.panelMatch.onChange = () => this.matchOptionsChanged();
       this.panel2d.toggle.textContent = "2D options";
@@ -149,6 +157,23 @@ export class App implements PanelHost {
     } catch (error) {
       this.optionsSlot.textContent = `Options unavailable: ${error instanceof ApiError ? error.message : String(error)}`;
     }
+  }
+
+  /** Redraws the 2D drawings once the user stops changing the options, as only the server can draw them. */
+  private render2dChanged(): void {
+    const signature = App.signature(this.panel2d);
+    if (signature === this.rendered2d) {
+      return;
+    }
+    this.rendered2d = signature;
+    window.clearTimeout(this.renderTimer);
+    this.renderTimer = window.setTimeout(() => this.panels.forEach((panel) => void panel.updateTwo()), 250);
+  }
+
+  /** Signature of 2d options so we can detect a change */
+  private static signature(options: OptionsPanel | null): string {
+    const values = Object.entries(options?.resolved() ?? {}).filter(([name]) => !PROJECTION_ONLY_2D.has(name));
+    return JSON.stringify(values);
   }
 
   /** Redraws the matches once the user stops changing the options. */

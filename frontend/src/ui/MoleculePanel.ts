@@ -222,6 +222,23 @@ export class MoleculePanel {
     }
   }
 
+  /** Applies changed 2D options, which the server has to draw again */
+  async updateTwo(): Promise<void> {
+    if (!this.current || !this.host.options2d()) {
+      return;
+    }
+    if (this.mode !== "2d" || this.active !== "2d") {
+      this.dropTwo();
+      return;
+    }
+    const { id, smiles, canonical } = this.current;
+    try {
+      await this.display(id, smiles, canonical, null);
+    } catch (error) {
+      this.results.showError(MoleculePanel.describe(error));
+    }
+  }
+
   /** Applies changed 3D options; only the number of conformers needs the server. */
   async updateThree(): Promise<void> {
     const options = this.host.options3d();
@@ -464,6 +481,14 @@ export class MoleculePanel {
     } else {
       entry.three = view as ThreeView;
       entry.conformers = conformers;
+    }
+  }
+
+  /** Lets go of the 2D drawing kept for the molecule shown, leaving its 3D view alone. */
+  private dropTwo(): void {
+    this.cache?.two?.dispose();
+    if (this.cache) {
+      this.cache.two = undefined;
     }
   }
 
