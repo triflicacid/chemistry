@@ -637,7 +637,7 @@ export class ThreeView implements MoleculeView {
     return mesh;
   }
 
-  private label(text: string, colour: string, height: number): Sprite {
+  private label(text: string, colour: string, height: number, occluded = false): Sprite {
     const key = `${text}|${colour}`;
     let texture = this.textures.get(key);
     if (!texture) {
@@ -660,7 +660,7 @@ export class ThreeView implements MoleculeView {
       this.textures.set(key, texture);
     }
     const image = texture.image as HTMLCanvasElement;
-    const sprite = new Sprite(new SpriteMaterial({ map: texture, depthTest: false, transparent: true }));
+    const sprite = new Sprite(new SpriteMaterial({ map: texture, depthTest: occluded, transparent: true }));
     sprite.scale.set((height * image.width) / image.height, height, 1);
     sprite.renderOrder = 10;
     return sprite;
@@ -669,11 +669,23 @@ export class ThreeView implements MoleculeView {
   private addCharge(site: Site3D, at: Vector3, radius: number): void {
     const size = Math.abs(site.charge);
     const text = (size === 1 ? "" : String(size)) + (site.charge > 0 ? "+" : "\u2212");
-    const sprite = this.label(text, site.charge > 0 ? "#1f4fd8" : "#c0392b", 0.5);
+    const sprite = this.label(text, site.charge > 0 ? "#1f4fd8" : "#c0392b",     0.5, true);
     // anchoring the sprite's lower left at the atom's centre, then pulling the anchor back, puts it at the upper right on screen
     const pull = Math.max(radius, 0.15) * 0.75;
     sprite.center.set(-pull / sprite.scale.x, -pull / sprite.scale.y);
     sprite.position.copy(at);
+    // depth-tested, so lift the label out of its own atom towards the camera; other atoms can still occlude it
+    const lift = radius * 1.05;
+    const toCamera = new Vector3();
+    const world = new Vector3();
+    sprite.onBeforeRender = (_renderer, _scene, camera) => {
+      sprite.position.copy(at);
+      this.content.localToWorld(world.copy(at));
+      toCamera.copy(camera.position).sub(world).normalize();
+      this.content.worldToLocal(world.copy(world).addScaledVector(toCamera, lift));
+      sprite.position.copy(world);
+      sprite.updateMatrixWorld();
+    };
     this.content.add(sprite);
   }
 
