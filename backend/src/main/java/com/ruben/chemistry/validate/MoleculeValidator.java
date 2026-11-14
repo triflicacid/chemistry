@@ -12,7 +12,7 @@ import com.ruben.chemistry.validate.checks.IsotopeBelowAtomicNumberCheck;
 import com.ruben.chemistry.validate.checks.MixedNotationCheck;
 import com.ruben.chemistry.validate.checks.OddElectronCountCheck;
 import com.ruben.chemistry.validate.checks.RingGeometryChecks;
-import com.ruben.chemistry.validate.checks.StereoCentreNeighbourCheck;
+import com.ruben.chemistry.validate.checks.StereochemistryChecks;
 import com.ruben.chemistry.validate.checks.StructureChecks;
 import com.ruben.chemistry.validate.checks.SystemAromaticityCheck;
 import com.ruben.chemistry.validate.checks.ValenceCheck;
@@ -44,7 +44,7 @@ public final class MoleculeValidator
         new AromaticAtomNotInRingCheck(),
         new SystemAromaticityCheck(),
         new RingGeometryChecks(),
-        new StereoCentreNeighbourCheck(),
+        new StereochemistryChecks(),
         new MixedNotationCheck());
 
     private final ValidationOptions options;

@@ -87,7 +87,22 @@ public enum Rule
     RING_STRAINED("ring.strained", Severity.INFO, Category.RING),
 
     /** A chirality marker on an atom with fewer than three neighbours. */
-    STEREO_CENTRE_TOO_FEW_NEIGHBOURS("stereo.centre.too-few-neighbours", Severity.ERROR, Category.STEREOCHEMISTRY);
+    STEREO_CENTRE_TOO_FEW_NEIGHBOURS("stereo.centre.too-few-neighbours", Severity.ERROR, Category.STEREOCHEMISTRY),
+
+    /** A chirality marker on an atom whose substituents are not all different, so it says nothing, e.g. {@code [C@](C)(C)(C)O}. */
+    STEREO_CENTRE_NOT_A_CENTRE("stereo.centre.not-a-centre", Severity.WARNING, Category.STEREOCHEMISTRY),
+
+    /** An unmarked stereocentre, so the notation stands for two structures without choosing, e.g. {@code CC(N)O}. */
+    STEREO_CENTRE_MISSING("stereo.centre.missing", Severity.INFO, Category.STEREOCHEMISTRY, false),
+
+    /** An unmarked stereogenic double bond, so the notation stands for two structures without choosing, e.g. {@code CC=CC}. */
+    STEREO_DOUBLE_BOND_MISSING("stereo.double-bond.missing", Severity.INFO, Category.STEREOCHEMISTRY, false),
+
+    /** A declared configuration a ring is too small to hold, e.g. a trans double bond in cyclohexene. */
+    STEREO_DOUBLE_BOND_IN_SMALL_RING("stereo.double-bond.in-small-ring", Severity.WARNING, Category.STEREOCHEMISTRY),
+
+    /** A declared configuration on a double bond with two alike substituents at one end, e.g. {@code C/C(C)=C/C}. */
+    STEREO_DOUBLE_BOND_NOT_STEREOGENIC("stereo.double-bond.not-stereogenic", Severity.WARNING, Category.STEREOCHEMISTRY);
 
     private static final Map<String, Rule> BY_ID = Stream.of(values())
         .collect(Collectors.toUnmodifiableMap(Rule::id, Function.identity()));

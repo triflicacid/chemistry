@@ -62,7 +62,7 @@ public final class RingGeometryChecks implements Check
             }
             for (Bond bond : ring.bonds())
             {
-                if (bond.order() != BondOrder.TRIPLE || smallestRingHolding(molecule, bond) != size)
+                if (bond.order() != BondOrder.TRIPLE || Rings.smallestSizeHolding(molecule, bond) != size)
                 {
                     continue;
                 }
@@ -85,19 +85,5 @@ public final class RingGeometryChecks implements Check
             .filter(bond -> bond.order() == BondOrder.DOUBLE)
             .filter(bond -> ring.contains(bond.getOther(atom)))
             .count();
-    }
-
-    /**
-     * @param molecule the molecule the bond belongs to
-     * @param bond a bond of it
-     * @return the size of the smallest ring holding it, or 0 if it lies on none
-     */
-    private static int smallestRingHolding(Molecule molecule, Bond bond)
-    {
-        return molecule.rings().stream()
-            .filter(ring -> ring.bonds().stream().anyMatch(member -> member.matches(bond.first(), bond.second())))
-            .mapToInt(Molecule::atomCount)
-            .min()
-            .orElse(0);
     }
 }

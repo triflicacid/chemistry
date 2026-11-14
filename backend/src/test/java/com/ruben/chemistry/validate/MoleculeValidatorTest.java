@@ -376,6 +376,113 @@ class MoleculeValidatorTest
             assertThat(rulesOf("C[C@H]")).contains(Rule.STEREO_CENTRE_TOO_FEW_NEIGHBOURS);
             assertThat(rulesOf("O[C@H](C)CC")).doesNotContain(Rule.STEREO_CENTRE_TOO_FEW_NEIGHBOURS);
         }
+
+        @Test
+        void reports_a_chirality_marker_on_an_atom_whose_substituents_are_not_all_different()
+        {
+            assertThat(rulesOf("[C@](C)(C)(C)O")).contains(Rule.STEREO_CENTRE_NOT_A_CENTRE);
+            assertThat(rulesOf("C[C@](C)(N)O")).contains(Rule.STEREO_CENTRE_NOT_A_CENTRE);
+            assertThat(messagesOf("C[C@](C)(N)O")).anyMatch(message -> message.contains("two of its substituents are alike"));
+            // four different substituents, so the marker chooses between two real structures
+            assertThat(rulesOf("C[C@H](N)O")).doesNotContain(Rule.STEREO_CENTRE_NOT_A_CENTRE);
+            assertThat(rulesOf("N[C@@H](C)C(=O)O")).isEmpty();
+        }
+
+        @Test
+        void judges_a_marker_on_three_substituents_by_those_three()
+        {
+            // a sulfoxide's lone pair holds its fourth position, so its three substituents are all it has to arrange
+            assertThat(rulesOf("C[S@](C)=O")).contains(Rule.STEREO_CENTRE_NOT_A_CENTRE);
+            assertThat(rulesOf("C[S@](CC)=O")).doesNotContain(Rule.STEREO_CENTRE_NOT_A_CENTRE);
+        }
+
+        @Test
+        void tells_a_hydrogen_from_a_heavier_one()
+        {
+            // the nuclides really do make a centre of the carbon, so the marker says something
+            assertThat(rulesOf("[C@](F)(Cl)([2H])[3H]")).doesNotContain(Rule.STEREO_CENTRE_NOT_A_CENTRE);
+            assertThat(rulesOf("[C@](F)(Cl)([2H])[2H]")).contains(Rule.STEREO_CENTRE_NOT_A_CENTRE);
+        }
+
+        @Test
+        void remarks_on_an_unmarked_stereocentre_only_when_asked()
+        {
+            assertThat(reported("CC(N)O", Rule.STEREO_CENTRE_MISSING)).containsExactly(Rule.STEREO_CENTRE_MISSING);
+            assertThat(messagesWith("CC(N)O", Rule.STEREO_CENTRE_MISSING))
+                .anyMatch(message -> message.contains("no arrangement written"));
+            // written stereochemistry omits far more often than it is wrong, so this is off unless a caller asks
+            assertThat(rulesOf("CC(N)O")).isEmpty();
+
+            // two alike substituents leave nothing unsaid
+            assertThat(reported("CC(C)O", Rule.STEREO_CENTRE_MISSING)).isEmpty();
+            // nor does a centre that already says which way round it goes
+            assertThat(reported("C[C@H](N)O", Rule.STEREO_CENTRE_MISSING)).isEmpty();
+            // an aromatic atom lies in its ring's plane
+            assertThat(reported("c1ccccc1", Rule.STEREO_CENTRE_MISSING)).isEmpty();
+        }
+
+        @Test
+        void reports_a_geometry_on_a_double_bond_with_an_end_it_cannot_be_measured_from()
+        {
+            // the molecule records a configuration here, measured from one of two alike methyls
+            assertThat(rulesOf("C/C(C)=C/C")).contains(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC);
+            assertThat(messagesOf("C/C(C)=C/C"))
+                .anyMatch(message -> message.contains("nothing to tell its two sides apart"));
+            assertThat(rulesOf("C/C=C/C")).doesNotContain(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC);
+            // an oxime's nitrogen is measured from its one substituent against its lone pair
+            assertThat(rulesOf("C/C=N/O")).doesNotContain(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC);
+        }
+
+        @Test
+        void refuses_a_geometry_that_carries_a_small_ring_off_to_either_side()
+        {
+            // trans-cycloheptene is a transient, and nothing smaller exists at all
+            assertThat(rulesOf("C1CC/C=C/CC1")).contains(Rule.STEREO_DOUBLE_BOND_IN_SMALL_RING);
+            assertThat(messagesOf("C1CC/C=C/CC1")).anyMatch(message -> message.contains("ring of 7"));
+            // the cis geometry is the one the ring forces, so it says nothing new and nothing wrong
+            assertThat(rulesOf("C1CC/C=C\\CC1")).doesNotContain(Rule.STEREO_DOUBLE_BOND_IN_SMALL_RING);
+            // trans-cyclooctene is isolable, which is where the bound comes from
+            assertThat(rulesOf("C1CCC/C=C/CC1")).doesNotContain(Rule.STEREO_DOUBLE_BOND_IN_SMALL_RING);
+            // a geometry read against the ring, not against whichever substituent the molecule measures from
+            assertThat(rulesOf("C1CC/C=C/CC1")).doesNotContain(Rule.STEREO_DOUBLE_BOND_NOT_STEREOGENIC);
+        }
+
+        @Test
+        void remarks_on_an_unmarked_stereogenic_double_bond_only_when_asked()
+        {
+            assertThat(reported("CC=CC", Rule.STEREO_DOUBLE_BOND_MISSING)).containsExactly(Rule.STEREO_DOUBLE_BOND_MISSING);
+            assertThat(rulesOf("CC=CC")).isEmpty();
+            assertThat(reported("C/C=C/C", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+
+            // an end with two alike substituents, or two hydrogens, has no two geometries to choose between
+            assertThat(reported("CC(C)=CC", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+            assertThat(reported("C=C", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+            assertThat(reported("CC=C", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+            // a second double bond leaves its atom straight, so an allene has no geometry of this kind
+            assertThat(reported("CC=C=CC", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+        }
+
+        @Test
+        void leaves_a_ring_double_bond_alone_until_the_ring_can_hold_it_either_way()
+        {
+            // cyclohexene is cis because its ring says so, so nothing is left unsaid
+            assertThat(reported("C1CCC=CC1", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+            assertThat(reported("c1ccccc1", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+            assertThat(reported("C1=CC=CC=C1", Rule.STEREO_DOUBLE_BOND_MISSING)).isEmpty();
+            // a ring of ten can take its double bond either way round, so leaving it out leaves two structures
+            assertThat(reported("C1CCCCCCC=CC1", Rule.STEREO_DOUBLE_BOND_MISSING))
+                .containsExactly(Rule.STEREO_DOUBLE_BOND_MISSING);
+        }
+
+        @Test
+        void counts_two_ring_branches_a_molecule_cannot_tell_apart_as_one()
+        {
+            // both ways round the ring from either methyl's carbon are the same way round
+            assertThat(reported("CC1CCC(C)CC1", Rule.STEREO_CENTRE_MISSING)).isEmpty();
+            // but a ring broken by one substituent is two different branches
+            assertThat(reported("CC1CCC(C)C(N)C1", Rule.STEREO_CENTRE_MISSING))
+                .containsOnly(Rule.STEREO_CENTRE_MISSING);
+        }
     }
 
     /** How the findings are reported, rather than what any one of them says. */
