@@ -115,6 +115,7 @@ public final class MoleculeEndpoint extends Endpoint
     public void registerHandlers(EndpointRegistry registry)
     {
         registry.register(HttpMethod.POST, "/api/molecules", this::create);
+        registry.register(HttpMethod.DELETE, "/api/molecules/:id", this::delete);
         registry.register(HttpMethod.POST, "/api/molecules/:id/render/2d", this::render2d);
         registry.register(HttpMethod.POST, "/api/molecules/:id/match/2d", this::match2d);
         registry.register(HttpMethod.POST, "/api/molecules/:id/match/3d", this::match3d);
@@ -148,6 +149,12 @@ public final class MoleculeEndpoint extends Endpoint
         {
             throw new HttpException(400, failure.code(), failure.getMessage());
         }
+    }
+
+    private void delete(Request request, ResponseContext responseContext) throws IOException
+    {
+        store.remove(request.pathParameter("id"));
+        responseContext.respond(204);
     }
 
     private void render2d(Request request, ResponseContext responseContext) throws IOException

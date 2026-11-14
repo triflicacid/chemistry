@@ -3,23 +3,31 @@ import { ApiError } from "../api/http";
 import { ViewStore } from "../store";
 import { MoleculePanel, type Mode, type PanelHost } from "./MoleculePanel";
 import { OptionsPanel } from "./OptionsPanel";
-import { SmilesForm } from "./SmilesForm";
+import { SearchForm } from "./SearchForm";
 
 export class App implements PanelHost {
   private readonly store = new ViewStore();
-  private readonly form = new SmilesForm((input, smarts) => void this.render(input, smarts));
+  private readonly form = new SearchForm((smarts) => this.search(smarts));
   private readonly results = document.createElement("section");
+  private readonly add = document.createElement("button");
   private readonly optionsSlot = document.createElement("div");
   private panels: MoleculePanel[] = [];
+  private readonly matchErrors = new Map<MoleculePanel, string>();
   private mode: Mode = this.store.mode;
   private panel2d: OptionsPanel | null = null;
   private panel3d: OptionsPanel | null = null;
   private panelMatch: OptionsPanel | null = null;
   private smartsText = "";
   private matchTimer: number | undefined;
+  /** True while stored molecules are loading, when the panels do not yet hold them all. */
+  private restoring = false;
 
   constructor(readonly api: ChemistryApi) {
     this.results.className = "results";
+    this.add.type = "button";
+    this.add.className = "add-molecule";
+    this.add.textContent = "+ Add molecule";
+    this.add.addEventListener("click", () => this.addPanel().startEmpty());
   }
 
   options2d(): OptionsPanel | null {
@@ -43,19 +51,65 @@ export class App implements PanelHost {
     this.store.rememberMode(mode);
   }
 
+  moleculeChanged(): void {
+    this.persist();
+  }
+
+  matchFailed(panel: MoleculePanel, message: string | null): void {
+    if (message === null) {
+      this.matchErrors.delete(panel);
+    } else {
+      this.matchErrors.set(panel, message);
+    }
+    this.form.setProblem(this.matchErrors.values().next().value ?? null);
+  }
+
+  removeRequested(panel: MoleculePanel): void {
+    this.matchErrors.delete(panel);
+    this.form.setProblem(this.matchErrors.values().next().value ?? null);
+    this.panels = this.panels.filter((candidate) => candidate !== panel);
+    panel.dispose();
+    this.persist();
+  }
+
   mount(root: HTMLElement): void {
-    root.append(this.form.element, this.optionsSlot, this.results);
+    root.append(this.form.element, this.optionsSlot, this.results, this.add);
     void this.loadOptions();
 
-    const input = this.store.input;
     this.smartsText = this.store.smarts;
     this.form.setSmarts(this.smartsText);
-    if (input.trim()) {
-      this.form.setSmiles(input);
-      void this.render(input, this.smartsText);
-    } else {
-      this.showMessage("Enter a SMILES string, or several on separate lines, and press RENDER.");
+    const lines = this.store.input.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+    if (lines.length === 0) {
+      this.addPanel().startEmpty();
     }
+    this.restoring = lines.length > 0;
+    const loading = lines.map((line) => this.addPanel().load(line));
+    void Promise.all(loading).finally(() => {
+      this.restoring = false;
+      this.persist();
+    });
+  }
+
+  private addPanel(): MoleculePanel {
+    const panel = new MoleculePanel(this, this.mode);
+    this.panels.push(panel);
+    this.results.append(panel.element);
+    return panel;
+  }
+
+  /** Remembers the molecules shown, so that they return when the page is reloaded. */
+  private persist(): void {
+    if (this.restoring) {
+      return;
+    }
+    const smiles = this.panels.map((panel) => panel.smiles).filter((value): value is string => value !== null);
+    this.store.rememberInput(smiles.join("\n"));
+  }
+
+  private search(smarts: string): void {
+    this.smartsText = smarts;
+    this.store.rememberSmarts(smarts);
+    this.panels.forEach((panel) => void panel.updateMatches());
   }
 
   private async loadOptions(): Promise<void> {
@@ -87,34 +141,5 @@ export class App implements PanelHost {
   private matchOptionsChanged(): void {
     window.clearTimeout(this.matchTimer);
     this.matchTimer = window.setTimeout(() => this.panels.forEach((panel) => void panel.updateMatches()), 250);
-  }
-
-  private showMessage(text: string): void {
-    const message = document.createElement("p");
-    message.className = "message";
-    message.textContent = text;
-    this.results.replaceChildren(message);
-  }
-
-  /** Draws a panel for each non-blank line. */
-  private async render(input: string, smarts: string): Promise<void> {
-    this.store.rememberInput(input);
-    this.store.rememberSmarts(smarts);
-    this.smartsText = smarts;
-    const lines = input.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
-    if (lines.length === 0) {
-      this.showMessage("Please enter a SMILES string.");
-      return;
-    }
-
-    this.form.setBusy(true);
-    try {
-      this.panels.forEach((panel) => panel.dispose());
-      this.panels = lines.map(() => new MoleculePanel(this, this.mode));
-      this.results.replaceChildren(...this.panels.map((panel) => panel.element));
-      await Promise.all(this.panels.map((panel, index) => panel.load(lines[index]!)));
-    } finally {
-      this.form.setBusy(false);
-    }
   }
 }

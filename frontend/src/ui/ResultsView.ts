@@ -3,6 +3,7 @@ import { Selection } from "../store";
 import type { MoleculeView } from "../view/MoleculeView";
 import { FormulaView } from "./FormulaView";
 import { MoleculeInspector } from "./MoleculeInspector";
+import { SmilesField } from "./SmilesField";
 import { SmilesText } from "./SmilesText";
 
 /** The molecule currently shown. */
@@ -23,7 +24,8 @@ export class ResultsView {
   private formula: FormulaView | null = null;
   private readonly selection = new Selection();
 
-  constructor() {
+  /** @param edit applies a SMILES the user typed in place of the one shown; resolves to why it was refused, or null */
+  constructor(private readonly edit: (smiles: string) => Promise<string | null>) {
     this.element.className = "results";
   }
 
@@ -33,6 +35,22 @@ export class ResultsView {
 
   showError(text: string): void {
     this.show(text, "message error", "pre");
+  }
+
+  /**
+   * Shows a SMILES being entered, because there is no molecule to show.
+   *
+   * @param smiles what was entered, or blank for a new panel
+   * @param problem why it cannot be shown, if it was tried
+   */
+  showEntry(smiles: string, problem: string | null): void {
+    this.reset();
+    const field = new SmilesField(new SmilesText(smiles), this.edit, true);
+    field.setError(problem);
+    const card = document.createElement("figure");
+    card.className = "card";
+    card.append(ResultsView.label("SMILES"), field.element);
+    this.element.replaceChildren(card);
   }
 
   /** Shows a rendered molecule and its SMILES. */
@@ -46,9 +64,15 @@ export class ResultsView {
     const card = document.createElement("figure");
     card.className = "card";
     card.dataset.molecule = moleculeId;
-    card.append(ResultsView.label("SMILES"), text.element, ResultsView.label("Canonical SMILES"),     canonical.element, view.element);
+    card.append(
+      ResultsView.label("SMILES"),
+      new SmilesField(text, this.edit).element,
+      ResultsView.label("Canonical SMILES"),
+      new SmilesField(canonical, this.edit).element,
+      view.element,
+    );
     this.element.replaceChildren(card);
-        this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
+    this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
   }
 
   /** Adds a line of text to the card being shown. */

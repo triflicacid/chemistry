@@ -10,6 +10,10 @@ body {
   margin: 0 auto;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 form {
   display: flex;
   flex-direction: column;
@@ -204,6 +208,79 @@ button:disabled {
   display: flex;
   gap: .4rem;
   padding-bottom: .2rem;
+}
+
+.toolbar .tabs {
+  flex: 1;
+}
+
+.chevron,
+.panel-remove {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: .6;
+  padding: .25rem .4rem;
+  line-height: 1;
+}
+
+.chevron:hover,
+.panel-remove:hover {
+  opacity: 1;
+}
+
+.panel-remove {
+  font-size: 1.2rem;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+}
+
+.search-row input[type=text] {
+  flex: 1;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 1rem;
+  padding: .5rem;
+}
+
+.add-molecule {
+  margin-top: .75rem;
+}
+
+.card .smiles[hidden] {
+  display: none;
+}
+
+.card .smiles.editable {
+  cursor: text;
+  border-radius: .25rem;
+}
+
+.card .smiles.editable:hover {
+  background: #8882;
+}
+
+.smiles-edit {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: .5rem;
+}
+
+.smiles-input {
+  flex: 1;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 1rem;
+  padding: .35rem .5rem;
 }
 
 .toolbar [hidden] {

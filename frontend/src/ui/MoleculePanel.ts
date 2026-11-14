@@ -17,6 +17,12 @@ export interface PanelHost {
   /** The SMARTS pattern to highlight, or blank. */
   smarts(): string;
   modeChosen(mode: Mode): void;
+  /** The panel now shows a different molecule. */
+  moleculeChanged(): void;
+  /** Matching in the panel failed with this message, or (null) no longer fails. */
+  matchFailed(panel: MoleculePanel, message: string | null): void;
+  /** The user asked for the panel to be removed. */
+  removeRequested(panel: MoleculePanel): void;
 }
 
 interface Cache {
@@ -37,7 +43,9 @@ interface Projection {
 
 export class MoleculePanel {
   readonly element = document.createElement("div");
-  private readonly results = new ResultsView();
+  private readonly results = new ResultsView((smiles) => this.open(smiles));
+  private readonly body = document.createElement("div");
+  private readonly chevron = document.createElement("button");
   private readonly matches = document.createElement("section");
   private matchViews: SvgView[] = [];
   /** Tells a slow match request that a newer one has replaced it. */
@@ -62,7 +70,18 @@ export class MoleculePanel {
     this.projectActions = this.buildProjectActions();
     this.projectActions.hidden = mode !== "3d";
     this.toolbar.className = "toolbar";
-    this.toolbar.hidden = true;
+    this.chevron.type = "button";
+    this.chevron.className = "chevron";
+    this.chevron.addEventListener("click", () => this.setCollapsed(!this.body.hidden));
+    this.setCollapsed(false);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "panel-remove";
+    remove.textContent = "×";
+    remove.title = "Remove this molecule";
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => this.host.removeRequested(this));
+    this.showTools(false);
     this.tabs.className = "tabs";
     this.tabs.setAttribute("role", "tablist");
     for (const [value, text] of [["2d", "2D"], ["3d", "3D"]] as const) {
@@ -76,10 +95,37 @@ export class MoleculePanel {
       this.tabs.append(tab);
     }
     this.markActive();
-    this.toolbar.append(this.tabs, this.projectActions);
+    this.toolbar.append(this.chevron, this.tabs, this.projectActions, remove);
     this.matches.className = "matches";
     this.matches.hidden = true;
-    this.element.append(this.toolbar, this.results.element, this.matches);
+    this.body.className = "panel-body";
+    this.body.append(this.results.element, this.matches);
+    this.element.append(this.toolbar, this.body);
+  }
+
+  /** Hides or shows everything below the toolbar. */
+  private setCollapsed(collapsed: boolean): void {
+    this.body.hidden = collapsed;
+    this.chevron.textContent = collapsed ? "▸" : "▾";
+    this.chevron.title = collapsed ? "Expand" : "Collapse";
+    this.chevron.setAttribute("aria-label", this.chevron.title);
+    this.chevron.setAttribute("aria-expanded", String(!collapsed));
+  }
+
+  /** The tabs only mean something once there is a molecule. */
+  private showTools(on: boolean): void {
+    this.tabs.hidden = !on;
+    this.projectActions.hidden = !on || this.mode !== "3d";
+  }
+
+  /** The SMILES of the molecule shown, or null if there is none. */
+  get smiles(): string | null {
+    return this.current?.smiles ?? null;
+  }
+
+  /** Shows an empty panel for a SMILES to be typed into. */
+  startEmpty(): void {
+    this.results.showEntry("", null);
   }
 
   private tabButton(text: string, onClick: () => void): HTMLButtonElement {
@@ -107,14 +153,57 @@ export class MoleculePanel {
   /** Creates the molecule on the server and draws it; a failure is shown in the panel rather than thrown. */
   async load(smiles: string): Promise<void> {
     this.results.showMessage(`Rendering ${smiles}...`);
-    try {
-      const created = await this.host.api.createMolecule(smiles);
-      await this.display(created.id, created.smiles, created.canonical_smiles, null);
-      this.toolbar.hidden = false;
-    } catch (error) {
-      this.toolbar.hidden = true;
-      this.results.showError(`${smiles}\n${MoleculePanel.describe(error)}`);
+    const problem = await this.open(smiles);
+    if (problem !== null) {
+      this.showTools(false);
+      this.results.showEntry(smiles, problem);
     }
+  }
+
+  /**
+   * Replaces the molecule shown with one made from this SMILES. If it cannot be made, the panel is left as it was.
+   *
+   * @returns why the SMILES was refused, or null if it is now shown
+   */
+  async open(smiles: string): Promise<string | null> {
+    let created;
+    try {
+      created = await this.host.api.createMolecule(smiles);
+    } catch (error) {
+      return MoleculePanel.describe(error);
+    }
+
+    this.forget();
+    try {
+      await this.display(created.id, created.smiles, created.canonical_smiles, null);
+    } catch (error) {
+      this.showTools(false);
+      this.results.showEntry(smiles, MoleculePanel.describe(error));
+      return null;
+    }
+    this.showTools(true);
+    this.host.moleculeChanged();
+    return null;
+  }
+
+  /** Lets go of the molecule shown, and everything made from it. */
+  private forget(): void {
+    this.matchRequest++;
+    this.clearMatches();
+    this.dropCache();
+    this.projections.forEach((projection) => {
+      projection.view.dispose();
+      projection.tab.remove();
+    });
+    this.projections.length = 0;
+    this.nextProjection = 1;
+    this.active = this.mode;
+    this.markActive();
+    this.three = null;
+    if (this.current) {
+      this.host.api.deleteMolecule(this.current.id).catch(() => undefined);
+    }
+    this.current = null;
   }
 
   /** Switches to the 2D or 3D drawing, reusing a view already made. */
@@ -122,7 +211,7 @@ export class MoleculePanel {
     this.mode = mode;
     this.active = mode;
     this.markActive();
-    this.projectActions.hidden = mode !== "3d";
+    this.projectActions.hidden = mode !== "3d" || !this.current;
     if (!this.current) {
       return;
     }
@@ -152,11 +241,7 @@ export class MoleculePanel {
   }
 
   dispose(): void {
-    this.matchRequest++;
-    this.clearMatches();
-    this.dropCache();
-    this.projections.forEach((projection) => projection.view.dispose());
-    this.projections.length = 0;
+    this.forget();
     this.element.remove();
   }
 
@@ -222,6 +307,7 @@ export class MoleculePanel {
    */
   async updateMatches(): Promise<void> {
     const request = ++this.matchRequest;
+    this.host.matchFailed(this, null);
     const smarts = this.host.smarts();
     const options = this.host.optionsMatch();
     if (!this.current || this.active !== this.mode || !smarts || !options) {
@@ -273,8 +359,7 @@ export class MoleculePanel {
       }
       this.clearMatches();
       this.clearHighlights();
-      this.matches.append(MoleculePanel.matchNote(MoleculePanel.describe(error), true));
-      this.matches.hidden = false;
+      this.host.matchFailed(this, MoleculePanel.describe(error));
     }
   }
 

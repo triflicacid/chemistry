@@ -67,6 +67,11 @@ export class ChemistryApi {
     return this.http.json<StoredMolecule>("POST", "/api/molecules", { json: { smiles } });
   }
 
+  /** Forgets a stored molecule. */
+  async deleteMolecule(id: MoleculeId): Promise<void> {
+    await this.http.send("DELETE", `/api/molecules/${encodeURIComponent(id)}`);
+  }
+
   /** Fetches a molecule's metadata. */
   metadata(id: MoleculeId): Promise<MoleculeMetadata> {
     return this.http.json<MoleculeMetadata>("GET", `/api/molecules/${encodeURIComponent(id)}/metadata`);

@@ -55,6 +55,17 @@ public final class MoleculeStore
 
     /**
      * @param id a molecule's ID
+     */
+    public void remove(String id)
+    {
+        synchronized (molecules)
+        {
+            molecules.remove(id);
+        }
+    }
+
+    /**
+     * @param id a molecule's ID
      * @return the molecule, if it is (still) stored
      */
     public Optional<StoredMolecule> find(String id)

@@ -20,6 +20,11 @@ export class SmilesText {
     this.highlight([]);
   }
 
+  /** The text shown, without any highlighting. */
+  get value(): string {
+    return this.text;
+  }
+
   /**
    * Highlights exactly the given none-overlapping ranges, each in its own colour.
    * A colour cycles through the pallet, and a range of null is left out.
