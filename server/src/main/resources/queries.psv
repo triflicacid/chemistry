@@ -1,0 +1,149 @@
+name|smarts|classes|description|example
+
+# Library of SMARTS queries
+# Format: name|smarts|class1;class2|description|example SMILES
+
+# --- the basics ---
+any atom|*|basics;atoms|Every atom in the molecule. The wildcard asks nothing of the element, charge or aromaticity.|CCO
+carbon|C|basics;atoms|Any carbon. An element symbol written as itself also matches aromatic atoms here, so this finds all six carbons of benzene.|c1ccccc1
+aromatic carbon|c|basics;atoms;aromatic|Only carbons in an aromatic ring. A lower-case symbol asks for aromaticity.|c1ccccc1
+aliphatic carbon|[C;!c]|basics;atoms|A carbon that is not aromatic. The symbol on its own would match both kinds.|Cc1ccccc1
+carbon by atomic number|[#6]|atoms|The same as C, written by atomic number. This is how to name elements outside the organic subset.|CCO
+oxygen|O|basics;atoms;oxygen|Any oxygen.|CCO
+nitrogen|N|basics;atoms;nitrogen|Any nitrogen.|CCN
+sulfur|S|atoms;sulfur|Any sulfur.|CCS
+phosphorus|P|atoms;phosphorus|Any phosphorus.|COP(=O)(O)O
+halogen|[F,Cl,Br,I]|atoms;halogen|Any of the four common halogens. The comma between primitives means OR.|CCBr
+heteroatom|[!#6]|atoms|Any atom that is not carbon. Hydrogens are inferred rather than kept as atoms, so only heavy atoms are matched.|CCO
+aromatic heteroatom|[n,o,s]|atoms;aromatic|An aromatic nitrogen, oxygen or sulfur: the atom that makes a ring a heterocycle.|c1cc[nH]c1
+aromatic atom|[c,n,o,s]|atoms;aromatic|Any of the common aromatic atoms. There is no single primitive for aromatic anything.|c1ccncc1
+
+# --- counting hydrogens and bonds ---
+methyl group|[CH3]|counts;hydrocarbon|A carbon carrying exactly three hydrogens. A number after H is the total hydrogen count, inferred ones included.|CCC
+methylene group|[CH2]|counts;hydrocarbon|A carbon carrying exactly two hydrogens.|CCC
+saturated carbon|[CX4]|counts|A carbon with four connections counting hydrogens: an sp3 carbon.|CCO
+trigonal carbon|[CX3]|counts|A carbon with three connections: it holds a double bond or sits in an aromatic ring.|CC=O
+quaternary carbon|[CX4;H0]|counts|A carbon bonded to four other atoms and no hydrogen.|CC(C)(C)C
+terminal atom|[D1]|counts|An atom with exactly one bond to a heavy atom: the end of a chain. D counts bonds and ignores hydrogens.|CCO
+branch point|[D3]|counts|An atom with three heavy-atom bonds, whatever its hydrogens.|CC(C)C
+divalent oxygen|[OX2]|counts;oxygen|An oxygen with two connections: an alcohol or an ether rather than a carbonyl.|CCOC
+trivalent nitrogen|[NX3]|counts;nitrogen|A nitrogen with three connections: an amine or an amide.|CCN
+valence four|[v4]|counts|An atom whose bond orders add up to four.|CCO
+inferred hydrogen|[O;h1]|counts;oxygen|An oxygen whose one hydrogen was inferred rather than written out. Lower-case h counts only the inferred hydrogens, where H counts them all.|CCO
+
+# --- charge and isotope ---
+cation|[+]|charge|Any atom with a formal charge of +1.|C[NH3+]
+anion|[-]|charge|Any atom with a formal charge of -1.|CC(=O)[O-]
+doubly charged cation|[+2]|charge|An atom with a formal charge of +2, which may also be written as two plus signs.|[Ca+2]
+charged atom|[+,-]|charge|An atom carrying a single charge of either sign.|CC(=O)[O-]
+singly uncharged atom|[!+;!-]|charge|An atom that is neither +1 nor -1. Larger charges need terms of their own, such as !+2.|CCO
+carbon-13|[13C]|isotope|A carbon written with mass number 13. A bare number inside brackets is the isotope.|[13CH4]
+
+# --- combining primitives ---
+or|[N,O]|logic|Nitrogen or oxygen. The comma is OR.|CCN
+and|[C&X4]|logic|A carbon that is also four-connected. The ampersand is AND and binds tighter than the comma; writing two primitives side by side means the same thing.|CCO
+or then and|[C,N;R]|logic|Carbon or nitrogen that is also in a ring. The semicolon is AND as well, but binds looser than the comma.|c1cc[nH]c1
+not|[!C]|logic|Any atom that is not carbon. The exclamation mark negates the one primitive after it.|CCO
+neither of two elements|[!N;!O]|logic|An atom that is neither nitrogen nor oxygen.|CCO
+
+# --- bonds ---
+single bond|*-*|bonds|Two atoms joined by a single bond.|CCO
+double bond|*=*|bonds|Two atoms joined by a double bond.|CC=O
+triple bond|*#*|bonds|Two atoms joined by a triple bond.|CC#N
+aromatic bond|*:*|bonds;aromatic|A bond inside an aromatic ring.|c1ccccc1
+any bond|*~*|bonds|Two bonded atoms, whatever the bond. Written with nothing between them, a single bond is meant.|c1ccccc1
+single or double bond|*-,=*|bonds;logic|Either order, with OR between two bond primitives.|CC=O
+ring bond|*@*|bonds;ring|A bond lying on a ring.|C1CCCCC1C
+chain bond|*!@*|bonds;ring|A bond outside any ring.|C1CCCCC1C
+single ring bond|*-@*|bonds;ring|A single bond that lies on a ring: the order and the ring test combined.|C1CCCCC1
+
+# --- rings ---
+ring atom|[R]|ring|Any atom lying on a ring.|C1CCCCC1C
+chain atom|[R0]|ring|An atom in no ring at all.|C1CCCCC1C
+fusion atom|[R2]|ring|An atom shared by two rings, where a ring system is fused.|c1ccc2ccccc2c1
+spiro atom|[D4;R2]|ring|An atom in two rings with four heavy-atom bonds: the single shared atom of a spiro system.|C1CCC2(CC1)CCCC2
+ring of three|[r3]|ring|An atom in a ring of exactly three atoms, which is a strained one.|C1CO1
+ring of five|[r5]|ring|An atom in a ring of exactly five atoms.|C1CCCC1
+ring of six|[r6]|ring|An atom in a ring of exactly six atoms.|C1CCCCC1
+ring heteroatom|[!#6;R]|ring|A ring atom that is not carbon: what makes a ring a heterocycle.|c1ccncc1
+cyclopropane ring|C1CC1|ring;hydrocarbon|The three-membered carbon ring. The matching digits are what close a ring.|C1CC1
+cyclopentane ring|C1CCCC1|ring;hydrocarbon|A five-membered carbon ring.|C1CCCC1
+cyclohexane ring|C1CCCCC1|ring;hydrocarbon|A six-membered carbon ring.|C1CCCCC1
+benzene ring|c1ccccc1|ring;aromatic|Six aromatic carbons in a ring.|c1ccccc1
+substituted aromatic carbon|[c;D3]|aromatic;counts|An aromatic carbon with three heavy neighbours, so one of them is a substituent.|Cc1ccccc1
+naphthalene|c1ccc2ccccc2c1|ring;aromatic;fused|Two fused aromatic six-rings.|c1ccc2ccccc2c1
+pyridine|c1ccncc1|ring;aromatic;nitrogen;heterocycle|An aromatic six-ring holding one nitrogen.|c1ccncc1
+pyrimidine|c1cncnc1|ring;aromatic;nitrogen;heterocycle|An aromatic six-ring with its two nitrogens one atom apart.|c1cncnc1
+pyrrole|c1cc[nH]c1|ring;aromatic;nitrogen;heterocycle|An aromatic five-ring whose nitrogen carries a hydrogen.|c1cc[nH]c1
+imidazole|c1cnc[nH]1|ring;aromatic;nitrogen;heterocycle|An aromatic five-ring with two nitrogens, one of them carrying a hydrogen.|c1cnc[nH]1
+furan|c1ccoc1|ring;aromatic;oxygen;heterocycle|An aromatic five-ring holding an oxygen.|c1ccoc1
+thiophene|c1ccsc1|ring;aromatic;sulfur;heterocycle|An aromatic five-ring holding a sulfur.|c1ccsc1
+
+# --- oxygen groups ---
+hydroxyl|[OX2H1]|functional-group;oxygen;alcohol|An oxygen with one hydrogen and one other connection: the OH of an alcohol, an acid or a phenol.|CCO
+alcohol|[CX4][OX2H1]|functional-group;oxygen;alcohol|A hydroxyl on a saturated carbon, which leaves out acids and phenols.|CCO
+primary alcohol|[OX2H1][CH2][#6]|functional-group;oxygen;alcohol|A hydroxyl on a carbon that carries two hydrogens and one other carbon.|CCO
+phenol|[OX2H1]c|functional-group;oxygen;alcohol;aromatic|A hydroxyl straight onto an aromatic ring.|Oc1ccccc1
+ether|[OD2]([#6])[#6]|functional-group;oxygen;ether|An oxygen with two carbon neighbours and nothing else.|CCOCC
+carbonyl|[CX3]=[OX1]|functional-group;oxygen;carbonyl|A carbon doubly bonded to an oxygen: the heart of aldehydes, ketones, acids, esters and amides.|CC=O
+aldehyde|[CX3H1](=O)[#6]|functional-group;oxygen;carbonyl;aldehyde|A carbonyl carbon carrying one hydrogen and one carbon.|CC=O
+ketone|[#6][CX3](=O)[#6]|functional-group;oxygen;carbonyl;ketone|A carbonyl with a carbon on either side.|CC(=O)C
+carboxylic acid|[CX3](=O)[OX2H1]|functional-group;oxygen;acid;carboxylic-acid|The COOH group: a carbonyl beside a hydroxyl.|CC(=O)O
+carboxylate|[CX3](=O)[O-]|functional-group;oxygen;acid;charge|A carboxylic acid that has lost its hydrogen.|CC(=O)[O-]
+ester|[#6][CX3](=O)[OX2][#6]|functional-group;oxygen;ester|A carbonyl whose second oxygen carries another carbon.|CC(=O)OC
+lactone|[CX3;R](=O)[OX2;R]|functional-group;oxygen;ester;ring|An ester closed into a ring.|O=C1CCCO1
+anhydride|[CX3](=O)[OX2][CX3]=O|functional-group;oxygen;anhydride|Two carbonyls sharing one oxygen.|CC(=O)OC(=O)C
+acyl chloride|[CX3](=O)Cl|functional-group;oxygen;halogen;acyl-halide|A carbonyl carrying a chlorine.|CC(=O)Cl
+peroxide|[OX2][OX2]|functional-group;oxygen;peroxide|Two oxygens bonded to each other.|CCOOCC
+enol|[OX2H1][#6]=[#6]|functional-group;oxygen;alcohol|A hydroxyl on a doubly bonded carbon.|OC=C
+epoxide|C1OC1|functional-group;oxygen;ring;epoxide|A three-membered ring holding one oxygen.|C1CO1
+
+# --- nitrogen groups ---
+primary amine|[NX3;H2][CX4]|functional-group;nitrogen;amine|A nitrogen with two hydrogens on a saturated carbon.|CCN
+secondary amine|[NX3;H1]([#6])[#6]|functional-group;nitrogen;amine|A nitrogen with one hydrogen between two carbons.|CNC
+tertiary amine|[NX3;H0]([#6])([#6])[#6]|functional-group;nitrogen;amine|A nitrogen with three carbons and no hydrogen.|CN(C)C
+aniline nitrogen|[NX3]c|functional-group;nitrogen;amine;aromatic|A nitrogen straight onto an aromatic ring.|Nc1ccccc1
+ammonium|[N+;X4]|functional-group;nitrogen;charge|A nitrogen with four connections and a positive charge.|C[NH3+]
+amide|[CX3](=O)[NX3]|functional-group;nitrogen;carbonyl;amide|A carbonyl bonded to a nitrogen.|CC(=O)N
+nitrile|[#6]#[NX1]|functional-group;nitrogen;nitrile|A carbon triply bonded to a nitrogen that holds nothing else.|CC#N
+nitro group|[N+](=O)[O-]|functional-group;nitrogen;nitro;charge|The nitro group, which has to be written with its charges.|C[N+](=O)[O-]
+imine|[CX3]=[NX2]|functional-group;nitrogen;imine|A carbon doubly bonded to a nitrogen.|CC=NC
+hydrazine|[NX3][NX3]|functional-group;nitrogen;hydrazine|Two nitrogens bonded to each other.|CNNC
+azide|[NX2]=[N+]=[N-]|functional-group;nitrogen;charge|Three nitrogens in a row, with the charges they are always written with.|CN=[N+]=[N-]
+urea|[NX3][CX3](=O)[NX3]|functional-group;nitrogen;carbonyl;urea|A carbonyl between two nitrogens.|NC(=O)N
+carbamate|[NX3][CX3](=O)[OX2]|functional-group;nitrogen;carbonyl|A carbonyl with a nitrogen on one side and an oxygen on the other.|NC(=O)OC
+guanidine|[NX3][CX3](=[NX2])[NX3]|functional-group;nitrogen;guanidine|One carbon joined to three nitrogens, one of them doubly.|NC(=N)N
+isocyanate|[NX2]=[CX2]=[OX1]|functional-group;nitrogen|A nitrogen and an oxygen sharing one carbon through two double bonds.|CN=C=O
+amino acid backbone|[NX3;H2][CX4][CX3](=O)[OX2H1]|functional-group;nitrogen;amino-acid|An amine and a carboxylic acid on neighbouring carbons: the skeleton every alpha-amino acid shares.|NCC(=O)O
+
+# --- sulfur and phosphorus groups ---
+thiol|[SX2H1]|functional-group;sulfur;thiol|A sulfur carrying one hydrogen: the SH group.|CCS
+thioether|[SX2]([#6])[#6]|functional-group;sulfur;thioether|A sulfur between two carbons.|CSC
+disulfide|[SX2][SX2]|functional-group;sulfur|Two sulfurs bonded to each other.|CSSC
+sulfoxide|[SX3](=O)|functional-group;sulfur;sulfoxide|A sulfur with one doubly bonded oxygen and two other connections.|CS(=O)C
+sulfone|[SX4](=O)(=O)|functional-group;sulfur;sulfone|A sulfur with two doubly bonded oxygens.|CS(=O)(=O)C
+sulfonic acid|[SX4](=O)(=O)[OX2H1]|functional-group;sulfur;acid;sulfonic-acid|A sulfone carrying a hydroxyl.|CS(=O)(=O)O
+sulfonamide|[SX4](=O)(=O)[NX3]|functional-group;sulfur;nitrogen;sulfonamide|A sulfone bonded to a nitrogen.|CS(=O)(=O)N
+phosphate|[PX4](=O)([OX2])([OX2])[OX2]|functional-group;phosphorus;phosphate|A phosphorus with one doubly bonded oxygen and three singly bonded ones.|COP(=O)(O)O
+
+# --- halogen groups ---
+alkyl halide|[CX4][F,Cl,Br,I]|functional-group;halogen;haloalkane|A halogen on a saturated carbon.|CCBr
+aryl halide|c[F,Cl,Br,I]|functional-group;halogen;aromatic|A halogen on an aromatic ring.|Clc1ccccc1
+trifluoromethyl|[CX4](F)(F)F|functional-group;halogen|The CF3 group.|FC(F)(F)c1ccccc1
+
+# --- carbon skeletons ---
+alkene|[CX3]=[CX3]|functional-group;hydrocarbon;alkene|A carbon-carbon double bond.|CC=CC
+terminal alkene|[CH2]=[CX3]|functional-group;hydrocarbon;alkene|A double bond at the end of a chain.|C=CC
+alkyne|[CX2]#[CX2]|functional-group;hydrocarbon;alkyne|A carbon-carbon triple bond.|CC#CC
+conjugated diene|C=CC=C|functional-group;hydrocarbon;diene|Two double bonds with one single bond between them.|C=CC=C
+
+# --- patterns inside patterns ---
+amide nitrogen|[NX3;$(NC=O)]|recursive;nitrogen;amide|A nitrogen next to a carbonyl. A bracketed dollar term is a pattern of its own, read as starting from the atom being tested.|CC(=O)N
+amine but not amide|[NX3;!$(NC=O);!$(N=*)]|recursive;nitrogen;amine|An amine nitrogen with amides and imines ruled out. Negating a nested pattern is how an exception is written.|CCN
+carbonyl carbon|[$(C=O)]|recursive;carbonyl|Any atom that is a carbon doubly bonded to an oxygen.|CC=O
+alcohol but not acid|[OX2H1;!$(OC=O)]|recursive;oxygen;alcohol|A hydroxyl that is not the one in a carboxylic acid or an ester.|CCO
+carbon beside a nitrogen|[#6;$(*[NX3])]|recursive|A carbon with a nitrogen for a neighbour. The wildcard inside the nested pattern stands for the atom being tested.|CCN
+
+# --- stereochemistry ---
+trans double bond|C/C=C/C|stereochemistry;alkene|Two carbons on opposite sides of a double bond: the trans or E arrangement.|C/C=C/C
+cis double bond|C/C=C\C|stereochemistry;alkene|Two carbons on the same side of a double bond: the cis or Z arrangement.|C/C=C\C

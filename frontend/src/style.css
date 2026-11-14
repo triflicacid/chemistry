@@ -577,3 +577,21 @@ button.small {
   text-align: center;
   color: #555;
 }
+
+.library-description {
+  font-size: .9rem;
+}
+
+.library-table td:first-child {
+  white-space: nowrap;
+}
+
+.library-actions {
+  display: flex;
+  gap: .3rem;
+  white-space: nowrap;
+}
+
+.library-dialog .tabs {
+  border-bottom: 1px solid #8884;
+}
