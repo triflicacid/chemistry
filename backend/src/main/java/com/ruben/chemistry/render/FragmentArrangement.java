@@ -112,6 +112,13 @@ public sealed interface FragmentArrangement
     }
 
     /**
+     * Fragments left exactly where the depiction puts them, as a view of them in space has them
+     */
+    record AsPlaced() implements FragmentArrangement
+    {
+    }
+
+    /**
      * A fragment's position and size in a regular grid
      *
      * @param row the first row it occupies

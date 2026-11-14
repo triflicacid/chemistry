@@ -10,6 +10,10 @@ body {
   margin: 0 auto;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 form {
   display: flex;
   flex-direction: column;
@@ -21,12 +25,63 @@ label {
   font-weight: 600;
 }
 
-textarea {
+textarea,
+form > input[type=text] {
   width: 100%;
   box-sizing: border-box;
   font-family: ui-monospace, monospace;
   font-size: 1rem;
   padding: 0.5rem;
+}
+
+.matches {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.matches[hidden] {
+  display: none;
+}
+
+.match-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.match-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.match-chips button {
+  border-width: 2px;
+}
+
+.match-chips button.active {
+  background: #ddf4ff;
+  font-weight: 600;
+}
+
+.match-row svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.match-smiles {
+  margin: 0.25rem 0 0;
+  font-family: monospace;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.option input[type=text] {
+  width: 9rem;
 }
 
 button {
@@ -52,9 +107,17 @@ button:disabled {
 }
 
 .card svg {
+  display: block;
+  margin: 0 auto;
   max-width: 100%;
   height: auto;
   cursor: default;
+}
+
+.download-row {
+  display: flex;
+  justify-content: center;
+  margin-top: .5rem;
 }
 
 .message.error {
@@ -106,6 +169,139 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: .6rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: .6rem;
+  border-bottom: 1px solid #8884;
+}
+
+.tabs {
+  display: flex;
+  gap: .2rem;
+  flex-wrap: wrap;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  border: 1px solid #8884;
+  border-bottom: none;
+  border-radius: .35rem .35rem 0 0;
+  margin-bottom: -1px;
+  opacity: .7;
+}
+
+.tab.active {
+  opacity: 1;
+  border-color: #888;
+  background: #8882;
+  font-weight: 600;
+}
+
+.tab button {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: .85rem;
+  padding: .25rem .6rem;
+}
+
+.tab .tab-close {
+  padding: .25rem .4rem .25rem 0;
+  opacity: .6;
+  line-height: 1;
+}
+
+.tab .tab-close:hover {
+  opacity: 1;
+}
+
+.toolbar .modes {
+  display: flex;
+  gap: .4rem;
+  padding-bottom: .2rem;
+}
+
+.toolbar .tabs {
+  flex: 1;
+}
+
+.chevron,
+.panel-remove {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: .6;
+  padding: .25rem .4rem;
+  line-height: 1;
+}
+
+.chevron:hover,
+.panel-remove:hover {
+  opacity: 1;
+}
+
+.panel-remove {
+  font-size: 1.2rem;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+}
+
+.search-row input[type=text] {
+  flex: 1;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 1rem;
+  padding: .5rem;
+}
+
+.add-molecule {
+  margin-top: .75rem;
+}
+
+.card .smiles[hidden] {
+  display: none;
+}
+
+.card .smiles.editable {
+  cursor: text;
+  border-radius: .25rem;
+}
+
+.card .smiles.editable:hover {
+  background: #8882;
+}
+
+.smiles-edit {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: .5rem;
+}
+
+.smiles-input {
+  flex: 1;
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 1rem;
+  padding: .35rem .5rem;
+}
+
+.toolbar [hidden] {
+  display: none;
 }
 
 button.small {
@@ -243,3 +439,17 @@ button.small {
 .plaque code {
   overflow-wrap: anywhere;
 }
+
+.view3d {
+  position: relative;
+  width: 100%;
+  height: 480px;
+}
+
+.view3d canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+

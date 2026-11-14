@@ -163,13 +163,12 @@ public final class SceneRenderer
     private Depiction arrange(Depiction local)
     {
         int count = local.fragments().size();
-        // nothing to set apart
-        if (count < 2)
+        FragmentArrangement arrangement = style.fragmentArrangement();
+        // nothing to set apart, or the fragments are to stay as placed
+        if (count < 2 || arrangement instanceof FragmentArrangement.AsPlaced)
         {
             return local;
         }
-
-        FragmentArrangement arrangement = style.fragmentArrangement();
         // pixels per depiction unit
         double scale = style.bondLength();
 
@@ -198,6 +197,7 @@ public final class SceneRenderer
         {
             case FragmentArrangement.Grid grid -> offsetsInRows(grid, extent, gap);
             case FragmentArrangement.Linear lines -> offsetsInTracks(lines, extent, gap);
+            case FragmentArrangement.AsPlaced placed -> throw new IllegalStateException("Fragments left as placed are not moved");
         };
 
         List<AtomPlacement> moved = new ArrayList<>(local.atoms().size());
@@ -437,7 +437,7 @@ public final class SceneRenderer
      * @param style how it should be drawn
      * @return the scene
      */
-    public static Scene render(Layout layout, RenderStyle style)
+    public static Scene render(Structure2D layout, RenderStyle style)
     {
         return render(layout, style, Annotations.none());
     }
@@ -453,7 +453,7 @@ public final class SceneRenderer
      * @param annotations how to restyle the layout's atoms and bonds, which belong to its snapshot's molecule
      * @return the scene
      */
-    public static Scene render(Layout layout, RenderStyle style, Annotations annotations)
+    public static Scene render(Structure2D layout, RenderStyle style, Annotations annotations)
     {
         return new SceneRenderer(layout.depiction(), style, layout.snapshot(), annotations).draw();
     }

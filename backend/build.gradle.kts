@@ -21,10 +21,17 @@ tasks.test {
     useJUnitPlatform()
 }
 
-tasks.register<JavaExec>("depict") {
+tasks.register<JavaExec>("render2d") {
     group = "chemistry"
     description = "Draws a SMILES string as an SVG document, e.g. --args=\"CCO --out=ethanol.svg\"."
-    mainClass = "com.ruben.chemistry.cli.DepictSmiles"
+    mainClass = "com.ruben.chemistry.cli.Render2d"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("render3d") {
+    group = "chemistry"
+    description = "Draws a SMILES string in 3D as an SVG document, e.g. --args=\"C1CC2CCC1CC2 --out=bicyclo.svg --yaw=40\"."
+    mainClass = "com.ruben.chemistry.cli.Render3d"
     classpath = sourceSets["main"].runtimeClasspath
 }
 
@@ -32,6 +39,13 @@ tasks.register<JavaExec>("match") {
     group = "chemistry"
     description = "Draws a SMILES string with the matches of a SMARTS pattern highlighted, e.g. --args=\"CCO CO --out=ethanol.svg\"."
     mainClass = "com.ruben.chemistry.cli.DepictMatch"
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("match3d") {
+    group = "chemistry"
+    description = "Draws a SMILES string in 3D with the matches of a SMARTS pattern highlighted, e.g. --args=\"CCO CO --out=ethanol.svg\"."
+    mainClass = "com.ruben.chemistry.cli.DepictMatch3d"
     classpath = sourceSets["main"].runtimeClasspath
 }
 

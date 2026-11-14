@@ -2,10 +2,7 @@ package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.query.Match;
-import com.ruben.chemistry.query.Query;
-import com.ruben.chemistry.query.SubstructureMatcher;
-import com.ruben.chemistry.render.Colour;
-import com.ruben.chemistry.render.Layout;
+import com.ruben.chemistry.render.Structure2D;
 import com.ruben.chemistry.render.MoleculeLayout;
 import com.ruben.chemistry.render.RenderStyle;
 import com.ruben.chemistry.render.SceneRenderer;
@@ -19,7 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -34,16 +30,6 @@ import java.util.stream.Stream;
  */
 final class DepictMatch
 {
-    /** How several matches are shown. */
-    private enum View
-    {
-        /** One drawing of the molecule per match, side by side. */
-        EACH,
-
-        /** One drawing, with every match highlighted in a colour of its own. */
-        MERGED
-    }
-
     private static final String STANDARD_OUTPUT = "-";
 
     private static final CliOption<String> OUT = CliOption.string(
@@ -53,72 +39,8 @@ final class DepictMatch
             STANDARD_OUTPUT
     );
 
-    private static final CliOption<View> VIEW = CliOption.choice(
-            "view",
-            "whether each match gets its own drawing of the molecule, or all are highlighted on one",
-            Map.of("each", View.EACH, "merged", View.MERGED),
-            () -> View.EACH
-    ).withDefaultText("each");
-
-    private static final CliOption<Boolean> ALL_MATCHES = CliOption.flag(
-            "all-matches",
-            "whether matches covering the same atoms in another order count as matches of their own",
-            false
-    );
-
-    private static final CliOption<Integer> MAX_MATCHES = CliOption.parsed(
-            "max-matches",
-            "n",
-            "the most matches to draw",
-            input -> {
-                try
-                {
-                    int count = Integer.parseInt(input);
-                    if (count < 1)
-                    {
-                        throw new IllegalArgumentException("--max-matches must be at least 1, but was " + count);
-                    }
-                    return count;
-                }
-                catch (NumberFormatException invalid)
-                {
-                    throw new IllegalArgumentException("--max-matches must be a whole number, but was '" + input + "'");
-                }
-            },
-            () -> 10
-    ).withDefaultText("10");
-
-    private static final CliOption<Double> DIM = CliOption.number(
-            "dim",
-            "0-1",
-            "how much everything outside the match is faded, from 0 (not at all) to 1 (invisible)",
-            0
-    );
-
-    private static final CliOption<Boolean> LABELS = CliOption.flag(
-            "labels",
-            "whether matched atoms and the bonds between them are numbered",
-            false
-    );
-
-    private static final CliOption<Boolean> RECOLOUR = CliOption.flag(
-            "recolour",
-            "whether matched atoms are filled with the colour of their match",
-            false
-    );
-
-    private static final CliOption<Colour> MATCH_COLOUR = CliOption.parsed(
-            "match-colour",
-            "colour",
-            "the colour to highlight every match in, instead of a colour each",
-            Colour::of,
-            null
-    );
-
-    private static final List<CliOption<?>> MATCH_OPTIONS = List.of(VIEW, ALL_MATCHES, MAX_MATCHES, DIM, LABELS, RECOLOUR, MATCH_COLOUR);
-
     static final List<CliOption<?>> OPTIONS = Stream.concat(
-            Stream.concat(Stream.of(OUT), MATCH_OPTIONS.stream()),
+            Stream.concat(Stream.of(OUT), MatchOptions.ALL.stream()),
             CommandOptions.DRAWING_OPTIONS.stream()).toList();
 
     private static final String USAGE = CliParser.usage(
@@ -188,41 +110,15 @@ final class DepictMatch
 
     private static String render(CliOptions options)
     {
-        List<String> subjects = options.subjects();
-        if (subjects.size() != 2)
-        {
-            throw new IllegalArgumentException("Expected a SMILES string and a SMARTS pattern, but got " + subjects.size() + " arguments");
-        }
+        MatchOptions.Found found = MatchOptions.find(options);
+        Molecule molecule = found.molecule();
+        List<Match> matches = found.matches();
+        MatchStyle matchStyle = MatchOptions.style(options);
 
-        Molecule molecule = Molecule.fromSmiles(subjects.get(0));
-        Query query = Query.fromSmarts(subjects.get(1));
-
-        SubstructureMatcher matcher = new SubstructureMatcher(molecule);
-        List<Match> found = options.get(ALL_MATCHES) ? matcher.findMatches(query) : matcher.findDistinctMatches(query);
-        if (found.isEmpty())
-        {
-            throw new IllegalArgumentException("'" + subjects.get(1) + "' does not match '" + subjects.get(0) + "'");
-        }
-
-        List<Match> matches = found.subList(0, Math.min(found.size(), options.get(MAX_MATCHES)));
-        if (matches.size() < found.size())
-        {
-            System.err.println("Drawing " + matches.size() + " of " + found.size() + " matches; see --max-matches");
-        }
-
-        MatchStyle matchStyle = MatchStyle.defaults()
-                .withDimRest(options.get(DIM))
-                .withLabels(options.get(LABELS))
-                .withRecolour(options.get(RECOLOUR));
-        if (options.has(MATCH_COLOUR.name()))
-        {
-            matchStyle = matchStyle.withColour(options.get(MATCH_COLOUR));
-        }
-
-        Layout layout = MoleculeLayout.layout(molecule, CommandOptions.depictionOptions(options));
+        Structure2D layout = MoleculeLayout.layout(molecule, CommandOptions.depictionOptions(options));
         RenderStyle style = CommandOptions.style(options);
 
-        if (options.get(VIEW) == View.MERGED)
+        if (options.get(MatchOptions.VIEW) == MatchOptions.View.MERGED)
         {
             return SvgWriter.write(SceneRenderer.render(layout, style, MatchAnnotator.annotate(matches, molecule, matchStyle)));
         }

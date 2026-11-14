@@ -1,107 +1,145 @@
-import { ChemistryApi } from "../api/ChemistryApi";
+import type { ChemistryApi } from "../api/ChemistryApi";
 import { ApiError } from "../api/http";
-import type { MoleculeId, MoleculeMetadata } from "../api/types";
 import { ViewStore } from "../store";
+import { MoleculePanel, type Mode, type PanelHost } from "./MoleculePanel";
 import { OptionsPanel } from "./OptionsPanel";
-import { ResultsView } from "./ResultsView";
-import { SmilesForm } from "./SmilesForm";
+import { SearchForm } from "./SearchForm";
 
-/** The whole page: title, SMILES form, options, results. */
-export class App {
-  private readonly results = new ResultsView();
+export class App implements PanelHost {
   private readonly store = new ViewStore();
-  private readonly form = new SmilesForm((smiles) => void this.render(smiles));
-  private options: OptionsPanel | null = null;
+  private readonly form = new SearchForm((smarts) => this.search(smarts));
+  private readonly results = document.createElement("section");
+  private readonly add = document.createElement("button");
   private readonly optionsSlot = document.createElement("div");
+  private panels: MoleculePanel[] = [];
+  private readonly matchErrors = new Map<MoleculePanel, string>();
+  private mode: Mode = this.store.mode;
+  private panel2d: OptionsPanel | null = null;
+  private panel3d: OptionsPanel | null = null;
+  private panelMatch: OptionsPanel | null = null;
+  private smartsText = "";
+  private matchTimer: number | undefined;
+  /** True while stored molecules are loading, when the panels do not yet hold them all. */
+  private restoring = false;
 
-  constructor(private readonly api: ChemistryApi) {}
-
-  mount(root: HTMLElement): void {
-    const title = document.createElement("h1");
-    title.textContent = "Chemistry";
-
-    this.results.showMessage("Enter a SMILES string and press RENDER.");
-    root.append(title, this.form.element, this.optionsSlot, this.results.element);
-    void this.loadOptions();
-
-    const remembered = this.store.remembered;
-    if (remembered) {
-      this.form.setSmiles(remembered.smiles);
-      if (remembered.id !== null) {
-        void this.restore(remembered.id, remembered.smiles);
-      }
-    }
+  constructor(readonly api: ChemistryApi) {
+    this.results.className = "results";
+    this.add.type = "button";
+    this.add.className = "add-molecule";
+    this.add.textContent = "+ Add molecule";
+    this.add.addEventListener("click", () => this.addPanel().startEmpty());
   }
 
-  /** Shows the molecule left from the last visit. */
-  private async restore(id: MoleculeId, smiles: string): Promise<void> {
-    this.results.showMessage("Loading the last molecule...");
-    this.form.setBusy(true);
-    try {
-      const [{ scene, moleculeId }, metadata] = await Promise.all([
-        this.api.moleculeScene(id),
-        this.api.metadata(id),
-      ]);
-      this.store.rememberMolecule(moleculeId, metadata.smiles);
-      this.results.showMolecule(scene, moleculeId, metadata.smiles, metadata.canonical_smiles);
-      this.results.inspect(metadata, moleculeId);
-    } catch (error) {
-      this.store.rememberSmiles(smiles);
-      this.results.showError(`Could not load the last molecule: ${App.describe(error)}`);
-    } finally {
-      this.form.setBusy(false);
+  options2d(): OptionsPanel | null {
+    return this.panel2d;
+  }
+
+  options3d(): OptionsPanel | null {
+    return this.panel3d;
+  }
+
+  optionsMatch(): OptionsPanel | null {
+    return this.panelMatch;
+  }
+
+  smarts(): string {
+    return this.smartsText;
+  }
+
+  modeChosen(mode: Mode): void {
+    this.mode = mode;
+    this.store.rememberMode(mode);
+  }
+
+  moleculeChanged(): void {
+    this.persist();
+  }
+
+  matchFailed(panel: MoleculePanel, message: string | null): void {
+    if (message === null) {
+      this.matchErrors.delete(panel);
+    } else {
+      this.matchErrors.set(panel, message);
     }
+    this.form.setProblem(this.matchErrors.values().next().value ?? null);
+  }
+
+  removeRequested(panel: MoleculePanel): void {
+    this.matchErrors.delete(panel);
+    this.form.setProblem(this.matchErrors.values().next().value ?? null);
+    this.panels = this.panels.filter((candidate) => candidate !== panel);
+    panel.dispose();
+    this.persist();
+  }
+
+  mount(root: HTMLElement): void {
+    root.append(this.form.element, this.optionsSlot, this.results, this.add);
+    void this.loadOptions();
+
+    this.smartsText = this.store.smarts;
+    this.form.setSmarts(this.smartsText);
+    const lines = this.store.input.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+    if (lines.length === 0) {
+      this.addPanel().startEmpty();
+    }
+    this.restoring = lines.length > 0;
+    const loading = lines.map((line) => this.addPanel().load(line));
+    void Promise.all(loading).finally(() => {
+      this.restoring = false;
+      this.persist();
+    });
+  }
+
+  private addPanel(): MoleculePanel {
+    const panel = new MoleculePanel(this, this.mode);
+    this.panels.push(panel);
+    this.results.append(panel.element);
+    return panel;
+  }
+
+  /** Remembers the molecules shown, so that they return when the page is reloaded. */
+  private persist(): void {
+    if (this.restoring) {
+      return;
+    }
+    const smiles = this.panels.map((panel) => panel.smiles).filter((value): value is string => value !== null);
+    this.store.rememberInput(smiles.join("\n"));
+  }
+
+  private search(smarts: string): void {
+    this.smartsText = smarts;
+    this.store.rememberSmarts(smarts);
+    this.panels.forEach((panel) => void panel.updateMatches());
   }
 
   private async loadOptions(): Promise<void> {
     try {
-      this.options = new OptionsPanel(await this.api.options());
-      this.form.addAction(this.options.toggle);
-      this.optionsSlot.replaceChildren(this.options.element);
-    } catch (error) {
-      this.optionsSlot.textContent = `Options unavailable: ${App.describe(error)}`;
-    }
-  }
-
-  private async render(smiles: string): Promise<void> {
-    if (!smiles) {
-      this.results.showError("Please enter a SMILES string.");
-      return;
-    }
-
-    this.form.setBusy(true);
-    try {
-      const created = await this.api.createMolecule(smiles);
-
-      // fetching both at once keeps the card from growing a second time once the metadata lands
-      const [{ scene, moleculeId }, metadata] = await Promise.all([
-        this.api.renderScene(created.id, this.options?.values() ?? {}),
-        this.inspectionOf(created.id),
+      const [descriptors2d, descriptors3d, descriptorsMatch] = await Promise.all([
+        this.api.options2d(),
+        this.api.options3d(),
+        this.api.optionsMatch(),
       ]);
-      this.store.rememberMolecule(moleculeId, created.smiles);
-      this.results.showMolecule(scene, moleculeId, created.smiles, created.canonical_smiles);
-      if (metadata) {
-        this.results.inspect(metadata, moleculeId);
-      }
+      this.panel2d = new OptionsPanel(descriptors2d);
+      this.panel3d = new OptionsPanel(descriptors3d);
+      this.panelMatch = new OptionsPanel(descriptorsMatch);
+      this.panel3d.onChange = () => this.panels.forEach((panel) => void panel.updateThree());
+      this.panelMatch.onChange = () => this.matchOptionsChanged();
+      this.panel2d.toggle.textContent = "2D options";
+      this.panel3d.toggle.textContent = "3D options";
+      this.panelMatch.toggle.textContent = "Match options";
+      this.form.addAction(this.panel2d.toggle);
+      this.form.addAction(this.panel3d.toggle);
+      this.form.addAction(this.panelMatch.toggle);
+      this.optionsSlot.replaceChildren(this.panel2d.element, this.panel3d.element, this.panelMatch.element);
+      this.panels.forEach((panel) => void panel.updateMatches());
     } catch (error) {
-      this.store.rememberSmiles(smiles);
-      this.results.showError(App.describe(error));
-    } finally {
-      this.form.setBusy(false);
+      this.optionsSlot.textContent = `Options unavailable: ${error instanceof ApiError ? error.message : String(error)}`;
     }
   }
 
-  /** Fetches the formulae and what hovering needs; the drawing is usable without them, so failing is not an error to show. */
-  private async inspectionOf(moleculeId: MoleculeId): Promise<MoleculeMetadata | null> {
-    try {
-      return await this.api.metadata(moleculeId);
-    } catch (error) {
-      console.warn("Could not load the molecule's metadata", error);
-      return null;
-    }
-  }
-
-  private static describe(error: unknown): string {
-    return error instanceof ApiError ? error.message : String(error);
+  /** Redraws the matches once the user stops changing the options. */
+  private matchOptionsChanged(): void {
+    window.clearTimeout(this.matchTimer);
+    this.matchTimer = window.setTimeout(() => this.panels.forEach((panel) => void panel.updateMatches()), 250);
   }
 }

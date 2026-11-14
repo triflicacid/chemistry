@@ -11,6 +11,8 @@ interface Control {
 export class OptionsPanel {
   readonly element = document.createElement("section");
   readonly toggle: HTMLButtonElement;
+  /** Called whenever a control changes. */
+  onChange: () => void = () => {};
   private readonly controls = new Map<string, { descriptor: OptionDescriptor; control: Control }>();
 
   constructor(descriptors: OptionDescriptor[]) {
@@ -60,6 +62,15 @@ export class OptionsPanel {
     return values;
   }
 
+  /** Every option, with defaults filled in. */
+  resolved(): OptionValues {
+    const values: OptionValues = {};
+    for (const [name, { descriptor, control }] of this.controls) {
+      values[name] = control.read() ?? descriptor.default_value;
+    }
+    return values;
+  }
+
   private reset(): void {
     this.controls.forEach(({ control }) => control.reset());
     this.refresh();
@@ -67,6 +78,7 @@ export class OptionsPanel {
 
   /** Disables options that have no effect given the others. */
   private refresh(): void {
+    this.onChange();
     for (const { descriptor, control } of this.controls.values()) {
       const rule = descriptor.ignored_when;
       const other = rule ? this.controls.get(rule.option) : undefined;
@@ -94,6 +106,8 @@ export class OptionsPanel {
         return OptionsPanel.checkbox(descriptor, onChange);
       case "number":
         return OptionsPanel.number(descriptor, onChange);
+      case "text":
+        return OptionsPanel.text(descriptor, onChange);
       case "choice":
         return OptionsPanel.radios(descriptor, onChange);
       case "arrangement":
@@ -130,6 +144,22 @@ export class OptionsPanel {
         const value = input.valueAsNumber;
         return Number.isNaN(value) || value === descriptor.default_value ? undefined : value;
       },
+      reset: () => (input.value = String(descriptor.default_value)),
+      setDisabled: (disabled) => (input.disabled = disabled),
+    };
+  }
+
+  private static text(descriptor: OptionDescriptor, onChange: () => void): Control {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = String(descriptor.default_value);
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.addEventListener("input", onChange);
+
+    return {
+      element: input,
+      read: () => (input.value.trim() === String(descriptor.default_value) ? undefined : input.value.trim()),
       reset: () => (input.value = String(descriptor.default_value)),
       setDisabled: (disabled) => (input.disabled = disabled),
     };

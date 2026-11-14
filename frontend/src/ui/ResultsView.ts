@@ -1,9 +1,9 @@
-import type { MoleculeId, MoleculeMetadata, Scene } from "../api/types";
+import type { MoleculeId, MoleculeMetadata } from "../api/types";
 import { Selection } from "../store";
 import type { MoleculeView } from "../view/MoleculeView";
-import { SvgView } from "../view/SvgView";
 import { FormulaView } from "./FormulaView";
 import { MoleculeInspector } from "./MoleculeInspector";
+import { SmilesField } from "./SmilesField";
 import { SmilesText } from "./SmilesText";
 
 /** The molecule currently shown. */
@@ -16,7 +16,7 @@ interface Shown {
   unsubscribe: () => void;
 }
 
-/** The section below the form where results or an error are shown. */
+/** The section below the form where results or an error are shown. Views passed in are never disposed here. */
 export class ResultsView {
   readonly element = document.createElement("section");
   private shown: Shown | null = null;
@@ -24,7 +24,8 @@ export class ResultsView {
   private formula: FormulaView | null = null;
   private readonly selection = new Selection();
 
-  constructor() {
+  /** @param edit applies a SMILES the user typed in place of the one shown; resolves to why it was refused, or null */
+  constructor(private readonly edit: (smiles: string) => Promise<string | null>) {
     this.element.className = "results";
   }
 
@@ -36,12 +37,26 @@ export class ResultsView {
     this.show(text, "message error", "pre");
   }
 
+  /**
+   * Shows a SMILES being entered, because there is no molecule to show.
+   *
+   * @param smiles what was entered, or blank for a new panel
+   * @param problem why it cannot be shown, if it was tried
+   */
+  showEntry(smiles: string, problem: string | null): void {
+    this.reset();
+    const field = new SmilesField(new SmilesText(smiles), this.edit, true);
+    field.setError(problem);
+    const card = document.createElement("figure");
+    card.className = "card";
+    card.append(ResultsView.label("SMILES"), field.element);
+    this.element.replaceChildren(card);
+  }
+
   /** Shows a rendered molecule and its SMILES. */
-  showMolecule(scene: Scene, moleculeId: MoleculeId, smiles: string, canonicalSmiles: string): void {
+  showMolecule(view: MoleculeView, moleculeId: MoleculeId, smiles: string, canonicalSmiles: string): void {
     this.reset();
 
-    const view = new SvgView();
-    view.setScene(scene);
     this.selection.clear();
     const unsubscribe = this.selection.subscribe(() => view.setSelection(this.selection));
     const text = new SmilesText(smiles);
@@ -49,9 +64,24 @@ export class ResultsView {
     const card = document.createElement("figure");
     card.className = "card";
     card.dataset.molecule = moleculeId;
-    card.append(ResultsView.label("SMILES"), text.element, ResultsView.label("Canonical SMILES"),     canonical.element, view.element);
+    card.append(
+      ResultsView.label("SMILES"),
+      new SmilesField(text, this.edit).element,
+      ResultsView.label("Canonical SMILES"),
+      new SmilesField(canonical, this.edit).element,
+      view.element,
+      ResultsView.downloadButton(view, canonicalSmiles),
+    );
     this.element.replaceChildren(card);
-        this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
+    this.shown = { moleculeId, card, view, smiles: text, canonical, unsubscribe };
+  }
+
+  /** Adds a line of text to the card being shown. */
+  note(text: string): void {
+    const note = document.createElement("p");
+    note.className = "message";
+    note.textContent = text;
+    this.shown?.card.append(note);
   }
 
   inspect(metadata: MoleculeMetadata, moleculeId: MoleculeId): void {
@@ -64,6 +94,26 @@ export class ResultsView {
     this.formula = new FormulaView(metadata.formula, metadata.fragments.length);
     this.shown.card.insertBefore(this.formula.element,     this.shown.view.element);
         this.inspector = new MoleculeInspector(this.shown.view, this.selection, this.shown.smiles, this.shown.canonical, this.formula, metadata);
+  }
+
+  private static downloadButton(view: MoleculeView, name: string): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "download-row";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "small";
+    button.textContent = `Download ${view.imageExtension.toUpperCase()}`;
+    button.addEventListener("click", () => {
+      void view.exportImage().then((blob) => {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${name.replace(/[^\w.+-]+/g, "_").slice(0, 60) || "molecule"}.${view.imageExtension}`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }).catch((error) => console.warn("Could not download the image", error));
+    });
+    row.append(button);
+    return row;
   }
 
   private static label(text: string): HTMLElement {
@@ -85,8 +135,12 @@ export class ResultsView {
     this.inspector?.detach();
     this.inspector = null;
     this.formula = null;
-    this.shown?.unsubscribe();
-    this.shown?.view.dispose();
+    if (this.shown) {
+      // the caller owns the view and may show it again, so leave it clean rather than disposing it
+      this.shown.unsubscribe();
+      this.shown.view.setSelection({ atoms: new Set(), bonds: new Set() });
+      this.shown.view.setHighlights({ hover: null, ends: [] });
+    }
     this.shown = null;
   }
 }

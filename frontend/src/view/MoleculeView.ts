@@ -1,5 +1,3 @@
-import type { Scene } from "../api/types";
-
 /** A position on screen, in client pixels. */
 export interface Point {
   x: number;
@@ -39,9 +37,6 @@ export interface MoleculeView {
   /** What to put in the page. */
   readonly element: Element;
 
-  /** Replaces the drawing, keeping the current selection. */
-  setScene(scene: Scene): void;
-
   /** Hears about the pointer; returns how to stop. */
   listen(listener: ViewListener): () => void;
 
@@ -50,6 +45,12 @@ export interface MoleculeView {
 
   /** Replaces the highlights. */
   setHighlights(highlights: Highlights): void;
+
+  /** The file type of `exportImage`. */
+  readonly imageExtension: "svg" | "png";
+
+  /** The view as an image file. */
+  exportImage(): Promise<Blob>;
 
   /** Puts the camera back where it started. */
   resetView(): void;

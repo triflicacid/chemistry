@@ -108,7 +108,7 @@ public record MatchStyle(
      * @param index which match, counting from 0
      * @return the colour of that match
      */
-    Colour colourOfMatch(int index)
+    public Colour colourOfMatch(int index)
     {
         return colourOverride.orElseGet(() -> palette.get(index % palette.size()));
     }

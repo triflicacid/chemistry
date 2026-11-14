@@ -12,8 +12,9 @@ import com.ruben.chemistry.render.rings.RingRefinement;
  * @param ringRefinement how hard ring systems, and branches that hang off them, are worked on to avoid collisions
  * @param ringRanking which of a ring system's distinct drawings to use, counting from 0 for the best; a system with
  *     fewer drawings uses its last
+ * @param depthBonds whether a view of a 3D structure draws bonds that point towards or away from the viewer as wedges and hashes
  */
-public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry, HydrogenStyle hydrogens, boolean projectCages, RingRefinement ringRefinement, int ringRanking)
+public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry, HydrogenStyle hydrogens, boolean projectCages, RingRefinement ringRefinement, int ringRanking, boolean depthBonds)
 {
     /**
      * @throws IllegalArgumentException if {@code ringRanking} is negative
@@ -33,7 +34,7 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
      */
     public DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry, HydrogenStyle hydrogens)
     {
-        this(style, chainGeometry, hydrogens, true, RingRefinement.STANDARD, 0);
+        this(style, chainGeometry, hydrogens, true, RingRefinement.STANDARD, 0, false);
     }
 
     /**
@@ -66,7 +67,7 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
      */
     public DepictionOptions withStyle(DepictionStyle style)
     {
-        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking);
+        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking, depthBonds);
     }
 
     /**
@@ -75,7 +76,7 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
      */
     public DepictionOptions withChainGeometry(ChainGeometry chainGeometry)
     {
-        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking);
+        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking, depthBonds);
     }
 
     /**
@@ -84,7 +85,7 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
      */
     public DepictionOptions withHydrogens(HydrogenStyle hydrogens)
     {
-        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking);
+        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking, depthBonds);
     }
 
     /**
@@ -93,7 +94,7 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
      */
     public DepictionOptions withProjectCages(boolean projectCages)
     {
-        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking);
+        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking, depthBonds);
     }
 
     /**
@@ -102,7 +103,7 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
      */
     public DepictionOptions withRingRefinement(RingRefinement ringRefinement)
     {
-        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking);
+        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking, depthBonds);
     }
 
     /**
@@ -112,6 +113,15 @@ public record DepictionOptions(DepictionStyle style, ChainGeometry chainGeometry
      */
     public DepictionOptions withRingRanking(int ringRanking)
     {
-        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking);
+        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking, depthBonds);
+    }
+
+    /**
+     * @param depthBonds whether a view of a 3D structure draws bonds pointing towards or away from the viewer as wedges and hashes
+     * @return these options, with that choice
+     */
+    public DepictionOptions withDepthBonds(boolean depthBonds)
+    {
+        return new DepictionOptions(style, chainGeometry, hydrogens, projectCages, ringRefinement, ringRanking, depthBonds);
     }
 }

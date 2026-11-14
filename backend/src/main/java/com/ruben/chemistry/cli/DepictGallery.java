@@ -203,7 +203,7 @@ final class DepictGallery
                         ? options
                         : CommandOptions.withLayout(options, entry.layout());
 
-                drawings.add(new Drawing(entry, DepictSmiles.render(entry.smiles(), own), null));
+                drawings.add(new Drawing(entry, Render2d.render(entry.smiles(), own), null));
             }
             catch (RuntimeException refused)
             {

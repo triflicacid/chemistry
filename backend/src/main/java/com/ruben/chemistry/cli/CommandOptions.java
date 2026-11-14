@@ -315,7 +315,8 @@ final class CommandOptions
                 hydrogens,
                 options.get(PROJECT_CAGES),
                 options.get(RING_REFINEMENT),
-                0
+                0,
+                false
         );
     }
 

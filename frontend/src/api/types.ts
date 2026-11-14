@@ -1,9 +1,9 @@
-/** One option as described by `GET /api/options`. */
+/** One option as described by `GET /api/options/2d` or `/api/options/3d`. */
 export interface OptionDescriptor {
   name: string;
   label: string;
   description: string;
-  type: "boolean" | "number" | "choice" | "arrangement";
+  type: "boolean" | "number" | "text" | "choice" | "arrangement";
   default_value: boolean | number | string;
   unit: string | null;
   min: number | null;
@@ -15,6 +15,30 @@ export interface OptionDescriptor {
 
 /** Option values by name. */
 export type OptionValues = Record<string, boolean | number | string>;
+
+export interface Vector {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Where a 3D view's camera is, in the molecule's coordinates. */
+export interface CameraPose {
+  eye: Vector;
+  target: Vector;
+  up: Vector;
+  field_of_view: number;
+}
+
+/** How to draw a 3D structure flat: from the clearest direction, or exactly as `camera` sees it. */
+export interface ProjectionRequest {
+  mode: "best" | "force";
+  conformer?: number;
+  camera?: CameraPose;
+  /** Draw only the disconnected parts these molecule atoms are in; every part if absent. */
+  atoms?: number[];
+  options: OptionValues;
+}
 
 /** The server's id for a stored molecule. */
 export type MoleculeId = string;
@@ -150,6 +174,14 @@ export type SceneElement =
   | (SceneBase & { type: "group"; children: SceneElement[] })
   | (SceneBase & { type: "title" | "description"; text: string });
 
+export interface GeneratedNotation {
+  smiles: string;
+  canonical_smiles: string;
+  /** Whether the canonical SMILES is the stored molecule's, so its metadata applies to it. */
+  matches_source: boolean;
+  issues: string[];
+}
+
 export interface Scene {
   width: number;
   height: number;
@@ -157,4 +189,102 @@ export interface Scene {
   attributes: SceneAttributes;
   gradients: SceneGradient[];
   elements: SceneElement[];
+  /** Only a projection has this: the SMILES read back from the 3D structure, or null if it could not be read. */
+  generated?: GeneratedNotation | null;
+}
+
+/** One match of a SMARTS pattern, by molecule atom and bond index (the `data-atom` and `data-bond` of a drawing). */
+export interface MatchHighlight {
+  /** Hex colour. */
+  colour: string;
+  atoms: number[];
+  bonds: number[];
+  atom_labels: { index: number; text: string }[];
+  bond_labels: { index: number; text: string }[];
+  smiles: string | null;
+}
+
+/** SMARTS match data for a molecule (3D) */
+export interface MatchData {
+  /** Whether every match is highlighted at once, rather than one at a time. */
+  merged: boolean;
+  total: number;
+  shown: number;
+  /** How much everything outside a match is faded, from 0 to 1. */
+  dim: number;
+  /** Whether matched atoms are filled with the colour of their match. */
+  recolour: boolean;
+  labels: boolean;
+  matches: MatchHighlight[];
+}
+
+/** What `POST /api/molecules/:id/match/2d` draws. */
+export interface MatchResult {
+  /** Whether `scenes` is one drawing with every match highlighted, rather than one per match. */
+  merged: boolean;
+  /** How many matches the pattern has; 0 if it does not match. */
+  total: number;
+  /** How many of them were drawn. */
+  shown: number;
+  scenes: Scene[];
+  /** SMILES of the fragment each drawn match covers, in order; null where it could not be written. */
+  smiles: (string | null)[];
+}
+
+/** An atom of a 3D structure. `index` is its place in `Structure3D.sites`. */
+export interface Site3D {
+  index: number;
+  element: string;
+  isotope: number;
+  /** The molecule atom this is (data-atom), or the atom an implied hydrogen hangs off. */
+  atom: number;
+  implied: boolean;
+  charge: number;
+  /** Hex colour. */
+  colour: string;
+  /** Van der Waals radius in angstroms. */
+  radius: number;
+}
+
+export interface Connection3D {
+  first: number;
+  second: number;
+  order: "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE" | "AROMATIC";
+  /** The molecule bond this is (data-bond), or -1 for the bond to an implied hydrogen. */
+  bond: number;
+}
+
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** What a conformer's geometry says about itself. Angles are degrees, lengths angstroms. */
+export interface Diagnostics3D {
+  strain: number;
+  lengths: { first: number; second: number; actual: number; ideal: number }[];
+  angles: { first: number; middle: number; second: number; actual: number; ideal: number }[];
+  torsions: { first: number; second: number; third: number; fourth: number; actual: number; ideal: number }[];
+  clashes: { first: number; second: number; distance: number; contact: number }[];
+  lone_pairs: { node: number; tip: Vec3 }[];
+  /** Each site's share of the deviation; 1 is one term at its tolerance. */
+  atom_strain: number[];
+}
+
+export interface Conformer3D {
+  strain: number;
+  /** [x, y, z] in angstroms for each site, centred on the origin. */
+  positions: [number, number, number][];
+  diagnostics: Diagnostics3D;
+}
+
+/** A molecule in 3D, as sent by `GET /api/molecules/:id/structure/3d`. */
+export interface Structure3D {
+  sites: Site3D[];
+  connections: Connection3D[];
+  /** How far a term may stray from ideal before it counts as strained. */
+  tolerances: { length: number; angle: number; torsion: number; clash: number };
+  /** The shapes found, least strained first. */
+  conformers: Conformer3D[];
 }

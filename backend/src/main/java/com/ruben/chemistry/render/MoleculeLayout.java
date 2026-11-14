@@ -24,7 +24,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
- * Lays a {@link Molecule} out into a {@link Layout}.
+ * Lays a {@link Molecule} out into a {@link Structure2D}.
  */
 public final class MoleculeLayout
 {
@@ -146,7 +146,7 @@ public final class MoleculeLayout
      * @return the layout
      * @throws NullPointerException if {@code molecule} is {@code null}
      */
-    public static Layout layout(Molecule molecule)
+    public static Structure2D layout(Molecule molecule)
     {
         return layout(molecule, DepictionOptions.defaults());
     }
@@ -160,7 +160,7 @@ public final class MoleculeLayout
      * @throws NullPointerException if either argument is {@code null}
      * @throws IllegalArgumentException if {@code molecule} declares a parity at an atom whose hydrogen the options leave undrawn
      */
-    public static Layout layout(Molecule molecule, DepictionOptions options)
+    public static Structure2D layout(Molecule molecule, DepictionOptions options)
     {
         return layOut(molecule, options, new RingDrawer(ringEffort(options, options.ringRanking() + 1)));
     }
@@ -176,17 +176,17 @@ public final class MoleculeLayout
      * @throws IllegalArgumentException if {@code alternatives} is less than 1, or {@code molecule} declares a parity at
      *     an atom whose hydrogen the options leave undrawn
      */
-    public static List<Layout> layouts(Molecule molecule, DepictionOptions options, int alternatives)
+    public static List<Structure2D> layouts(Molecule molecule, DepictionOptions options, int alternatives)
     {
         if (alternatives < 1)
         {
             throw new IllegalArgumentException("At least one layout is wanted, but was " + alternatives);
         }
         RingDrawer ringDrawer = new RingDrawer(ringEffort(options, alternatives));
-        List<Layout> layouts = new ArrayList<>();
+        List<Structure2D> layouts = new ArrayList<>();
         for (int ranking = 0; ranking < alternatives; ranking++)
         {
-            Layout layout = layOut(molecule, options.withRingRanking(ranking), ringDrawer);
+            Structure2D layout = layOut(molecule, options.withRingRanking(ranking), ringDrawer);
             if (layouts.stream().noneMatch(kept -> kept.depiction().looksLike(layout.depiction())))
             {
                 layouts.add(layout);
@@ -200,10 +200,10 @@ public final class MoleculeLayout
         return new RingEffort(options.projectCages(), options.ringRefinement(), wanted);
     }
 
-    private static Layout layOut(Molecule molecule, DepictionOptions options, RingDrawer ringDrawer)
+    private static Structure2D layOut(Molecule molecule, DepictionOptions options, RingDrawer ringDrawer)
     {
         MoleculeLayout layout = new MoleculeLayout(molecule, options, ringDrawer);
-        return new Layout(layout.build(), layout.snapshot);
+        return new Structure2D(layout.build(), layout.snapshot);
     }
 
     private Depiction build()

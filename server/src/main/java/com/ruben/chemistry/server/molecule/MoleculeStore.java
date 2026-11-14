@@ -1,6 +1,6 @@
 package com.ruben.chemistry.server.molecule;
 
-import com.ruben.chemistry.server.render.MoleculeRenderer;
+
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,7 +43,7 @@ public final class MoleculeStore
      * @param parsed a molecule read from SMILES
      * @return the stored molecule
      */
-    public StoredMolecule add(MoleculeRenderer.Parsed parsed)
+    public StoredMolecule add(ParsedMolecule parsed)
     {
         StoredMolecule stored = new StoredMolecule(UUID.randomUUID().toString(), parsed);
         synchronized (molecules)
@@ -51,6 +51,17 @@ public final class MoleculeStore
             molecules.put(stored.id(), stored);
         }
         return stored;
+    }
+
+    /**
+     * @param id a molecule's ID
+     */
+    public void remove(String id)
+    {
+        synchronized (molecules)
+        {
+            molecules.remove(id);
+        }
     }
 
     /**

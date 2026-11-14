@@ -2,6 +2,9 @@ package com.ruben.chemistry.render.rings;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.render.Point;
+import com.ruben.chemistry.space.BondConstraints;
+import com.ruben.chemistry.space.StructureProjector;
+import com.ruben.chemistry.space.Vectors;
 
 import java.util.ArrayList;
 import java.util.Arrays;
