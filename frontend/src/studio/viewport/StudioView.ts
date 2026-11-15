@@ -87,8 +87,8 @@ export interface StudioViewListener {
   bondDrag?(edit: BondEdit, done: boolean): void;
   /** A drag of a bond's handle was abandoned, and the session is to put the bond back. */
   bondDragCancel?(): void;
-  /** The camera moved, or its field of view changed, and is now as `camera` says. */
-  camera?(camera: CameraState): void;
+  /** The camera's state changed. `byUser` - whether a user change or initial load from server. */
+  camera?(camera: CameraState, byUser: boolean): void;
 }
 
 /**
@@ -312,6 +312,8 @@ export class StudioView {
   private debug = false;
   private guide: Guide | null = null;
   private emphasis: Emphasised = { selected: NO_EMPHASIS, active: NO_EMPHASIS, hover: NO_EMPHASIS };
+  /** How many times the view is placing the camera itself, which is not the user moving it. */
+  private placing = 0;
   /** Whether to leave what is selected undrawn, with no lengths or names for it or for what is hovered. Hover is still tinted. */
   private plain = false;
 
@@ -325,7 +327,8 @@ export class StudioView {
       onMove: () => {
         this.placeGuide();
         const camera = this.cameraState();
-        this.listeners.forEach((listener) => listener.camera?.(camera));
+        const byUser = this.placing === 0;
+        this.listeners.forEach((listener) => listener.camera?.(camera, byUser));
       },
     });
     // scrolling goes towards what the pointer is over, which also moves the view, so a molecule can be brought closer
@@ -425,7 +428,16 @@ export class StudioView {
     this.refreshLocks();
     if (this.framedSession !== state.session_id) {
       this.framedSession = state.session_id;
-      this.frameScene();
+      // a session that remembers where the camera was is shown from there, and one that does not is framed on its molecule
+      this.placing++;
+      try {
+        this.frameScene();
+        if (state.camera) {
+          this.setCamera(state.camera);
+        }
+      } finally {
+        this.placing--;
+      }
     }
     this.syncGizmo();
     this.syncBondGizmo();
@@ -1154,7 +1166,10 @@ export class StudioView {
     this.stage.pivotOn(to);
   }
 
-  /** Puts the camera back as it first was: the default field of view, level, at the default angle, framing everything. */
+  /**
+   * Puts the camera at the defaults the code has, whatever it was at when the session opened or was last saved: the default
+   * field of view, level, at the default yaw and pitch, framing the whole molecule.
+   */
   resetCamera(): void {
     // framing works out how far back to stand from the field of view, so that comes first
     this.setCamera({ fov: FIELD_OF_VIEW });

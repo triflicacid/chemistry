@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -73,6 +73,18 @@ export interface SessionFragment {
   atoms: string[];
 }
 
+/** Remember the viewer's camera. */
+export interface SessionCamera {
+  /** Where the camera is in the scene, in ångströms. */
+  position: Vec3;
+  /** The point it looks at and orbits, in ångströms. */
+  target: Vec3;
+  /** Its vertical field of view, in degrees. */
+  fov: number;
+  /** How far the picture is turned about the way the camera looks, from level, in degrees. */
+  roll: number;
+}
+
 /** Everything needed to draw a session. */
 export interface SessionState extends ServerEnvelope {
   type: "session.state";
@@ -88,6 +100,8 @@ export interface SessionState extends ServerEnvelope {
   locked: string[];
   /** Where the molecule sits in the scene. The atoms' positions are in the molecule's own frame, not this one. */
   transform: Pose;
+  /** Where the camera was when the molecule was last saved, or null if it never was. */
+  camera: SessionCamera | null;
   /** Whether there is an edit to take back. */
   can_undo: boolean;
   /** Whether there is an undone edit to make again. */
@@ -188,6 +202,13 @@ export interface SessionConflict extends ServerEnvelope {
   /** The version the refused message said it was based on. */
   base_version: number;
   state: SessionState;
+}
+
+/** The answer to a camera the session kept. */
+export interface CameraAck extends ServerEnvelope {
+  type: "camera.set.ack";
+  /** The stored molecule holding the session's work, which keeping the camera may have just created. */
+  saved_molecule_id: string | null;
 }
 
 /** The answer to a lock or unlock the session made. */
@@ -343,6 +364,7 @@ export type ServerMessage =
   | TransformAck
   | BondEditAck
   | LockAck
+  | CameraAck
   | EditApplied
   | OptimiseStarted
   | OptimiseProgress

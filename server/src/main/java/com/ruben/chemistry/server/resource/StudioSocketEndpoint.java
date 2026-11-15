@@ -3,6 +3,7 @@ package com.ruben.chemistry.server.resource;
 import com.ruben.chemistry.server.json.JsonException;
 import com.ruben.chemistry.server.json.JsonNames;
 import com.ruben.chemistry.server.json.RecordConverter;
+import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.server.molecule.MoleculeException;
 import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
@@ -39,7 +40,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 10;
+    private static final int PROTOCOL_VERSION = 11;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -407,6 +408,59 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             ack.put("saved_molecule_id", session.savedMoleculeId());
             ack.put("can_undo", session.canUndo());
             ack.put("can_redo", session.canRedo());
+            context.sendJson(ack);
+        }
+    }
+
+    /**
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void camera(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.CameraRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.CameraRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("camera.set", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("camera.set", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        Camera camera;
+        try
+        {
+            camera = request.camera();
+        }
+        catch (IllegalArgumentException unusable)
+        {
+            context.error("camera.set", sequence, "INVALID_MESSAGE", unusable.getMessage());
+            return;
+        }
+
+        synchronized (session)
+        {
+            session.setCamera(camera);
+            save(session);
+
+            Map<String, Object> ack = new LinkedHashMap<>();
+            ack.put("type", "camera.set.ack");
+            ack.put("sequence", sequence);
+            ack.put("saved_molecule_id", session.savedMoleculeId());
             context.sendJson(ack);
         }
     }
@@ -923,6 +977,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         stored.setLatestStructure3d(session.structure());
         stored.setLockedSites(session.lockedSites());
         stored.setPose(session.pose());
+        session.camera().ifPresent(stored::setCamera);
     }
 
     /**
@@ -1049,6 +1104,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("smiles.submit", endpoint::submitSmiles),
                     Map.entry("atom.patch", endpoint::patch),
                     Map.entry("molecule.transform", endpoint::transform),
+                    Map.entry("camera.set", endpoint::camera),
                     Map.entry("atom.lock", endpoint::lock),
                     Map.entry("bond.length", endpoint::bondLength),
                     Map.entry("bond.torsion", endpoint::bondTorsion),

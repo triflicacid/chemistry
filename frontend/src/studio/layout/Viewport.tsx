@@ -4,7 +4,7 @@ import type {Models, PickMode} from "../selection/models";
 import type {RotateMode, Space} from "../selection/ToolModel";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
-import type {AtomMove, BondEdit, GeometryResult, Pose, SessionState} from "../session/messages";
+import type {AtomMove, BondEdit, GeometryResult, Pose, SessionCamera, SessionState} from "../session/messages";
 import {movers} from "../selection/bondLength";
 import {defaultReference} from "../selection/torsion";
 import {angleMovers, defaultPair} from "../selection/angle";
@@ -23,6 +23,8 @@ export interface ViewportProps {
   geometry: GeometryResult | null;
   models: Models;
   onOpenSmiles: (smiles: string) => void;
+  /** The user has moved the camera, which is now as given. A camera the viewer placed itself, as on opening a session, is not reported. */
+  onSaveCamera: (camera: SessionCamera) => void;
   /** Atoms have been dragged to positions, and the drag is not over. */
   onDragAtoms: (moves: AtomMove[]) => void;
   /** Atoms have been dropped at positions, which ends their drag. */
@@ -79,6 +81,7 @@ const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
 /** The canvas, which fills whatever space the workspace leaves it, and the molecule drawn on it. */
 export function Viewport({
   phase,
+  onSaveCamera,
   state,
   geometry,
   models,
@@ -160,13 +163,20 @@ export function Viewport({
       return;
     }
     camera.report(view.cameraState());
-    const stopListening = view.listen({ camera: (now) => camera.report(now) });
+    const stopListening = view.listen({
+      camera: (now, byUser) => {
+        camera.report(now);
+        if (byUser) {
+          onSaveCamera({ position: now.position, target: now.target, fov: now.fov, roll: now.roll });
+        }
+      },
+    });
     const stopHandling = camera.handle((edit) => view.setCamera(edit));
     return () => {
       stopListening();
       stopHandling();
     };
-  }, [view, camera]);
+  }, [view, camera, onSaveCamera]);
 
   useEffect(() => {
     view?.setConstraint(constraint);
@@ -459,7 +469,7 @@ export function Viewport({
             <button
               type="button"
               className="tool"
-              title="Put the camera back as it first was: level, at the default angle and field of view, framing the whole molecule"
+              title="Put the camera at the built-in defaults, not at how it was when the session opened: level, at the default angle and field of view, framing the whole molecule"
               onClick={() => view?.resetCamera()}
             >
               Reset camera

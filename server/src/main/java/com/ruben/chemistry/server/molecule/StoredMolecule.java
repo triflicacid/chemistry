@@ -27,6 +27,7 @@ public final class StoredMolecule
     private volatile Structure3D latestStructure3d;
     private volatile Set<Integer> lockedSites = Set.of();
     private volatile Pose pose = Pose.IDENTITY;
+    private volatile Camera camera;
 
     StoredMolecule(String id, ParsedMolecule parsed)
     {
@@ -136,5 +137,21 @@ public final class StoredMolecule
     public void setPose(Pose pose)
     {
         this.pose = pose;
+    }
+
+    /**
+     * @return where an editing session left the camera when it saved, if it ever said
+     */
+    public Optional<Camera> camera()
+    {
+        return Optional.ofNullable(camera);
+    }
+
+    /**
+     * @param camera where the camera was and how it looked, which a session opened on this molecule starts with
+     */
+    public void setCamera(Camera camera)
+    {
+        this.camera = camera;
     }
 }

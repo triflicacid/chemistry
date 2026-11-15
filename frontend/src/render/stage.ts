@@ -15,6 +15,10 @@ import {rolled, rollOf} from "./roll";
 /** The camera's vertical field of view, in degrees. */
 export const FIELD_OF_VIEW = 30;
 
+/** How far round the scene's up, from the +z axis, and how far above level, in degrees, the camera is when it frames something. */
+export const DEFAULT_YAW = 30;
+export const DEFAULT_PITCH = 20;
+
 const suppress = (event: Event): void => event.preventDefault();
 
 /** Where a stage is drawn, and what to tell when the view moves. */
@@ -79,8 +83,8 @@ export class Stage {
    */
   frame(centre: Vector3, radius: number): void {
     const distance = (1.1 * radius) / Math.sin((this.camera.fov * Math.PI) / 360);
-    const yaw = (30 * Math.PI) / 180;
-    const pitch = (20 * Math.PI) / 180;
+    const yaw = (DEFAULT_YAW * Math.PI) / 180;
+    const pitch = (DEFAULT_PITCH * Math.PI) / 180;
     this.camera.position.set(
       Math.cos(pitch) * Math.sin(yaw) * distance,
       Math.sin(pitch) * distance,

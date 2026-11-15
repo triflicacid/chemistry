@@ -8,7 +8,7 @@ import type {
     SessionPhase,
     SubmitResult
 } from "../session/useSession";
-import type {AtomMove, BondEdit, GeometryResult, Pose, SessionState} from "../session/messages";
+import type {AtomMove, BondEdit, GeometryResult, Pose, SessionCamera, SessionState} from "../session/messages";
 import type {Models} from "../selection/models";
 import type {LayoutState, Panel} from "../store";
 import {AnalysisPanel} from "./AnalysisPanel";
@@ -38,6 +38,8 @@ export interface WorkspaceProps {
   onSetBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   onSetAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   onLockAtoms: (ids: string[], locked: boolean) => void;
+  /** The camera was moved by the user, and is now as given. */
+  onSaveCamera: (camera: SessionCamera) => void;
   canLock: boolean;
   lockPressed: boolean;
   onToggleLock: () => void;
@@ -60,7 +62,7 @@ export interface WorkspaceProps {
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag, onUndo, onRedo } = props;
+  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onLockAtoms, onSaveCamera, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -115,6 +117,7 @@ export function Workspace(props: WorkspaceProps) {
 
       <div className="viewport-cell">
         <Viewport
+          onSaveCamera={onSaveCamera}
           phase={phase}
           state={state}
           geometry={geometry}
