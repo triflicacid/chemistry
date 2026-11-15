@@ -1,4 +1,4 @@
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, type Ray, Raycaster, type Sprite, Vector3 } from "three";
+import { Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, Quaternion, type Ray, Raycaster, type Sprite, Vector3 } from "three";
 import type { Vec3 } from "../../api/types/structure";
 import { aromaticCentres } from "../../render/aromatic";
 import { makeAxes } from "../../render/axes";
@@ -77,6 +77,9 @@ interface BondNode {
   drawn: { group: Group; part: Part } | null;
 }
 
+/** How far, in radians, the camera may have turned since a triad click and still count as not having moved. */
+const SAME_VIEW = 1e-3;
+
 /** How far the pointer may move between pressing and releasing and still count as a click. */
 const CLICK_SLOP = 4;
 
@@ -129,6 +132,8 @@ export class StudioView {
   private moving = false;
   private constraint: Constraint = "free";
   private grab: Grab | null = null;
+  /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
+  private snapped: { axis: Vector3; sign: 1 | -1; orientation: Quaternion } | null = null;
   /** Whether to draw how a move would go. */
   private debug = false;
   private guide: Guide | null = null;
@@ -147,6 +152,7 @@ export class StudioView {
     canvas.addEventListener("pointermove", this.onMove);
     canvas.addEventListener("pointerleave", this.onLeave);
     // captured, so that this hears the press before the orbit controls do and can keep them from turning the camera
+    canvas.addEventListener("pointerdown", this.onTriad, { capture: true });
     canvas.addEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
@@ -350,6 +356,7 @@ export class StudioView {
     const canvas = this.stage.canvas;
     canvas.removeEventListener("pointermove", this.onMove);
     canvas.removeEventListener("pointerleave", this.onLeave);
+    canvas.removeEventListener("pointerdown", this.onTriad, { capture: true });
     canvas.removeEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.removeEventListener("pointerdown", this.onDown);
     canvas.removeEventListener("pointerup", this.onUp);
@@ -538,6 +545,28 @@ export class StudioView {
     this.refreshGuide();
   }
 
+  private readonly onTriad = (event: PointerEvent): void => {
+    if (event.button !== 0) {
+      return;
+    }
+    const axis = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+    if (!axis) {
+      return;
+    }
+
+    // the press is the triad's: it must not orbit the camera, pick up an atom behind it, or clear the selection
+    event.stopImmediatePropagation();
+    event.preventDefault();
+
+    // the same letter again, with the camera where the last click left it, goes round to the other side
+    const last = this.snapped;
+    const again = last !== null && last.axis.dot(axis) > 0.99 && this.stage.camera.quaternion.angleTo(last.orientation) < SAME_VIEW;
+    const sign = again && last.sign === 1 ? -1 : 1;
+
+    this.stage.lookFrom(axis.clone().multiplyScalar(sign));
+    this.snapped = { axis, sign, orientation: this.stage.camera.quaternion.clone() };
+  };
+
   private readonly onGrab = (event: PointerEvent): void => {
     if (!this.moving || event.button !== 0) {
       return;
@@ -605,11 +634,14 @@ export class StudioView {
     if (event.buttons !== 0) {
       return;
     }
+    const overTriad = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) !== null;
+    this.stage.canvas.style.cursor = overTriad ? "pointer" : "";
     const pick = this.pickAt(event);
     this.listeners.forEach((listener) => listener.hover?.(pick, { x: event.clientX, y: event.clientY }));
   };
 
   private readonly onLeave = (): void => {
+    this.stage.canvas.style.cursor = "";
     this.listeners.forEach((listener) => listener.hover?.(null, { x: 0, y: 0 }));
   };
 

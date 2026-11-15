@@ -11,6 +11,12 @@
 
 The browser's context menu is disabled over the viewport.
 
+With **Axes** on, the triad in the lower left turns with the camera. Click one of its letters to look at
+the molecule from along that axis (X is the view from the right, Y from above, Z from the front). Click
+the same letter again, without having turned the camera since, to look from the other side; once the
+camera has been turned, the next click starts from the positive side again. The click does not orbit,
+select or pick up an atom behind it.
+
 ## Selecting
 
 | Input | Action |

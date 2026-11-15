@@ -105,6 +105,19 @@ export class Stage {
   }
 
   /**
+   * Turns the camera to look at its orbit point from along a direction, from as far away as it is now.
+   *
+   * @param from the direction from the orbit point to where the camera goes, such as +x to look at it from the right
+   */
+  lookFrom(from: Vector3): void {
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    this.camera.position.copy(this.controls.target).addScaledVector(from.clone().normalize(), distance);
+    this.controls.update();
+    this.options.onMove?.();
+    this.requestRender();
+  }
+
+  /**
    * Converts the position of a pointer event to where it falls on the canvas.
    *
    * @param event any event that carries client coordinates
