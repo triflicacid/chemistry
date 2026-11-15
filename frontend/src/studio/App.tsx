@@ -35,6 +35,19 @@ export function App() {
     return () => clearTimeout(timer);
   }, [layout, store]);
 
+  // Escape clears the selection, unless it is being used to leave a text field
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.matches("input, textarea, select, [contenteditable]") ?? false;
+      if (event.key === "Escape" && !typing) {
+        shared.selection.clear();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shared]);
+
   const resize = useCallback((panel: Panel, size: number) => {
     setLayout((before) => (before[panel] === size ? before : { ...before, [panel]: size }));
   }, []);

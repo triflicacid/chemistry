@@ -49,6 +49,20 @@ export class SelectionModel extends Observable<Selection> {
   }
 
   /**
+   * Takes some items out of the selection.
+   *
+   * @param doomed says whether an item is to be taken out
+   */
+  remove(doomed: (item: Item) => boolean): void {
+    const { items, active } = this.get();
+    const kept = items.filter((item) => !doomed(item));
+    if (kept.length === items.length) {
+      return;
+    }
+    this.set({ items: kept, active: active && !doomed(active) ? active : (kept[kept.length - 1] ?? null) });
+  }
+
+  /**
    * Drops what no longer exists, as when the session sends a state in which some atoms are gone.
    *
    * @param state anything that can say whether an item still exists

@@ -427,6 +427,10 @@ body.resizing {
   color: var(--ink-soft);
 }
 
+.tree-area {
+  min-height: 100%;
+}
+
 .tree-line {
   display: flex;
   align-items: center;

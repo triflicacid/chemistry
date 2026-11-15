@@ -17,7 +17,7 @@ The browser's context menu is disabled over the viewport.
 |---|---|
 | Click an atom or bond | Select it, replacing the selection |
 | Shift-, Ctrl- or Cmd-click | Add to the selection, or remove if already selected |
-| Click empty space | Clear the selection |
+| Click empty space, or press Esc | Clear the selection |
 | Hover | Highlight, without selecting |
 
 A click that moves more than 4 px is a camera drag and selects nothing.
@@ -36,6 +36,8 @@ The last item selected is the active one, which the Inspector shows.
 | Input | Action |
 |---|---|
 | Click a molecule, atom or bond row | Select it (modifiers as above) |
+| Ctrl-/Shift-/Cmd-click a molecule that has anything selected in it | Deselect everything in that molecule |
+| Click empty space in the panel | Clear the selection |
 | Hover a row | Highlight it in the viewport |
 | Arrow beside a molecule, or the Atoms / Bonds rows | Expand or collapse |
 

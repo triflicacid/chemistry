@@ -86,7 +86,15 @@ export function Outliner({ state, models }: OutlinerProps) {
             rows.current.delete(key);
           }
         }}
-        onClick={(event) => selection.select(item, additive(event))}
+        onClick={(event) => {
+          // a modified click on a molecule that has anything selected in it lets go of all of that, not just the molecule row
+          const inside = (each: Item) => index.fragmentOf(each) === item.id;
+          if (item.kind === "molecule" && additive(event) && selected.items.some(inside)) {
+            selection.remove(inside);
+          } else {
+            selection.select(item, additive(event));
+          }
+        }}
         onPointerEnter={() => hover.hover(item)}
         onPointerLeave={() => hover.hover(null)}
       >
@@ -95,57 +103,66 @@ export function Outliner({ state, models }: OutlinerProps) {
     );
   };
 
+  // a click that lands on no row is a click on the background, which clears the selection as it does in the viewport
+  const background = (event: MouseEvent) => {
+    if (!(event.target as HTMLElement).closest("button")) {
+      selection.clear();
+    }
+  };
+
   return (
-    <ul className="tree">
-      <li className="tree-row tree-root">Scene</li>
-      {state.fragments.map((fragment) => {
-        const atoms = `${fragment.key}:atom`;
-        const bonds = `${fragment.key}:bond`;
-        const links = index.bondsInFragment(fragment.key);
-        return (
-          <li key={fragment.key}>
-            <div className="tree-line">
-              <Twisty depth={1} expanded={open[fragment.key] ?? false} onToggle={() => toggle(fragment.key)} />
-              {row({ kind: "molecule", id: fragment.key }, `${fragment.name} - ${index.formula(fragment.key)}`, 0)}
-            </div>
-            {(open[fragment.key] ?? false) && (
-              <ul>
-                <li>
-                  <Disclosure
-                    label={`Atoms (${fragment.atoms.length})`}
-                    depth={2}
-                    expanded={open[atoms] ?? false}
-                    onToggle={() => toggle(atoms)}
-                  />
-                  {(open[atoms] ?? false) && (
-                    <ul>
-                      {fragment.atoms.map((id) => (
-                        <li key={id}>{row({ kind: "atom", id }, index.label(id), 3)}</li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-                <li>
-                  <Disclosure
-                    label={`Bonds (${links.length})`}
-                    depth={2}
-                    expanded={open[bonds] ?? false}
-                    onToggle={() => toggle(bonds)}
-                  />
-                  {(open[bonds] ?? false) && (
-                    <ul>
-                      {links.map((bond) => (
-                        <li key={bond.id}>{row({ kind: "bond", id: bond.id }, index.bondLabel(bond), 3)}</li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              </ul>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <div className="tree-area" onClick={background}>
+      <ul className="tree">
+        <li className="tree-row tree-root">Scene</li>
+        {state.fragments.map((fragment) => {
+          const atoms = `${fragment.key}:atom`;
+          const bonds = `${fragment.key}:bond`;
+          const links = index.bondsInFragment(fragment.key);
+          return (
+            <li key={fragment.key}>
+              <div className="tree-line">
+                <Twisty depth={1} expanded={open[fragment.key] ?? false} onToggle={() => toggle(fragment.key)} />
+                {row({ kind: "molecule", id: fragment.key }, `${fragment.name} - ${index.formula(fragment.key)}`, 0)}
+              </div>
+              {(open[fragment.key] ?? false) && (
+                <ul>
+                  <li>
+                    <Disclosure
+                      label={`Atoms (${fragment.atoms.length})`}
+                      depth={2}
+                      expanded={open[atoms] ?? false}
+                      onToggle={() => toggle(atoms)}
+                    />
+                    {(open[atoms] ?? false) && (
+                      <ul>
+                        {fragment.atoms.map((id) => (
+                          <li key={id}>{row({ kind: "atom", id }, index.label(id), 3)}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                  <li>
+                    <Disclosure
+                      label={`Bonds (${links.length})`}
+                      depth={2}
+                      expanded={open[bonds] ?? false}
+                      onToggle={() => toggle(bonds)}
+                    />
+                    {(open[bonds] ?? false) && (
+                      <ul>
+                        {links.map((bond) => (
+                          <li key={bond.id}>{row({ kind: "bond", id: bond.id }, index.bondLabel(bond), 3)}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
