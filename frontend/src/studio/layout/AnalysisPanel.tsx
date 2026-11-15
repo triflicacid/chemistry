@@ -4,6 +4,7 @@ import type {GeometryResult, SessionState} from "../session/messages";
 import type {Activity, OptimisationOutcome} from "../session/useSession";
 import {describeFinding, isCurrent} from "./findings";
 import {describeOutcome} from "./optimisation";
+import {type Segment, Segmented} from "./Segmented";
 
 export interface AnalysisPanelProps {
   activity: Activity[];
@@ -17,19 +18,19 @@ export interface AnalysisPanelProps {
 
 type Tab = "geometry" | "activity";
 
+const TABS: Segment<Tab>[] = [
+  { value: "geometry", label: "Geometry" },
+  { value: "activity", label: "Activity" },
+];
+
 /** How strained the geometry is and what is wrong with it, and what the session has done. */
 export function AnalysisPanel({ activity, state, geometry, outcome, models }: AnalysisPanelProps) {
   const [tab, setTab] = useState<Tab>("geometry");
 
   return (
     <>
-      <div className="tool-group analysis-tabs" role="group" aria-label="Analysis">
-        <button type="button" className="tool" aria-pressed={tab === "geometry"} onClick={() => setTab("geometry")}>
-          Geometry
-        </button>
-        <button type="button" className="tool" aria-pressed={tab === "activity"} onClick={() => setTab("activity")}>
-          Activity
-        </button>
+      <div className="analysis-tabs">
+        <Segmented label="Analysis" value={tab} options={TABS} onChange={setTab} />
       </div>
       {tab === "geometry" ? (
         <>

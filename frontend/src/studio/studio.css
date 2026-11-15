@@ -783,20 +783,57 @@ body.resizing {
   border-left-color: var(--bad);
 }
 
-.tool-select {
+/* a choice of one thing: a single lozenge, divided by faint lines into sections that are hovered and pressed one by one */
+.segmented {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.segment {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.55rem;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.segment + .segment {
+  border-left: 1px solid color-mix(in srgb, var(--edge) 55%, transparent);
+}
+
+.segment:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.segment[aria-checked="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.segment:disabled {
+  color: var(--ink-soft);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* a choice with its name beside it, kept together when the row wraps */
+.segmented-captioned {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.8rem;
-  color: var(--ink);
 }
 
-.tool-select select {
-  font: inherit;
+.segmented-caption {
   font-size: 0.8rem;
-  padding: 0.15rem 0.3rem;
-  color: var(--ink);
-  background: var(--panel);
-  border: 1px solid var(--edge);
-  border-radius: 5px;
+  color: var(--ink-soft);
 }

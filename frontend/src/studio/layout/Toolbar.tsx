@@ -1,7 +1,24 @@
 import {useObservable} from "../selection/observable";
-import type {ToolModel} from "../selection/ToolModel";
+import type {Tool, ToolModel} from "../selection/ToolModel";
 import type {LayoutState, Panel} from "../store";
 import type {Optimising, SessionPhase} from "../session/useSession";
+import {type Segment, Segmented} from "./Segmented";
+
+/** What a left-drag does, one at a time. */
+const TOOLS: Segment<Tool>[] = [
+  { value: "select", label: "Select", title: "Dragging an atom orbits the camera, like dragging anywhere else" },
+  {
+    value: "move",
+    label: "Move",
+    title: "Dragging an atom moves it, and with a molecule selected its handles move the whole molecule. Hold an atom to an axis or plane with X, Y and Z, or the buttons in the viewport",
+  },
+  { value: "rotate", label: "Rotate", title: "With a molecule selected, drag a ring to turn the whole molecule about its pivot" },
+  {
+    value: "pan",
+    label: "Pan",
+    title: "Dragging pans the view and right-dragging orbits it. Scrolling zooms towards the pointer. Double-click an atom to centre the view on it",
+  },
+];
 
 export interface ToolbarProps {
   phase: SessionPhase;
@@ -35,42 +52,7 @@ export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOp
       <span className="brand">Molecular Studio</span>
 
       <div className="tool-group" role="group" aria-label="Tools">
-        <button
-          type="button"
-          className="tool"
-          aria-pressed={tool === "select"}
-          title="Dragging an atom orbits the camera, like dragging anywhere else"
-          onClick={() => tools.use("select")}
-        >
-          Select
-        </button>
-        <button
-          type="button"
-          className="tool"
-          aria-pressed={tool === "move"}
-          title="Dragging an atom moves it, and with a molecule selected its handles move the whole molecule. Hold an atom to an axis or plane with X, Y and Z, or the buttons in the viewport"
-          onClick={() => tools.use("move")}
-        >
-          Move
-        </button>
-        <button
-          type="button"
-          className="tool"
-          aria-pressed={tool === "rotate"}
-          title="With a molecule selected, drag a ring to turn the whole molecule about its pivot"
-          onClick={() => tools.use("rotate")}
-        >
-          Rotate
-        </button>
-        <button
-          type="button"
-          className="tool"
-          aria-pressed={tool === "pan"}
-          title="Dragging pans the view and right-dragging orbits it. Scrolling zooms towards the pointer. Double-click an atom to centre the view on it"
-          onClick={() => tools.use("pan")}
-        >
-          Pan
-        </button>
+        <Segmented label="Tool" value={tool} options={TOOLS} onChange={(next) => tools.use(next)} />
         <button
           type="button"
           className="tool"

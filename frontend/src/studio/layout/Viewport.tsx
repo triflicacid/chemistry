@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import type {Item} from "../selection/items";
 import type {Models, PickMode} from "../selection/models";
+import type {Space} from "../selection/ToolModel";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
 import type {AtomMove, GeometryResult, Pose, SessionState} from "../session/messages";
@@ -10,6 +11,7 @@ import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {type StudioPick, StudioView} from "../viewport/StudioView";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "./OpenMolecule";
+import {type Segment, Segmented} from "./Segmented";
 
 export interface ViewportProps {
   phase: SessionPhase;
@@ -31,6 +33,24 @@ export interface ViewportProps {
   /** A drag of the molecule was abandoned, and it is back at `from`. */
   onCancelMoleculeDrag: (from: Pose) => void;
 }
+
+const GRIDS: Segment<GridKind | "off">[] = [
+  { value: "off", label: "Off", title: "Show no grid" },
+  { value: "cartesian", label: "Square", title: "Lines every angstrom, with a stronger one every five. In Local space it turns with the molecule" },
+  { value: "polar", label: "Polar", title: "Spheres every angstrom about the orbit anchor, with lines of latitude and longitude every 30 degrees. It fills space, so it has no plane" },
+];
+
+const GRID_PLANES: Segment<GridPlaneChoice>[] = [
+  { value: "xz", label: "XZ", title: "The plane spanned by the x and z axes" },
+  { value: "xy", label: "XY", title: "The plane spanned by the x and y axes" },
+  { value: "yz", label: "YZ", title: "The plane spanned by the y and z axes" },
+  { value: "all", label: "All", title: "All three planes at once, which reach less far" },
+];
+
+const SPACES: Segment<Space>[] = [
+  { value: "world", label: "World", title: "Measure moves and handles along the scene's axes" },
+  { value: "local", label: "Local", title: "Measure moves and handles along the molecule's own axes, which turn with it" },
+];
 
 const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
   { value: "free", label: "Free", title: "Move in the plane facing the camera" },
@@ -260,24 +280,15 @@ export function Viewport({
             <button type="button" className="tool" aria-pressed={axes} title="Show or hide the x, y and z axes at the orbit anchor. The small triad in the corner is always shown" onClick={() => setAxes(!axes)}>
               Axes
             </button>
-            <label className="tool-select" title="Show a grid: lines every angstrom, or rings and spokes about the orbit anchor. In Local space a square grid turns with the molecule">
-              Grid
-              <select value={grid} onChange={(event) => setGrid(event.target.value as GridKind | "off")}>
-                <option value="off">Off</option>
-                <option value="cartesian">Square</option>
-                <option value="polar">Polar</option>
-              </select>
-            </label>
-            {grid !== "off" && (
-              <label className="tool-select" title="The plane the grid lies in, named by the scene axes that span it, or all three at once (which reach less far)">
-                Plane
-                <select value={gridPlane} onChange={(event) => setGridPlane(event.target.value as GridPlaneChoice)}>
-                  <option value="xz">XZ</option>
-                  <option value="xy">XY</option>
-                  <option value="yz">YZ</option>
-                  <option value="all">All</option>
-                </select>
-              </label>
+            <span className="segmented-captioned">
+              <span className="segmented-caption">Grid</span>
+              <Segmented label="Grid" value={grid} options={GRIDS} onChange={setGrid} />
+            </span>
+            {grid === "cartesian" && (
+              <span className="segmented-captioned">
+                <span className="segmented-caption">Plane</span>
+                <Segmented label="Grid plane" value={gridPlane} options={GRID_PLANES} onChange={setGridPlane} />
+              </span>
             )}
             <button
               type="button"
@@ -304,24 +315,12 @@ export function Viewport({
 
           <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
             {(tool === "move" || (tool === "rotate" && moleculeSelected)) && (
-              <div className="tool-group" role="group" aria-label="Space">
-                {(["world", "local"] as const).map((each) => (
-                  <button
-                    key={each}
-                    type="button"
-                    className="tool"
-                    aria-pressed={space === each}
-                    title={
-                      each === "world"
-                        ? "Measure moves and handles along the scene's axes"
-                        : "Measure moves and handles along the molecule's own axes, which turn with it"
-                    }
-                    onClick={() => tools.useSpace(each)}
-                  >
-                    {each === "world" ? "World" : "Local"}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                label="Space"
+                value={space}
+                options={SPACES}
+                onChange={(next) => tools.useSpace(next)}
+              />
             )}
             {tool === "move" && (
               <button
@@ -336,21 +335,16 @@ export function Viewport({
             )}
             {tool === "rotate" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
             {tool === "move" && !moleculeSelected && (
-              <div className="tool-group" role="group" aria-label="Move constraint">
-                {CONSTRAINTS.map(({ value, label, title }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className="tool"
-                    aria-pressed={constraint === value}
-                    disabled={blocked}
-                    title={blocked ? "A locked atom is selected, so the selection cannot be moved" : title}
-                    onClick={() => tools.constrain(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                label="Move constraint"
+                value={constraint}
+                options={CONSTRAINTS.map((each) => ({
+                  ...each,
+                  disabled: blocked,
+                  title: blocked ? "A locked atom is selected, so the selection cannot be moved" : each.title,
+                }))}
+                onChange={(next) => tools.constrain(next)}
+              />
             )}
             <button type="button" className="tool" title="Centre the camera on the selection, or on everything if nothing is selected" onClick={frame}>
               Frame selection

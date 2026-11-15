@@ -795,10 +795,11 @@ export class StudioView {
    * Shows a grid in one of the scene's planes, or in all three, or takes it away.
    * <p>
    * The grid is centred on the orbit anchor, where the axes are drawn. In **World** space its lines run along the scene's
-   * axes; in **Local** space they turn with the molecule.
+   * axes; in **Local** space they turn with the molecule. A square grid lies in a plane; a polar one is nested spheres,
+   * fills space and has no plane.
    *
    * @param kind the grid to show, or {@code null} for none
-   * @param plane the plane it lies in, or all three
+   * @param plane the plane a square grid lies in, or all three; a polar grid ignores it
    */
   setGrid(kind: GridKind | null, plane: GridPlaneChoice): void {
     if (this.grid) {
