@@ -1,21 +1,24 @@
 import {useEffect, useRef, useState} from "react";
 import type {Models} from "../selection/models";
 import type {GeometryResult, SessionState} from "../session/messages";
-import type {Activity} from "../session/useSession";
+import type {Activity, OptimisationOutcome} from "../session/useSession";
 import {describeFinding, isCurrent} from "./findings";
+import {describeOutcome} from "./optimisation";
 
 export interface AnalysisPanelProps {
   activity: Activity[];
   state: SessionState | null;
   /** What the server last said about the geometry. */
   geometry: GeometryResult | null;
+  /** How the latest optimisation ended, or null if there has been none. */
+  outcome: OptimisationOutcome | null;
   models: Models;
 }
 
 type Tab = "geometry" | "activity";
 
 /** How strained the geometry is and what is wrong with it, and what the session has done. */
-export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPanelProps) {
+export function AnalysisPanel({ activity, state, geometry, outcome, models }: AnalysisPanelProps) {
   const [tab, setTab] = useState<Tab>("geometry");
 
   return (
@@ -28,8 +31,27 @@ export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPan
           Activity
         </button>
       </div>
-      {tab === "geometry" ? <GeometryView state={state} geometry={geometry} models={models} /> : <ActivityLog activity={activity} />}
+      {tab === "geometry" ? (
+        <>
+          {outcome && <LastOptimisation outcome={outcome} />}
+          <GeometryView state={state} geometry={geometry} models={models} />
+        </>
+      ) : (
+        <ActivityLog activity={activity} />
+      )}
     </>
+  );
+}
+
+/** How the latest optimisation went, kept here after the notice over the viewport has faded. */
+function LastOptimisation({ outcome }: { outcome: OptimisationOutcome }) {
+  const described = describeOutcome(outcome);
+
+  return (
+    <div className={`last-optimisation optimise-${described.tone}`}>
+      <strong>{described.headline}</strong>
+      {described.detail && <span>{described.detail}</span>}
+    </div>
   );
 }
 

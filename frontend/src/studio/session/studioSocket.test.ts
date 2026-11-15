@@ -1,6 +1,13 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {StudioError, StudioSocket} from "./studioSocket";
-import {type GeometryResult, PROTOCOL_VERSION, type SessionAtom, type SessionState} from "./messages";
+import {
+    type GeometryResult,
+    type OptimiseProgress,
+    type OptimiseResult,
+    PROTOCOL_VERSION,
+    type SessionAtom,
+    type SessionState,
+} from "./messages";
 import {IDENTITY_POSE} from "./pose";
 
 const STUDIO_URL = process.env.WS_URL ?? "ws://localhost:8081/ws/studio";
@@ -327,6 +334,50 @@ describe("the Studio socket", () => {
     expect(results[1]!.strain).toBeGreaterThan(10);
     expect(results[1]!.findings.length).toBeGreaterThan(0);
     expect(results[1]!.clashes.length).toBeGreaterThan(0);
+  });
+
+  it("relaxes a distorted geometry as one edit, reporting progress, and takes it back in one undo", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const progress: OptimiseProgress[] = [];
+    const results: OptimiseResult[] = [];
+    socket.on<OptimiseProgress>("optimise.progress", (message) => progress.push(message));
+    socket.on<OptimiseResult>("optimise.result", (message) => results.push(message));
+
+    const opened = await socket.openSession(stored.id);
+    const first = opened.atoms[0]!;
+    const distorted = await socket.patchAtoms(opened.session_id, opened.version, [
+      { id: first.id, position: { ...first.position, x: first.position.x + 0.6 } },
+    ]);
+    if (distorted.type !== "atom.patch.ack") {
+      throw new Error(`Expected the patch to be acknowledged, not ${distorted.type}`);
+    }
+
+    const started = await socket.optimise(opened.session_id, distorted.version);
+    expect(started.type).toBe("optimise.started");
+
+    await vi.waitFor(() => expect(results).toHaveLength(1), { timeout: TIMEOUT_MS });
+    const [result] = results as [OptimiseResult];
+    expect(result).toMatchObject({ session_id: opened.session_id, base_version: distorted.version, status: "complete", can_undo: true });
+    expect(result.version).toBe(distorted.version + 1);
+    expect(result.atoms.length).toBeGreaterThan(0);
+    expect(result.strain_after!).toBeLessThan(result.strain_before!);
+    expect(progress[0]).toMatchObject({ session_id: opened.session_id, iteration: 0 });
+
+    const undone = await socket.step("undo", opened.session_id, result.version);
+    expect(undone.type === "edit.applied" && undone.atoms.map((atom) => atom.id).sort()).toEqual(result.atoms.map((atom) => atom.id).sort());
+  });
+
+  it("answers an optimise made on a stale version with a conflict, and a cancel with nothing to stop as not cancelling", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+
+    const stale = await socket.optimise(opened.session_id, opened.version + 5);
+    expect(stale.type).toBe("conflict");
+
+    const cancel = await socket.cancelOptimise(opened.session_id);
+    expect(cancel.cancelling).toBe(false);
   });
 
   it("refuses a rotation of no length", async () => {

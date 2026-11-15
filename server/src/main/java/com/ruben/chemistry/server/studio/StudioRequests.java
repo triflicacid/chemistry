@@ -84,6 +84,21 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session to optimise
+     * @param baseVersion the version the client was looking at, so that an optimisation of a structure that has since changed is refused
+     */
+    public record OptimiseRequest(String sessionId, Long baseVersion)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose optimisation to stop
+     */
+    public record CancelOptimiseRequest(String sessionId)
+    {
+    }
+
+    /**
      * @param sessionId the session to undo or redo in
      * @param baseVersion the version the client was looking at, so that an undo over a changed session is refused
      */

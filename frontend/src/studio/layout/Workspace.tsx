@@ -1,11 +1,12 @@
 import type {ReactNode} from "react";
 import type {Vec3} from "../../api/types/structure";
-import type {Activity, SessionPhase, SubmitResult} from "../session/useSession";
+import type {Activity, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "../session/useSession";
 import type {AtomMove, GeometryResult, Pose, SessionState} from "../session/messages";
 import type {Models} from "../selection/models";
 import type {LayoutState, Panel} from "../store";
 import {AnalysisPanel} from "./AnalysisPanel";
 import {Inspector} from "./Inspector";
+import {OptimiseNotice} from "./OptimiseNotice";
 import {Outliner} from "./Outliner";
 import {SmilesBar} from "./SmilesBar";
 import {Splitter} from "./Splitter";
@@ -39,10 +40,14 @@ export interface WorkspaceProps {
   onCancelMoleculeDrag: (from: Pose) => void;
   onUndo: () => void;
   onRedo: () => void;
+  optimising: Optimising | null;
+  outcome: OptimisationOutcome | null;
+  onOptimise: () => void;
+  onCancelOptimise: () => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onUndo, onRedo } = props;
+  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -65,6 +70,10 @@ export function Workspace(props: WorkspaceProps) {
     <div className="workspace" style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}>
       <Toolbar
         phase={phase}
+        optimising={optimising}
+        canOptimise={phase.kind === "open" && state !== null}
+        onOptimise={onOptimise}
+        onCancelOptimise={onCancelOptimise}
         tools={models.tools}
         canLock={canLock}
         lockPressed={lockPressed}
@@ -105,6 +114,7 @@ export function Workspace(props: WorkspaceProps) {
           onDropMolecule={onDropMolecule}
           onCancelMoleculeDrag={onCancelMoleculeDrag}
         />
+        <OptimiseNotice outcome={outcome} />
       </div>
 
       {!layout.inspectorCollapsed && (
@@ -127,7 +137,7 @@ export function Workspace(props: WorkspaceProps) {
         <Header name="Activity" panel="analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
         {!layout.analysisCollapsed && (
           <div className="panel-body">
-            <AnalysisPanel activity={activity} state={state} geometry={geometry} models={models} />
+            <AnalysisPanel activity={activity} state={state} geometry={geometry} outcome={outcome} models={models} />
           </div>
         )}
       </section>

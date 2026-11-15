@@ -121,6 +121,7 @@ body.resizing {
   grid-area: viewport;
   min-width: 0;
   min-height: 0;
+  position: relative;
 }
 .splitter-right {
   grid-area: split-right;
@@ -714,4 +715,58 @@ body.resizing {
   margin-left: 6px;
   vertical-align: -1px;
   opacity: 0.7;
+}
+
+.optimise-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: min(34rem, 90%);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-left-width: 4px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+}
+
+.optimise-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.optimise-text span,
+.last-optimisation span {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.last-optimisation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--edge);
+  border-left-width: 4px;
+  border-radius: 6px;
+}
+
+.optimise-good {
+  border-left-color: #2da44e;
+}
+
+.optimise-neutral {
+  border-left-color: var(--accent);
+}
+
+.optimise-bad {
+  border-left-color: var(--bad);
 }

@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -37,6 +38,9 @@ public final class StudioSession
 
     /** The most committed edits kept to undo. */
     public static final int MAX_UNDO = 200;
+
+    /** How far, in angstroms, an atom must be moved by an optimisation for the move to count. */
+    private static final double OPTIMISATION_RESOLUTION = 1e-6;
 
     /**
      * One atom to put somewhere.
@@ -66,6 +70,18 @@ public final class StudioSession
      * @param positions where each atom is, in angstroms in the molecule's own frame, in the order of {@link #molecule()}'s atoms
      */
     public record Snapshot(long version, List<Vec3> positions)
+    {
+    }
+
+    /**
+     * What an optimisation is made from, taken at one version so that it can run without holding the session.
+     *
+     * @param version the version of the session this describes
+     * @param structure the working geometry as the structure that saving stores, whose sites are numbered as {@code sites}
+     * @param lockedSites the sites of {@code structure} that are locked, which the optimisation must leave where they are
+     * @param sites the atom each site of {@code structure} is, in site order
+     */
+    public record OptimisationInput(long version, Structure3D structure, Set<Integer> lockedSites, List<String> sites)
     {
     }
 
@@ -386,6 +402,62 @@ public final class StudioSession
         }
 
         return version;
+    }
+
+    /**
+     * Takes what an optimisation of the geometry as it is now needs.
+     *
+     * @return the geometry, what is locked in it, and the version it is at
+     * @throws StudioEditException with {@code BUSY} if an edit is in progress, whose moves an optimisation would
+     *     otherwise be filed with
+     */
+    public synchronized OptimisationInput beginOptimisation()
+    {
+        if (!uncommitted.isEmpty() || uncommittedPose != null)
+        {
+            throw new StudioEditException("BUSY", "An edit is still in progress, so the structure cannot be optimised yet");
+        }
+
+        prepareStructure();
+        return new OptimisationInput(version, structure(), Set.copyOf(lockedSites()), List.copyOf(nodeAtoms));
+    }
+
+    /**
+     * Puts the atoms where an optimisation of an earlier version left them, as one edit that can be undone. Locked
+     * atoms are left where they are however far the optimisation moved them.
+     *
+     * @param fromVersion the version the optimisation was made from
+     * @param positions where the optimisation put each atom, by atom
+     * @return what changed and the version after it, which is the version the session was at if no unlocked atom
+     *     moved; empty, changing nothing, if the session has moved on from {@code fromVersion} so that the result
+     *     describes a structure that no longer exists
+     */
+    public synchronized Optional<Applied> optimised(long fromVersion, Map<String, Vec3> positions)
+    {
+        if (version != fromVersion)
+        {
+            return Optional.empty();
+        }
+
+        List<Move> moves = new ArrayList<>();
+        positions.forEach((id, position) ->
+        {
+            Vec3 from = geometry.get(id);
+            if (from != null && !locked.contains(id) && from.minus(position).length() > OPTIMISATION_RESOLUTION)
+            {
+                moves.add(new Move(id, position));
+            }
+        });
+
+        if (moves.isEmpty())
+        {
+            return Optional.of(new Applied(version, Map.of(), null));
+        }
+
+        long next = move(moves, true);
+        Map<String, Vec3> moved = new LinkedHashMap<>();
+        moves.forEach(move -> moved.put(move.atomId(), move.position()));
+        return Optional.of(new Applied(next, moved, null));
     }
 
     /**

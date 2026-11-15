@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -162,6 +162,64 @@ export interface EditApplied extends ServerEnvelope {
   transform: Pose | null;
 }
 
+/** The answer to a request to optimise, saying only that the optimisation has begun; progress and a result follow. */
+export interface OptimiseStarted extends ServerEnvelope {
+  type: "optimise.started";
+  operation_id: string;
+  /** The version of the session the optimisation is made from. */
+  version: number;
+}
+
+/** How an optimisation is getting on, sent on the server's own initiative at most about ten times a second. */
+export interface OptimiseProgress extends ServerEnvelope {
+  type: "optimise.progress";
+  session_id: string;
+  operation_id: string;
+  /** How many steps have been taken. */
+  iteration: number;
+  /** The value being minimised, which has no unit and is a sign of progress only: it is not the strain shown in the toolbar. */
+  energy: number;
+}
+
+/** How an optimisation ended, sent on the server's own initiative. */
+export interface OptimiseResult extends ServerEnvelope {
+  type: "optimise.result";
+  session_id: string;
+  operation_id: string;
+  /** The version of the session the optimisation was made from. */
+  base_version: number;
+  /**
+   * `complete` moved atoms and is one edit that can be undone; `unchanged` found nothing worth moving; `failed` could
+   * not reach a relaxed structure; `cancelled` was stopped or overtaken by an edit. Only `complete` changes the session.
+   */
+  status: "complete" | "unchanged" | "failed" | "cancelled";
+  /** The version the session is at after it. */
+  version: number;
+  can_undo: boolean;
+  can_redo: boolean;
+  saved_molecule_id: string | null;
+  /** Where each atom that moved now is, empty unless the status is `complete`. */
+  atoms: { id: string; position: Vec3 }[];
+  /**
+   * The strain of the geometry it started from and the session ends with, measured as `geometry.result` measures it,
+   * so they can be set beside the toolbar's figure. Null if it never got that far or the geometry could not be examined.
+   */
+  strain_before: number | null;
+  strain_after: number | null;
+  iterations: number;
+  /** Things the optimisation could not do as asked, such as stereochemistry it could not read. */
+  warnings: string[];
+  /** Why it failed or was cancelled. */
+  message: string | null;
+}
+
+/** The answer to a request to stop optimising. */
+export interface OptimiseCancelAck extends ServerEnvelope {
+  type: "optimise.cancel.ack";
+  /** Whether there was an optimisation to stop, which then ends with a `cancelled` result. */
+  cancelling: boolean;
+}
+
 /** One term of the geometry beyond its tolerance. */
 export interface GeometryFinding {
   kind: "bond" | "angle" | "clash";
@@ -232,6 +290,10 @@ export type ServerMessage =
   | TransformAck
   | LockAck
   | EditApplied
+  | OptimiseStarted
+  | OptimiseProgress
+  | OptimiseResult
+  | OptimiseCancelAck
   | GeometryResult
   | SocketError
   | Pong;

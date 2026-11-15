@@ -2,6 +2,8 @@ import type {Vec3} from "../../api/types/structure";
 import {
     type EditApplied,
     type LockAck,
+    type OptimiseCancelAck,
+    type OptimiseStarted,
     type PatchAck,
     type Pose,
     PROTOCOL_VERSION,
@@ -275,6 +277,31 @@ export class StudioSocket {
       { session_id: sessionId, base_version: baseVersion, atoms, locked },
       ["atom.lock.ack", "conflict"],
     );
+  }
+
+  /**
+   * Starts relaxing the geometry. The answer says only that it has begun: listen for `optimise.progress` and
+   * `optimise.result` for the rest.
+   *
+   * @param sessionId the session to optimise
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @returns the start, or a conflict carrying the state the session is actually in
+   */
+  optimise(sessionId: string, baseVersion: number): Promise<OptimiseStarted | SessionConflict> {
+    return this.request<OptimiseStarted | SessionConflict>(
+      "optimise.start",
+      { session_id: sessionId, base_version: baseVersion },
+      ["optimise.started", "conflict"],
+    );
+  }
+
+  /**
+   * Asks for a session's optimisation to stop, after which it ends with a `cancelled` result.
+   *
+   * @param sessionId the session whose optimisation to stop
+   */
+  cancelOptimise(sessionId: string): Promise<OptimiseCancelAck> {
+    return this.request<OptimiseCancelAck>("optimise.cancel", { session_id: sessionId }, "optimise.cancel.ack");
   }
 
   /**

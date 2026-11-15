@@ -110,6 +110,39 @@ class StructureFixerTest
     }
 
     @Test
+    void progress_should_be_told_the_energy_before_every_step_of_a_relaxation()
+    {
+        Structure3D rough = noisy(embed("CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O"), 0.12, new Random(5));
+        List<Integer> iterations = new ArrayList<>();
+        List<Double> energies = new ArrayList<>();
+
+        StructureFixer.fix(rough, StructureFixer.Constraints.NONE, StructureFixer.Options.DEFAULT, (iteration, energy) ->
+        {
+            iterations.add(iteration);
+            energies.add(energy);
+            return true;
+        });
+
+        assertThat(iterations).startsWith(0, 1, 2);
+        assertThat(energies.getLast()).isLessThan(energies.getFirst());
+    }
+
+    @Test
+    void a_relaxation_that_progress_stops_should_take_no_more_steps()
+    {
+        Structure3D rough = noisy(embed("CC(C)[C@@H]1CC[C@@H](C)C[C@H]1O"), 0.12, new Random(5));
+        List<Integer> asked = new ArrayList<>();
+
+        StructureFixer.fix(rough, StructureFixer.Constraints.NONE, StructureFixer.Options.DEFAULT, (iteration, energy) ->
+        {
+            asked.add(iteration);
+            return iteration < 3;
+        });
+
+        assertThat(asked).containsExactly(0, 1, 2, 3);
+    }
+
+    @Test
     void a_stereoisomer_should_not_be_turned_into_its_mirror_image()
     {
         Random random = new Random(3);

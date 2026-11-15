@@ -1,10 +1,16 @@
 import {useObservable} from "../selection/observable";
 import type {ToolModel} from "../selection/ToolModel";
 import type {LayoutState, Panel} from "../store";
-import type {SessionPhase} from "../session/useSession";
+import type {Optimising, SessionPhase} from "../session/useSession";
 
 export interface ToolbarProps {
   phase: SessionPhase;
+  /** The optimisation under way, or null if there is none. */
+  optimising: Optimising | null;
+  /** Whether there is a structure to optimise. */
+  canOptimise: boolean;
+  onOptimise: () => void;
+  onCancelOptimise: () => void;
   tools: ToolModel;
   /** Whether any atom is selected, which is what a lock applies to. */
   canLock: boolean;
@@ -21,9 +27,7 @@ export interface ToolbarProps {
   onUndo: () => void;
   onRedo: () => void;}
 
-const WAITING = "Not built yet";
-
-export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo }: ToolbarProps) {
   const { tool } = useObservable(tools);
 
   return (
@@ -77,9 +81,21 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
         <button type="button" className="tool" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" onClick={onRedo}>
           Redo
         </button>
-        <button type="button" className="tool" disabled title={WAITING}>
-          Optimise
-        </button>      </div>
+        <button
+          type="button"
+          className="tool"
+          disabled={!optimising && !canOptimise}
+          aria-pressed={optimising !== null}
+          title={
+            optimising
+              ? "Stop optimising. The structure is left as it was"
+              : "Relax the geometry to lower its strain, keeping its stereochemistry and holding locked atoms where they are. One undo takes it back"
+          }
+          onClick={optimising ? onCancelOptimise : onOptimise}
+        >
+          {optimising ? "Stop" : "Optimise"}
+        </button>
+      </div>
 
       <div className="tool-group tool-group-end" role="group" aria-label="Panels">
         <PanelToggle panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} />
@@ -89,6 +105,7 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
 
       <span className={`status status-${phase.kind}`} role="status">
         {describe(phase)}
+        {phase.kind === "open" && optimising ? ` · optimising, step ${optimising.iteration}` : ""}
         {phase.kind === "open" && strain ? ` · ${strain}` : ""}
         {phase.kind === "open" && saved ? " · edits saved" : ""}
       </span>

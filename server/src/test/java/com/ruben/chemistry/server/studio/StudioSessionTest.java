@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -472,6 +473,83 @@ class StudioSessionTest
 
         assertThat(before.version()).isEqualTo(1);
         assertThat(before.positions()).doesNotContain(new Vec3(9, 9, 9));
+    }
+
+    @Test
+    void takes_what_an_optimisation_needs_at_the_version_it_is_at()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).get(3);
+        session.lock(List.of(atom), true);
+
+        StudioSession.OptimisationInput input = session.beginOptimisation();
+
+        assertThat(input.version()).isEqualTo(2);
+        assertThat(input.sites()).hasSize(9).contains(atom);
+        assertThat(input.structure().sites()).hasSameSizeAs(input.sites());
+        assertThat(input.lockedSites()).containsExactly(input.sites().indexOf(atom));
+        assertThat(input.structure().conformers().getFirst().positions().get(input.sites().indexOf(atom))).isEqualTo(session.positionOf(atom));
+    }
+
+    @Test
+    void refuses_to_take_an_optimisation_while_an_edit_is_in_progress()
+    {
+        StudioSession session = open("CCO");
+        session.move(List.of(new StudioSession.Move(ids(session).getFirst(), new Vec3(1, 2, 3))), false);
+
+        assertThatThrownBy(session::beginOptimisation)
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("BUSY"));
+    }
+
+    @Test
+    void files_an_optimisation_as_one_edit_and_leaves_locked_atoms_where_they_are()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        session.lock(List.of(ids.get(1)), true);
+        Vec3 held = session.positionOf(ids.get(1));
+
+        StudioSession.Applied applied = session.optimised(2, Map.of(
+                ids.get(0), new Vec3(1, 2, 3),
+                ids.get(1), new Vec3(4, 5, 6),
+                ids.get(2), new Vec3(7, 8, 9))).orElseThrow();
+
+        assertThat(applied.version()).isEqualTo(3);
+        assertThat(applied.moved()).containsOnlyKeys(ids.get(0), ids.get(2));
+        assertThat(session.positionOf(ids.get(1))).isEqualTo(held);
+        assertThat(session.canUndo()).isTrue();
+
+        session.undo();
+        assertThat(session.positionOf(ids.get(0))).isNotEqualTo(new Vec3(1, 2, 3));
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void ignores_an_optimisation_made_from_a_version_the_session_has_moved_on_from()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 where = session.positionOf(atom);
+        session.move(List.of(new StudioSession.Move(ids(session).get(1), new Vec3(1, 2, 3))), true);
+
+        assertThat(session.optimised(1, Map.of(atom, new Vec3(7, 8, 9)))).isEmpty();
+
+        assertThat(session.positionOf(atom)).isEqualTo(where);
+        assertThat(session.version()).isEqualTo(2);
+    }
+
+    @Test
+    void leaves_the_version_alone_when_an_optimisation_moves_nothing_that_matters()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 where = session.positionOf(atom);
+
+        StudioSession.Applied applied = session.optimised(1, Map.of(atom, where.plus(new Vec3(1e-9, 0, 0)))).orElseThrow();
+
+        assertThat(applied.version()).isEqualTo(1);
+        assertThat(applied.moved()).isEmpty();
+        assertThat(session.canUndo()).isFalse();
     }
 
     @Test

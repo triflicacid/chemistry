@@ -31,6 +31,10 @@ export function App() {
     dropMolecule,
     cancelMoleculeDrag,
     lockAtoms,
+    optimising,
+    outcome,
+    optimise,
+    cancelOptimise,
     undo,
     redo,
   } = useSession();
@@ -146,6 +150,8 @@ export function App() {
     return `strain ${geometry.strain.toFixed(1)}${geometry.version === state?.version ? "" : "…"}`;
   }, [geometry, state?.version]);
 
+  const startOptimise = useCallback(() => void optimise(), [optimise]);
+  const stopOptimise = useCallback(() => void cancelOptimise(), [cancelOptimise]);
   const undoEdit = useCallback(() => void undo(), [undo]);
   const redoEdit = useCallback(() => void redo(), [redo]);
 
@@ -184,6 +190,10 @@ export function App() {
       onCancelMoleculeDrag={cancelWhole}
       onUndo={undoEdit}
       onRedo={redoEdit}
+      optimising={optimising}
+      outcome={outcome}
+      onOptimise={startOptimise}
+      onCancelOptimise={stopOptimise}
     />
   );
 }

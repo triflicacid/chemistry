@@ -3,7 +3,16 @@ import {ChemistryApi} from "../../api/ChemistryApi";
 import {ApiError} from "../../api/http";
 import {describing, describingSmiles, requested} from "./location";
 import type {Vec3} from "../../api/types/structure";
-import type {AtomMove, EditApplied, GeometryResult, PatchAck, Pose, SessionState} from "./messages";
+import type {
+    AtomMove,
+    EditApplied,
+    GeometryResult,
+    OptimiseProgress,
+    OptimiseResult,
+    PatchAck,
+    Pose,
+    SessionState,
+} from "./messages";
 import {samePose} from "./pose";
 import {StudioError, StudioSocket} from "./studioSocket";
 
@@ -60,9 +69,35 @@ export type EditResult =
   | { kind: "conflict" }
   | { kind: "refused"; message: string };
 
+/** An optimisation the server is running, and how far it has got. */
+export interface Optimising {
+  /** How many steps it has taken, which is zero until the server first reports. */
+  iteration: number;
+}
+
+/** How the latest optimisation ended, kept so the user can be shown it and look back at it. */
+export interface OptimisationOutcome {
+  /** When it ended, which tells one outcome from the next. */
+  at: number;
+  status: OptimiseResult["status"];
+  /** The toolbar's strain before and after, or null if it was not measured. */
+  strainBefore: number | null;
+  strainAfter: number | null;
+  /** How many atoms it moved. */
+  atoms: number;
+  iterations: number;
+  /** Why it failed or was stopped. */
+  message: string | null;
+  warnings: string[];
+}
+
 export interface Session {
   phase: SessionPhase;
   state: SessionState | null;
+  /** The optimisation under way, or null if there is none. */
+  optimising: Optimising | null;
+  /** How the latest optimisation ended, or null if there has been none in this session. */
+  outcome: OptimisationOutcome | null;
   /**
    * How strained the geometry is, as the server last said. It describes the version in `version`, which is out of date
    * once the session has moved on; the server sends a fresh one shortly after every change.
@@ -94,6 +129,13 @@ export interface Session {
   cancelMoleculeDrag: (from: Pose) => Promise<EditResult>;
   /** Locks or unlocks atoms, so that they refuse or accept edits. A lock is saved with the molecule but is not an edit, so it cannot be undone. */
   lockAtoms: (ids: string[], locked: boolean) => Promise<EditResult>;
+  /**
+   * Relaxes the geometry on the server, holding locked atoms where they are. Resolves once the server has started,
+   * not when it has finished: the result is applied as one edit that can be undone, and reported in the activity log.
+   */
+  optimise: () => Promise<EditResult>;
+  /** Asks the server to stop the optimisation under way, which then ends without changing the structure. */
+  cancelOptimise: () => Promise<void>;
   /** Takes back the latest edit. */
   undo: () => Promise<EditResult>;
   /** Makes the latest undone edit again. */
@@ -113,6 +155,8 @@ export function useSession(client?: ChemistryApi): Session {
   const [phase, setPhase] = useState<SessionPhase>({ kind: "connecting" });
   const [state, setState] = useState<SessionState | null>(null);
   const [geometry, setGeometry] = useState<GeometryResult | null>(null);
+  const [optimising, setOptimising] = useState<Optimising | null>(null);
+  const [outcome, setOutcome] = useState<OptimisationOutcome | null>(null);
   const [activity, setActivity] = useState<Activity[]>([]);
 
   const socketRef = useRef<StudioSocket | null>(null);
@@ -128,6 +172,8 @@ export function useSession(client?: ChemistryApi): Session {
     // what was said of another session says nothing of this one
     if (held.current && held.current.session_id !== next.session_id) {
       setGeometry(null);
+      setOptimising(null);
+      setOutcome(null);
     }
     // the molecule saved is what a reload should open, since it holds the edits and the molecule opened does not
     if (next.saved_molecule_id && next.saved_molecule_id !== held.current?.saved_molecule_id) {
@@ -212,7 +258,12 @@ export function useSession(client?: ChemistryApi): Session {
             note(reason(cause), true);
           });
       },
-      onDrop: (why) => note(`The connection dropped (${why}); reconnecting`, true),
+      onDrop: (why) => {
+        // the server finishes the optimisation and sends its result to whichever connection holds the session, which
+        // may be the next one, so what is shown stops here and the result is still applied if it arrives
+        setOptimising(null);
+        note(`The connection dropped (${why}); reconnecting`, true);
+      },
       onIncompatible: (error) => {
         if (held.current) {
           setPhase({ kind: "failed", message: error.message });
@@ -228,6 +279,62 @@ export function useSession(client?: ChemistryApi): Session {
         return;
       }
       setGeometry((before) => (before && before.session_id === result.session_id && before.version > result.version ? before : result));
+    });
+
+    const hearProgress = socket.on<OptimiseProgress>("optimise.progress", (progress) => {
+      if (held.current && held.current.session_id !== progress.session_id) {
+        return;
+      }
+      // a report that arrives after the result, or on a connection that never asked, has nothing to update
+      setOptimising((before) => (before ? { iteration: progress.iteration } : before));
+    });
+
+    const hearResult = socket.on<OptimiseResult>("optimise.result", (result) => {
+      const base = held.current;
+      if (!base || base.session_id !== result.session_id) {
+        return;
+      }
+
+      setOptimising(null);
+      setOutcome({
+        at: Date.now(),
+        status: result.status,
+        strainBefore: result.strain_before,
+        strainAfter: result.strain_after,
+        atoms: result.atoms.length,
+        iterations: result.iterations,
+        message: result.message,
+        warnings: result.warnings,
+      });
+      for (const warning of result.warnings) {
+        note(`Optimiser: ${warning}`, true);
+      }
+
+      switch (result.status) {
+        case "complete": {
+          const [before, after] = [result.strain_before, result.strain_after];
+          note(
+            `Optimised ${result.atoms.length} atoms in ${result.iterations} steps` +
+              (before !== null && after !== null ? `: strain ${before.toFixed(1)} → ${after.toFixed(1)}` : ""),
+          );
+
+          if (base.version === result.base_version) {
+            adopt(patched(base, result.atoms, result));
+          } else if (base.version !== result.version) {
+            // the sparse result says nothing of an atom the client has moved since, so ask for the whole state
+            socket.resync(base.session_id, base.version).then(adopt).catch((cause: unknown) => note(reason(cause), true));
+          }
+          break;
+        }
+        case "unchanged":
+          note("The geometry is already as relaxed as it can be");
+          break;
+        case "failed":
+          note(result.message ?? "The optimisation failed", true);
+          break;
+        default:
+          note(result.message ?? "The optimisation was cancelled");
+      }
     });
 
     void (async () => {
@@ -259,6 +366,8 @@ export function useSession(client?: ChemistryApi): Session {
     return () => {
       live = false;
       hearGeometry();
+      hearProgress();
+      hearResult();
       socket.close();
       socketRef.current = null;
     };
@@ -555,12 +664,60 @@ export function useSession(client?: ChemistryApi): Session {
     [adopt, note, serially],
   );
 
+  const optimise = useCallback(
+    (): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to optimise." };
+        }
+
+        // set before asking, because a small molecule can finish before the server's answer to the request arrives
+        setOptimising({ iteration: 0 });
+        setOutcome(null);
+        try {
+          const reply = await socket.optimise(base.session_id, base.version);
+          if (reply.type === "conflict") {
+            setOptimising(null);
+            adopt(reply.state);
+            note("The structure changed, so it was not optimised", true);
+            return { kind: "conflict" };
+          }
+
+          note("Optimising");
+          return { kind: "applied" };
+        } catch (cause) {
+          setOptimising(null);
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
+  const cancelOptimise = useCallback(async (): Promise<void> => {
+    const socket = socketRef.current;
+    const base = held.current;
+    if (!socket || !base) {
+      return;
+    }
+
+    try {
+      await socket.cancelOptimise(base.session_id);
+    } catch (cause) {
+      note(reason(cause), true);
+    }
+  }, [note]);
+
   const undo = useCallback(() => step("undo"), [step]);
   const redo = useCallback(() => step("redo"), [step]);
 
   return {
     phase,
     state,
+    optimising,
+    outcome,
     geometry,
     activity,
     openSmiles: submit,
@@ -574,6 +731,8 @@ export function useSession(client?: ChemistryApi): Session {
     dropMolecule,
     cancelMoleculeDrag,
     lockAtoms,
+    optimise,
+    cancelOptimise,
     undo,
     redo,
   };
@@ -595,7 +754,7 @@ function sameSpots(first: AtomMove[], second: AtomMove[]): boolean {
  * @param ack the session's acknowledgement, which says the version and history it is now at
  * @param transform where the molecule now sits, if the change moved it as a whole
  */
-function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | EditApplied, transform: Pose | null = null): SessionState {
+function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | EditApplied | OptimiseResult, transform: Pose | null = null): SessionState {
   const to = new Map(moves.map((move) => [move.id, move.position]));
   return {
     ...base,
