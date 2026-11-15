@@ -1,6 +1,6 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {StudioError, StudioSocket} from "./studioSocket";
-import {PROTOCOL_VERSION, type SessionState} from "./messages";
+import {type GeometryResult, PROTOCOL_VERSION, type SessionAtom, type SessionState} from "./messages";
 import {IDENTITY_POSE} from "./pose";
 
 const STUDIO_URL = process.env.WS_URL ?? "ws://localhost:8081/ws/studio";
@@ -305,6 +305,28 @@ describe("the Studio socket", () => {
     const undone = await socket.step("undo", opened.session_id, synced.version);
     expect(undone.type === "edit.applied" && undone.transform).toEqual(IDENTITY_POSE);
     expect(undone.type === "edit.applied" && undone.atoms).toEqual([]);
+  });
+
+  it("tells the strain of the geometry on its own once the session is left alone, and more of it after an edit", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const results: GeometryResult[] = [];
+    socket.on<GeometryResult>("geometry.result", (result) => results.push(result));
+
+    const opened = await socket.openSession(stored.id);
+    await vi.waitFor(() => expect(results).toHaveLength(1), { timeout: TIMEOUT_MS });
+    expect(results[0]).toMatchObject({ session_id: opened.session_id, version: opened.version, status: "complete", strain: 0, findings: [] });
+
+    // an atom put on top of another
+    const [first, , third] = opened.atoms as [SessionAtom, SessionAtom, SessionAtom];
+    const ack = await socket.patchAtoms(opened.session_id, opened.version, [{ id: first.id, position: third.position }]);
+    expect(ack.type).toBe("atom.patch.ack");
+
+    await vi.waitFor(() => expect(results).toHaveLength(2), { timeout: TIMEOUT_MS });
+    expect(results[1]!.version).toBe(opened.version + 1);
+    expect(results[1]!.strain).toBeGreaterThan(10);
+    expect(results[1]!.findings.length).toBeGreaterThan(0);
+    expect(results[1]!.clashes.length).toBeGreaterThan(0);
   });
 
   it("refuses a rotation of no length", async () => {

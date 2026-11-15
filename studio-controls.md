@@ -94,7 +94,23 @@ changed on the server while you were editing, the rebuild is refused and the cur
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
 | Axes | Show or hide the scene axes, which sit on the point the view orbits (so they move when you re-anchor or pan), and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
+| Strain | Mark what is strained: a red halo on each strained atom (stronger the more strained), each strained bond in red with its length, each strained angle as its two bonds in orange with its size, and a red line between each pair of atoms that are too close. Shown only while the strain figure is current, so it disappears while you drag and comes back when you pause. While it is on, selecting an atom or a bond details its strain in the Inspector |
 | Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |
+
+## Strain
+
+The toolbar shows `strain N`: how far the geometry is from ideal bond lengths, angles and contacts, in units of
+tolerance, where 0 means nothing is wrong and about 3 is as bad as one bond, angle or contact three tolerances out.
+The halos on atoms get larger, brighter and redder as an atom's share rises, and are solid red from about 6. It is worked out on the server about a quarter of a second after you stop changing anything, and
+shows `…` after the number while it is catching up. It is not comparable between molecules of different sizes.
+
+The **Geometry** tab of the Activity panel lists the worst things wrong, worst first, as bonds, angles and clashes
+with how many tolerances each is out by. Click one to select the atoms it is between. The **Activity** tab is the
+log of what the session has done. Torsions are not counted or listed.
+
+With the **Strain** viewport button on, the Inspector adds a Strain section to a selected atom (its share of the
+strain, and every bond, angle and clash beyond tolerance that involves it) and to a selected bond (the findings that
+involve both its atoms). It says "Working it out…" while the figure is catching up after an edit.
 
 ## Outliner
 

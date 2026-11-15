@@ -3,7 +3,7 @@ import {ChemistryApi} from "../../api/ChemistryApi";
 import {ApiError} from "../../api/http";
 import {describing, describingSmiles, requested} from "./location";
 import type {Vec3} from "../../api/types/structure";
-import type {AtomMove, EditApplied, PatchAck, Pose, SessionState} from "./messages";
+import type {AtomMove, EditApplied, GeometryResult, PatchAck, Pose, SessionState} from "./messages";
 import {samePose} from "./pose";
 import {StudioError, StudioSocket} from "./studioSocket";
 
@@ -63,6 +63,11 @@ export type EditResult =
 export interface Session {
   phase: SessionPhase;
   state: SessionState | null;
+  /**
+   * How strained the geometry is, as the server last said. It describes the version in `version`, which is out of date
+   * once the session has moved on; the server sends a fresh one shortly after every change.
+   */
+  geometry: GeometryResult | null;
   activity: Activity[];
   /** Stores a molecule written as SMILES and opens a session on it. */
   openSmiles: (smiles: string) => void;
@@ -107,6 +112,7 @@ export function useSession(client?: ChemistryApi): Session {
 
   const [phase, setPhase] = useState<SessionPhase>({ kind: "connecting" });
   const [state, setState] = useState<SessionState | null>(null);
+  const [geometry, setGeometry] = useState<GeometryResult | null>(null);
   const [activity, setActivity] = useState<Activity[]>([]);
 
   const socketRef = useRef<StudioSocket | null>(null);
@@ -119,6 +125,10 @@ export function useSession(client?: ChemistryApi): Session {
   }, []);
 
   const adopt = useCallback((next: SessionState) => {
+    // what was said of another session says nothing of this one
+    if (held.current && held.current.session_id !== next.session_id) {
+      setGeometry(null);
+    }
     // the molecule saved is what a reload should open, since it holds the edits and the molecule opened does not
     if (next.saved_molecule_id && next.saved_molecule_id !== held.current?.saved_molecule_id) {
       describing(next.saved_molecule_id, next.smiles);
@@ -212,6 +222,14 @@ export function useSession(client?: ChemistryApi): Session {
     });
     socketRef.current = socket;
 
+    // the server says how strained the geometry is whenever it has had time to work it out; one older than what is held is stale
+    const hearGeometry = socket.on<GeometryResult>("geometry.result", (result) => {
+      if (held.current && held.current.session_id !== result.session_id) {
+        return;
+      }
+      setGeometry((before) => (before && before.session_id === result.session_id && before.version > result.version ? before : result));
+    });
+
     void (async () => {
       try {
         await socket.connect();
@@ -240,6 +258,7 @@ export function useSession(client?: ChemistryApi): Session {
 
     return () => {
       live = false;
+      hearGeometry();
       socket.close();
       socketRef.current = null;
     };
@@ -542,6 +561,7 @@ export function useSession(client?: ChemistryApi): Session {
   return {
     phase,
     state,
+    geometry,
     activity,
     openSmiles: submit,
     submitSmiles,

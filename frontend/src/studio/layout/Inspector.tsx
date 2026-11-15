@@ -4,13 +4,16 @@ import type {Models} from "../selection/models";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
 import type {Vec3} from "../../api/types/structure";
-import type {Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
+import type {GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
 import {eulerOf, withEuler} from "../session/pose";
 import type {Pivot} from "../selection/ToolModel";
+import {describeFinding, isCurrent} from "./findings";
 import {NumberField} from "./NumberField";
 
 export interface InspectorProps {
   state: SessionState | null;
+  /** What the server last said about the geometry, which is detailed for the selected atom or bond while strain is shown. */
+  geometry: GeometryResult | null;
   models: Models;
   /** Puts an atom at a position. */
   onMoveAtom: (id: string, position: Vec3) => void;
@@ -26,7 +29,7 @@ export interface InspectorProps {
  * The active item decides what is shown. With nothing selected it shows the session; with a
  * mixture of kinds it says what the mixture is and does not guess at a pane.
  */
-export function Inspector({ state, models, onMoveAtom, onMoveMolecule, onLockAtoms }: InspectorProps) {
+export function Inspector({ state, geometry, models, onMoveAtom, onMoveMolecule, onLockAtoms }: InspectorProps) {
   const { selection, index } = models;
   const { items, active } = useObservable(selection);
 
@@ -38,7 +41,7 @@ export function Inspector({ state, models, onMoveAtom, onMoveMolecule, onLockAto
     return (
       <>
         <p className="panel-empty">Nothing selected.</p>
-        <SessionPane state={state} />
+        <SessionPane state={state} geometry={geometry} />
       </>
     );
   }
@@ -54,7 +57,15 @@ export function Inspector({ state, models, onMoveAtom, onMoveMolecule, onLockAto
           {items.length} {active.kind}s selected. Showing {describe(active, index)}.
         </p>
       )}
-      <ItemPane item={active} index={index} models={models} onMoveAtom={onMoveAtom} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
+      <ItemPane
+        item={active}
+        index={index}
+        geometry={geometry}
+        models={models}
+        onMoveAtom={onMoveAtom}
+        onMoveMolecule={onMoveMolecule}
+        onLockAtoms={onLockAtoms}
+      />
     </>
   );
 }
@@ -62,40 +73,59 @@ export function Inspector({ state, models, onMoveAtom, onMoveMolecule, onLockAto
 interface ItemPaneProps {
   item: Item;
   index: StateIndex;
+  geometry: GeometryResult | null;
   models: Models;
   onMoveAtom: (id: string, position: Vec3) => void;
   onMoveMolecule: (pose: Pose) => void;
   onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
-function ItemPane({ item, index, models, onMoveAtom, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
+function ItemPane({ item, index, geometry, models, onMoveAtom, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
       const atom = index.atoms.get(item.id);
-      return atom ? <AtomPane key={atom.id} atom={atom} index={index} models={models} onMove={onMoveAtom} onLock={onLockAtoms} /> : null;
+      return atom ? <AtomPane key={atom.id} atom={atom} index={index} geometry={geometry} models={models} onMove={onMoveAtom} onLock={onLockAtoms} /> : null;
     }
     case "bond": {
       const bond = index.bonds.get(item.id);
-      return bond ? <BondPane bond={bond} index={index} models={models} /> : null;
+      return bond ? <BondPane bond={bond} index={index} geometry={geometry} models={models} /> : null;
     }
     default:
       return <MoleculePane id={item.id} index={index} models={models} onMove={onMoveMolecule} />;
   }
 }
 
-function SessionPane({ state }: { state: SessionState }) {
+function SessionPane({ state, geometry }: { state: SessionState; geometry: GeometryResult | null }) {
   return (
     <dl className="properties">
       <Property name="SMILES" value={state.smiles} mono />
       <Property name="Atoms" value={String(state.atoms.length)} />
       <Property name="Bonds" value={String(state.bonds.length)} />
       <Property name="Molecules" value={String(state.fragments.length)} />
-      <Property name="Strain" value={state.strain.toFixed(3)} />
+      <Property name="Strain" value={strainOf(state, geometry)} />
       <Property name="Version" value={String(state.version)} />
       <Property name="Source" value={state.source_molecule_id} mono />
       <Property name="Saved" value={state.saved_molecule_id ?? "not saved"} mono={state.saved_molecule_id !== null} />
     </dl>
   );
+}
+
+/**
+ * Says how strained the molecule is as a whole.
+ *
+ * @param state the session
+ * @param geometry what the server last said of its geometry
+ */
+function strainOf(state: SessionState, geometry: GeometryResult | null): string {
+  if (!geometry) {
+    return "not examined yet";
+  }
+  if (geometry.status === "failed" || geometry.strain === null) {
+    return "unavailable";
+  }
+
+  const wait = isCurrent(geometry, state) ? "" : " (updating…)";
+  return `${geometry.strain.toFixed(2)} · ${geometry.findings.length === 0 ? "happy" : "strained"}${wait}`;
 }
 
 interface MixedPaneProps {
@@ -217,12 +247,13 @@ function MoleculePane({ id, index, models, onMove }: MoleculePaneProps) {
 interface AtomPaneProps {
   atom: SessionAtom;
   index: StateIndex;
+  geometry: GeometryResult | null;
   models: Models;
   onMove: (id: string, position: Vec3) => void;
   onLock: (ids: string[], locked: boolean) => void;
 }
 
-function AtomPane({ atom, index, models, onMove, onLock }: AtomPaneProps) {
+function AtomPane({ atom, index, geometry, models, onMove, onLock }: AtomPaneProps) {
   const { position } = atom;
   const fragment = index.fragmentOf({ kind: "atom", id: atom.id });
   const state = index.state;
@@ -271,6 +302,8 @@ function AtomPane({ atom, index, models, onMove, onLock }: AtomPaneProps) {
 
       <h4 className="pane-subtitle">Bonds</h4>
       <Links models={models} links={index.bondsOf(atom.id).map((bond) => ({ item: { kind: "bond", id: bond.id }, label: index.bondLabel(bond) }))} />
+
+      <StrainDetails atoms={[atom.id]} index={index} geometry={geometry} models={models} />
     </>
   );
 }
@@ -278,10 +311,11 @@ function AtomPane({ atom, index, models, onMove, onLock }: AtomPaneProps) {
 interface BondPaneProps {
   bond: SessionBond;
   index: StateIndex;
+  geometry: GeometryResult | null;
   models: Models;
 }
 
-function BondPane({ bond, index, models }: BondPaneProps) {
+function BondPane({ bond, index, geometry, models }: BondPaneProps) {
   const first = index.atoms.get(bond.first);
   const second = index.atoms.get(bond.second);
   const length = first && second ? Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y, first.position.z - second.position.z) : null;
@@ -300,6 +334,70 @@ function BondPane({ bond, index, models }: BondPaneProps) {
         models={models}
         links={[bond.first, bond.second].map((id) => ({ item: { kind: "atom", id }, label: index.label(id) }))}
       />
+
+      <StrainDetails atoms={[bond.first, bond.second]} index={index} geometry={geometry} models={models} />
+    </>
+  );
+}
+
+interface StrainDetailsProps {
+  /** The atoms of what is selected: the atom, or the two ends of a bond. */
+  atoms: string[];
+  index: StateIndex;
+  geometry: GeometryResult | null;
+  models: Models;
+}
+
+/**
+ * What is wrong with the selected atom or bond, while strain is shown: how much of the strain is the atom's, and every
+ * bond, angle and clash beyond its tolerance that involves all of its atoms.
+ */
+function StrainDetails({ atoms, index, geometry, models }: StrainDetailsProps) {
+  const { strain } = useObservable(models.tools);
+  if (!strain) {
+    return null;
+  }
+
+  const title = <h4 className="pane-subtitle">Strain</h4>;
+  if (!geometry || geometry.status === "failed") {
+    return (
+      <>
+        {title}
+        <p className="panel-empty">The geometry has not been examined.</p>
+      </>
+    );
+  }
+  if (!isCurrent(geometry, index.state)) {
+    return (
+      <>
+        {title}
+        <p className="panel-empty">Working it out…</p>
+      </>
+    );
+  }
+
+  const findings = geometry.findings.filter((finding) => atoms.every((id) => finding.atoms.includes(id)));
+  const share = geometry.atom_strain.find((each) => each.id === atoms[0])?.strain ?? 0;
+  return (
+    <>
+      {title}
+      {atoms.length === 1 && (
+        <dl className="properties">
+          <Property name="Share" value={share.toFixed(2)} mono />
+        </dl>
+      )}
+      {findings.length === 0 ? (
+        <p className="panel-empty">Nothing beyond its tolerance.</p>
+      ) : (
+        <ul className="findings">
+          {findings.map((finding) => (
+            <li key={`${finding.kind}:${finding.atoms.join(",")}`}>
+              <span className="finding">{describeFinding(finding, (id) => index.label(id))}</span>
+              <span className="severity">{finding.severity.toFixed(1)}×</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

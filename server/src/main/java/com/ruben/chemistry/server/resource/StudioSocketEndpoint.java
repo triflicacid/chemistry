@@ -8,6 +8,7 @@ import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.studio.GeometryScheduler;
 import com.ruben.chemistry.server.studio.StudioEditException;
 import com.ruben.chemistry.server.studio.StudioRequests;
 import com.ruben.chemistry.server.studio.StudioSession;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
@@ -35,14 +37,18 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 6;
+    private static final int PROTOCOL_VERSION = 7;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
 
     private final MoleculeStore molecules;
     private final StudioSessionStore sessions;
+    private final GeometryScheduler geometry;
     private final MoleculeParser parser = new MoleculeParser();
+
+    /** The connection each session's results are sent to, which is the one holding it. */
+    private final Map<String, WebSocketContext> holders = new ConcurrentHashMap<>();
 
     /**
      * @param molecules the molecules a session can be opened on
@@ -58,8 +64,19 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions)
     {
+        this(molecules, sessions, new GeometryScheduler(GeometryScheduler.DEFAULT_DEBOUNCE));
+    }
+
+    /**
+     * @param molecules the molecules a session can be opened on
+     * @param sessions where to hold the open sessions
+     * @param geometry what examines a session's geometry once it has been left alone
+     */
+    public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry)
+    {
         this.molecules = Objects.requireNonNull(molecules, "molecules");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
+        this.geometry = Objects.requireNonNull(geometry, "geometry");
     }
 
     @Override
@@ -123,6 +140,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         sessions.add(session, context.id());
         hold(context, session);
         context.sendJson(StudioState.of(session, sequence));
+        recalculate(session);
     }
 
     /**
@@ -160,6 +178,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         // dropped one was holding and so stops its grace window
         hold(context, session);
         context.sendJson(StudioState.of(session, sequence));
+        recalculate(session);
     }
 
     /**
@@ -226,6 +245,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         sessions.replace(rebuilt);
         context.sendJson(StudioState.of(rebuilt, sequence));
+        recalculate(rebuilt);
     }
 
     /**
@@ -270,6 +290,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         boolean commit = request.commit() == null || request.commit();
         synchronized (session)
         {
+            long before = session.version();
             long version;
             try
             {
@@ -288,6 +309,11 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             }
 
             Map<String, Object> ack = new LinkedHashMap<>();
+            if (version != before)
+            {
+                recalculate(session);
+            }
+
             ack.put("type", "atom.patch.ack");
             ack.put("sequence", sequence);
             ack.put("version", version);
@@ -335,6 +361,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         boolean commit = request.commit() == null || request.commit();
         synchronized (session)
         {
+            long before = session.version();
             long version;
             try
             {
@@ -353,6 +380,11 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             }
 
             Map<String, Object> ack = new LinkedHashMap<>();
+            if (version != before)
+            {
+                recalculate(session);
+            }
+
             ack.put("type", "molecule.transform.ack");
             ack.put("sequence", sequence);
             ack.put("version", version);
@@ -416,6 +448,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             if (version != before)
             {
                 save(session);
+                recalculate(session);
             }
 
             Map<String, Object> ack = new LinkedHashMap<>();
@@ -497,6 +530,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             }
 
             save(session);
+            recalculate(session);
 
             Map<String, Object> reply = new LinkedHashMap<>();
             reply.put("type", "edit.applied");
@@ -511,6 +545,33 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     .toList());
             context.sendJson(reply);
         }
+    }
+
+    /**
+     * Asks for a session's geometry to be examined once it has been left alone, and the result sent to the connection
+     * holding it. A session that has been replaced or has no holder is not sent one.
+     *
+     * @param session the session that has changed
+     */
+    private void recalculate(StudioSession session)
+    {
+        geometry.schedule(session, report ->
+        {
+            WebSocketContext holder = holders.get(session.sessionId());
+            if (holder == null || sessions.find(session.sessionId()).orElse(null) != session)
+            {
+                return;
+            }
+
+            try
+            {
+                holder.sendJson(report);
+            }
+            catch (IOException closed)
+            {
+                // the connection is gone, and the client will resync and be sent the result again
+            }
+        });
     }
 
     /**
@@ -609,6 +670,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
 
         sessions.attach(session.sessionId(), context.id());
+        holders.put(session.sessionId(), context);
     }
 
     /**
@@ -622,6 +684,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         if (held != null)
         {
             sessions.detach((String) held, context.id());
+            holders.remove((String) held, context);
         }
     }
 

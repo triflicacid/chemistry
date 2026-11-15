@@ -60,6 +60,16 @@ public final class StudioSession
     }
 
     /**
+     * The atoms' positions at one version, which a calculation can be made from without holding the session.
+     *
+     * @param version the version of the session the positions are of
+     * @param positions where each atom is, in angstroms in the molecule's own frame, in the order of {@link #molecule()}'s atoms
+     */
+    public record Snapshot(long version, List<Vec3> positions)
+    {
+    }
+
+    /**
      * One committed edit.
      *
      * @param before where each atom the edit touched was
@@ -633,9 +643,17 @@ public final class StudioSession
     }
 
     /**
+     * @return the atoms' positions as they are now, with the version they are at
+     */
+    public synchronized Snapshot snapshot()
+    {
+        return new Snapshot(version, molecule.atoms().stream().map(atom -> geometry.get(atomIds.get(atom))).toList());
+    }
+
+    /**
      * @return how many mutations this session has applied, counting from 1
      */
-    public long version()
+    public synchronized long version()
     {
         return version;
     }

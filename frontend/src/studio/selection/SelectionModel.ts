@@ -1,5 +1,5 @@
-import { type Item, sameItem } from "./items";
-import { Observable } from "./observable";
+import {type Item, sameItem} from "./items";
+import {Observable} from "./observable";
 
 /** What is selected. */
 export interface Selection {
@@ -36,6 +36,19 @@ export class SelectionModel extends Observable<Selection> {
       this.set({ items: [...items, item], active: item });
     } else {
       this.set({ items: [item], active: item });
+    }
+  }
+
+  /**
+   * Selects exactly these items, whatever was selected before.
+   *
+   * @param items what to select, in order; the last becomes the active one
+   */
+  replace(items: readonly Item[]): void {
+    if (items.length === 0) {
+      this.clear();
+    } else {
+      this.set({ items: [...items], active: items[items.length - 1] ?? null });
     }
   }
 
