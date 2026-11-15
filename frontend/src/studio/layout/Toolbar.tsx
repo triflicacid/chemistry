@@ -1,7 +1,7 @@
-import { useObservable } from "../selection/observable";
-import type { ToolModel } from "../selection/ToolModel";
-import type { LayoutState, Panel } from "../store";
-import type { SessionPhase } from "../session/useSession";
+import {useObservable} from "../selection/observable";
+import type {ToolModel} from "../selection/ToolModel";
+import type {LayoutState, Panel} from "../store";
+import type {SessionPhase} from "../session/useSession";
 
 export interface ToolbarProps {
   phase: SessionPhase;
@@ -43,12 +43,18 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
           type="button"
           className="tool"
           aria-pressed={tool === "move"}
-          title="Dragging an atom moves it. Hold it to an axis or plane with X, Y and Z, or the buttons in the viewport"
+          title="Dragging an atom moves it, and with a molecule selected its handles move the whole molecule. Hold an atom to an axis or plane with X, Y and Z, or the buttons in the viewport"
           onClick={() => tools.use("move")}
         >
           Move
         </button>
-        <button type="button" className="tool" disabled title={WAITING}>
+        <button
+          type="button"
+          className="tool"
+          aria-pressed={tool === "rotate"}
+          title="With a molecule selected, drag a ring to turn the whole molecule about its pivot"
+          onClick={() => tools.use("rotate")}
+        >
           Rotate
         </button>
         <button

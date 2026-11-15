@@ -1,11 +1,11 @@
-import type { Vec3 } from "../../api/types/structure";
+import type {Vec3} from "../../api/types/structure";
 
 /**
  * The version of the session protocol this client is written for. It goes in every message, and the server refuses
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -19,6 +19,24 @@ export interface SessionReady extends ServerEnvelope {
   connection_id: string;
   protocol_version: number;
   max_message_bytes: number;
+}
+
+/** A rotation as a quaternion. A unit quaternion when it describes a pose. */
+export interface Rotation {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
+
+/**
+ * Where the whole molecule sits in the scene.
+ * A point at `local` in the molecule is at `rotation.rotate(local) + position` in the scene.
+ */
+export interface Pose {
+  /** Where the molecule's origin is, in angstroms. */
+  position: Vec3;
+  rotation: Rotation;
 }
 
 /** One atom of a session's working graph. */
@@ -68,6 +86,8 @@ export interface SessionState extends ServerEnvelope {
   bonds: SessionBond[];
   fragments: SessionFragment[];
   locked: string[];
+  /** Where the molecule sits in the scene. The atoms' positions are in the molecule's own frame, not this one. */
+  transform: Pose;
   strain: number;
   /** Whether there is an edit to take back. */
   can_undo: boolean;
@@ -85,6 +105,18 @@ export interface AtomMove {
 export interface PatchAck extends ServerEnvelope {
   type: "atom.patch.ack";
   /** The version the session is at after the patch. */
+  version: number;
+  status: "applied";
+  can_undo: boolean;
+  can_redo: boolean;
+  /** The stored molecule holding the session's work, which this edit may have just created. */
+  saved_molecule_id: string | null;
+}
+
+/** The answer to a move of the molecule as a whole that the session applied. */
+export interface TransformAck extends ServerEnvelope {
+  type: "molecule.transform.ack";
+  /** The version the session is at after the change. */
   version: number;
   status: "applied";
   can_undo: boolean;
@@ -117,7 +149,7 @@ export interface LockAck extends ServerEnvelope {
   saved_molecule_id: string | null;
 }
 
-/** The answer to an undo or redo: only the atoms it moved, not the whole state. */
+/** The answer to an undo or redo: only what it changed, not the whole state. */
 export interface EditApplied extends ServerEnvelope {
   type: "edit.applied";
   /** The version the session is at after the step. */
@@ -127,6 +159,8 @@ export interface EditApplied extends ServerEnvelope {
   saved_molecule_id: string | null;
   /** Where each atom the step touched is now. */
   atoms: { id: string; position: Vec3 }[];
+  /** Where the molecule now sits, or null if the step did not move it as a whole. */
+  transform: Pose | null;
 }
 
 /** A message the server could not handle, which leaves the connection open. */
@@ -142,4 +176,4 @@ export interface Pong extends ServerEnvelope {
   type: "pong";
 }
 
-export type ServerMessage = SessionReady | SessionState | SessionConflict | PatchAck | LockAck | EditApplied | SocketError | Pong;
+export type ServerMessage = SessionReady | SessionState | SessionConflict | PatchAck | TransformAck | LockAck | EditApplied | SocketError | Pong;

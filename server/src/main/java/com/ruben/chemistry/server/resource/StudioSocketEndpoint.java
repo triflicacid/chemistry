@@ -5,8 +5,8 @@ import com.ruben.chemistry.server.json.JsonNames;
 import com.ruben.chemistry.server.json.RecordConverter;
 import com.ruben.chemistry.server.molecule.MoleculeException;
 import com.ruben.chemistry.server.molecule.MoleculeParser;
-import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
+import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.studio.StudioEditException;
 import com.ruben.chemistry.server.studio.StudioRequests;
@@ -35,7 +35,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 5;
+    private static final int PROTOCOL_VERSION = 6;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -300,6 +300,71 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Moves and turns the molecule as a whole.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void transform(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.TransformRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.TransformRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("molecule.transform", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.position() == null || request.rotation() == null)
+        {
+            context.error("molecule.transform", sequence, "INVALID_MESSAGE", "position and rotation are required");
+            return;
+        }
+
+        StudioSession session = current(context, "molecule.transform", sequence, request.sessionId(), request.baseVersion());
+        if (session == null)
+        {
+            return;
+        }
+
+        boolean commit = request.commit() == null || request.commit();
+        synchronized (session)
+        {
+            long version;
+            try
+            {
+                version = session.transform(request.pose(), commit);
+            }
+            catch (StudioEditException refused)
+            {
+                context.error("molecule.transform", sequence, refused.code(), refused.getMessage());
+                return;
+            }
+
+            // an edit in progress is not yet something worth keeping
+            if (commit && session.canUndo())
+            {
+                save(session);
+            }
+
+            Map<String, Object> ack = new LinkedHashMap<>();
+            ack.put("type", "molecule.transform.ack");
+            ack.put("sequence", sequence);
+            ack.put("version", version);
+            ack.put("status", "applied");
+            ack.put("saved_molecule_id", session.savedMoleculeId());
+            ack.put("can_undo", session.canUndo());
+            ack.put("can_redo", session.canRedo());
+            context.sendJson(ack);
+        }
+    }
+
+    /**
      * Locks or unlocks atoms.
      *
      * @param context the connection that asked
@@ -440,6 +505,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             reply.put("can_undo", session.canUndo());
             reply.put("can_redo", session.canRedo());
             reply.put("saved_molecule_id", session.savedMoleculeId());
+            reply.put("transform", applied.pose());
             reply.put("atoms", applied.moved().entrySet().stream()
                     .map(moved -> Map.of("id", moved.getKey(), "position", moved.getValue()))
                     .toList());
@@ -463,6 +529,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         stored.setLatestStructure3d(session.structure());
         stored.setLockedSites(session.lockedSites());
+        stored.setPose(session.pose());
     }
 
     /**
@@ -572,6 +639,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     "session.resync", endpoint::resync,
                     "smiles.submit", endpoint::submitSmiles,
                     "atom.patch", endpoint::patch,
+                    "molecule.transform", endpoint::transform,
                     "atom.lock", endpoint::lock,
                     "edit.undo", endpoint::undo,
                     "edit.redo", endpoint::redo));

@@ -1,17 +1,31 @@
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, Quaternion, type Ray, Raycaster, type Sprite, Vector3 } from "three";
-import type { Vec3 } from "../../api/types/structure";
-import { aromaticCentres } from "../../render/aromatic";
-import { makeAxes } from "../../render/axes";
-import { ballRadius, buildBond, type BondEnds, type Style } from "../../render/bonds";
-import { disposeMaterials } from "../../render/dispose";
-import { applyTints, HOVER_TINT, SELECTED_TINT } from "../../render/emphasis";
-import { type Part, PartRegistry } from "../../render/parts";
-import { Primitives } from "../../render/primitives";
-import { Stage } from "../../render/stage";
-import { Triad } from "../../render/triad";
-import { type Constraint, dragged, pointOnConstraint } from "./dragPlane";
-import { type Guide, makeGuide } from "./guides";
-import type { AtomMove, SessionAtom, SessionBond, SessionState } from "../session/messages";
+import {
+  Box3,
+  Color,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  type Object3D,
+  Quaternion,
+  Ray,
+  Raycaster,
+  type Sprite,
+  Vector3
+} from "three";
+import type {Vec3} from "../../api/types/structure";
+import {aromaticCentres} from "../../render/aromatic";
+import {makeAxes} from "../../render/axes";
+import {ballRadius, type BondEnds, buildBond, type Style} from "../../render/bonds";
+import {disposeMaterials} from "../../render/dispose";
+import {applyTints, HOVER_TINT, SELECTED_TINT} from "../../render/emphasis";
+import {type Part, PartRegistry} from "../../render/parts";
+import {Primitives} from "../../render/primitives";
+import {Stage} from "../../render/stage";
+import {Triad} from "../../render/triad";
+import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
+import {type GizmoMode, MoleculeGizmo} from "./gizmo";
+import {type Guide, makeGuide} from "./guides";
+import type {AtomMove, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
+import type {Pivot, Space} from "../selection/ToolModel";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
 export interface StudioPick {
@@ -36,6 +50,12 @@ export interface StudioViewListener {
   drag?(moves: AtomMove[], done: boolean): void;
   /** A drag was abandoned, and the atoms put back at `moves`' positions, where they were picked up. */
   dragCancel?(moves: AtomMove[]): void;
+  /** A handle of the molecule's gizmo has been taken hold of, with the molecule at `from`. */
+  moleculeDragStart?(from: Pose): void;
+  /** The gizmo has put the molecule at `pose`. `done` is true for the last report, when the handle is let go. */
+  moleculeDrag?(pose: Pose, done: boolean): void;
+  /** A drag of the molecule was abandoned, and it was put back at `from`, where it was picked up. */
+  moleculeDragCancel?(from: Pose): void;
 }
 
 /** Atoms and bonds, by identifier, to draw with emphasis. */
@@ -105,11 +125,11 @@ interface Grab {
   members: Member[];
   /** Where the pointer's ray met the constraint when it began. */
   point: Vector3;
-  /** The way the camera looks, which does not change during a drag because the camera is not moved. */
+  /** The way the camera looks, in the molecule's own frame, which does not change during a drag because the camera is not moved. */
   viewDirection: Vector3;
   /** Where the pointer was pressed, in pixels. */
   from: ScreenPoint;
-  /** The pointer's latest ray, kept so that a change of constraint can start from where the pointer is. */
+  /** The pointer's latest ray, in the molecule's own frame, kept so that a change of constraint can start from where the pointer is. */
   ray: Ray;
   dragging: boolean;
 }
@@ -121,7 +141,11 @@ export class StudioView {
   private readonly triad = new Triad(this.kit.labels);
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
+  /** Holds everything drawn of the molecule, positioned in the scene by its pose. Atoms are placed in this group's own frame. */
   private readonly content = new Group();
+  /** Turns a guide to the frame it is drawn in: the scene's, the molecule's, or the camera's. */
+  private readonly guideFrame = new Group();
+  private readonly gizmo: MoleculeGizmo;
   private readonly axes = makeAxes();
   private readonly listeners = new Set<StudioViewListener>();
 
@@ -145,6 +169,19 @@ export class StudioView {
   /** Whether pressing on an atom picks it up. */
   private moving = false;
   private constraint: Constraint = "free";
+  /** Whether constraints, and the molecule's gizmo, follow the scene's axes or the molecule's. */
+  private space: Space = "world";
+  private pivot: Pivot = "anchor";
+  private pivotPoint = new Vector3();
+  /**
+   * The point the view was last anchored on, in the molecule's own frame so that it stays on the same spot of the
+   * molecule when the molecule is moved. Panning does not change it: only framing and a right-click do.
+   */
+  private anchor = new Vector3();
+  /** What the molecule's gizmo does, or null while it is not shown. */
+  private gizmoMode: GizmoMode | null = null;
+  /** The pose last drawn, so that an unchanged one is not drawn again. */
+  private drawnPose: Pose | null = null;
   private grab: Grab | null = null;
   /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
   private snapped: { axis: Vector3; sign: 1 | -1; orientation: Quaternion } | null = null;
@@ -168,7 +205,19 @@ export class StudioView {
     });
     // off until the viewport says otherwise, so they do not flash on before it does
     this.axes.visible = false;
-    this.stage.scene.add(this.content, this.axes);
+    this.stage.scene.add(this.content, this.axes, this.guideFrame);
+    this.gizmo = new MoleculeGizmo(this.stage, this.content, {
+      start: (from) => this.listeners.forEach((listener) => listener.moleculeDragStart?.(from)),
+      change: (pose, done) => {
+        this.refreshGuide();
+        this.listeners.forEach((listener) => listener.moleculeDrag?.(pose, done));
+      },
+      cancel: (from) => {
+        this.drawnPose = from;
+        this.refreshGuide();
+        this.listeners.forEach((listener) => listener.moleculeDragCancel?.(from));
+      },
+    });
     this.stage.addOverlay((renderer, camera) => this.triad.draw(renderer, camera));
 
     canvas.addEventListener("pointermove", this.onMove);
@@ -193,11 +242,17 @@ export class StudioView {
   setState(state: SessionState): void {
     const signature = signatureOf(state);
     this.locked = new Set(state.locked);
+
+    // a molecule in the user's hand is where the pointer has put it, and the session is only catching up
+    if (!this.gizmo.dragging) {
+      this.applyPose(state.transform);
+    }
     if (signature === this.signature) {
       // the atom in the user's hand is where the pointer has put it, and the session is only catching up
       const held = new Set(this.grab?.dragging ? this.grab.members.map((member) => member.node.atom.id) : []);
       this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
       this.refreshLocks();
+      this.syncGizmo();
       return;
     }
 
@@ -210,6 +265,127 @@ export class StudioView {
       this.framedSession = state.session_id;
       this.frameScene();
     }
+    this.syncGizmo();
+  }
+
+  /**
+   * Puts the molecule where its pose says. No atom moves: the pose carries the group they are drawn in.
+   *
+   * @param pose where the molecule sits in the scene
+   */
+  private applyPose(pose: Pose): void {
+    const drawn = this.drawnPose;
+    if (
+      drawn &&
+      drawn.position.x === pose.position.x &&
+      drawn.position.y === pose.position.y &&
+      drawn.position.z === pose.position.z &&
+      drawn.rotation.x === pose.rotation.x &&
+      drawn.rotation.y === pose.rotation.y &&
+      drawn.rotation.z === pose.rotation.z &&
+      drawn.rotation.w === pose.rotation.w
+    ) {
+      return;
+    }
+
+    this.drawnPose = pose;
+    this.content.position.set(pose.position.x, pose.position.y, pose.position.z);
+    this.content.quaternion.set(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
+    this.content.updateMatrixWorld(true);
+    this.placeGuide();
+    this.stage.requestRender();
+  }
+
+  /**
+   * Shows what the molecule's gizmo does, or hides it.
+   *
+   * @param mode translate to carry the molecule along an axis or plane, rotate to turn it about the pivot, or null for neither
+   */
+  setGizmo(mode: GizmoMode | null): void {
+    this.gizmoMode = mode;
+    this.syncGizmo();
+  }
+
+  /**
+   * Chooses whether constraints, and the molecule's gizmo, follow the scene's axes or the molecule's own.
+   *
+   * @param space which to follow
+   */
+  setSpace(space: Space): void {
+    this.space = space;
+    this.syncGizmo();
+    this.refreshGuide();
+  }
+
+  /**
+   * Chooses the point the molecule's gizmo sits on and the molecule turns about.
+   *
+   * @param pivot the point the view orbits, the middle of its atoms, its own origin, or a point
+   * @param point where the point is, in the scene, when the pivot is a point
+   */
+  setPivot(pivot: Pivot, point: Vec3): void {
+    this.pivot = pivot;
+    this.pivotPoint.set(point.x, point.y, point.z);
+    this.syncGizmo();
+  }
+
+  /** Brings the gizmo into line with its mode, space, pivot and the molecule's pose. A gizmo being dragged is left alone. */
+  private syncGizmo(): void {
+    if (this.gizmoMode === null || this.atoms.length === 0) {
+      this.gizmo.hide();
+      return;
+    }
+    this.gizmo.show(this.gizmoMode, this.space, this.pivotWorld());
+  }
+
+  /** Where the pivot is in the scene. */
+  private pivotWorld(): Vector3 {
+    if (this.pivot === "point") {
+      return this.pivotPoint.clone();
+    }
+    if (this.pivot === "anchor") {
+      return this.content.localToWorld(this.anchor.clone());
+    }
+    if (this.pivot === "origin" || this.atoms.length === 0) {
+      return this.content.position.clone();
+    }
+
+    const box = new Box3();
+    this.atoms.forEach((node) => box.expandByPoint(this.worldOf(node)));
+    return box.getCenter(new Vector3());
+  }
+
+  /** Where an atom is in the scene, which is not where it is in the molecule's own frame once the molecule has moved. */
+  private worldOf(node: AtomNode): Vector3 {
+    return this.content.localToWorld(node.at.clone());
+  }
+
+  /**
+   * Turns a ray in the scene into the same ray in the molecule's own frame, which is where atoms are placed.
+   *
+   * @param ray a ray in the scene
+   * @returns the ray in the molecule's frame
+   */
+  private localRay(ray: Ray): Ray {
+    const inverse = this.content.quaternion.clone().invert();
+    return new Ray(this.content.worldToLocal(ray.origin.clone()), ray.direction.clone().applyQuaternion(inverse));
+  }
+
+  /**
+   * @returns the directions of the axes a constraint names, in the molecule's own frame, which are its own axes in
+   *     local space and the scene's, turned back by the molecule's rotation, in world space
+   */
+  private dragBasis(): Basis {
+    if (this.space === "local") {
+      return STANDARD_BASIS;
+    }
+
+    const inverse = this.content.quaternion.clone().invert();
+    return {
+      x: STANDARD_BASIS.x.clone().applyQuaternion(inverse),
+      y: STANDARD_BASIS.y.clone().applyQuaternion(inverse),
+      z: STANDARD_BASIS.z.clone().applyQuaternion(inverse),
+    };
   }
 
   /** Draws a padlock on each locked atom and takes it off the rest. */
@@ -308,17 +484,44 @@ export class StudioView {
     }
     if (nodes.length === 0) {
       this.stage.frame(new Vector3(), 3);
+      this.anchorOn(new Vector3());
       return;
     }
 
     const box = new Box3();
-    nodes.forEach((node) => box.expandByPoint(node.at));
+    nodes.forEach((node) => box.expandByPoint(this.worldOf(node)));
     const centre = box.getCenter(new Vector3());
     let radius = 1;
     for (const node of nodes) {
-      radius = Math.max(radius, node.at.distanceTo(centre) + Math.max(ballRadius(node.atom.radius, STYLE, true), 0.3));
+      radius = Math.max(radius, this.worldOf(node).distanceTo(centre) + Math.max(ballRadius(node.atom.radius, STYLE, true), 0.3));
     }
     this.stage.frame(centre, radius + 0.5);
+    this.anchorOn(centre);
+  }
+
+  /**
+   * Anchors the view on an atom, as a right-click on it does, which is where the molecule's gizmo sits when its pivot
+   * is the anchor.
+   *
+   * @param id the atom's identifier; one that is not drawn is ignored
+   */
+  anchorOnAtom(id: string): void {
+    const node = this.atomById.get(id);
+    if (node) {
+      const world = this.worldOf(node);
+      this.stage.pivotOn(world);
+      this.anchorOn(world);
+    }
+  }
+
+  /**
+   * Records where the view has been anchored, which is where the molecule's gizmo sits when its pivot is the anchor.
+   *
+   * @param world the point the view now orbits, in the scene
+   */
+  private anchorOn(world: Vector3): void {
+    this.anchor = this.content.worldToLocal(world.clone());
+    this.syncGizmo();
   }
 
   /**
@@ -369,7 +572,7 @@ export class StudioView {
     const grab = this.grab;
     if (grab?.dragging) {
       grab.members.forEach((member) => (member.start = member.node.at.clone()));
-      grab.point = pointOnConstraint(grab.ray, grab.members[0]!.start, constraint, grab.viewDirection) ?? grab.point;
+      grab.point = pointOnConstraint(grab.ray, grab.members[0]!.start, constraint, grab.viewDirection, this.dragBasis()) ?? grab.point;
     }
   }
 
@@ -412,6 +615,7 @@ export class StudioView {
     canvas.removeEventListener("pointercancel", this.onCancel);
     window.removeEventListener("keydown", this.onKey, { capture: true });
     this.clear();
+    this.gizmo.dispose();
     this.guide?.dispose();
     this.triad.dispose();
     disposeMaterials(this.axes);
@@ -449,14 +653,14 @@ export class StudioView {
   /** Draws the guide for the current constraint afresh, or removes it when there is nothing for it to show. */
   private refreshGuide(): void {
     if (this.guide) {
-      this.stage.scene.remove(this.guide.group);
+      this.guideFrame.remove(this.guide.group);
       this.guide.dispose();
       this.guide = null;
     }
 
     if (this.debug && this.moving && this.guideTarget() && !this.selectionLocked()) {
       this.guide = makeGuide(this.constraint);
-      this.stage.scene.add(this.guide.group);
+      this.guideFrame.add(this.guide.group);
       this.placeGuide();
     }
     this.stage.requestRender();
@@ -469,9 +673,15 @@ export class StudioView {
       return;
     }
 
-    this.guide.group.position.copy(target.at);
+    // the guide is drawn in the frame the constraint is measured in: the camera's for free movement, otherwise the
+    // molecule's own axes or the scene's
+    this.guideFrame.position.copy(this.worldOf(target));
     if (this.guide.facesCamera) {
-      this.guide.group.quaternion.copy(this.stage.camera.quaternion);
+      this.guideFrame.quaternion.copy(this.stage.camera.quaternion);
+    } else if (this.space === "local") {
+      this.guideFrame.quaternion.copy(this.content.quaternion);
+    } else {
+      this.guideFrame.quaternion.identity();
     }
     this.stage.requestRender();
   }
@@ -599,6 +809,11 @@ export class StudioView {
     return this.raycaster.ray.clone();
   }
 
+  /** The pointer's ray in the molecule's own frame, which is the one atoms are dragged in. */
+  private localRayOf(event: PointerEvent): Ray {
+    return this.localRay(this.rayOf(event));
+  }
+
   /**
    * Where the grabbed atoms are, given where the pointer is.
    *
@@ -609,7 +824,7 @@ export class StudioView {
    */
   private placesOf(grab: Grab, ray: Ray): AtomMove[] | null {
     const [lead] = grab.members as [Member, ...Member[]];
-    const point = pointOnConstraint(ray, lead.start, this.constraint, grab.viewDirection);
+    const point = pointOnConstraint(ray, lead.start, this.constraint, grab.viewDirection, this.dragBasis());
     if (!point) {
       return null;
     }
@@ -648,6 +863,12 @@ export class StudioView {
   };
 
   private readonly onGrab = (event: PointerEvent): void => {
+    if (event.button === 0 && this.gizmo.hovered) {
+      // a handle of the molecule's gizmo is under the pointer, which takes hold of it, and the camera must stay put
+      this.stage.controls.enabled = false;
+      return;
+    }
+
     if (!this.moving || event.button !== 0) {
       return;
     }
@@ -665,9 +886,9 @@ export class StudioView {
       return;
     }
 
-    const ray = this.rayOf(event);
-    const viewDirection = this.stage.camera.getWorldDirection(new Vector3());
-    const point = pointOnConstraint(ray, node.at, this.constraint, viewDirection);
+    const ray = this.localRayOf(event);
+    const viewDirection = this.stage.camera.getWorldDirection(new Vector3()).applyQuaternion(this.content.quaternion.clone().invert());
+    const point = pointOnConstraint(ray, node.at, this.constraint, viewDirection, this.dragBasis());
     if (!point) {
       return;
     }
@@ -688,7 +909,10 @@ export class StudioView {
   };
 
   private readonly onKey = (event: KeyboardEvent): void => {
-    if (event.key === "Escape" && this.grab?.dragging) {
+    if (event.key === "Escape" && this.gizmo.dragging) {
+      event.stopPropagation();
+      this.gizmo.cancel();
+    } else if (event.key === "Escape" && this.grab?.dragging) {
       // the key abandons the drag and goes no further, so it does not also clear the selection
       event.stopPropagation();
       this.cancelDrag();
@@ -707,7 +931,7 @@ export class StudioView {
         this.listeners.forEach((listener) => listener.dragStart?.(grab.id));
       }
 
-      grab.ray = this.rayOf(event);
+      grab.ray = this.localRayOf(event);
       const moves = this.placesOf(grab, grab.ray);
       if (moves) {
         this.moveAtoms(moves.map((move) => [move.id, move.position]));
@@ -734,7 +958,8 @@ export class StudioView {
   };
 
   private readonly onDown = (event: PointerEvent): void => {
-    this.down = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+    // a press on the molecule's gizmo is the gizmo's, and when it lets go it must not also select what is under it
+    this.down = event.button === 0 && !this.gizmo.hovered ? { x: event.clientX, y: event.clientY } : null;
     this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
   };
 
@@ -753,7 +978,8 @@ export class StudioView {
     let nearest: Vector3 | null = null;
     let best = Infinity;
     if (hit) {
-      for (const { at } of this.atoms) {
+      for (const node of this.atoms) {
+        const at = this.worldOf(node);
         const distance = at.distanceToSquared(hit);
         if (distance < best) {
           best = distance;
@@ -763,8 +989,10 @@ export class StudioView {
     }
 
     const box = new Box3();
-    this.atoms.forEach((node) => box.expandByPoint(node.at));
-    this.stage.pivotOn(nearest?.clone() ?? (box.isEmpty() ? new Vector3() : box.getCenter(new Vector3())));
+    this.atoms.forEach((node) => box.expandByPoint(this.worldOf(node)));
+    const anchored = nearest?.clone() ?? (box.isEmpty() ? new Vector3() : box.getCenter(new Vector3()));
+    this.stage.pivotOn(anchored);
+    this.anchorOn(anchored);
   };
 
   private readonly onUp = (event: PointerEvent): void => {
@@ -775,7 +1003,7 @@ export class StudioView {
         this.down = null;
         // a pointer that has left what the drag is held to leaves the atoms where they are
         const moves =
-          this.placesOf(grab, this.rayOf(event)) ??
+          this.placesOf(grab, this.localRayOf(event)) ??
           grab.members.map((member): AtomMove => ({ id: member.node.atom.id, position: toVec3(member.node.at) }));
         this.moveAtoms(moves.map((move) => [move.id, move.position]));
         this.listeners.forEach((listener) => listener.drag?.(moves, true));

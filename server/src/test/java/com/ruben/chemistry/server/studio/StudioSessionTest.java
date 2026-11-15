@@ -6,6 +6,8 @@ import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.space.Embedder;
+import com.ruben.chemistry.space.Pose;
+import com.ruben.chemistry.space.Quaternion;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.space.Vec3;
 import org.junit.jupiter.api.Test;
@@ -444,6 +446,169 @@ class StudioSessionTest
         session.lock(List.of(atom), false);
         session.redo();
         assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 2, 3));
+    }
+
+    @Test
+    void starts_with_the_molecule_where_its_own_frame_is_the_scene()
+    {
+        assertThat(open("CCO").pose()).isEqualTo(Pose.IDENTITY);
+    }
+
+    @Test
+    void moves_and_turns_the_molecule_without_changing_a_coordinate_inside_it()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        List<Vec3> before = ids.stream().map(session::positionOf).toList();
+        Pose pose = new Pose(new Vec3(3, -2, 5), new Quaternion(1, 2, 3, 4).normalised());
+
+        long version = session.transform(pose, true);
+
+        assertThat(version).isEqualTo(2);
+        assertThat(session.pose()).isEqualTo(pose);
+        assertThat(ids.stream().map(session::positionOf).toList()).isEqualTo(before);
+    }
+
+    @Test
+    void keeps_every_bond_length_the_same_in_the_scene_after_a_move()
+    {
+        StudioSession session = open("CCO");
+        session.transform(new Pose(new Vec3(3, -2, 5), new Quaternion(1, 2, 3, 4).normalised()), true);
+
+        for (Bond bond : session.molecule().bonds())
+        {
+            Vec3 first = session.positionOf(session.atomId(bond.first()));
+            Vec3 second = session.positionOf(session.atomId(bond.second()));
+
+            assertThat(session.pose().apply(first).distanceTo(session.pose().apply(second)))
+                    .isCloseTo(first.distanceTo(second), org.assertj.core.api.Assertions.within(1e-9));
+        }
+    }
+
+    @Test
+    void scales_a_rotation_that_is_not_of_length_one()
+    {
+        StudioSession session = open("CCO");
+
+        session.transform(new Pose(Vec3.ZERO, new Quaternion(0, 0, 0, 2)), true);
+
+        assertThat(session.pose().rotation()).isEqualTo(Quaternion.IDENTITY);
+    }
+
+    @Test
+    void leaves_the_version_alone_when_the_molecule_is_already_there()
+    {
+        StudioSession session = open("CCO");
+
+        assertThat(session.transform(Pose.IDENTITY, true)).isEqualTo(1);
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void refuses_a_pose_that_is_not_a_rotation_or_not_finite()
+    {
+        StudioSession session = open("CCO");
+
+        assertThatThrownBy(() -> session.transform(new Pose(Vec3.ZERO, new Quaternion(0, 0, 0, 0)), true))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("INVALID_MESSAGE"));
+        assertThatThrownBy(() -> session.transform(new Pose(new Vec3(Double.NaN, 0, 0), Quaternion.IDENTITY), true))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("INVALID_MESSAGE"));
+
+        assertThat(session.pose()).isEqualTo(Pose.IDENTITY);
+        assertThat(session.version()).isEqualTo(1);
+    }
+
+    @Test
+    void moves_a_molecule_with_locked_atoms_in_it()
+    {
+        StudioSession session = open("CCO");
+        session.lock(List.of(ids(session).getFirst()), true);
+        Pose pose = new Pose(new Vec3(1, 0, 0), Quaternion.IDENTITY);
+
+        session.transform(pose, true);
+
+        assertThat(session.pose()).isEqualTo(pose);
+    }
+
+    @Test
+    void files_a_drag_of_the_molecule_as_one_edit_to_undo()
+    {
+        StudioSession session = open("CCO");
+        session.transform(new Pose(new Vec3(1, 0, 0), Quaternion.IDENTITY), false);
+        session.transform(new Pose(new Vec3(2, 0, 0), Quaternion.IDENTITY), false);
+        session.transform(new Pose(new Vec3(3, 0, 0), Quaternion.IDENTITY), true);
+
+        StudioSession.Applied undone = session.undo();
+
+        assertThat(undone.pose()).isEqualTo(Pose.IDENTITY);
+        assertThat(undone.moved()).isEmpty();
+        assertThat(session.pose()).isEqualTo(Pose.IDENTITY);
+        assertThat(session.canUndo()).isFalse();
+
+        StudioSession.Applied redone = session.redo();
+
+        assertThat(redone.pose().position()).isEqualTo(new Vec3(3, 0, 0));
+        assertThat(session.pose()).isEqualTo(redone.pose());
+    }
+
+    @Test
+    void cancels_a_drag_of_the_molecule_in_progress_when_undone()
+    {
+        StudioSession session = open("CCO");
+        session.transform(new Pose(new Vec3(1, 0, 0), Quaternion.IDENTITY), false);
+
+        assertThat(session.canUndo()).isTrue();
+        StudioSession.Applied cancelled = session.undo();
+
+        assertThat(cancelled.pose()).isEqualTo(Pose.IDENTITY);
+        assertThat(session.pose()).isEqualTo(Pose.IDENTITY);
+        assertThat(session.canUndo()).isFalse();
+        assertThat(session.canRedo()).isFalse();
+    }
+
+    @Test
+    void files_nothing_when_a_drag_of_the_molecule_ends_where_it_began()
+    {
+        StudioSession session = open("CCO");
+        session.transform(new Pose(new Vec3(1, 0, 0), Quaternion.IDENTITY), false);
+        session.transform(Pose.IDENTITY, true);
+
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void undoes_an_atom_move_without_touching_where_the_molecule_sits()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 before = session.positionOf(atom);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 2, 3))), true);
+        Pose pose = new Pose(new Vec3(9, 0, 0), Quaternion.IDENTITY);
+        session.transform(pose, true);
+
+        session.undo();
+        assertThat(session.pose()).isEqualTo(Pose.IDENTITY);
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 2, 3));
+
+        StudioSession.Applied second = session.undo();
+        assertThat(second.pose()).isNull();
+        assertThat(session.positionOf(atom)).isEqualTo(before);
+    }
+
+    @Test
+    void reopens_where_the_molecule_was_left_and_rebuilds_back_at_the_origin()
+    {
+        StudioSession session = open("CCO");
+        Pose pose = new Pose(new Vec3(1, 2, 3), new Quaternion(0, 0, 1, 1).normalised());
+        session.transform(pose, true);
+        StoredMolecule stored = molecules.add(com.ruben.chemistry.server.molecule.ParsedMolecule.written(session.collapsed()));
+        stored.setLatestStructure3d(session.structure());
+        stored.setPose(session.pose());
+
+        StudioSession reopened = StudioSession.open("again", stored, 1);
+
+        assertThat(reopened.pose()).isEqualTo(pose);
+        assertThat(reopened.rebuilt(parser.parse("CC").molecule(), 1).pose()).isEqualTo(Pose.IDENTITY);
     }
 
     private static List<String> ids(StudioSession session)

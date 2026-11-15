@@ -7,12 +7,11 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.PiSystem;
 import com.ruben.chemistry.render.ElementColours;
 import com.ruben.chemistry.space.ElementData;
+import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Vec3;
 import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -30,6 +29,7 @@ import java.util.Set;
  * @param bonds every bond of the working graph
  * @param fragments the disconnected parts of the molecule
  * @param locked the atoms and bonds that refuse an edit
+ * @param transform where the molecule sits in the scene; the atoms' positions are in the molecule's own frame
  * @param strain how far the working geometry strays from its ideal lengths, angles and contacts
  * @param canUndo whether there is an edit to take back
  * @param canRedo whether there is an undone edit to make again
@@ -46,6 +46,7 @@ public record StudioState(
         List<BondState> bonds,
         List<FragmentState> fragments,
         List<String> locked,
+        Pose transform,
         double strain,
         boolean canUndo,
         boolean canRedo)
@@ -165,6 +166,7 @@ public record StudioState(
                 bonds,
                 fragments,
                 List.copyOf(session.locked()),
+                session.pose(),
                 session.strain(),
                 session.canUndo(),
                 session.canRedo());

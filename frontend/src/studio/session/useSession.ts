@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChemistryApi } from "../../api/ChemistryApi";
-import { ApiError } from "../../api/http";
-import { describing, describingSmiles, requested } from "./location";
-import type { Vec3 } from "../../api/types/structure";
-import type { AtomMove, EditApplied, PatchAck, SessionState } from "./messages";
-import { StudioError, StudioSocket } from "./studioSocket";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {ChemistryApi} from "../../api/ChemistryApi";
+import {ApiError} from "../../api/http";
+import {describing, describingSmiles, requested} from "./location";
+import type {Vec3} from "../../api/types/structure";
+import type {AtomMove, EditApplied, PatchAck, Pose, SessionState} from "./messages";
+import {samePose} from "./pose";
+import {StudioError, StudioSocket} from "./studioSocket";
 
 /** How far the session has got towards being editable. */
 export type SessionPhase =
@@ -28,14 +29,18 @@ const HISTORY = 200;
 /** The least time between the patches a drag sends, so a drag sends about ten a second however fast the pointer moves. */
 export const DRAG_INTERVAL_MS = 100;
 
-/** Atoms being dragged, and how much of the drag the session has been told. */
+/** Something being dragged, atoms or the whole molecule, and how much of the drag the session has been told. */
 interface Drag {
-  /** Which atoms are in the drag, so that a report about different ones starts a new drag. */
+  /** What is in the drag, so that a report about something different starts a new drag. */
   key: string;
-  /** Where the pointer last put the atoms. */
-  latest: AtomMove[];
-  /** The positions of the last patch sent, so that one that would repeat it is not. */
-  sent: AtomMove[] | null;
+  /** Where the pointer last put it: a list of atom moves, or a pose. */
+  latest: unknown;
+  /** What the last patch sent, so that one that would repeat it is not. */
+  sent: unknown;
+  /** Whether two reports put it in the same place. */
+  same: (first: never, second: never) => boolean;
+  /** Sends a report to the session as part of the drag. */
+  transmit: (report: never) => void;
   /** When the last patch was sent. */
   at: number;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -74,6 +79,14 @@ export interface Session {
   dropAtoms: (moves: AtomMove[]) => Promise<EditResult>;
   /** Abandons a drag, putting the atoms back at the positions they were picked up from. */
   cancelDrag: (moves: AtomMove[]) => Promise<EditResult>;
+  /** Puts the molecule somewhere in the scene, as one edit that can be undone. */
+  moveMolecule: (pose: Pose) => Promise<EditResult>;
+  /** Reports where a dragged molecule has got to. */
+  dragMolecule: (pose: Pose) => void;
+  /** Ends a drag of the molecule at a pose, as one edit that can be undone however many patches the drag sent. */
+  dropMolecule: (pose: Pose) => Promise<EditResult>;
+  /** Abandons a drag of the molecule, putting it back at the pose it was picked up at. */
+  cancelMoleculeDrag: (from: Pose) => Promise<EditResult>;
   /** Locks or unlocks atoms, so that they refuse or accept edits. A lock is saved with the molecule but is not an edit, so it cannot be undone. */
   lockAtoms: (ids: string[], locked: boolean) => Promise<EditResult>;
   /** Takes back the latest edit. */
@@ -323,35 +336,95 @@ export function useSession(client?: ChemistryApi): Session {
 
   const moveAtom = useCallback((id: string, position: Vec3) => send([{ id, position }], true), [send]);
 
-  const dragAtoms = useCallback(
-    (moves: AtomMove[]) => {
-      const key = moves.map((move) => move.id).join(",");
-      let current = drag.current;
-      if (!current || current.key !== key) {
-        current = { key, latest: moves, sent: null, at: 0, timer: undefined, closed: false };
-        drag.current = current;
-      }
-      current.latest = moves;
+  /**
+   * Puts the molecule at a pose.
+   *
+   * @param pose where to put it
+   * @param commit whether this ends the edit it belongs to; a patch that does not is part of a drag
+   */
+  const sendPose = useCallback(
+    (pose: Pose, commit: boolean): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
 
-      if (current.timer !== undefined) {
+        try {
+          const reply = await socket.transformMolecule(base.session_id, base.version, pose, commit);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note("The structure changed under your edit, so it was not applied", true);
+            return { kind: "conflict" };
+          }
+
+          // a resync that landed meanwhile is authoritative, and already says where the molecule is
+          if (held.current?.version === base.version) {
+            adopt({
+              ...base,
+              version: reply.version,
+              can_undo: reply.can_undo,
+              can_redo: reply.can_redo,
+              saved_molecule_id: reply.saved_molecule_id,
+              transform: pose,
+            });
+          }
+          if (commit) {
+            const { x, y, z } = pose.position;
+            note(`Moved the molecule to ${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}`);
+          }
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
+  const moveMolecule = useCallback((pose: Pose) => sendPose(pose, true), [sendPose]);
+
+  /**
+   * Reports where something being dragged has got to. The first patch goes at once and the rest are spaced out, each
+   * carrying whatever the latest report is by then.
+   *
+   * @param key what is being dragged, so that a report about something else starts a new drag
+   * @param report where it is now
+   * @param same whether two reports put it in the same place
+   * @param transmit sends a report to the session, as part of the drag
+   */
+  const reporting = useCallback(<T,>(key: string, report: T, same: (first: T, second: T) => boolean, transmit: (report: T) => void) => {
+    let current = drag.current;
+    if (!current || current.key !== key) {
+      current = { key, latest: report, sent: null, same, transmit, at: 0, timer: undefined, closed: false } as Drag;
+      drag.current = current;
+    }
+    current.latest = report;
+
+    if (current.timer !== undefined) {
+      return;
+    }
+
+    const live = current;
+    const wait = Math.max(0, live.at + DRAG_INTERVAL_MS - Date.now());
+    live.timer = setTimeout(() => {
+      live.timer = undefined;
+      live.at = Date.now();
+      if (live.closed || (live.sent !== null && (live.same as (a: unknown, b: unknown) => boolean)(live.sent, live.latest))) {
         return;
       }
+      live.sent = live.latest;
+      (live.transmit as (report: unknown) => void)(live.latest);
+    }, wait);
+  }, []);
 
-      // the first patch goes at once and the rest are spaced out, each carrying whatever the latest position is by then
-      const live = current;
-      const wait = Math.max(0, live.at + DRAG_INTERVAL_MS - Date.now());
-      live.timer = setTimeout(() => {
-        live.timer = undefined;
-        live.at = Date.now();
-        if (live.closed || (live.sent && sameSpots(live.sent, live.latest))) {
-          return;
-        }
-        live.sent = live.latest;
-        void send(live.latest, false);
-      }, wait);
-    },
-    [send],
+  const dragAtoms = useCallback(
+    (moves: AtomMove[]) => reporting(`atoms:${moves.map((move) => move.id).join(",")}`, moves, sameSpots, (latest) => void send(latest, false)),
+    [reporting, send],
   );
+
+  const dragMolecule = useCallback((pose: Pose) => reporting("molecule", pose, samePose, (latest) => void sendPose(latest, false)), [reporting, sendPose]);
 
   /** Ends the drag in progress, if there is one, so that nothing it still had waiting is sent. */
   const closeDrag = useCallback((): Drag | null => {
@@ -381,6 +454,24 @@ export function useSession(client?: ChemistryApi): Session {
       return ended?.sent ? send(from, true) : { kind: "applied" };
     },
     [closeDrag, send],
+  );
+
+  const dropMolecule = useCallback(
+    (pose: Pose) => {
+      closeDrag();
+      return sendPose(pose, true);
+    },
+    [closeDrag, sendPose],
+  );
+
+  const cancelMoleculeDrag = useCallback(
+    async (from: Pose): Promise<EditResult> => {
+      const ended = closeDrag();
+
+      // as with atoms: only a drag that had sent something has anything to put back
+      return ended?.sent ? sendPose(from, true) : { kind: "applied" };
+    },
+    [closeDrag, sendPose],
   );
 
   const lockAtoms = useCallback(
@@ -433,7 +524,7 @@ export function useSession(client?: ChemistryApi): Session {
 
           // the answer is only the atoms that moved; a resync that landed meanwhile already says where they are
           if (held.current?.version === base.version) {
-            adopt(patched(base, reply.atoms, reply));
+            adopt(patched(base, reply.atoms, reply, reply.transform));
           }
           note(direction === "undo" ? "Undid the last edit" : "Redid the last undone edit");
           return { kind: "applied" };
@@ -448,7 +539,24 @@ export function useSession(client?: ChemistryApi): Session {
   const undo = useCallback(() => step("undo"), [step]);
   const redo = useCallback(() => step("redo"), [step]);
 
-  return { phase, state, activity, openSmiles: submit, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, lockAtoms, undo, redo };
+  return {
+    phase,
+    state,
+    activity,
+    openSmiles: submit,
+    submitSmiles,
+    moveAtom,
+    dragAtoms,
+    dropAtoms,
+    cancelDrag,
+    moveMolecule,
+    dragMolecule,
+    dropMolecule,
+    cancelMoleculeDrag,
+    lockAtoms,
+    undo,
+    redo,
+  };
 }
 
 /** Whether two reports put the same atoms in the same places. */
@@ -465,11 +573,13 @@ function sameSpots(first: AtomMove[], second: AtomMove[]): boolean {
  * @param base the state the change was made on
  * @param moves the atoms that moved and where each went
  * @param ack the session's acknowledgement, which says the version and history it is now at
+ * @param transform where the molecule now sits, if the change moved it as a whole
  */
-function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | EditApplied): SessionState {
+function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | EditApplied, transform: Pose | null = null): SessionState {
   const to = new Map(moves.map((move) => [move.id, move.position]));
   return {
     ...base,
+    transform: transform ?? base.transform,
     version: ack.version,
     can_undo: ack.can_undo,
     can_redo: ack.can_redo,

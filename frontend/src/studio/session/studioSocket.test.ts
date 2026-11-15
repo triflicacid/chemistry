@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { StudioError, StudioSocket } from "./studioSocket";
-import { PROTOCOL_VERSION, type SessionState } from "./messages";
+import {afterEach, describe, expect, it, vi} from "vitest";
+import {StudioError, StudioSocket} from "./studioSocket";
+import {PROTOCOL_VERSION, type SessionState} from "./messages";
+import {IDENTITY_POSE} from "./pose";
 
 const STUDIO_URL = process.env.WS_URL ?? "ws://localhost:8081/ws/studio";
 const API_URL = process.env.API_URL ?? "http://localhost:8080";
@@ -273,6 +274,47 @@ describe("the Studio socket", () => {
 
     const unlocked = await socket.lockAtoms(opened.session_id, locked.version, [first.id], false);
     expect(unlocked.type === "atom.lock.ack" && unlocked.locked).toEqual([]);
+  });
+
+  it("moves the molecule as a whole, undoes it, and leaves every atom where it was", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    expect(opened.transform).toEqual(IDENTITY_POSE);
+
+    // a quarter turn about z, and a shift
+    const half = Math.SQRT1_2;
+    const pose = { position: { x: 3, y: -1, z: 2 }, rotation: { x: 0, y: 0, z: half, w: half } };
+
+    const dragging = await socket.transformMolecule(opened.session_id, opened.version, pose, false);
+    expect(dragging.type === "molecule.transform.ack" && dragging.can_undo).toBe(true);
+    if (dragging.type !== "molecule.transform.ack") {
+      return;
+    }
+    const dropped = await socket.transformMolecule(opened.session_id, dragging.version, pose, true);
+    expect(dropped.type === "molecule.transform.ack" && dropped.saved_molecule_id).toBeTruthy();
+    if (dropped.type !== "molecule.transform.ack") {
+      return;
+    }
+
+    const synced = await socket.resync(opened.session_id, dropped.version);
+    expect(synced.transform.position).toEqual(pose.position);
+    expect(synced.transform.rotation.z).toBeCloseTo(half, 12);
+    expect(synced.atoms.map((atom) => atom.position)).toEqual(opened.atoms.map((atom) => atom.position));
+
+    const undone = await socket.step("undo", opened.session_id, synced.version);
+    expect(undone.type === "edit.applied" && undone.transform).toEqual(IDENTITY_POSE);
+    expect(undone.type === "edit.applied" && undone.atoms).toEqual([]);
+  });
+
+  it("refuses a rotation of no length", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+
+    await expect(
+      socket.transformMolecule(opened.session_id, opened.version, { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 0 } }),
+    ).rejects.toMatchObject({ code: "INVALID_MESSAGE" });
   });
 
   it("refuses to send on a connection that is not open", () => {

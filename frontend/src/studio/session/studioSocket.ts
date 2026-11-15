@@ -1,13 +1,15 @@
-import type { Vec3 } from "../../api/types/structure";
+import type {Vec3} from "../../api/types/structure";
 import {
-  type EditApplied,
-  type LockAck,
-  type PatchAck,
-  PROTOCOL_VERSION,
-  type ServerEnvelope,
-  type SessionConflict,
-  type SessionReady,
-  type SessionState,
+    type EditApplied,
+    type LockAck,
+    type PatchAck,
+    type Pose,
+    PROTOCOL_VERSION,
+    type ServerEnvelope,
+    type SessionConflict,
+    type SessionReady,
+    type SessionState,
+    type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -238,6 +240,23 @@ export class StudioSocket {
       "atom.patch",
       { session_id: sessionId, base_version: baseVersion, commit, atoms },
       ["atom.patch.ack", "conflict"],
+    );
+  }
+
+  /**
+   * Puts the molecule somewhere in the scene, as a whole.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param pose where the molecule goes, in full and not as a change to where it is
+   * @param commit whether this ends the edit it belongs to; a transform that does not is part of a drag
+   * @returns the acknowledgement, or a conflict carrying the state the session is actually in
+   */
+  transformMolecule(sessionId: string, baseVersion: number, pose: Pose, commit = true): Promise<TransformAck | SessionConflict> {
+    return this.request<TransformAck | SessionConflict>(
+      "molecule.transform",
+      { session_id: sessionId, base_version: baseVersion, commit, position: pose.position, rotation: pose.rotation },
+      ["molecule.transform.ack", "conflict"],
     );
   }
 

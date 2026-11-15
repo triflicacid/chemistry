@@ -1,5 +1,7 @@
 package com.ruben.chemistry.server.studio;
 
+import com.ruben.chemistry.space.Pose;
+import com.ruben.chemistry.space.Quaternion;
 import com.ruben.chemistry.space.Vec3;
 
 import java.util.List;
@@ -51,6 +53,24 @@ public final class StudioRequests
      */
     public record AtomPatch(String id, Vec3 position)
     {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param commit whether this ends the edit it belongs to (optional, default true)
+     * @param position where the molecule's origin goes in the scene, in angstroms
+     * @param rotation how the molecule is turned about its origin, as a quaternion
+     */
+    public record TransformRequest(String sessionId, Long baseVersion, Boolean commit, Vec3 position, Quaternion rotation)
+    {
+        /**
+         * @return the pose this asks for
+         */
+        public Pose pose()
+        {
+            return new Pose(position, rotation);
+        }
     }
 
     /**

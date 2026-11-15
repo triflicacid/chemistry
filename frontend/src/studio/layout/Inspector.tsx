@@ -1,28 +1,32 @@
-import type { MouseEvent, ReactNode } from "react";
-import { type Item, keyOf } from "../selection/items";
-import type { Models } from "../selection/models";
-import { useObservable } from "../selection/observable";
-import type { StateIndex } from "../selection/StateIndex";
-import type { Vec3 } from "../../api/types/structure";
-import type { SessionAtom, SessionBond, SessionState } from "../session/messages";
-import { NumberField } from "./NumberField";
+import type {MouseEvent, ReactNode} from "react";
+import {type Item, keyOf} from "../selection/items";
+import type {Models} from "../selection/models";
+import {useObservable} from "../selection/observable";
+import type {StateIndex} from "../selection/StateIndex";
+import type {Vec3} from "../../api/types/structure";
+import type {Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
+import {eulerOf, withEuler} from "../session/pose";
+import type {Pivot} from "../selection/ToolModel";
+import {NumberField} from "./NumberField";
 
 export interface InspectorProps {
   state: SessionState | null;
   models: Models;
   /** Puts an atom at a position. */
   onMoveAtom: (id: string, position: Vec3) => void;
+  /** Puts the whole molecule at a pose. */
+  onMoveMolecule: (pose: Pose) => void;
   /** Locks or unlocks atoms. */
   onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
 /**
- * The properties of whatever is selected. An atom's position can be edited.
+ * The properties of whatever is selected. An atom's position, and where a molecule sits, can be edited.
  *
  * The active item decides what is shown. With nothing selected it shows the session; with a
  * mixture of kinds it says what the mixture is and does not guess at a pane.
  */
-export function Inspector({ state, models, onMoveAtom, onLockAtoms }: InspectorProps) {
+export function Inspector({ state, models, onMoveAtom, onMoveMolecule, onLockAtoms }: InspectorProps) {
   const { selection, index } = models;
   const { items, active } = useObservable(selection);
 
@@ -50,7 +54,7 @@ export function Inspector({ state, models, onMoveAtom, onLockAtoms }: InspectorP
           {items.length} {active.kind}s selected. Showing {describe(active, index)}.
         </p>
       )}
-      <ItemPane item={active} index={index} models={models} onMoveAtom={onMoveAtom} onLockAtoms={onLockAtoms} />
+      <ItemPane item={active} index={index} models={models} onMoveAtom={onMoveAtom} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
     </>
   );
 }
@@ -60,10 +64,11 @@ interface ItemPaneProps {
   index: StateIndex;
   models: Models;
   onMoveAtom: (id: string, position: Vec3) => void;
+  onMoveMolecule: (pose: Pose) => void;
   onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
-function ItemPane({ item, index, models, onMoveAtom, onLockAtoms }: ItemPaneProps) {
+function ItemPane({ item, index, models, onMoveAtom, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
       const atom = index.atoms.get(item.id);
@@ -74,7 +79,7 @@ function ItemPane({ item, index, models, onMoveAtom, onLockAtoms }: ItemPaneProp
       return bond ? <BondPane bond={bond} index={index} models={models} /> : null;
     }
     default:
-      return <MoleculePane id={item.id} index={index} />;
+      return <MoleculePane id={item.id} index={index} models={models} onMove={onMoveMolecule} />;
   }
 }
 
@@ -114,12 +119,30 @@ function MixedPane({ items, active, index }: MixedPaneProps) {
   );
 }
 
-function MoleculePane({ id, index }: { id: string; index: StateIndex }) {
+interface MoleculePaneProps {
+  id: string;
+  index: StateIndex;
+  models: Models;
+  onMove: (pose: Pose) => void;
+}
+
+const PIVOTS: { value: Pivot; label: string }[] = [
+  { value: "anchor", label: "Orbit anchor" },
+  { value: "centre", label: "Centre of atoms" },
+  { value: "origin", label: "Molecule origin" },
+  { value: "point", label: "A point" },
+];
+
+function MoleculePane({ id, index, models, onMove }: MoleculePaneProps) {
+  const { tools } = models;
+  const { pivot, point } = useObservable(tools);
   const fragment = index.fragments.get(id);
   if (!fragment) {
     return null;
   }
   const charge = fragment.atoms.reduce((sum, atom) => sum + (index.atoms.get(atom)?.charge ?? 0), 0);
+  const pose = index.state.transform;
+  const angles = eulerOf(pose);
   return (
     <>
       <h3 className="pane-title">Molecule</h3>
@@ -129,7 +152,64 @@ function MoleculePane({ id, index }: { id: string; index: StateIndex }) {
         <Property name="Atoms" value={String(fragment.atoms.length)} />
         <Property name="Bonds" value={String(index.bondsInFragment(id).length)} />
         <Property name="Charge" value={signed(charge)} />
+        <dt>Position</dt>
+        <dd className="position">
+          {(["x", "y", "z"] as const).map((axis) => (
+            <NumberField
+              key={axis}
+              label={`${axis.toUpperCase()} position of the molecule's origin, in ångströms`}
+              value={pose.position[axis]}
+              onCommit={(value) => onMove({ ...pose, position: { ...pose.position, [axis]: value } })}
+            />
+          ))}
+          <span className="unit">Å</span>
+        </dd>
+        <dt>Rotation</dt>
+        <dd className="position">
+          {(["x", "y", "z"] as const).map((axis) => (
+            <NumberField
+              key={axis}
+              label={`Rotation of the molecule about ${axis}, in degrees`}
+              value={angles[axis]}
+              digits={2}
+              onCommit={(value) => onMove(withEuler(pose, { ...angles, [axis]: value }))}
+            />
+          ))}
+          <span className="unit">°</span>
+        </dd>
+        <dt>Pivot</dt>
+        <dd>
+          <select
+            value={pivot}
+            aria-label="What the molecule turns about"
+            title="What the handles turn the molecule about, and where they sit. The fields above always turn it about its own origin"
+            onChange={(event) => tools.pivotOn(event.target.value as Pivot)}
+          >
+            {PIVOTS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </dd>
+        {pivot === "point" && (
+          <>
+            <dt>Pivot point</dt>
+            <dd className="position">
+              {(["x", "y", "z"] as const).map((axis) => (
+                <NumberField
+                  key={axis}
+                  label={`${axis.toUpperCase()} of the pivot point, in ångströms`}
+                  value={point[axis]}
+                  onCommit={(value) => tools.setPoint({ ...point, [axis]: value })}
+                />
+              ))}
+              <span className="unit">Å</span>
+            </dd>
+          </>
+        )}
       </dl>
+      {index.state.fragments.length > 1 && <p className="panel-note">The session holds one molecule, so moving this part moves all of them together.</p>}
     </>
   );
 }

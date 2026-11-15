@@ -7,6 +7,7 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.Embedder;
+import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.space.Vec3;
 import com.ruben.chemistry.util.IdentitySet;
@@ -52,8 +53,9 @@ public final class StudioSession
      *
      * @param version the version after it
      * @param moved where each atom it touched is now
+     * @param pose where the molecule now sits, or {@code null} if the step did not move it as a whole
      */
-    public record Applied(long version, Map<String, Vec3> moved)
+    public record Applied(long version, Map<String, Vec3> moved, Pose pose)
     {
     }
 
@@ -62,8 +64,10 @@ public final class StudioSession
      *
      * @param before where each atom the edit touched was
      * @param after where each of them is after it
+     * @param poseBefore where the molecule sat before the edit, or {@code null} if the edit did not move it as a whole
+     * @param poseAfter where it sat after the edit, or {@code null} under the same condition
      */
-    private record Edit(Map<String, Vec3> before, Map<String, Vec3> after)
+    private record Edit(Map<String, Vec3> before, Map<String, Vec3> after, Pose poseBefore, Pose poseAfter)
     {
     }
 
@@ -99,6 +103,12 @@ public final class StudioSession
 
     /** Where each atom was before the uncommitted moves that have touched it, so a commit can say what it replaced. */
     private final Map<String, Vec3> uncommitted = new LinkedHashMap<>();
+
+    /** Where the molecule sat before the uncommitted moves of it as a whole, or null if there have been none. */
+    private Pose uncommittedPose;
+
+    /** Where the molecule sits in the scene; its atoms' coordinates are in the molecule's own frame, not this one. */
+    private Pose pose = Pose.IDENTITY;
 
     private long version = 1;
     private String smiles;
@@ -150,7 +160,9 @@ public final class StudioSession
             source.setLatestStructure3d(structure);
         }
 
-        return build(sessionId, source.id(), source.molecule(), structure, source.lockedSites());
+        StudioSession session = build(sessionId, source.id(), source.molecule(), structure, source.lockedSites());
+        session.pose = source.pose();
+        return session;
     }
 
     /**
@@ -273,8 +285,55 @@ public final class StudioSession
 
         if (commit)
         {
-            record(uncommitted);
-            uncommitted.clear();
+            record();
+        }
+
+        if (moved)
+        {
+            version++;
+        }
+
+        return version;
+    }
+
+    /**
+     * Puts the molecule somewhere in the scene, turning and moving it as one rigid body.
+     *
+     * @param to where to put it, as the full pose and not a change to the current one
+     * @param commit whether this ends the edit it belongs to
+     * @return the version after the change, which is the one before it if the molecule was already there
+     * @throws StudioEditException with {@code INVALID_MESSAGE} if the pose is not finite or its rotation has no length
+     */
+    public synchronized long transform(Pose to, boolean commit)
+    {
+        if (!to.isFinite())
+        {
+            throw new StudioEditException("INVALID_MESSAGE", "The pose is not a finite number");
+        }
+
+        Pose unit;
+        try
+        {
+            unit = to.normalised();
+        }
+        catch (IllegalStateException noRotation)
+        {
+            throw new StudioEditException("INVALID_MESSAGE", "The rotation has no length, so it is not a rotation");
+        }
+
+        boolean moved = !unit.equals(pose);
+        if (moved)
+        {
+            if (uncommittedPose == null)
+            {
+                uncommittedPose = pose;
+            }
+            pose = unit;
+        }
+
+        if (commit)
+        {
+            record();
         }
 
         if (moved)
@@ -343,13 +402,20 @@ public final class StudioSession
      */
     public synchronized Applied undo()
     {
-        if (!uncommitted.isEmpty())
+        if (!uncommitted.isEmpty() || uncommittedPose != null)
         {
             requireUnlocked(uncommitted.keySet());
             Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
             geometry.putAll(restored);
             uncommitted.clear();
-            return new Applied(++version, restored);
+
+            Pose restoredPose = uncommittedPose;
+            if (restoredPose != null)
+            {
+                pose = restoredPose;
+                uncommittedPose = null;
+            }
+            return new Applied(++version, restored, restoredPose);
         }
 
         Edit edit = done.peekLast();
@@ -362,8 +428,12 @@ public final class StudioSession
         done.removeLast();
 
         geometry.putAll(edit.before());
+        if (edit.poseBefore() != null)
+        {
+            pose = edit.poseBefore();
+        }
         undone.addLast(edit);
-        return new Applied(++version, edit.before());
+        return new Applied(++version, edit.before(), edit.poseBefore());
     }
 
     /**
@@ -385,8 +455,12 @@ public final class StudioSession
         undone.removeLast();
 
         geometry.putAll(edit.after());
+        if (edit.poseAfter() != null)
+        {
+            pose = edit.poseAfter();
+        }
         done.addLast(edit);
-        return new Applied(++version, edit.after());
+        return new Applied(++version, edit.after(), edit.poseAfter());
     }
 
     /**
@@ -479,7 +553,7 @@ public final class StudioSession
      */
     public synchronized boolean canUndo()
     {
-        return !done.isEmpty() || !uncommitted.isEmpty();
+        return !done.isEmpty() || !uncommitted.isEmpty() || uncommittedPose != null;
     }
 
     /**
@@ -491,15 +565,14 @@ public final class StudioSession
     }
 
     /**
-     * Files the moves since the last commit as one undoable edit.
-     *
-     * @param before where each atom moved since the last commit was when it started
+     * Files the moves since the last commit, of atoms and of the molecule as a whole, as one undoable edit. An edit
+     * that ended where it began is not filed.
      */
-    private void record(Map<String, Vec3> before)
+    private void record()
     {
         Map<String, Vec3> then = new LinkedHashMap<>();
         Map<String, Vec3> now = new LinkedHashMap<>();
-        for (Map.Entry<String, Vec3> entry : before.entrySet())
+        for (Map.Entry<String, Vec3> entry : uncommitted.entrySet())
         {
             Vec3 current = geometry.get(entry.getKey());
             if (!current.equals(entry.getValue()))
@@ -509,12 +582,17 @@ public final class StudioSession
             }
         }
 
-        if (then.isEmpty())
+        Pose poseThen = uncommittedPose;
+        boolean posed = poseThen != null && !poseThen.equals(pose);
+        uncommitted.clear();
+        uncommittedPose = null;
+
+        if (then.isEmpty() && !posed)
         {
             return;
         }
 
-        done.addLast(new Edit(then, now));
+        done.addLast(new Edit(then, now, posed ? poseThen : null, posed ? pose : null));
         undone.clear();
         while (done.size() > MAX_UNDO)
         {
@@ -560,6 +638,14 @@ public final class StudioSession
     public long version()
     {
         return version;
+    }
+
+    /**
+     * @return where the molecule sits in the scene
+     */
+    public synchronized Pose pose()
+    {
+        return pose;
     }
 
     /**

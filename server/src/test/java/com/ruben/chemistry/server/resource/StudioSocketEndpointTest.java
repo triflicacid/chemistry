@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StudioSocketEndpointTest
 {
     /** The start of every message, naming the protocol the client is written for. */
-    private static final String PROTOCOL = "\"protocol_version\": 5, ";
+    private static final String PROTOCOL = "\"protocol_version\": 6, ";
 
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
@@ -43,7 +43,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 5L);
+        assertThat(ready).containsEntry("protocol_version", 6L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -88,13 +88,13 @@ class StudioSocketEndpointTest
         collector.next();
 
         // a stale client, a client from the future, and one that never said, each refused for its own reason
-        socket.sendText("{\"protocol_version\": 4, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
+        socket.sendText("{\"protocol_version\": 5, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
         Map<String, Object> stale = collector.nextJson();
         assertThat(error(stale)).containsEntry("code", "PROTOCOL_MISMATCH");
         assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
         assertThat((String) error(stale).get("message")).contains("out of date");
 
-        socket.sendText("{\"protocol_version\": 6, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        socket.sendText("{\"protocol_version\": 7, \"type\": \"session.open\", \"sequence\": 2}", true).join();
         assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
 
         // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
@@ -543,6 +543,123 @@ class StudioSocketEndpointTest
     }
 
     @Test
+    void should_move_the_molecule_as_a_whole_and_leave_its_atoms_alone() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        assertThat(opened.get("transform")).isEqualTo(Map.of(
+                "position", Map.of("x", 0.0, "y", 0.0, "z", 0.0),
+                "rotation", Map.of("x", 0.0, "y", 0.0, "z", 0.0, "w", 1.0)));
+
+        socket.sendText(transform(sessionId, 1, false, 1, 2, 3, 2), true).join();
+        Map<String, Object> ack = collector.nextJson();
+        assertThat(ack).containsEntry("type", "molecule.transform.ack").containsEntry("sequence", 2L)
+                .containsEntry("version", 2L).containsEntry("can_undo", true).containsEntry("saved_molecule_id", null);
+
+        socket.sendText(transform(sessionId, 2, true, 4, 5, 6, 3), true).join();
+        Map<String, Object> committed = collector.nextJson();
+        assertThat(committed).containsEntry("version", 3L).containsEntry("can_undo", true);
+        assertThat(committed.get("saved_molecule_id")).isNotNull();
+
+        socket.sendText(resync(sessionId, 4), true).join();
+        Map<String, Object> state = collector.nextJson();
+        assertThat(state.get("transform")).isEqualTo(Map.of(
+                "position", Map.of("x", 4.0, "y", 5.0, "z", 6.0),
+                "rotation", Map.of("x", 0.0, "y", 0.0, "z", 0.0, "w", 1.0)));
+        assertThat(list(state, "atoms").stream().map(StudioSocketEndpointTest::position).toList())
+                .isEqualTo(list(opened, "atoms").stream().map(StudioSocketEndpointTest::position).toList());
+    }
+
+    @Test
+    void should_undo_and_redo_a_move_of_the_molecule_as_one_edit_and_save_it() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+
+        // a drag is several patches and then one that commits, which is one step to undo
+        socket.sendText(transform(sessionId, 1, false, 1, 0, 0, 2), true).join();
+        collector.next();
+        socket.sendText(transform(sessionId, 2, true, 2, 0, 0, 3), true).join();
+        String saved = (String) collector.nextJson().get("saved_molecule_id");
+
+        socket.sendText(history("edit.undo", sessionId, 3, 4), true).join();
+        Map<String, Object> undone = collector.nextJson();
+        assertThat(undone).containsEntry("type", "edit.applied").containsEntry("can_undo", false).containsEntry("can_redo", true);
+        assertThat(undone.get("transform")).isEqualTo(Map.of(
+                "position", Map.of("x", 0.0, "y", 0.0, "z", 0.0),
+                "rotation", Map.of("x", 0.0, "y", 0.0, "z", 0.0, "w", 1.0)));
+        assertThat(list(undone, "atoms")).isEmpty();
+        assertThat(molecules.find(saved).orElseThrow().pose().position().x()).isEqualTo(0.0);
+
+        socket.sendText(history("edit.redo", sessionId, 4, 5), true).join();
+        Map<String, Object> redone = collector.nextJson();
+        assertThat(redone.get("transform")).isEqualTo(Map.of(
+                "position", Map.of("x", 2.0, "y", 0.0, "z", 0.0),
+                "rotation", Map.of("x", 0.0, "y", 0.0, "z", 0.0, "w", 1.0)));
+        assertThat(molecules.find(saved).orElseThrow().pose().position().x()).isEqualTo(2.0);
+    }
+
+    @Test
+    void should_open_a_saved_molecule_where_it_was_left() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+        socket.sendText(transform(sessionId, 1, true, 3, 0, 0, 2), true).join();
+        String saved = (String) collector.nextJson().get("saved_molecule_id");
+
+        socket.sendText(open(saved, 3), true).join();
+        Map<String, Object> reopened = collector.nextJson();
+
+        assertThat(reopened.get("transform")).isEqualTo(Map.of(
+                "position", Map.of("x", 3.0, "y", 0.0, "z", 0.0),
+                "rotation", Map.of("x", 0.0, "y", 0.0, "z", 0.0, "w", 1.0)));
+    }
+
+    @Test
+    void should_refuse_a_transform_it_cannot_make() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"molecule.transform\", \"sequence\": 2, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1, \"position\": {\"x\": 0, \"y\": 0, \"z\": 0}, "
+                + "\"rotation\": {\"x\": 0, \"y\": 0, \"z\": 0, \"w\": 0}}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"molecule.transform\", \"sequence\": 3, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText(transform(sessionId, 9, true, 1, 1, 1, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "conflict");
+
+        socket.sendText(resync(sessionId, 5), true).join();
+        assertThat(collector.nextJson()).containsEntry("version", 1L);
+    }
+
+    @Test
     void should_refuse_a_lock_it_cannot_make() throws Exception
     {
         StoredMolecule stored = store("CCO");
@@ -773,6 +890,23 @@ class StudioSocketEndpointTest
     {
         return "{" + PROTOCOL + "\"type\": \"atom.lock\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + ", \"atoms\": [\"" + atom + "\"], \"locked\": " + locked + "}";
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client says it was looking at
+     * @param commit whether this ends the edit
+     * @param x where the molecule's origin goes along x
+     * @param y where it goes along y
+     * @param z where it goes along z
+     * @param sequence the message's sequence number
+     * @return a {@code molecule.transform} message that moves the molecule without turning it
+     */
+    private static String transform(String sessionId, long baseVersion, boolean commit, double x, double y, double z, int sequence)
+    {
+        return "{" + PROTOCOL + "\"type\": \"molecule.transform\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"base_version\": " + baseVersion + ", \"commit\": " + commit + ", \"position\": {\"x\": " + x + ", \"y\": " + y
+                + ", \"z\": " + z + "}, \"rotation\": {\"x\": 0, \"y\": 0, \"z\": 0, \"w\": 1}}";
     }
 
     /**

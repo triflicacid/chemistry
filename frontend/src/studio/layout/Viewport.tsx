@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import type { Item } from "../selection/items";
-import type { Models, PickMode } from "../selection/models";
-import { useObservable } from "../selection/observable";
-import type { StateIndex } from "../selection/StateIndex";
-import type { AtomMove, SessionState } from "../session/messages";
-import type { SessionPhase } from "../session/useSession";
-import { type Constraint, constraintForKey } from "../viewport/dragPlane";
-import { type StudioPick, StudioView } from "../viewport/StudioView";
-import { OpenMolecule } from "./OpenMolecule";
+import {useEffect, useRef, useState} from "react";
+import type {Item} from "../selection/items";
+import type {Models, PickMode} from "../selection/models";
+import {useObservable} from "../selection/observable";
+import type {StateIndex} from "../selection/StateIndex";
+import type {AtomMove, Pose, SessionState} from "../session/messages";
+import type {SessionPhase} from "../session/useSession";
+import {type Constraint, constraintForKey} from "../viewport/dragPlane";
+import {type StudioPick, StudioView} from "../viewport/StudioView";
+import {OpenMolecule} from "./OpenMolecule";
 
 export interface ViewportProps {
   phase: SessionPhase;
@@ -20,6 +20,12 @@ export interface ViewportProps {
   onDropAtoms: (moves: AtomMove[]) => void;
   /** A drag was abandoned, and the atoms are back at `moves`' positions. */
   onCancelDrag: (moves: AtomMove[]) => void;
+  /** The molecule has been dragged to a pose, and the drag is not over. */
+  onDragMolecule: (pose: Pose) => void;
+  /** The molecule has been dropped at a pose, which ends its drag. */
+  onDropMolecule: (pose: Pose) => void;
+  /** A drag of the molecule was abandoned, and it is back at `from`. */
+  onCancelMoleculeDrag: (from: Pose) => void;
 }
 
 const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
@@ -33,14 +39,25 @@ const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
 ];
 
 /** The canvas, which fills whatever space the workspace leaves it, and the molecule drawn on it. */
-export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDropAtoms, onCancelDrag }: ViewportProps) {
+export function Viewport({
+  phase,
+  state,
+  models,
+  onOpenSmiles,
+  onDragAtoms,
+  onDropAtoms,
+  onCancelDrag,
+  onDragMolecule,
+  onDropMolecule,
+  onCancelMoleculeDrag,
+}: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
   const [axes, setAxes] = useState(false);
   const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickMode>("element");
   const { selection, hover, tools, index } = models;
-  const { tool, constraint } = useObservable(tools);
+  const { tool, constraint, space, pivot, point } = useObservable(tools);
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -78,6 +95,21 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
   useEffect(() => {
     view?.setConstraint(constraint);
   }, [view, constraint]);
+
+  useEffect(() => {
+    view?.setSpace(space);
+  }, [view, space]);
+
+  useEffect(() => {
+    view?.setPivot(pivot, point);
+  }, [view, pivot, point]);
+
+  // the whole molecule is moved or turned with handles, which are there while a molecule is selected and a tool that uses them is
+  const moleculeSelected = selected.items.some((item) => item.kind === "molecule");
+  const gizmo = moleculeSelected && tool === "move" ? "translate" : moleculeSelected && tool === "rotate" ? "rotate" : null;
+  useEffect(() => {
+    view?.setGizmo(gizmo);
+  }, [view, gizmo]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
@@ -119,6 +151,20 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
     return view.listen({
       hover: (pick) => hover.hover(pick ? resolve(pick, mode, index) : null),
       click: (pick, additive) => {
+        // with the rotate tool an atom stands for its molecule, turned about that atom
+        if (pick?.kind === "atom" && tools.get().tool === "rotate") {
+          const fragment = index.fragmentOf(pick);
+          if (fragment !== null) {
+            // clicking what is selected already would deselect it, and here it only moves the pivot
+            if (!selection.get().items.some((item) => item.kind === "molecule" && item.id === fragment)) {
+              selection.select({ kind: "molecule", id: fragment });
+            }
+            tools.pivotOn("anchor");
+            view.anchorOnAtom(pick.id);
+            return;
+          }
+        }
+
         if (pick) {
           selection.select(resolve(pick, mode, index), additive);
         } else if (!additive) {
@@ -134,8 +180,10 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
       },
       drag: (moves, done) => (done ? onDropAtoms(moves) : onDragAtoms(moves)),
       dragCancel: onCancelDrag,
+      moleculeDrag: (pose, done) => (done ? onDropMolecule(pose) : onDragMolecule(pose)),
+      moleculeDragCancel: onCancelMoleculeDrag,
     });
-  }, [view, index, mode, selection, hover, onDragAtoms, onDropAtoms, onCancelDrag]);
+  }, [view, index, mode, selection, hover, tools, onDragAtoms, onDropAtoms, onCancelDrag, onDragMolecule, onDropMolecule, onCancelMoleculeDrag]);
 
   const frame = () => {
     if (!view || !index) {
@@ -154,7 +202,28 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
       <canvas ref={canvasRef} className="viewport-canvas" />
       {state && (
         <div className="viewport-tools" role="group" aria-label="View">
-          {tool === "move" && (
+          {(tool === "move" || (tool === "rotate" && moleculeSelected)) && (
+            <div className="tool-group" role="group" aria-label="Space">
+              {(["world", "local"] as const).map((each) => (
+                <button
+                  key={each}
+                  type="button"
+                  className="tool"
+                  aria-pressed={space === each}
+                  title={
+                    each === "world"
+                      ? "Measure moves and handles along the scene's axes"
+                      : "Measure moves and handles along the molecule's own axes, which turn with it"
+                  }
+                  onClick={() => tools.useSpace(each)}
+                >
+                  {each === "world" ? "World" : "Local"}
+                </button>
+              ))}
+            </div>
+          )}
+          {tool === "rotate" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
+          {tool === "move" && !moleculeSelected && (
             <div className="tool-group" role="group" aria-label="Move constraint">
               {CONSTRAINTS.map(({ value, label, title }) => (
                 <button

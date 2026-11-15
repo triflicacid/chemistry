@@ -1,16 +1,16 @@
-import type { ReactNode } from "react";
-import type { Vec3 } from "../../api/types/structure";
-import type { Activity, SessionPhase, SubmitResult } from "../session/useSession";
-import type { AtomMove, SessionState } from "../session/messages";
-import type { Models } from "../selection/models";
-import type { LayoutState, Panel } from "../store";
-import { AnalysisPanel } from "./AnalysisPanel";
-import { Inspector } from "./Inspector";
-import { Outliner } from "./Outliner";
-import { SmilesBar } from "./SmilesBar";
-import { Splitter } from "./Splitter";
-import { Toolbar } from "./Toolbar";
-import { Viewport } from "./Viewport";
+import type {ReactNode} from "react";
+import type {Vec3} from "../../api/types/structure";
+import type {Activity, SessionPhase, SubmitResult} from "../session/useSession";
+import type {AtomMove, Pose, SessionState} from "../session/messages";
+import type {Models} from "../selection/models";
+import type {LayoutState, Panel} from "../store";
+import {AnalysisPanel} from "./AnalysisPanel";
+import {Inspector} from "./Inspector";
+import {Outliner} from "./Outliner";
+import {SmilesBar} from "./SmilesBar";
+import {Splitter} from "./Splitter";
+import {Toolbar} from "./Toolbar";
+import {Viewport} from "./Viewport";
 
 export interface WorkspaceProps {
   phase: SessionPhase;
@@ -30,12 +30,16 @@ export interface WorkspaceProps {
   onDragAtoms: (moves: AtomMove[]) => void;
   onDropAtoms: (moves: AtomMove[]) => void;
   onCancelDrag: (moves: AtomMove[]) => void;
+  onMoveMolecule: (pose: Pose) => void;
+  onDragMolecule: (pose: Pose) => void;
+  onDropMolecule: (pose: Pose) => void;
+  onCancelMoleculeDrag: (from: Pose) => void;
   onUndo: () => void;
   onRedo: () => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onUndo, onRedo } = props;
+  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -92,6 +96,9 @@ export function Workspace(props: WorkspaceProps) {
           onDragAtoms={onDragAtoms}
           onDropAtoms={onDropAtoms}
           onCancelDrag={onCancelDrag}
+          onDragMolecule={onDragMolecule}
+          onDropMolecule={onDropMolecule}
+          onCancelMoleculeDrag={onCancelMoleculeDrag}
         />
       </div>
 
@@ -102,7 +109,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <Side panel="inspector" name="Inspector" collapsed={layout.inspectorCollapsed} onCollapse={onCollapse}>
-        <Inspector state={state} models={models} onMoveAtom={onMoveAtom} onLockAtoms={onLockAtoms} />
+        <Inspector state={state} models={models} onMoveAtom={onMoveAtom} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
       </Side>
 
       {!layout.analysisCollapsed && (

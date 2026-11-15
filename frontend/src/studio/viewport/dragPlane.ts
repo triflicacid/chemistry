@@ -1,4 +1,4 @@
-import { type Ray, Vector3 } from "three";
+import {type Ray, Vector3} from "three";
 
 /** What a dragged atom is held to: anywhere in the view plane, along one axis, or within one plane. */
 export type Constraint = "free" | "x" | "y" | "z" | "xy" | "yz" | "xz";
@@ -6,18 +6,18 @@ export type Constraint = "free" | "x" | "y" | "z" | "xy" | "yz" | "xz";
 /** How close to parallel a ray may be to what it is meant to meet before the meeting is too far off to trust. */
 const PARALLEL = 1e-6;
 
-/** The direction of each axis, which a constraint named for one picks. */
-const AXIS: Record<"x" | "y" | "z", Vector3> = {
+/** The direction of each of the three axes a constraint is named for, in whatever frame the drag is measured in. */
+export interface Basis {
+  x: Vector3;
+  y: Vector3;
+  z: Vector3;
+}
+
+/** The axes as they are, which is the frame of a drag measured along the scene's own axes. */
+export const STANDARD_BASIS: Basis = {
   x: new Vector3(1, 0, 0),
   y: new Vector3(0, 1, 0),
   z: new Vector3(0, 0, 1),
-};
-
-/** The normal of the plane each plane constraint holds an atom in: the axis it leaves out. */
-const NORMAL: Record<"xy" | "yz" | "xz", Vector3> = {
-  xy: AXIS.z,
-  yz: AXIS.x,
-  xz: AXIS.y,
 };
 
 /**
@@ -27,14 +27,21 @@ const NORMAL: Record<"xy" | "yz" | "xz", Vector3> = {
  * @param anchor a point the constraint passes through, which is where the atom is when the constraint starts
  * @param constraint what the atom is held to
  * @param viewDirection the way the camera looks, which free movement is perpendicular to
+ * @param basis which way the axes the constraint names point; the ray, the anchor and the view direction are in the same frame
  * @returns the point, or null if the ray never meets it: it runs parallel, or the plane is behind the pointer
  */
-export function pointOnConstraint(ray: Ray, anchor: Vector3, constraint: Constraint, viewDirection: Vector3): Vector3 | null {
+export function pointOnConstraint(
+  ray: Ray,
+  anchor: Vector3,
+  constraint: Constraint,
+  viewDirection: Vector3,
+  basis: Basis = STANDARD_BASIS,
+): Vector3 | null {
   if (constraint === "x" || constraint === "y" || constraint === "z") {
-    return nearestOnAxis(ray, anchor, AXIS[constraint]);
+    return nearestOnAxis(ray, anchor, basis[constraint]);
   }
 
-  const normal = constraint === "free" ? viewDirection : NORMAL[constraint];
+  const normal = constraint === "free" ? viewDirection : basis[constraint === "xy" ? "z" : constraint === "yz" ? "x" : "y"];
   const along = ray.direction.dot(normal);
   if (Math.abs(along) < PARALLEL) {
     return null;

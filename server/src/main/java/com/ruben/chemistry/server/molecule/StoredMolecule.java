@@ -5,10 +5,10 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.smiles.SmilesWriter;
+import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.validate.MoleculeValidator;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -26,6 +26,7 @@ public final class StoredMolecule
     private volatile ValidationReport validation;
     private volatile Structure3D latestStructure3d;
     private volatile Set<Integer> lockedSites = Set.of();
+    private volatile Pose pose = Pose.IDENTITY;
 
     StoredMolecule(String id, ParsedMolecule parsed)
     {
@@ -118,5 +119,22 @@ public final class StoredMolecule
     public void setLockedSites(Set<Integer> sites)
     {
         this.lockedSites = Set.copyOf(sites);
+    }
+
+    /**
+     * @return where an editing session left the molecule in its scene when it saved; the identity if it never
+     *     moved the molecule as a whole
+     */
+    public Pose pose()
+    {
+        return pose;
+    }
+
+    /**
+     * @param pose where the molecule sits in its scene, which the structure's own coordinates are unaffected by
+     */
+    public void setPose(Pose pose)
+    {
+        this.pose = pose;
     }
 }

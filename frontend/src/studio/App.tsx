@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Vec3 } from "../api/types/structure";
-import type { AtomMove } from "./session/messages";
-import { Workspace } from "./layout/Workspace";
-import { createModels } from "./selection/models";
-import { useObservable } from "./selection/observable";
-import { StateIndex } from "./selection/StateIndex";
-import { useSession } from "./session/useSession";
-import type { Panel } from "./store";
-import { StudioStore } from "./store";
+import {useCallback, useEffect, useMemo, useState} from "react";
+import type {Vec3} from "../api/types/structure";
+import type {AtomMove, Pose} from "./session/messages";
+import {Workspace} from "./layout/Workspace";
+import {createModels} from "./selection/models";
+import {useObservable} from "./selection/observable";
+import {StateIndex} from "./selection/StateIndex";
+import {useSession} from "./session/useSession";
+import type {Panel} from "./store";
+import {StudioStore} from "./store";
 
 /** How long to let a drag settle before writing the layout down. */
 const SETTLE_MS = 200;
@@ -15,7 +15,24 @@ const SETTLE_MS = 200;
 export function App() {
   const store = useMemo(() => new StudioStore(), []);
   const [layout, setLayout] = useState(store.layout);
-  const { phase, state, activity, openSmiles, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, lockAtoms, undo, redo } = useSession();
+  const {
+    phase,
+    state,
+    activity,
+    openSmiles,
+    submitSmiles,
+    moveAtom,
+    dragAtoms,
+    dropAtoms,
+    cancelDrag,
+    moveMolecule,
+    dragMolecule,
+    dropMolecule,
+    cancelMoleculeDrag,
+    lockAtoms,
+    undo,
+    redo,
+  } = useSession();
 
   const shared = useMemo(createModels, []);
   const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
@@ -90,6 +107,9 @@ export function App() {
   const drop = useCallback((moves: AtomMove[]) => void dropAtoms(moves), [dropAtoms]);
   const cancel = useCallback((moves: AtomMove[]) => void cancelDrag(moves), [cancelDrag]);
   const lock = useCallback((ids: string[], locked: boolean) => void lockAtoms(ids, locked), [lockAtoms]);
+  const moveWhole = useCallback((pose: Pose) => void moveMolecule(pose), [moveMolecule]);
+  const dropWhole = useCallback((pose: Pose) => void dropMolecule(pose), [dropMolecule]);
+  const cancelWhole = useCallback((from: Pose) => void cancelMoleculeDrag(from), [cancelMoleculeDrag]);
 
   // the toolbar button and the L key lock the selected atoms, or unlock them if all of them are locked already.
   // A selected molecule stands for every atom in it
@@ -144,6 +164,10 @@ export function App() {
       onDragAtoms={dragAtoms}
       onDropAtoms={drop}
       onCancelDrag={cancel}
+      onMoveMolecule={moveWhole}
+      onDragMolecule={dragMolecule}
+      onDropMolecule={dropWhole}
+      onCancelMoleculeDrag={cancelWhole}
       onUndo={undoEdit}
       onRedo={redoEdit}
     />

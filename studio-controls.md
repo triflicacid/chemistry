@@ -46,10 +46,33 @@ Choose **Move** in the toolbar (**Select** goes back). Then:
 | The same key again | Let go of the constraint |
 | Constraint buttons in the viewport | The same, by mouse: Free, X, Y, Z, YZ, XZ, XY |
 
-Free movement is in the plane facing the camera. Axes are the world's: with no molecule transform yet,
-there is no local space to choose. The atom you drag is selected, so the Inspector shows its position
+Free movement is in the plane facing the camera. Axes are the scene's in **World** space and the molecule's own
+in **Local** space (see below); they differ once the molecule has been turned. The atom you drag is selected, so the Inspector shows its position
 as it moves. While you drag, the viewport follows the pointer at once and the session is told about ten
 times a second.
+
+## Moving and turning the whole molecule
+
+Select a molecule (**Pick whole molecule**, or a molecule row in the Outliner), then choose **Move** or **Rotate**.
+Handles appear at the pivot. Moving or turning the molecule changes where it sits in the scene and no atom's
+coordinates, so every bond length and angle is as it was.
+
+| Input | Action |
+|---|---|
+| **Move** tool, drag an arrow or a square on the handles | Carry the molecule along that axis, or within that plane |
+| **Rotate** tool, click an atom | Select its molecule, anchor the view on that atom and make the anchor the pivot, so the rings turn the molecule about that atom. Clicking another atom moves the pivot there |
+| **Rotate** tool, drag a ring | Turn the molecule about the pivot, around that axis. The outer ring turns it about the view direction |
+| Esc during a drag | Abandon it; the molecule goes back where it was picked up |
+| Release | Drop it. The whole drag is one undo step |
+| **World** / **Local** (viewport buttons, shown with Move or Rotate) | Measure the handles, and atom drags, along the scene's axes or the molecule's own, which turn with it |
+| Molecule's **Position** and **Rotation** in the Inspector | Type where its origin goes, and its turn as angles about x, y and z in degrees. These always act about the molecule's own origin |
+| **Pivot** in the Inspector | What the handles turn the molecule about and sit on: the orbit anchor (the default: right-click an atom to put the handles on it, or right-click empty space to go back to the middle of the molecule), the centre of its atoms, the molecule's own origin, or a point typed in the scene's coordinates |
+
+The molecule's atoms are still dragged with the Move tool when no molecule is selected, or by pressing on an atom
+away from a handle. A locked atom does not stop the molecule moving, because a lock holds an atom in place within
+the molecule. A session holds one molecule, so selecting one fragment of it and moving it moves them all.
+
+The Inspector's atom positions are in the molecule's own frame, not the scene's.
 
 ## SMILES bar
 

@@ -352,7 +352,13 @@ body.resizing {
   top: 0.5rem;
   right: 0.5rem;
   display: flex;
+  align-items: center;
   gap: 0.25rem;
+}
+
+.viewport-hint {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
 }
 
 .viewport-overlay {
