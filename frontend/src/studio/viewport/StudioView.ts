@@ -27,12 +27,13 @@ import {applyTints, HOVER_TINT, SELECTED_TINT} from "../../render/emphasis";
 import {type Part, PartRegistry} from "../../render/parts";
 import {Primitives} from "../../render/primitives";
 import {sweep} from "../../render/roll";
-import {Stage} from "../../render/stage";
+import {FIELD_OF_VIEW, Stage} from "../../render/stage";
 import {Triad} from "../../render/triad";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
 import {withTerminalHydrogens} from "./carry";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
 import {RollRing} from "./rollRing";
+import {BALL_TRAVEL, CameraSpheres, type SphereHandle} from "./cameraSpheres";
 import {BondGizmo} from "./bondGizmo";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
@@ -49,6 +50,7 @@ import type {Hold} from "../selection/bondLength";
 import type {AngleView, Pivot, Space, TorsionView} from "../selection/ToolModel";
 import {torsion} from "../selection/torsion";
 import {angleAt, planeNormal} from "../selection/angle";
+import {type CameraEdit, type CameraState, edited, orbitOf} from "../selection/CameraModel";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
 export interface StudioPick {
@@ -85,6 +87,8 @@ export interface StudioViewListener {
   bondDrag?(edit: BondEdit, done: boolean): void;
   /** A drag of a bond's handle was abandoned, and the session is to put the bond back. */
   bondDragCancel?(): void;
+  /** The camera's state changed. `byUser` - whether a user change or initial load from server. */
+  camera?(camera: CameraState, byUser: boolean): void;
 }
 
 /**
@@ -181,6 +185,9 @@ const CLICK_SLOP = 4;
 /** The longest, in milliseconds, between two clicks that make a double-click. */
 const DOUBLE_CLICK_MS = 350;
 
+/** How far, in degrees, the view turns for each pixel a sphere is dragged, which is about what dragging the view itself does. */
+const ORBIT_DEGREES_PER_PIXEL = 0.4;
+
 /** The side of the square the axes triad is drawn in, and how far it is from the canvas's lower left corner, in CSS pixels. */
 const TRIAD_SIZE = 110;
 const TRIAD_MARGIN = 24;
@@ -226,6 +233,7 @@ export class StudioView {
   private readonly triad = new Triad(this.kit.labels, TRIAD_SIZE, TRIAD_MARGIN);
   /** The dial round the triad that rolls the view. */
   private readonly ring = new RollRing(TRIAD_CENTRE);
+  private readonly spheres = new CameraSpheres(TRIAD_SIZE, TRIAD_MARGIN);
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
   /** Holds everything drawn of the molecule, positioned in the scene by its pose. Atoms are placed in this group's own frame. */
@@ -262,6 +270,8 @@ export class StudioView {
   private panning = false;
   /** The roll ring being turned, with the angle the pointer was last at round it, or null while it is not. */
   private rolling: { last: number } | null = null;
+  /** The camera sphere being dragged, and where the pointer was at the last step. */
+  private sphereDrag: { handle: SphereHandle; x: number; y: number } | null = null;
   /** When the ring was last pressed, so that a second press soon after can level the view. */
   private lastRingPress = 0;
   /** Whether moving an atom carries the hydrogens bonded to it. */
@@ -302,6 +312,8 @@ export class StudioView {
   private debug = false;
   private guide: Guide | null = null;
   private emphasis: Emphasised = { selected: NO_EMPHASIS, active: NO_EMPHASIS, hover: NO_EMPHASIS };
+  /** How many times the view is placing the camera itself, which is not the user moving it. */
+  private placing = 0;
   /** Whether to leave what is selected undrawn, with no lengths or names for it or for what is hovered. Hover is still tinted. */
   private plain = false;
 
@@ -314,6 +326,9 @@ export class StudioView {
       sizedBy: canvas,
       onMove: () => {
         this.placeGuide();
+        const camera = this.cameraState();
+        const byUser = this.placing === 0;
+        this.listeners.forEach((listener) => listener.camera?.(camera, byUser));
       },
     });
     // scrolling goes towards what the pointer is over, which also moves the view, so a molecule can be brought closer
@@ -360,6 +375,7 @@ export class StudioView {
       // the ring is for turning the view, and does not belong in a picture of the molecule
       if (!capturing) {
         this.ring.draw(renderer);
+        this.spheres.draw(renderer, camera);
       }
     });
 
@@ -368,6 +384,7 @@ export class StudioView {
     // captured, so that this hears the press before the orbit controls do and can keep them from turning the camera
     canvas.addEventListener("pointerdown", this.onTriad, { capture: true });
     canvas.addEventListener("pointerdown", this.onRing, { capture: true });
+    canvas.addEventListener("pointerdown", this.onSpheres, { capture: true });
     canvas.addEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
@@ -411,7 +428,16 @@ export class StudioView {
     this.refreshLocks();
     if (this.framedSession !== state.session_id) {
       this.framedSession = state.session_id;
-      this.frameScene();
+      // a session that remembers where the camera was is shown from there, and one that does not is framed on its molecule
+      this.placing++;
+      try {
+        this.frameScene();
+        if (state.camera) {
+          this.setCamera(state.camera);
+        }
+      } finally {
+        this.placing--;
+      }
     }
     this.syncGizmo();
     this.syncBondGizmo();
@@ -1077,6 +1103,86 @@ export class StudioView {
     return this.stage.capture();
   }
 
+  /**
+   * Says where the camera is.
+   *
+   * @returns its position, what it looks at, how it is turned about that, and its field of view
+   */
+  cameraState(): CameraState {
+    const { camera, controls } = this.stage;
+    const position = toVec3(camera.position);
+    const target = toVec3(controls.target);
+    return { position, target, ...orbitOf(position, target), fov: camera.fov, roll: (this.stage.rolledBy * 180) / Math.PI };
+  }
+
+  /**
+   * Moves the camera.
+   *
+   * @param edit what to change; one that would put the camera on what it looks at is ignored
+   */
+  setCamera(edit: CameraEdit): void {
+    const next = edited(this.cameraState(), edit);
+    if (next) {
+      this.stage.place(new Vector3(next.position.x, next.position.y, next.position.z), new Vector3(next.target.x, next.target.y, next.target.z), next.fov, (next.roll * Math.PI) / 180);
+    }
+  }
+
+  /**
+   * Brings the middle of the molecule to the middle of the view, which then orbits it and which the molecule's handles
+   * sit on, keeping the view's angle and distance.
+   */
+  centreCamera(): void {
+    const middle = this.middleOfAtoms();
+    this.stage.pivotOn(middle);
+    this.anchorOn(middle);
+  }
+
+  /**
+   * Orbits the view as a drag on it would: dragging across turns the camera round the scene's up, as if the molecule were
+   * pulled across, and dragging down lifts the camera over it.
+   *
+   * @param dx how far the pointer went across, in pixels
+   * @param dy how far it went down, in pixels
+   */
+  orbitBy(dx: number, dy: number): void {
+    const now = this.cameraState();
+    this.setCamera({ yaw: now.yaw - dx * ORBIT_DEGREES_PER_PIXEL, pitch: now.pitch + dy * ORBIT_DEGREES_PER_PIXEL });
+  }
+
+  /**
+   * Pans the view as a drag on it would, carrying the camera and the point it looks at along the screen so that what is at
+   * the pointer stays under it.
+   *
+   * @param dx how far the pointer went across, in pixels
+   * @param dy how far it went down, in pixels
+   */
+  panBy(dx: number, dy: number): void {
+    const { camera, controls, canvas } = this.stage;
+    const height = Math.max(1, canvas.clientHeight);
+    const perPixel = (2 * camera.position.distanceTo(controls.target) * Math.tan((camera.fov * Math.PI) / 360)) / height;
+    const across = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const up = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    const to = controls.target.clone().addScaledVector(across, -dx * perPixel).addScaledVector(up, dy * perPixel);
+    this.stage.pivotOn(to);
+  }
+
+  /**
+   * Puts the camera at the defaults the code has, whatever it was at when the session opened or was last saved: the default
+   * field of view, level, at the default yaw and pitch, framing the whole molecule.
+   */
+  resetCamera(): void {
+    // framing works out how far back to stand from the field of view, so that comes first
+    this.setCamera({ fov: FIELD_OF_VIEW });
+    this.frameScene();
+  }
+
+  /** The middle of the box round every atom, in the scene, or its origin if none is drawn. */
+  private middleOfAtoms(): Vector3 {
+    const box = new Box3();
+    this.atoms.forEach((node) => box.expandByPoint(this.worldOf(node)));
+    return box.isEmpty() ? new Vector3() : box.getCenter(new Vector3());
+  }
+
   /** Points the camera at the whole scene. */
   frameScene(): void {
     this.frameAtoms(this.atoms.map((node) => node.atom.id));
@@ -1245,6 +1351,12 @@ export class StudioView {
     controls.mouseButtons.RIGHT = enabled ? MOUSE.ROTATE : MOUSE.PAN;
     controls.touches.ONE = enabled ? TOUCH.PAN : TOUCH.ROTATE;
     this.stage.canvas.style.cursor = enabled ? "grab" : "";
+    // the spheres are the camera's controls, so they are there while the view is what is being worked on
+    this.spheres.visible = enabled;
+    if (!enabled) {
+      this.spheres.hovered = null;
+    }
+    this.stage.requestRender();
   }
 
   /**
@@ -1307,6 +1419,7 @@ export class StudioView {
     canvas.removeEventListener("pointerleave", this.onLeave);
     canvas.removeEventListener("pointerdown", this.onTriad, { capture: true });
     canvas.removeEventListener("pointerdown", this.onRing, { capture: true });
+    canvas.removeEventListener("pointerdown", this.onSpheres, { capture: true });
     canvas.removeEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.removeEventListener("pointerdown", this.onDown);
     canvas.removeEventListener("pointerup", this.onUp);
@@ -1319,6 +1432,7 @@ export class StudioView {
     this.guide?.dispose();
     this.triad.dispose();
     this.ring.dispose();
+    this.spheres.dispose();
     disposeMaterials(this.axes);
     this.setGrid(null, "xz");
     this.kit.dispose();
@@ -1605,6 +1719,59 @@ export class StudioView {
     this.stage.requestRender();
   }
 
+  /**
+   * A press on one of the camera spheres takes hold of it, and dragging orbits or pans the view by as far as the pointer
+   * goes, along the way the handle holds it to.
+   */
+  private readonly onSpheres = (event: PointerEvent): void => {
+    const handle = event.button === 0 ? this.spheres.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) : null;
+    if (!handle) {
+      return;
+    }
+
+    // the press is the sphere's: it must not orbit the camera, pick up an atom behind it, or clear the selection
+    event.stopImmediatePropagation();
+    event.preventDefault();
+
+    this.stage.controls.enabled = false;
+    this.stage.canvas.setPointerCapture(event.pointerId);
+    this.sphereDrag = { handle, x: event.clientX, y: event.clientY };
+    this.spheres.active = handle;
+    this.stage.canvas.style.cursor = "grabbing";
+    this.stage.requestRender();
+  };
+
+  /** Moves the view by a step of a drag on a camera sphere. */
+  private dragSpheres(event: PointerEvent, drag: { handle: SphereHandle; x: number; y: number }): void {
+    const across = drag.handle === "pitch" || drag.handle === "pan-y" ? 0 : event.clientX - drag.x;
+    const down = drag.handle === "yaw" || drag.handle === "pan-x" ? 0 : event.clientY - drag.y;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+
+    if (drag.handle === "orbit" || drag.handle === "yaw" || drag.handle === "pitch") {
+      this.orbitBy(across, down);
+      return;
+    }
+
+    this.panBy(across, down);
+    // the ball is pulled out the way the view goes, as far as its track lets it
+    const pulled = { x: this.spheres.ball.x + across, y: this.spheres.ball.y - down };
+    const length = Math.hypot(pulled.x, pulled.y);
+    const scale = length > BALL_TRAVEL ? BALL_TRAVEL / length : 1;
+    this.spheres.ball = { x: pulled.x * scale, y: pulled.y * scale };
+    this.stage.requestRender();
+  }
+
+  /** Lets go of a camera sphere, giving the camera its controls back and the pan ball back its place. */
+  private endSphereDrag(): void {
+    this.sphereDrag = null;
+    this.spheres.active = null;
+    this.spheres.ball = { x: 0, y: 0 };
+    this.stage.controls.enabled = true;
+    this.stage.canvas.style.cursor = this.panning ? "grab" : "";
+    this.stage.requestRender();
+  }
+
   private readonly onGrab = (event: PointerEvent): void => {
     if (event.button === 0 && this.handleHovered) {
       // a handle is under the pointer, which takes hold of it, and the camera must stay put
@@ -1666,6 +1833,12 @@ export class StudioView {
   };
 
   private readonly onMove = (event: PointerEvent): void => {
+    const sphereDrag = this.sphereDrag;
+    if (sphereDrag && event.buttons !== 0) {
+      this.dragSpheres(event, sphereDrag);
+      return;
+    }
+
     const rolling = this.rolling;
     if (rolling && event.buttons !== 0) {
       // the picture turns as far as the pointer has gone round the ring since the last move, however far from it
@@ -1699,7 +1872,12 @@ export class StudioView {
       return;
     }
     const overTriad = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) !== null;
-    const overRing = !overTriad && this.ring.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+    const overSphere = this.spheres.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+    if (overSphere !== this.spheres.hovered) {
+      this.spheres.hovered = overSphere;
+      this.stage.requestRender();
+    }
+    const overRing = !overTriad && !overSphere && this.ring.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
     if (overRing !== this.ring.hovered) {
       this.ring.hovered = overRing;
       this.stage.requestRender();
@@ -1708,11 +1886,15 @@ export class StudioView {
 
     // an atom the move tool would refuse to pick up, because it or one moving with it is locked, says so
     const refused = this.moving && pick?.kind === "atom" && this.groupOf(pick.id).some((id) => this.locked.has(id));
-    this.stage.canvas.style.cursor = overTriad ? "pointer" : overRing ? "grab" : refused ? "not-allowed" : this.panning ? "grab" : "";
+    this.stage.canvas.style.cursor = overSphere ? SPHERE_CURSOR[overSphere] : overTriad ? "pointer" : overRing ? "grab" : refused ? "not-allowed" : this.panning ? "grab" : "";
     this.listeners.forEach((listener) => listener.hover?.(pick, { x: event.clientX, y: event.clientY }));
   };
 
   private readonly onLeave = (): void => {
+    if (this.spheres.hovered) {
+      this.spheres.hovered = null;
+      this.stage.requestRender();
+    }
     if (this.ring.hovered) {
       this.ring.hovered = false;
       this.stage.requestRender();
@@ -1765,14 +1947,17 @@ export class StudioView {
       }
     }
 
-    const box = new Box3();
-    this.atoms.forEach((node) => box.expandByPoint(this.worldOf(node)));
-    const anchored = nearest?.clone() ?? (box.isEmpty() ? new Vector3() : box.getCenter(new Vector3()));
+    const anchored = nearest?.clone() ?? this.middleOfAtoms();
     this.stage.pivotOn(anchored);
     this.anchorOn(anchored);
   }
 
   private readonly onUp = (event: PointerEvent): void => {
+    if (this.sphereDrag) {
+      this.endSphereDrag();
+      return;
+    }
+
     if (this.rolling) {
       this.endRoll();
       return;
@@ -1820,6 +2005,9 @@ export class StudioView {
   };
 
   private readonly onCancel = (): void => {
+    if (this.sphereDrag) {
+      this.endSphereDrag();
+    }
     if (this.rolling) {
       this.endRoll();
     }
@@ -1827,6 +2015,16 @@ export class StudioView {
     this.cancelDrag();
   };
 }
+
+/** The cursor over each camera sphere handle: across or up and down for one that holds a drag to that way. */
+const SPHERE_CURSOR: Record<SphereHandle, string> = {
+  orbit: "grab",
+  yaw: "ew-resize",
+  pitch: "ns-resize",
+  pan: "grab",
+  "pan-x": "ew-resize",
+  "pan-y": "ns-resize",
+};
 
 /** The constraint a translate handle holds a move to, by the name three.js gives the handle. */
 const CONSTRAINT_OF_HANDLE: Record<string, Constraint | undefined> = {

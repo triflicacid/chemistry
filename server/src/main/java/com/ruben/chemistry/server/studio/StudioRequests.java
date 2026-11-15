@@ -1,5 +1,6 @@
 package com.ruben.chemistry.server.studio;
 
+import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Quaternion;
 import com.ruben.chemistry.space.Vec3;
@@ -70,6 +71,29 @@ public final class StudioRequests
         public Pose pose()
         {
             return new Pose(position, rotation);
+        }
+    }
+
+    /**
+     * @param sessionId the session whose camera this is
+     * @param position where the camera is in the scene, in angstroms
+     * @param target the point it looks at, in angstroms
+     * @param fov its vertical field of view, in degrees
+     * @param roll how far the picture is turned about the way it looks, in degrees
+     */
+    public record CameraRequest(String sessionId, Vec3 position, Vec3 target, Double fov, Double roll)
+    {
+        /**
+         * @return the camera this describes
+         * @throws IllegalArgumentException if any of it is missing or not a usable camera
+         */
+        public Camera camera()
+        {
+            if (fov == null || roll == null)
+            {
+                throw new IllegalArgumentException("position, target, fov and roll are required");
+            }
+            return new Camera(position, target, fov, roll);
         }
     }
 

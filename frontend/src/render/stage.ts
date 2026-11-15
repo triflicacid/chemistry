@@ -1,19 +1,23 @@
 import {
-    AmbientLight,
-    DirectionalLight,
-    PerspectiveCamera,
-    type Quaternion,
-    Scene,
-    Vector2,
-    Vector3,
-    WebGLRenderer,
+  AmbientLight,
+  DirectionalLight,
+  PerspectiveCamera,
+  type Quaternion,
+  Scene,
+  Vector2,
+  Vector3,
+  WebGLRenderer,
 } from "three";
 import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 import {UP} from "./primitives";
-import {rolled} from "./roll";
+import {rolled, rollOf} from "./roll";
 
 /** The camera's vertical field of view, in degrees. */
 export const FIELD_OF_VIEW = 30;
+
+/** How far round the scene's up, from the +z axis, and how far above level, in degrees, the camera is when it frames something. */
+export const DEFAULT_YAW = 30;
+export const DEFAULT_PITCH = 20;
 
 const suppress = (event: Event): void => event.preventDefault();
 
@@ -78,9 +82,9 @@ export class Stage {
    * @param radius how far from `centre` the things to show reach
    */
   frame(centre: Vector3, radius: number): void {
-    const distance = (1.1 * radius) / Math.sin((FIELD_OF_VIEW * Math.PI) / 360);
-    const yaw = (30 * Math.PI) / 180;
-    const pitch = (20 * Math.PI) / 180;
+    const distance = (1.1 * radius) / Math.sin((this.camera.fov * Math.PI) / 360);
+    const yaw = (DEFAULT_YAW * Math.PI) / 180;
+    const pitch = (DEFAULT_PITCH * Math.PI) / 180;
     this.camera.position.set(
       Math.cos(pitch) * Math.sin(yaw) * distance,
       Math.sin(pitch) * distance,
@@ -89,6 +93,36 @@ export class Stage {
     this.controls.target.copy(centre);
     this.orient(UP);
     this.controls.update();
+    this.options.onMove?.();
+    this.requestRender();
+  }
+
+  /** How far the camera is rolled from level, in radians, counterclockwise positive. */
+  get rolledBy(): number {
+    const forward = this.controls.target.clone().sub(this.camera.position);
+    return rollOf(new Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion), forward);
+  }
+
+  /**
+   * Puts the camera somewhere, looking at a point, which it then orbits, rolled as asked.
+   *
+   * @param position where the camera goes
+   * @param target the point it looks at
+   * @param fov the camera's vertical field of view, in degrees
+   * @param roll how far to roll it from level, in radians
+   */
+  place(position: Vector3, target: Vector3, fov: number, roll: number): void {
+    this.camera.position.copy(position);
+    this.controls.target.copy(target);
+    if (fov !== this.camera.fov) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.orient(UP);
+    this.controls.update();
+    if (roll !== 0) {
+      this.roll(roll);
+    }
     this.options.onMove?.();
     this.requestRender();
   }

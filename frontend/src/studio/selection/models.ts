@@ -1,7 +1,8 @@
-import { HoverModel } from "./HoverModel";
-import type { StateIndex } from "./StateIndex";
-import { SelectionModel } from "./SelectionModel";
-import { ToolModel } from "./ToolModel";
+import {CameraModel} from "./CameraModel";
+import {HoverModel} from "./HoverModel";
+import type {StateIndex} from "./StateIndex";
+import {SelectionModel} from "./SelectionModel";
+import {ToolModel} from "./ToolModel";
 
 /** How a click in the viewport picks: the atom or bond itself, or the whole molecule it is in. */
 export type PickMode = "element" | "molecule";
@@ -12,6 +13,8 @@ export interface Models {
   hover: HoverModel;
   /** Which tool is in use, and what a move is held to. */
   tools: ToolModel;
+  /** Where the camera is, which the viewport reports and the Inspector can change. */
+  camera: CameraModel;
   /** Looks identifiers up in the state the surfaces are showing; null until a session opens. */
   index: StateIndex | null;
 }
@@ -19,8 +22,9 @@ export interface Models {
 /**
  * Makes the models a workspace needs.
  *
- * @returns a selection and a hover model, with nothing selected, and a tool model on the select tool
+ * @returns a selection and a hover model, with nothing selected, a tool model on the select tool, and a camera model
+ *     that knows nothing until a viewport reports
  */
-export function createModels(): Pick<Models, "selection" | "hover" | "tools"> {
-  return { selection: new SelectionModel(), hover: new HoverModel(), tools: new ToolModel() };
+export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera"> {
+  return { selection: new SelectionModel(), hover: new HoverModel(), tools: new ToolModel(), camera: new CameraModel() };
 }

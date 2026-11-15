@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.PiSystem;
 import com.ruben.chemistry.render.ElementColours;
+import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.space.ElementData;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Vec3;
@@ -30,6 +31,7 @@ import java.util.Set;
  * @param fragments the disconnected parts of the molecule
  * @param locked the atoms and bonds that refuse an edit
  * @param transform where the molecule sits in the scene; the atoms' positions are in the molecule's own frame
+ * @param camera where the client's camera was last said to be, or {@code null} if it never said
  * @param canUndo whether there is an edit to take back
  * @param canRedo whether there is an undone edit to make again
  */
@@ -46,6 +48,7 @@ public record StudioState(
         List<FragmentState> fragments,
         List<String> locked,
         Pose transform,
+        Camera camera,
         boolean canUndo,
         boolean canRedo)
 {
@@ -165,6 +168,7 @@ public record StudioState(
                 fragments,
                 List.copyOf(session.locked()),
                 session.pose(),
+                session.camera().orElse(null),
                 session.canUndo(),
                 session.canRedo());
     }

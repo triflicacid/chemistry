@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StudioSocketEndpointTest
 {
     /** The start of every message, naming the protocol the client is written for. */
-    private static final String PROTOCOL = "\"protocol_version\": 10, ";
+    private static final String PROTOCOL = "\"protocol_version\": 11, ";
 
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
@@ -45,7 +45,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 10L);
+        assertThat(ready).containsEntry("protocol_version", 11L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -90,13 +90,13 @@ class StudioSocketEndpointTest
         collector.next();
 
         // a stale client, a client from the future, and one that never said, each refused for its own reason
-        socket.sendText("{\"protocol_version\": 9, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
+        socket.sendText("{\"protocol_version\": 10, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
         Map<String, Object> stale = collector.nextJson();
         assertThat(error(stale)).containsEntry("code", "PROTOCOL_MISMATCH");
         assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
         assertThat((String) error(stale).get("message")).contains("out of date");
 
-        socket.sendText("{\"protocol_version\": 11, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        socket.sendText("{\"protocol_version\": 12, \"type\": \"session.open\", \"sequence\": 2}", true).join();
         assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
 
         // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
@@ -807,6 +807,36 @@ class StudioSocketEndpointTest
     }
 
     @Test
+    void should_save_the_camera_with_the_molecule_and_give_it_back_when_that_is_opened() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        assertThat(opened).containsEntry("camera", null);
+
+        socket.sendText(camera(sessionId, 2, 40), true).join();
+        Map<String, Object> ack = collector.nextJson();
+        assertThat(ack).containsEntry("type", "camera.set.ack").containsEntry("sequence", 2L);
+        String saved = (String) ack.get("saved_molecule_id");
+        assertThat(saved).isNotNull().isNotEqualTo(stored.id());
+
+        // looking around is not an edit, so the session is still at its first version with nothing to undo
+        socket.sendText(resync(sessionId, 3), true).join();
+        Map<String, Object> same = collector.nextJson();
+        assertThat(same).containsEntry("version", 1L).containsEntry("can_undo", false);
+        assertThat(same.get("camera")).isEqualTo(cameraState(40));
+
+        socket.sendText(open(saved, 4), true).join();
+        assertThat(collector.nextJson().get("camera")).isEqualTo(cameraState(40));
+        assertThat(stored.camera()).isEmpty();
+    }
+
+    @Test
     void should_send_the_strain_of_the_geometry_once_it_is_left_alone() throws Exception
     {
         endpoint = new StudioSocketEndpoint(molecules, new StudioSessionStore(), new GeometryScheduler(Duration.ofMillis(30)));
@@ -1244,6 +1274,32 @@ class StudioSocketEndpointTest
         return "{" + PROTOCOL + "\"type\": \"molecule.transform\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + ", \"commit\": " + commit + ", \"position\": {\"x\": " + x + ", \"y\": " + y
                 + ", \"z\": " + z + "}, \"rotation\": {\"x\": 0, \"y\": 0, \"z\": 0, \"w\": 1}}";
+    }
+
+    /**
+     * @param sessionId the session whose camera it is
+     * @param sequence the message's sequence number
+     * @param fov the camera's field of view, in degrees
+     * @return a {@code camera.set} message for {@link #cameraState(double)}
+     */
+    private static String camera(String sessionId, int sequence, double fov)
+    {
+        return "{" + PROTOCOL + "\"type\": \"camera.set\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"position\": {\"x\": 1, \"y\": 2, \"z\": 3}, \"target\": {\"x\": 0, \"y\": 0.5, \"z\": -1}, \"fov\": " + fov
+                + ", \"roll\": 15}";
+    }
+
+    /**
+     * @param fov the camera's field of view, in degrees
+     * @return the camera a state carries after {@link #camera(String, int, double)} sent it
+     */
+    private static Map<String, Object> cameraState(double fov)
+    {
+        return Map.of(
+                "position", Map.of("x", 1.0, "y", 2.0, "z", 3.0),
+                "target", Map.of("x", 0.0, "y", 0.5, "z", -1.0),
+                "fov", fov,
+                "roll", 15.0);
     }
 
     /**

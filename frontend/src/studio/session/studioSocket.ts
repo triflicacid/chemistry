@@ -1,18 +1,20 @@
 import type {Vec3} from "../../api/types/structure";
 import {
-    type BondEditAck,
-    type EditApplied,
-    type LockAck,
-    type OptimiseCancelAck,
-    type OptimiseStarted,
-    type PatchAck,
-    type Pose,
-    PROTOCOL_VERSION,
-    type ServerEnvelope,
-    type SessionConflict,
-    type SessionReady,
-    type SessionState,
-    type TransformAck,
+  type BondEditAck,
+  type CameraAck,
+  type EditApplied,
+  type LockAck,
+  type OptimiseCancelAck,
+  type OptimiseStarted,
+  type PatchAck,
+  type Pose,
+  PROTOCOL_VERSION,
+  type ServerEnvelope,
+  type SessionCamera,
+  type SessionConflict,
+  type SessionReady,
+  type SessionState,
+  type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -322,6 +324,22 @@ export class StudioSocket {
       "molecule.transform",
       { session_id: sessionId, base_version: baseVersion, commit, position: pose.position, rotation: pose.rotation },
       ["molecule.transform.ack", "conflict"],
+    );
+  }
+
+  /**
+   * Tells the server where the camera is, which it keeps with the molecule. The camera is not an edit, so this names no
+   * version, cannot conflict, and changes nothing there is to undo.
+   *
+   * @param sessionId the session the camera is for
+   * @param camera where the camera is and how it looks
+   * @returns the acknowledgement, which names the stored molecule holding the camera
+   */
+  setCamera(sessionId: string, camera: SessionCamera): Promise<CameraAck> {
+    return this.request<CameraAck>(
+      "camera.set",
+      { session_id: sessionId, position: camera.position, target: camera.target, fov: camera.fov, roll: camera.roll },
+      "camera.set.ack",
     );
   }
 

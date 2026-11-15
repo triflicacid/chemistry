@@ -4,17 +4,18 @@ import {ApiError} from "../../api/http";
 import {describing, describingSmiles, requested} from "./location";
 import type {Vec3} from "../../api/types/structure";
 import type {
-    AtomMove,
-    BondEdit,
-    BondEditAck,
-    EditApplied,
-    GeometryResult,
-    OptimiseProgress,
-    OptimiseResult,
-    PatchAck,
-    Pose,
-    SessionConflict,
-    SessionState,
+  AtomMove,
+  BondEdit,
+  BondEditAck,
+  EditApplied,
+  GeometryResult,
+  OptimiseProgress,
+  OptimiseResult,
+  PatchAck,
+  Pose,
+  SessionCamera,
+  SessionConflict,
+  SessionState,
 } from "./messages";
 import {samePose} from "./pose";
 import {StudioError, StudioSocket} from "./studioSocket";
@@ -40,6 +41,9 @@ const HISTORY = 200;
 
 /** The least time between the patches a drag sends, so a drag sends about ten a second however fast the pointer moves. */
 export const DRAG_INTERVAL_MS = 100;
+
+/** How long the camera must be left alone before where it is gets sent to be kept, in milliseconds. */
+export const CAMERA_SAVE_MS = 500;
 
 /** Something being dragged, atoms or the whole molecule, and how much of the drag the session has been told. */
 interface Drag {
@@ -148,6 +152,12 @@ export interface Session {
   dropMolecule: (pose: Pose) => Promise<EditResult>;
   /** Abandons a drag of the molecule, putting it back at the pose it was picked up at. */
   cancelMoleculeDrag: (from: Pose) => Promise<EditResult>;
+  /**
+   * Says where the camera is, to be kept with the molecule so that opening it again shows the same view. Sends once the
+   * camera has been left alone for {@link CAMERA_SAVE_MS}, with the latest. It is not an edit, so it cannot be undone and
+   * the version does not change, but the first one may store the molecule, which is how a reload finds the view.
+   */
+  saveCamera: (camera: SessionCamera) => void;
   /** Locks or unlocks atoms, so that they refuse or accept edits. A lock is saved with the molecule but is not an edit, so it cannot be undone. */
   lockAtoms: (ids: string[], locked: boolean) => Promise<EditResult>;
   /**
@@ -738,6 +748,54 @@ export function useSession(client?: ChemistryApi): Session {
     [closeDrag, sendPose],
   );
 
+  const cameraTimer = useRef<number | null>(null);
+
+  // nothing is sent for a camera that was waiting when the page went
+  useEffect(
+    () => () => {
+      if (cameraTimer.current !== null) {
+        clearTimeout(cameraTimer.current);
+      }
+    },
+    [],
+  );
+
+  const saveCamera = useCallback(
+    (camera: SessionCamera) => {
+      if (cameraTimer.current !== null) {
+        clearTimeout(cameraTimer.current);
+      }
+      cameraTimer.current = window.setTimeout(() => {
+        cameraTimer.current = null;
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return;
+        }
+
+        socket
+          .setCamera(base.session_id, camera)
+          .then((reply) => {
+            const now = held.current;
+            if (!now || now.session_id !== base.session_id) {
+              return;
+            }
+            if (now.saved_molecule_id !== reply.saved_molecule_id) {
+              // the view has just stored the molecule, which is what a reload should open
+              adopt({ ...now, camera, saved_molecule_id: reply.saved_molecule_id });
+            } else {
+              // the screen is already as it was left, so nothing needs to draw again
+              held.current = { ...now, camera };
+            }
+          })
+          .catch(() => {
+            // the view is as the user left it, and the next change tries again
+          });
+      }, CAMERA_SAVE_MS);
+    },
+    [adopt],
+  );
+
   const lockAtoms = useCallback(
     (ids: string[], locked: boolean): Promise<EditResult> =>
       serially(async () => {
@@ -873,6 +931,7 @@ export function useSession(client?: ChemistryApi): Session {
     dropMolecule,
     cancelMoleculeDrag,
     lockAtoms,
+    saveCamera,
     optimise,
     cancelOptimise,
     undo,

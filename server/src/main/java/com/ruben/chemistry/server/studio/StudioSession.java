@@ -4,6 +4,7 @@ import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.BondMotion;
@@ -141,6 +142,9 @@ public final class StudioSession
     /** Where the molecule sits in the scene; its atoms' coordinates are in the molecule's own frame, not this one. */
     private Pose pose = Pose.IDENTITY;
 
+    /** Where the client's camera is, or null if it has never said. It is not part of the version, and is never undone. */
+    private Camera camera;
+
     private long version = 1;
     private String smiles;
     private long smilesVersion;
@@ -193,6 +197,7 @@ public final class StudioSession
 
         StudioSession session = build(sessionId, source.id(), source.molecule(), structure, source.lockedSites());
         session.pose = source.pose();
+        session.camera = source.camera().orElse(null);
         return session;
     }
 
@@ -216,6 +221,8 @@ public final class StudioSession
         Structure3D structure = Embedder.embed(molecule, Embedder.Options.DEFAULT.withConformers(conformers));
         StudioSession next = build(sessionId, sourceMoleculeId, molecule, structure, Set.of());
         next.version = version + 1;
+        // the screen is arranged as it was, though the molecule on it is not
+        next.camera = camera;
         return next;
     }
 
@@ -921,6 +928,25 @@ public final class StudioSession
     public synchronized Pose pose()
     {
         return pose;
+    }
+
+    /**
+     * @return where the client's camera is, or empty if it has never said
+     */
+    public synchronized Optional<Camera> camera()
+    {
+        return Optional.ofNullable(camera);
+    }
+
+    /**
+     * Records where the client's camera is. This is how a screen is arranged and not an edit, so the version does not
+     * change and there is nothing to undo.
+     *
+     * @param camera where the camera is and how it looks
+     */
+    public synchronized void setCamera(Camera camera)
+    {
+        this.camera = camera;
     }
 
     /**

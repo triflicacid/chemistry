@@ -37,6 +37,7 @@ export function App() {
     dropMolecule,
     cancelMoleculeDrag,
     lockAtoms,
+    saveCamera,
     optimising,
     outcome,
     optimise,
@@ -189,6 +190,7 @@ export function App() {
       onSetBondTorsion={setBondTorsion}
       onSetAngle={setAngle}
       onLockAtoms={lock}
+      onSaveCamera={saveCamera}
       canLock={chosen.length > 0}
       lockPressed={allLocked}
       onToggleLock={toggleLock}
