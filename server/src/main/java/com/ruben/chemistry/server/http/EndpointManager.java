@@ -76,29 +76,17 @@ final class EndpointManager implements EndpointRegistry
     @Override
     public void register(HttpMethod method, String path, Handler handler)
     {
-        if (!path.startsWith("/"))
-        {
-            throw new IllegalArgumentException("A route must start with '/', but was '" + path + "'");
-        }
-
-        List<String> segments = segments(path);
-        for (String segment : segments)
-        {
-            if (segment.equals(":"))
-            {
-                throw new IllegalArgumentException("A path parameter needs a name, in '" + path + "'");
-            }
-        }
+        PathPattern pattern = PathPattern.compile(path);
 
         for (Route existing : routes)
         {
-            if (existing.method == method && existing.sameShape(segments))
+            if (existing.method == method && existing.pattern.sameShape(pattern))
             {
                 throw new IllegalArgumentException(method + " " + path + " is already registered");
             }
         }
 
-        routes.add(new Route(method, segments, handler));
+        routes.add(new Route(method, pattern, handler));
     }
 
     /**
@@ -154,7 +142,7 @@ final class EndpointManager implements EndpointRegistry
 
     private void handle(HttpExchange exchange, ExchangeContext context) throws Exception
     {
-        List<String> segments = segments(decodeRawPath(exchange.getRequestURI().getRawPath()));
+        List<String> segments = PathPattern.segments(decodeRawPath(exchange.getRequestURI().getRawPath()));
         Optional<HttpMethod> method = HttpMethod.of(exchange.getRequestMethod());
 
         Route matched = null;
@@ -221,19 +209,6 @@ final class EndpointManager implements EndpointRegistry
         matched.handler.handle(request, context);
     }
 
-    private static List<String> segments(String path)
-    {
-        List<String> segments = new ArrayList<>();
-        for (String segment : path.split("/"))
-        {
-            if (!segment.isEmpty())
-            {
-                segments.add(segment);
-            }
-        }
-        return segments;
-    }
-
     private static String decodeRawPath(String rawPath)
     {
         if (rawPath == null)
@@ -289,52 +264,11 @@ final class EndpointManager implements EndpointRegistry
         }
     }
 
-    private record Route(HttpMethod method, List<String> segments, Handler handler)
+    private record Route(HttpMethod method, PathPattern pattern, Handler handler)
     {
         Map<String, String> match(List<String> given)
         {
-            if (given.size() != segments.size())
-            {
-                return null;
-            }
-
-            Map<String, String> parameters = new LinkedHashMap<>();
-            for (int i = 0; i < segments.size(); i++)
-            {
-                String expected = segments.get(i);
-                String actual = given.get(i);
-
-                if (expected.startsWith(":"))
-                {
-                    parameters.put(expected.substring(1), actual);
-                }
-                else if (!expected.equals(actual))
-                {
-                    return null;
-                }
-            }
-            return parameters;
-        }
-
-        boolean sameShape(List<String> other)
-        {
-            if (other.size() != segments.size())
-            {
-                return false;
-            }
-
-            for (int i = 0; i < segments.size(); i++)
-            {
-                String mine = segments.get(i);
-                String theirs = other.get(i);
-                boolean mineVariable = mine.startsWith(":");
-
-                if (mineVariable != theirs.startsWith(":") || (!mineVariable && !mine.equals(theirs)))
-                {
-                    return false;
-                }
-            }
-            return true;
+            return pattern.match(given);
         }
     }
 }
