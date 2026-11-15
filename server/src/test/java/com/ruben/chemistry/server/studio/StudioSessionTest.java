@@ -91,7 +91,6 @@ class StudioSessionTest
 
         assertThat(session.version()).isEqualTo(1);
         assertThat(session.savedMoleculeId()).isNull();
-        assertThat(session.pinned()).isEmpty();
         assertThat(session.locked()).isEmpty();
     }
 
@@ -163,7 +162,6 @@ class StudioSessionTest
         assertThat(rebuilt.version()).isEqualTo(session.version() + 1);
         assertThat(rebuilt.smiles()).isEqualTo("CCN");
         assertThat(rebuilt.molecule().atomCount()).isEqualTo(10);
-        assertThat(rebuilt.pinned()).isEmpty();
         assertThat(rebuilt.locked()).isEmpty();
     }
 

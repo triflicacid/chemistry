@@ -95,7 +95,6 @@ class StudioSocketEndpointTest
         assertThat(state.get("session_id")).asString().isNotBlank();
         assertThat(state.get("saved_molecule_id")).isNull();
         assertThat(state.get("strain")).isInstanceOf(Double.class);
-        assertThat(state.get("pinned")).isEqualTo(List.of());
         assertThat(state.get("locked")).isEqualTo(List.of());
 
         // ethanol's three written atoms and the six hydrogens it counted

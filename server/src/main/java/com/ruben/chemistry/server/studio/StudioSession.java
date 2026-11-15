@@ -76,9 +76,6 @@ public final class StudioSession
     private final Set<String> wasImplicit;
     private final double strain;
 
-    /** Atoms relaxation and optimisation must leave where they are. */
-    private final Set<String> pinned = new LinkedHashSet<>();
-
     /** Atoms and bonds that refuse an edit. */
     private final Set<String> locked = new LinkedHashSet<>();
 
@@ -643,14 +640,6 @@ public final class StudioSession
     public boolean wasImplicit(String atomId)
     {
         return wasImplicit.contains(atomId);
-    }
-
-    /**
-     * @return the atoms relaxation must not move
-     */
-    public Set<String> pinned()
-    {
-        return Collections.unmodifiableSet(pinned);
     }
 
     /**

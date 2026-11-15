@@ -91,9 +91,10 @@ export function App() {
   const cancel = useCallback((moves: AtomMove[]) => void cancelDrag(moves), [cancelDrag]);
   const lock = useCallback((ids: string[], locked: boolean) => void lockAtoms(ids, locked), [lockAtoms]);
 
-  // the toolbar button and the L key lock the selected atoms, or unlock them if all of them are locked already
+  // the toolbar button and the L key lock the selected atoms, or unlock them if all of them are locked already.
+  // A selected molecule stands for every atom in it
   const { items: selected } = useObservable(shared.selection);
-  const chosen = useMemo(() => selected.flatMap((item) => (item.kind === "atom" ? [item.id] : [])), [selected]);
+  const chosen = useMemo(() => (index ? [...index.members(selected).atoms] : []), [index, selected]);
   const allLocked = chosen.length > 0 && chosen.every((id) => state?.locked.includes(id));
   const toggleLock = useCallback(() => {
     if (chosen.length > 0) {

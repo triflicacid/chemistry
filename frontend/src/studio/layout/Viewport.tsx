@@ -80,7 +80,7 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
   }, [view, constraint]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
-  const blocked = state !== null && selected.items.some((item) => item.kind === "atom" && state.locked.includes(item.id));
+  const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
 
   // X, Y and Z hold a move to an axis, and shift with one holds it to the plane across that axis
   useEffect(() => {

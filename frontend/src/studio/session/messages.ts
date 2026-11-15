@@ -60,7 +60,6 @@ export interface SessionState extends ServerEnvelope {
   atoms: SessionAtom[];
   bonds: SessionBond[];
   fragments: SessionFragment[];
-  pinned: string[];
   locked: string[];
   strain: number;
   /** Whether there is an edit to take back. */

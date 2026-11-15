@@ -170,7 +170,6 @@ function AtomPane({ atom, index, models, onMove, onLock }: AtomPaneProps) {
           <span className="unit">Å</span>
         </dd>
         {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
-        <Property name="Pinned" value={state.pinned.includes(atom.id) ? "yes" : "no"} />
         <dt>Locked</dt>
         <dd>
           <input
