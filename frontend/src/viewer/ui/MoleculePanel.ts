@@ -1,6 +1,11 @@
-import type { ChemistryApi, SceneResponse } from "../api/ChemistryApi";
-import { ApiError } from "../api/http";
-import type { GeneratedNotation, MatchData, MoleculeId, MoleculeMetadata, OptionValues, ProjectionRequest, Scene, Structure3D } from "../api/types";
+import type { ChemistryApi, SceneResponse } from "../../api/ChemistryApi";
+import { ApiError } from "../../api/http";
+import type { MatchData } from "../../api/types/match";
+import type { MoleculeMetadata } from "../../api/types/metadata";
+import type { OptionValues } from "../../api/types/options";
+import type { GeneratedNotation, ProjectionRequest, Scene } from "../../api/types/scene";
+import type { MoleculeId } from "../../api/types/stored";
+import type { Structure3D } from "../../api/types/structure";
 import type { PanelState } from "../store";
 import { SvgView } from "../view/SvgView";
 import { ThreeView } from "../view/ThreeView";
@@ -60,6 +65,7 @@ export class MoleculePanel {
   private matchRequest = 0;
   private readonly projectActions: HTMLElement;
   private readonly validateAction: HTMLButtonElement;
+  private readonly studioAction: HTMLButtonElement;
   /** The tabs and projection buttons, shown once there is a molecule to act on. */
   private readonly toolbar = document.createElement("div");
   private readonly tabs = document.createElement("div");
@@ -79,6 +85,7 @@ export class MoleculePanel {
     this.projectActions = this.buildProjectActions();
     this.projectActions.hidden = mode !== "3d";
     this.validateAction = this.buildValidateAction();
+    this.studioAction = this.buildStudioAction();
     this.toolbar.className = "toolbar";
     this.chevron.type = "button";
     this.chevron.className = "chevron";
@@ -102,7 +109,7 @@ export class MoleculePanel {
       this.tabs.append(tab);
     }
     this.markActive();
-    this.toolbar.append(this.chevron, this.tabs, this.projectActions, this.validateAction, remove);
+    this.toolbar.append(this.chevron, this.tabs, this.projectActions, this.validateAction, this.studioAction, remove);
     this.matches.className = "matches";
     this.matches.hidden = true;
     this.body.className = "panel-body";
@@ -124,6 +131,28 @@ export class MoleculePanel {
     this.tabs.hidden = !on;
     this.projectActions.hidden = !on || this.mode !== "3d";
     this.validateAction.hidden = !on;
+    this.studioAction.hidden = !on;
+  }
+
+  private buildStudioAction(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "small";
+    button.textContent = "Open in Studio";
+    button.title = "Open this molecule in Studio, the editing workspace";
+    button.addEventListener("click", () => this.openInStudio());
+    return button;
+  }
+
+  /**
+   * Leaves the viewer for Studio, naming the molecule shown so that Studio can load it.
+   *
+   * Studio is a separate page, so this is a navigation rather than a change to this one.
+   */
+  private openInStudio(): void {
+    if (this.current) {
+      window.location.href = `/studio/?molecule=${encodeURIComponent(this.current.id)}`;
+    }
   }
 
   private buildValidateAction(): HTMLButtonElement {

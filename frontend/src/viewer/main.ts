@@ -1,4 +1,4 @@
-import { ChemistryApi } from "./api/ChemistryApi";
+import { ChemistryApi } from "../api/ChemistryApi";
 import { App } from "./ui/App";
 import "./style.css";
 

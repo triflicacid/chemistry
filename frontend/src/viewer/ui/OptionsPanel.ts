@@ -1,4 +1,4 @@
-import type { OptionDescriptor, OptionValues } from "../api/types";
+import type { OptionDescriptor, OptionValues } from "../../api/types/options";
 
 interface Control {
   element: HTMLElement;

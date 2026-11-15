@@ -1,4 +1,4 @@
-import type { Scene, SceneAttributes, SceneElement, ScenePoint } from "../api/types";
+import type { Scene, SceneAttributes, SceneElement, ScenePoint } from "../../api/types/scene";
 import type { FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
 const NS = "http://www.w3.org/2000/svg";
