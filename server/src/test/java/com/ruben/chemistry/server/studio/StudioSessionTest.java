@@ -168,6 +168,51 @@ class StudioSessionTest
     }
 
     @Test
+    void rebuilds_having_saved_nothing()
+    {
+        StudioSession session = open("CCO");
+        session.saved("some-molecule");
+
+        StudioSession rebuilt = session.rebuilt(parser.parse("CCN").molecule(), 1);
+
+        assertThat(rebuilt.savedMoleculeId()).isNull();
+    }
+
+    @Test
+    void describes_its_geometry_as_the_structure_of_the_molecule_it_stores()
+    {
+        StudioSession session = open("CCO");
+        String carbon = ids(session).getFirst();
+        session.move(List.of(new StudioSession.Move(carbon, new Vec3(7, 8, 9))), true);
+
+        Structure3D structure = session.structure();
+
+        assertThat(session.collapsed().atomCount()).isEqualTo(3);
+        assertThat(structure.sites()).hasSize(9);
+        assertThat(structure.sites().stream().filter(Structure3D.Site::implied).count()).isEqualTo(6);
+        assertThat(structure.conformers()).hasSize(1);
+        assertThat(structure.conformers().getFirst().positions().getFirst()).isEqualTo(new Vec3(7, 8, 9));
+    }
+
+    @Test
+    void reopens_on_the_geometry_it_described()
+    {
+        StudioSession session = open("CCO");
+        session.move(List.of(new StudioSession.Move(ids(session).getFirst(), new Vec3(7, 8, 9))), true);
+        StoredMolecule stored = molecules.add(com.ruben.chemistry.server.molecule.ParsedMolecule.written(session.collapsed()));
+        stored.setLatestStructure3d(session.structure());
+
+        StudioSession reopened = StudioSession.open("again", stored, 1);
+
+        assertThat(reopened.molecule().atomCount()).isEqualTo(9);
+        for (String id : ids(session))
+        {
+            assertThat(reopened.positionOf(id)).isEqualTo(session.positionOf(id));
+            assertThat(reopened.wasImplicit(id)).isEqualTo(session.wasImplicit(id));
+        }
+    }
+
+    @Test
     void rebuilds_without_touching_the_session_it_replaces()
     {
         StudioSession session = open("CCO");

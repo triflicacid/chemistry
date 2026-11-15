@@ -55,6 +55,7 @@ export function Workspace(props: WorkspaceProps) {
         onCollapse={onCollapse}
         canUndo={state?.can_undo ?? false}
         canRedo={state?.can_redo ?? false}
+        saved={state?.saved_molecule_id != null}
         onUndo={onUndo}
         onRedo={onRedo}
       />

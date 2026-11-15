@@ -9,8 +9,10 @@ import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.space.Vec3;
+import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
@@ -45,6 +47,16 @@ public final class StudioSession
     }
 
     /**
+     * What an undo or redo did.
+     *
+     * @param version the version after it
+     * @param moved where each atom it touched is now
+     */
+    public record Applied(long version, Map<String, Vec3> moved)
+    {
+    }
+
+    /**
      * One committed edit.
      *
      * @param before where each atom the edit touched was
@@ -71,6 +83,15 @@ public final class StudioSession
 
     /** The molecule this session last saved, or null if it has saved none. */
     private String savedMoleculeId;
+
+    /** The working graph with its hydrogens counted, or null until saving first asks for it. */
+    private Molecule collapsed;
+
+    /** The structure of {@link #collapsed}, whose conformer is a placeholder, or null until saving first asks for it. */
+    private Structure3D structureShape;
+
+    /** The atom each node of {@link #collapsed}'s structure is, in node order. */
+    private List<String> nodeAtoms;
 
     /** Committed edits, the latest last. */
     private final Deque<Edit> done = new ArrayDeque<>();
@@ -139,7 +160,8 @@ public final class StudioSession
      *
      * @param molecule the molecule to rebuild on, whose hydrogens may still be counts
      * @param conformers how many conformers to embed
-     * @return the new session, one version on from this one, with this session's name, source and saved molecule
+     * @return the new session, one version on from this one, with this session's name and source; it has saved
+     *     nothing, because the molecule this session saved describes a structure that no longer exists
      * @throws IllegalArgumentException if {@code conformers} is outside 1 to {@link #MAX_CONFORMERS}
      * @throws IllegalStateException if no shape could be embedded, or the shape found does not describe the molecule's atoms one for one
      */
@@ -153,7 +175,6 @@ public final class StudioSession
         Structure3D structure = Embedder.embed(molecule, Embedder.Options.DEFAULT.withConformers(conformers));
         StudioSession next = build(sessionId, sourceMoleculeId, molecule, structure);
         next.version = version + 1;
-        next.savedMoleculeId = savedMoleculeId;
         return next;
     }
 
@@ -264,16 +285,17 @@ public final class StudioSession
     /**
      * Takes back the latest committed edit. An edit still in progress is cancelled instead.
      *
-     * @return the version after the undo
+     * @return the atoms it moved and the version after it
      * @throws StudioEditException with {@code NOTHING_TO_UNDO} if there is nothing to take back
      */
-    public synchronized long undo()
+    public synchronized Applied undo()
     {
         if (!uncommitted.isEmpty())
         {
-            geometry.putAll(uncommitted);
+            Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
+            geometry.putAll(restored);
             uncommitted.clear();
-            return ++version;
+            return new Applied(++version, restored);
         }
 
         Edit edit = done.pollLast();
@@ -284,16 +306,16 @@ public final class StudioSession
 
         geometry.putAll(edit.before());
         undone.addLast(edit);
-        return ++version;
+        return new Applied(++version, edit.before());
     }
 
     /**
      * Makes again the edit most recently undone.
      *
-     * @return the version after the redo
+     * @return the atoms it moved and the version after it
      * @throws StudioEditException with {@code NOTHING_TO_REDO} if no undone edit is waiting
      */
-    public synchronized long redo()
+    public synchronized Applied redo()
     {
         Edit edit = undone.pollLast();
         if (edit == null)
@@ -303,7 +325,71 @@ public final class StudioSession
 
         geometry.putAll(edit.after());
         done.addLast(edit);
-        return ++version;
+        return new Applied(++version, edit.after());
+    }
+
+    /**
+     * @return the working graph with its hydrogens taken back into counts, which is how it is stored
+     */
+    public synchronized Molecule collapsed()
+    {
+        prepareStructure();
+        return collapsed;
+    }
+
+    /**
+     * Describes the working geometry as the structure of {@link #collapsed()}, which is what saving stores.
+     *
+     * @return the structure, whose positions are the working positions, not recentred
+     */
+    public synchronized Structure3D structure()
+    {
+        prepareStructure();
+
+        List<Vec3> positions = new ArrayList<>(nodeAtoms.size());
+        nodeAtoms.forEach(id -> positions.add(geometry.get(id)));
+
+        return new Structure3D(
+                structureShape.sites(),
+                structureShape.connections(),
+                List.of(new Structure3D.Conformer(strain, positions)));
+    }
+
+    /** Works out, the first time it is needed, what saving stores that does not change as atoms move. */
+    private void prepareStructure()
+    {
+        if (collapsed != null)
+        {
+            return;
+        }
+
+        Map<Atom, List<Atom>> absorbed = Hydrogens.absorbedBy(molecule);
+        Set<Atom> gone = IdentitySet.of();
+        absorbed.values().forEach(gone::addAll);
+        List<Atom> kept = molecule.atoms().stream().filter(atom -> !gone.contains(atom)).toList();
+
+        // the collapsed molecule lists the hydrogens it implies atom by atom, after every atom it holds
+        List<String> order = new ArrayList<>();
+        kept.forEach(atom -> order.add(atomIds.get(atom)));
+        for (Atom atom : kept)
+        {
+            absorbed.getOrDefault(atom, List.of()).forEach(hydrogen -> order.add(atomIds.get(hydrogen)));
+        }
+
+        Molecule counted = Hydrogens.asCounts(molecule);
+        structureShape = Embedder.placed(counted, order.stream().map(geometry::get).toList(), strain);
+        nodeAtoms = List.copyOf(order);
+        collapsed = counted;
+    }
+
+    /**
+     * Notes the stored molecule that holds this session's work.
+     *
+     * @param moleculeId the stored molecule
+     */
+    public synchronized void saved(String moleculeId)
+    {
+        this.savedMoleculeId = moleculeId;
     }
 
     /**

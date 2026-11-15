@@ -1,5 +1,5 @@
 import type { Vec3 } from "../../api/types/structure";
-import type { PatchAck, ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
+import type { EditApplied, PatchAck, ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
 
 /** The error the server answered a message with. */
 export class StudioError extends Error {
@@ -232,13 +232,13 @@ export class StudioSocket {
    * @param direction which way to step through the session's history
    * @param sessionId the session to step through
    * @param baseVersion the version the caller was looking at
-   * @returns the state after the step, or a conflict carrying the state the session is actually in
+   * @returns the atoms the step moved, or a conflict carrying the state the session is actually in
    */
-  step(direction: "undo" | "redo", sessionId: string, baseVersion: number): Promise<SessionState | SessionConflict> {
-    return this.request<SessionState | SessionConflict>(
+  step(direction: "undo" | "redo", sessionId: string, baseVersion: number): Promise<EditApplied | SessionConflict> {
+    return this.request<EditApplied | SessionConflict>(
       `edit.${direction}`,
       { session_id: sessionId, base_version: baseVersion },
-      ["session.state", "conflict"],
+      ["edit.applied", "conflict"],
     );
   }
 

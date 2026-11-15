@@ -228,13 +228,15 @@ describe("the Studio socket", () => {
     expect(ack.can_undo).toBe(true);
 
     const undone = await socket.step("undo", opened.session_id, ack.version);
-    expect(undone.type).toBe("session.state");
-    const state = undone as SessionState;
-    expect(state.atoms[0]!.position).toEqual(first.position);
-    expect(state.can_redo).toBe(true);
+    expect(undone.type).toBe("edit.applied");
+    if (undone.type !== "edit.applied") {
+      return;
+    }
+    expect(undone.atoms).toEqual([{ id: first.id, position: first.position }]);
+    expect(undone.can_redo).toBe(true);
 
-    const redone = (await socket.step("redo", opened.session_id, state.version)) as SessionState;
-    expect(redone.atoms[0]!.position).toEqual(target);
+    const redone = await socket.step("redo", opened.session_id, undone.version);
+    expect(redone.type === "edit.applied" && redone.atoms[0]!.position).toEqual(target);
   });
 
   it("answers a patch made on a stale version with a conflict, and refuses an unknown atom", async () => {

@@ -7,13 +7,14 @@ export interface ToolbarProps {
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   canUndo: boolean;
   canRedo: boolean;
+  saved: boolean;
   onUndo: () => void;
   onRedo: () => void;
 }
 
 const WAITING = "Not built yet";
 
-export function Toolbar({ phase, layout, onCollapse, canUndo, canRedo, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ phase, layout, onCollapse, canUndo, canRedo, saved, onUndo, onRedo }: ToolbarProps) {
   return (
     <header className="toolbar">
       <span className="brand">Molecular Studio</span>
@@ -38,9 +39,6 @@ export function Toolbar({ phase, layout, onCollapse, canUndo, canRedo, onUndo, o
           Redo
         </button>
         <button type="button" className="tool" disabled title={WAITING}>
-          Save
-        </button>
-        <button type="button" className="tool" disabled title={WAITING}>
           Optimise
         </button>
       </div>
@@ -53,6 +51,7 @@ export function Toolbar({ phase, layout, onCollapse, canUndo, canRedo, onUndo, o
 
       <span className={`status status-${phase.kind}`} role="status">
         {describe(phase)}
+        {phase.kind === "open" && saved ? " · edits saved" : ""}
       </span>
     </header>
   );

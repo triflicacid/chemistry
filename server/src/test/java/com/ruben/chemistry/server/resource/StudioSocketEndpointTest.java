@@ -475,17 +475,78 @@ class StudioSocketEndpointTest
 
         socket.sendText(history("edit.undo", sessionId, 2, 4), true).join();
         Map<String, Object> undone = collector.nextJson();
-        assertThat(undone).containsEntry("type", "session.state").containsEntry("version", 3L);
+        assertThat(undone).containsEntry("type", "edit.applied").containsEntry("version", 3L);
         assertThat(undone).containsEntry("can_undo", false).containsEntry("can_redo", true);
-        assertThat(list(undone, "atoms").getFirst().get("position")).isEqualTo(first.get("position"));
+        assertThat(list(undone, "atoms")).hasSize(1);
+        assertThat(list(undone, "atoms").getFirst()).containsEntry("id", first.get("id")).containsEntry("position", first.get("position"));
 
         socket.sendText(history("edit.redo", sessionId, 3, 5), true).join();
         Map<String, Object> redone = collector.nextJson();
         assertThat(redone).containsEntry("version", 4L);
         assertThat(list(redone, "atoms").getFirst().get("position")).isEqualTo(Map.of("x", 4.0, "y", 4.0, "z", 4.0));
+        assertThat(redone).containsEntry("type", "edit.applied");
 
         socket.sendText(history("edit.redo", sessionId, 4, 6), true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "NOTHING_TO_REDO");
+    }
+
+    @Test
+    void should_save_each_committed_edit_to_a_molecule_of_its_own() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        assertThat(opened).containsEntry("saved_molecule_id", null);
+        String atom = (String) list(opened, "atoms").getFirst().get("id");
+
+        socket.sendText(patch(sessionId, 1, true, atom, 4, 5, 6, 2), true).join();
+        Map<String, Object> ack = collector.nextJson();
+        String saved = (String) ack.get("saved_molecule_id");
+
+        assertThat(saved).isNotNull().isNotEqualTo(stored.id());
+        assertThat(molecules.find(saved)).isPresent();
+        assertThat(stored.latestStructure3d().orElseThrow().conformers().getFirst().positions().getFirst())
+                .isNotEqualTo(new com.ruben.chemistry.space.Vec3(4, 5, 6));
+
+        // a second edit, and an undo, go to the same molecule
+        socket.sendText(patch(sessionId, 2, true, atom, 7, 8, 9, 3), true).join();
+        assertThat(collector.nextJson()).containsEntry("saved_molecule_id", saved);
+        socket.sendText(history("edit.undo", sessionId, 3, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("saved_molecule_id", saved);
+        assertThat(molecules.find(saved).orElseThrow().latestStructure3d().orElseThrow().conformers().getFirst().positions().getFirst())
+                .isEqualTo(new com.ruben.chemistry.space.Vec3(4, 5, 6));
+
+        // opening what was saved gives the edited structure back
+        socket.sendText(open(saved, 5), true).join();
+        Map<String, Object> reopened = collector.nextJson();
+        assertThat(list(reopened, "atoms").getFirst().get("position")).isEqualTo(Map.of("x", 4.0, "y", 5.0, "z", 6.0));
+        assertThat(reopened).containsEntry("smiles", "CCO");
+        assertThat(list(reopened, "atoms")).hasSize(9);
+    }
+
+    @Test
+    void should_not_save_before_anything_is_edited_or_while_an_edit_is_in_progress() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String atom = (String) list(opened, "atoms").getFirst().get("id");
+
+        socket.sendText(patch(sessionId, 1, false, atom, 4, 5, 6, 2), true).join();
+        assertThat(collector.nextJson()).containsEntry("saved_molecule_id", null);
+
+        socket.sendText(patch(sessionId, 2, true, atom, 4, 5, 6, 3), true).join();
+        assertThat(collector.nextJson().get("saved_molecule_id")).isNotNull();
     }
 
     /**

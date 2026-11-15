@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.function.ToLongFunction;
+import java.util.function.Function;
 
 import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 
@@ -318,12 +318,13 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                 .map(atom -> new StudioSession.Move(atom.id(), atom.position()))
                 .toList();
 
+        boolean commit = request.commit() == null || request.commit();
         synchronized (session)
         {
             long version;
             try
             {
-                version = session.move(moves, request.commit() == null || request.commit());
+                version = session.move(moves, commit);
             }
             catch (StudioEditException refused)
             {
@@ -331,11 +332,18 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                 return;
             }
 
+            // an edit in progress is not yet something worth keeping
+            if (commit && session.canUndo())
+            {
+                save(session);
+            }
+
             Map<String, Object> ack = new LinkedHashMap<>();
             ack.put("type", "atom.patch.ack");
             ack.put("sequence", sequence);
             ack.put("version", version);
             ack.put("status", "applied");
+            ack.put("saved_molecule_id", session.savedMoleculeId());
             ack.put("can_undo", session.canUndo());
             ack.put("can_redo", session.canRedo());
             context.sendJson(ack);
@@ -369,7 +377,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
-     * Steps a session back or forward through its history and answers with the state that results.
+     * Steps a session back or forward through its history and answers with the atoms that moved.
      *
      * @param context the connection that asked
      * @param body the message
@@ -378,7 +386,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      * @param step what to do to the session
      * @throws IOException if the connection cannot be written
      */
-    private void walk(WebSocketContext context, Map<String, Object> body, Long sequence, String type, ToLongFunction<StudioSession> step) throws IOException
+    private void walk(WebSocketContext context, Map<String, Object> body, Long sequence, String type, Function<StudioSession, StudioSession.Applied> step) throws IOException
     {
         HistoryRequest request;
         try
@@ -399,9 +407,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         synchronized (session)
         {
+            StudioSession.Applied applied;
             try
             {
-                step.applyAsLong(session);
+                applied = step.apply(session);
             }
             catch (StudioEditException refused)
             {
@@ -409,8 +418,37 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                 return;
             }
 
-            context.sendJson(StudioState.of(session, sequence));
+            save(session);
+
+            Map<String, Object> reply = new LinkedHashMap<>();
+            reply.put("type", "edit.applied");
+            reply.put("sequence", sequence);
+            reply.put("version", applied.version());
+            reply.put("can_undo", session.canUndo());
+            reply.put("can_redo", session.canRedo());
+            reply.put("saved_molecule_id", session.savedMoleculeId());
+            reply.put("atoms", applied.moved().entrySet().stream()
+                    .map(moved -> Map.of("id", moved.getKey(), "position", moved.getValue()))
+                    .toList());
+            context.sendJson(reply);
         }
+    }
+
+    /**
+     * @param session the session to save, which the caller holds the lock of
+     */
+    private void save(StudioSession session)
+    {
+        StoredMolecule stored = session.savedMoleculeId() == null
+                ? null
+                : molecules.find(session.savedMoleculeId()).orElse(null);
+        if (stored == null)
+        {
+            stored = molecules.add(ParsedMolecule.written(session.collapsed()));
+            session.saved(stored.id());
+        }
+
+        stored.setLatestStructure3d(session.structure());
     }
 
     /**

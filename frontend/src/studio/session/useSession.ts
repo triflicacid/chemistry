@@ -3,7 +3,7 @@ import { ChemistryApi } from "../../api/ChemistryApi";
 import { ApiError } from "../../api/http";
 import { describing, describingSmiles, requested } from "./location";
 import type { Vec3 } from "../../api/types/structure";
-import type { PatchAck, SessionState } from "./messages";
+import type { EditApplied, PatchAck, SessionState } from "./messages";
 import { StudioError, StudioSocket } from "./studioSocket";
 
 /** How far the session has got towards being editable. */
@@ -76,6 +76,10 @@ export function useSession(client?: ChemistryApi): Session {
   }, []);
 
   const adopt = useCallback((next: SessionState) => {
+    // the molecule saved is what a reload should open, since it holds the edits and the molecule opened does not
+    if (next.saved_molecule_id && next.saved_molecule_id !== held.current?.saved_molecule_id) {
+      describing(next.saved_molecule_id, next.smiles);
+    }
     held.current = next;
     setState(next);
     setPhase({ kind: "open" });
@@ -259,7 +263,7 @@ export function useSession(client?: ChemistryApi): Session {
 
           // a resync that landed meanwhile is authoritative, and already says where the atom is
           if (held.current?.version === base.version) {
-            adopt(patched(base, id, position, reply));
+            adopt(patched(base, [{ id, position }], reply));
           }
           note(`Moved ${id} to ${position.x.toFixed(3)}, ${position.y.toFixed(3)}, ${position.z.toFixed(3)}`);
           return { kind: "applied" };
@@ -288,7 +292,10 @@ export function useSession(client?: ChemistryApi): Session {
             return { kind: "conflict" };
           }
 
-          adopt(reply);
+          // the answer is only the atoms that moved; a resync that landed meanwhile already says where they are
+          if (held.current?.version === base.version) {
+            adopt(patched(base, reply.atoms, reply));
+          }
           note(direction === "undo" ? "Undid the last edit" : "Redid the last undone edit");
           return { kind: "applied" };
         } catch (cause) {
@@ -306,20 +313,24 @@ export function useSession(client?: ChemistryApi): Session {
 }
 
 /**
- * The state after the session accepted a move, without waiting for it to send the whole state again.
+ * The state after the session accepted a change, without waiting for it to send the whole state again.
  *
- * @param base the state the move was made on
- * @param id the atom that moved
- * @param position where it went
+ * @param base the state the change was made on
+ * @param moves the atoms that moved and where each went
  * @param ack the session's acknowledgement, which says the version and history it is now at
  */
-function patched(base: SessionState, id: string, position: Vec3, ack: PatchAck): SessionState {
+function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | EditApplied): SessionState {
+  const to = new Map(moves.map((move) => [move.id, move.position]));
   return {
     ...base,
     version: ack.version,
     can_undo: ack.can_undo,
     can_redo: ack.can_redo,
-    atoms: base.atoms.map((atom) => (atom.id === id ? { ...atom, position } : atom)),
+    saved_molecule_id: ack.saved_molecule_id,
+    atoms: base.atoms.map((atom) => {
+      const position = to.get(atom.id);
+      return position ? { ...atom, position } : atom;
+    }),
   };
 }
 
