@@ -11,7 +11,7 @@ import { Stage } from "../../render/stage";
 import { Triad } from "../../render/triad";
 import { type Constraint, dragged, pointOnConstraint } from "./dragPlane";
 import { type Guide, makeGuide } from "./guides";
-import type { SessionAtom, SessionBond, SessionState } from "../session/messages";
+import type { AtomMove, SessionAtom, SessionBond, SessionState } from "../session/messages";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
 export interface StudioPick {
@@ -30,12 +30,12 @@ export interface StudioViewListener {
   hover?(pick: StudioPick | null, at: ScreenPoint): void;
   /** A left click that was not a camera drag. `additive` is whether shift, control or command was held. */
   click?(pick: StudioPick | null, additive: boolean): void;
-  /** An atom has been picked up by the move tool and has begun to move. */
+  /** An atom has been picked up by the move tool and has begun to move, along with the rest of the selection if it is in it. */
   dragStart?(id: string): void;
-  /** A dragged atom is at `position`. `done` is true for the last report, when the pointer is released. */
-  drag?(id: string, position: Vec3, done: boolean): void;
-  /** A drag was abandoned, and the atom put back at `from`, where it was picked up. */
-  dragCancel?(id: string, from: Vec3): void;
+  /** The dragged atoms are at `moves`' positions. `done` is true for the last report, when the pointer is released. */
+  drag?(moves: AtomMove[], done: boolean): void;
+  /** A drag was abandoned, and the atoms put back at `moves`' positions, where they were picked up. */
+  dragCancel?(moves: AtomMove[]): void;
 }
 
 /** Atoms and bonds, by identifier, to draw with emphasis. */
@@ -85,14 +85,24 @@ const CLICK_SLOP = 4;
 
 const STYLE: Style = "ball_and_stick";
 
-/** An atom the pointer is pressed on while the move tool is in use, which becomes a drag once the pointer has moved. */
-interface Grab {
-  id: string;
+/** An atom that moves with a drag. */
+interface Member {
   node: AtomNode;
   /** Where the atom was when it was pressed, which a cancelled drag puts it back to. */
   original: Vector3;
   /** Where the atom was when the current constraint began, which the drag is measured from. */
   start: Vector3;
+}
+
+/**
+ * An atom the pointer is pressed on while the move tool is in use, which becomes a drag once the pointer has moved.
+ * If the atom is one of several selected, the rest are carried with it, each keeping its offset from the others.
+ */
+interface Grab {
+  /** The atom the pointer is on. */
+  id: string;
+  /** The atoms that move, with the one the pointer is on first. */
+  members: Member[];
   /** Where the pointer's ray met the constraint when it began. */
   point: Vector3;
   /** The way the camera looks, which does not change during a drag because the camera is not moved. */
@@ -172,8 +182,8 @@ export class StudioView {
     this.locked = new Set(state.locked);
     if (signature === this.signature) {
       // the atom in the user's hand is where the pointer has put it, and the session is only catching up
-      const held = this.grab?.dragging ? this.grab.id : null;
-      this.moveAtoms(state.atoms.filter((atom) => atom.id !== held).map((atom) => [atom.id, atom.position]));
+      const held = new Set(this.grab?.dragging ? this.grab.members.map((member) => member.node.atom.id) : []);
+      this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
       return;
     }
 
@@ -321,8 +331,8 @@ export class StudioView {
     this.refreshGuide();
     const grab = this.grab;
     if (grab?.dragging) {
-      grab.start = grab.node.at.clone();
-      grab.point = pointOnConstraint(grab.ray, grab.start, constraint, grab.viewDirection) ?? grab.point;
+      grab.members.forEach((member) => (member.start = member.node.at.clone()));
+      grab.point = pointOnConstraint(grab.ray, grab.members[0]!.start, constraint, grab.viewDirection) ?? grab.point;
     }
   }
 
@@ -335,8 +345,9 @@ export class StudioView {
     this.releaseGrab();
 
     if (grab.dragging) {
-      this.moveAtoms([[grab.id, grab.original]]);
-      this.listeners.forEach((listener) => listener.dragCancel?.(grab.id, toVec3(grab.original)));
+      const moves = grab.members.map((member): AtomMove => ({ id: member.node.atom.id, position: toVec3(member.original) }));
+      this.moveAtoms(moves.map((move) => [move.id, move.position]));
+      this.listeners.forEach((listener) => listener.dragCancel?.(moves));
     }
   }
 
@@ -374,7 +385,7 @@ export class StudioView {
   /** The atom the move guide is drawn on: the one in hand, or else the active one. */
   private guideTarget(): AtomNode | null {
     if (this.grab?.dragging) {
-      return this.grab.node;
+      return this.grab.members[0]!.node;
     }
     const [active] = this.emphasis.active.atoms;
     return active === undefined ? null : (this.atomById.get(active) ?? null);
@@ -532,10 +543,23 @@ export class StudioView {
     return this.raycaster.ray.clone();
   }
 
-  /** Where a grabbed atom is, given where the pointer is, or null if the pointer's ray does not meet what it is held to. */
-  private targetOf(grab: Grab, ray: Ray): Vector3 | null {
-    const point = pointOnConstraint(ray, grab.start, this.constraint, grab.viewDirection);
-    return point ? dragged(grab.point, point, grab.start) : null;
+  /**
+   * Where the grabbed atoms are, given where the pointer is.
+   *
+   * @param grab the drag
+   * @param ray the pointer's ray
+   * @returns each atom's place, which are all the same distance from where they began, or null if the ray does not meet
+   *     what the drag is held to
+   */
+  private placesOf(grab: Grab, ray: Ray): AtomMove[] | null {
+    const [lead] = grab.members as [Member, ...Member[]];
+    const point = pointOnConstraint(ray, lead.start, this.constraint, grab.viewDirection);
+    if (!point) {
+      return null;
+    }
+
+    const offset = dragged(grab.point, point, lead.start).sub(lead.start);
+    return grab.members.map((member) => ({ id: member.node.atom.id, position: toVec3(member.start.clone().add(offset)) }));
   }
 
   /** Lets go of the atom in hand, giving the camera its controls back. */
@@ -578,6 +602,14 @@ export class StudioView {
       return;
     }
 
+    // an atom in a selection of several takes the rest with it; one outside the selection goes alone
+    const selected = this.emphasis.selected.atoms;
+    const group = selected.has(pick.id) && selected.size > 1 ? [...selected] : [pick.id];
+    const nodes = [node, ...group.filter((id) => id !== pick.id).map((id) => this.atomById.get(id))];
+    if (nodes.some((each) => !each || this.locked.has(each.atom.id))) {
+      return;
+    }
+
     const ray = this.rayOf(event);
     const viewDirection = this.stage.camera.getWorldDirection(new Vector3());
     const point = pointOnConstraint(ray, node.at, this.constraint, viewDirection);
@@ -587,9 +619,7 @@ export class StudioView {
 
     this.grab = {
       id: pick.id,
-      node,
-      original: node.at.clone(),
-      start: node.at.clone(),
+      members: (nodes as AtomNode[]).map((each) => ({ node: each, original: each.at.clone(), start: each.at.clone() })),
       point,
       viewDirection,
       from: { x: event.clientX, y: event.clientY },
@@ -623,10 +653,10 @@ export class StudioView {
       }
 
       grab.ray = this.rayOf(event);
-      const target = this.targetOf(grab, grab.ray);
-      if (target) {
-        this.moveAtoms([[grab.id, target]]);
-        this.listeners.forEach((listener) => listener.drag?.(grab.id, toVec3(target), false));
+      const moves = this.placesOf(grab, grab.ray);
+      if (moves) {
+        this.moveAtoms(moves.map((move) => [move.id, move.position]));
+        this.listeners.forEach((listener) => listener.drag?.(moves, false));
       }
       return;
     }
@@ -655,9 +685,12 @@ export class StudioView {
       this.releaseGrab();
       if (grab.dragging) {
         this.down = null;
-        const target = this.targetOf(grab, this.rayOf(event)) ?? grab.node.at;
-        this.moveAtoms([[grab.id, target]]);
-        this.listeners.forEach((listener) => listener.drag?.(grab.id, toVec3(target), true));
+        // a pointer that has left what the drag is held to leaves the atoms where they are
+        const moves =
+          this.placesOf(grab, this.rayOf(event)) ??
+          grab.members.map((member): AtomMove => ({ id: member.node.atom.id, position: toVec3(member.node.at) }));
+        this.moveAtoms(moves.map((move) => [move.id, move.position]));
+        this.listeners.forEach((listener) => listener.drag?.(moves, true));
         return;
       }
     }

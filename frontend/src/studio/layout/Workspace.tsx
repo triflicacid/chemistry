@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Vec3 } from "../../api/types/structure";
 import type { Activity, SessionPhase, SubmitResult } from "../session/useSession";
-import type { SessionState } from "../session/messages";
+import type { AtomMove, SessionState } from "../session/messages";
 import type { Models } from "../selection/models";
 import type { LayoutState, Panel } from "../store";
 import { AnalysisPanel } from "./AnalysisPanel";
@@ -23,15 +23,15 @@ export interface WorkspaceProps {
   onOpenSmiles: (smiles: string) => void;
   onSubmitSmiles: (smiles: string) => Promise<SubmitResult>;
   onMoveAtom: (id: string, position: Vec3) => void;
-  onDragAtom: (id: string, position: Vec3) => void;
-  onDropAtom: (id: string, position: Vec3) => void;
-  onCancelDrag: (id: string, from: Vec3) => void;
+  onDragAtoms: (moves: AtomMove[]) => void;
+  onDropAtoms: (moves: AtomMove[]) => void;
+  onCancelDrag: (moves: AtomMove[]) => void;
   onUndo: () => void;
   onRedo: () => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onDragAtom, onDropAtom, onCancelDrag, onUndo, onRedo } = props;
+  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onDragAtoms, onDropAtoms, onCancelDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -82,8 +82,8 @@ export function Workspace(props: WorkspaceProps) {
           state={state}
           models={models}
           onOpenSmiles={onOpenSmiles}
-          onDragAtom={onDragAtom}
-          onDropAtom={onDropAtom}
+          onDragAtoms={onDragAtoms}
+          onDropAtoms={onDropAtoms}
           onCancelDrag={onCancelDrag}
         />
       </div>

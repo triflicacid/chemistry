@@ -3,7 +3,7 @@ import { ChemistryApi } from "../../api/ChemistryApi";
 import { ApiError } from "../../api/http";
 import { describing, describingSmiles, requested } from "./location";
 import type { Vec3 } from "../../api/types/structure";
-import type { EditApplied, PatchAck, SessionState } from "./messages";
+import type { AtomMove, EditApplied, PatchAck, SessionState } from "./messages";
 import { StudioError, StudioSocket } from "./studioSocket";
 
 /** How far the session has got towards being editable. */
@@ -28,13 +28,14 @@ const HISTORY = 200;
 /** The least time between the patches a drag sends, so a drag sends about ten a second however fast the pointer moves. */
 export const DRAG_INTERVAL_MS = 100;
 
-/** An atom being dragged, and how much of the drag the session has been told. */
+/** Atoms being dragged, and how much of the drag the session has been told. */
 interface Drag {
-  id: string;
-  /** Where the pointer last put the atom. */
-  latest: Vec3;
-  /** The position of the last patch sent, so that one that would repeat it is not. */
-  sent: Vec3 | null;
+  /** Which atoms are in the drag, so that a report about different ones starts a new drag. */
+  key: string;
+  /** Where the pointer last put the atoms. */
+  latest: AtomMove[];
+  /** The positions of the last patch sent, so that one that would repeat it is not. */
+  sent: AtomMove[] | null;
   /** When the last patch was sent. */
   at: number;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -65,14 +66,14 @@ export interface Session {
   /** Puts an atom at a position, as one edit that can be undone. */
   moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
   /**
-   * Reports where a dragged atom has got to. Sends at most one patch per {@link DRAG_INTERVAL_MS}, of the latest
-   * position, none of which is yet an edit to undo.
+   * Reports where dragged atoms have got to. Sends at most one patch per {@link DRAG_INTERVAL_MS}, of the latest
+   * positions, none of which is yet an edit to undo.
    */
-  dragAtom: (id: string, position: Vec3) => void;
-  /** Ends a drag at a position, as one edit that can be undone however many patches the drag sent. */
-  dropAtom: (id: string, position: Vec3) => Promise<EditResult>;
-  /** Abandons a drag, putting the atom back at the position it was picked up from. */
-  cancelDrag: (id: string, from: Vec3) => Promise<EditResult>;
+  dragAtoms: (moves: AtomMove[]) => void;
+  /** Ends a drag at positions, as one edit that can be undone however many patches the drag sent. */
+  dropAtoms: (moves: AtomMove[]) => Promise<EditResult>;
+  /** Abandons a drag, putting the atoms back at the positions they were picked up from. */
+  cancelDrag: (moves: AtomMove[]) => Promise<EditResult>;
   /** Takes back the latest edit. */
   undo: () => Promise<EditResult>;
   /** Makes the latest undone edit again. */
@@ -272,14 +273,13 @@ export function useSession(client?: ChemistryApi): Session {
   }, []);
 
   /**
-   * Puts an atom at a position.
+   * Puts atoms at positions, in one patch.
    *
-   * @param id the atom
-   * @param position where to put it
+   * @param moves the atoms and where to put each
    * @param commit whether this ends the edit it belongs to; a patch that does not is part of a drag
    */
   const send = useCallback(
-    (id: string, position: Vec3, commit: boolean): Promise<EditResult> =>
+    (moves: AtomMove[], commit: boolean): Promise<EditResult> =>
       serially(async () => {
         const socket = socketRef.current;
         const base = held.current;
@@ -288,7 +288,7 @@ export function useSession(client?: ChemistryApi): Session {
         }
 
         try {
-          const reply = await socket.patchAtoms(base.session_id, base.version, [{ id, position }], commit);
+          const reply = await socket.patchAtoms(base.session_id, base.version, moves, commit);
           if (reply.type === "conflict") {
             adopt(reply.state);
             note("The structure changed under your edit, so it was not applied", true);
@@ -297,10 +297,12 @@ export function useSession(client?: ChemistryApi): Session {
 
           // a resync that landed meanwhile is authoritative, and already says where the atom is
           if (held.current?.version === base.version) {
-            adopt(patched(base, [{ id, position }], reply));
+            adopt(patched(base, moves, reply));
           }
           if (commit) {
-            note(`Moved ${id} to ${position.x.toFixed(3)}, ${position.y.toFixed(3)}, ${position.z.toFixed(3)}`);
+            const [first] = moves as [AtomMove, ...AtomMove[]];
+            const { x, y, z } = first.position;
+            note(moves.length === 1 ? `Moved ${first.id} to ${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}` : `Moved ${moves.length} atoms`);
           }
           return { kind: "applied" };
         } catch (cause) {
@@ -311,16 +313,17 @@ export function useSession(client?: ChemistryApi): Session {
     [adopt, note, serially],
   );
 
-  const moveAtom = useCallback((id: string, position: Vec3) => send(id, position, true), [send]);
+  const moveAtom = useCallback((id: string, position: Vec3) => send([{ id, position }], true), [send]);
 
-  const dragAtom = useCallback(
-    (id: string, position: Vec3) => {
+  const dragAtoms = useCallback(
+    (moves: AtomMove[]) => {
+      const key = moves.map((move) => move.id).join(",");
       let current = drag.current;
-      if (!current || current.id !== id) {
-        current = { id, latest: position, sent: null, at: 0, timer: undefined, closed: false };
+      if (!current || current.key !== key) {
+        current = { key, latest: moves, sent: null, at: 0, timer: undefined, closed: false };
         drag.current = current;
       }
-      current.latest = position;
+      current.latest = moves;
 
       if (current.timer !== undefined) {
         return;
@@ -332,11 +335,11 @@ export function useSession(client?: ChemistryApi): Session {
       live.timer = setTimeout(() => {
         live.timer = undefined;
         live.at = Date.now();
-        if (live.closed || (live.sent && sameSpot(live.sent, live.latest))) {
+        if (live.closed || (live.sent && sameSpots(live.sent, live.latest))) {
           return;
         }
         live.sent = live.latest;
-        void send(live.id, live.latest, false);
+        void send(live.latest, false);
       }, wait);
     },
     [send],
@@ -353,21 +356,21 @@ export function useSession(client?: ChemistryApi): Session {
     return current;
   }, []);
 
-  const dropAtom = useCallback(
-    (id: string, position: Vec3) => {
+  const dropAtoms = useCallback(
+    (moves: AtomMove[]) => {
       closeDrag();
-      return send(id, position, true);
+      return send(moves, true);
     },
     [closeDrag, send],
   );
 
   const cancelDrag = useCallback(
-    async (id: string, from: Vec3): Promise<EditResult> => {
+    async (from: AtomMove[]): Promise<EditResult> => {
       const ended = closeDrag();
 
       // a drag that had sent nothing has nothing to put back. One that had is put back by a patch that
-      // commits, which records nothing to undo because the atom ends where it began
-      return ended?.sent ? send(id, from, true) : { kind: "applied" };
+      // commits, which records nothing to undo because the atoms end where they began
+      return ended?.sent ? send(from, true) : { kind: "applied" };
     },
     [closeDrag, send],
   );
@@ -406,12 +409,15 @@ export function useSession(client?: ChemistryApi): Session {
   const undo = useCallback(() => step("undo"), [step]);
   const redo = useCallback(() => step("redo"), [step]);
 
-  return { phase, state, activity, openSmiles: submit, submitSmiles, moveAtom, dragAtom, dropAtom, cancelDrag, undo, redo };
+  return { phase, state, activity, openSmiles: submit, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, undo, redo };
 }
 
-/** Whether two positions are the same place. */
-function sameSpot(first: Vec3, second: Vec3): boolean {
-  return first.x === second.x && first.y === second.y && first.z === second.z;
+/** Whether two reports put the same atoms in the same places. */
+function sameSpots(first: AtomMove[], second: AtomMove[]): boolean {
+  return first.every((move, i) => {
+    const other = second[i];
+    return other !== undefined && move.position.x === other.position.x && move.position.y === other.position.y && move.position.z === other.position.z;
+  });
 }
 
 /**

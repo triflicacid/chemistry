@@ -37,6 +37,7 @@ Choose **Move** in the toolbar (**Select** goes back). Then:
 | Input | Action |
 |---|---|
 | Drag an atom | Move it. Dragging empty space still orbits, and a locked atom cannot be picked up |
+| Drag a selected atom, with several selected | Move the whole selection rigidly, each atom keeping its place relative to the others. If any of them is locked, nothing moves. An atom outside the selection is dragged alone |
 | Release | Drop it. The whole drag is one undo step |
 | Esc during a drag | Abandon it; the atom goes back where it was picked up |
 | X, Y or Z | Hold the move to that axis |

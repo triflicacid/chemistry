@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Vec3 } from "../api/types/structure";
+import type { AtomMove } from "./session/messages";
 import { Workspace } from "./layout/Workspace";
 import { createModels } from "./selection/models";
 import { StateIndex } from "./selection/StateIndex";
@@ -13,7 +14,7 @@ const SETTLE_MS = 200;
 export function App() {
   const store = useMemo(() => new StudioStore(), []);
   const [layout, setLayout] = useState(store.layout);
-  const { phase, state, activity, openSmiles, submitSmiles, moveAtom, dragAtom, dropAtom, cancelDrag, undo, redo } = useSession();
+  const { phase, state, activity, openSmiles, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, undo, redo } = useSession();
 
   const shared = useMemo(createModels, []);
   const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
@@ -85,8 +86,8 @@ export function App() {
 
   // stable, because the viewport listens afresh whenever one of these changes, and the session redraws this at every patch of a drag
   const move = useCallback((id: string, position: Vec3) => void moveAtom(id, position), [moveAtom]);
-  const drop = useCallback((id: string, position: Vec3) => void dropAtom(id, position), [dropAtom]);
-  const cancel = useCallback((id: string, from: Vec3) => void cancelDrag(id, from), [cancelDrag]);
+  const drop = useCallback((moves: AtomMove[]) => void dropAtoms(moves), [dropAtoms]);
+  const cancel = useCallback((moves: AtomMove[]) => void cancelDrag(moves), [cancelDrag]);
   const undoEdit = useCallback(() => void undo(), [undo]);
   const redoEdit = useCallback(() => void redo(), [redo]);
 
@@ -110,8 +111,8 @@ export function App() {
       onOpenSmiles={openSmiles}
       onSubmitSmiles={submit}
       onMoveAtom={move}
-      onDragAtom={dragAtom}
-      onDropAtom={drop}
+      onDragAtoms={dragAtoms}
+      onDropAtoms={drop}
       onCancelDrag={cancel}
       onUndo={undoEdit}
       onRedo={redoEdit}

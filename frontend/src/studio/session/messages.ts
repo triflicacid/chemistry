@@ -69,6 +69,12 @@ export interface SessionState extends ServerEnvelope {
   can_redo: boolean;
 }
 
+/** An atom and where it is to go. */
+export interface AtomMove {
+  id: string;
+  position: Vec3;
+}
+
 /** The answer to an atom patch the session applied. */
 export interface PatchAck extends ServerEnvelope {
   type: "atom.patch.ack";

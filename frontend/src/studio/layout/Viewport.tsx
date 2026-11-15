@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { Vec3 } from "../../api/types/structure";
 import type { Item } from "../selection/items";
 import type { Models, PickMode } from "../selection/models";
 import { useObservable } from "../selection/observable";
 import type { StateIndex } from "../selection/StateIndex";
-import type { SessionState } from "../session/messages";
+import type { AtomMove, SessionState } from "../session/messages";
 import type { SessionPhase } from "../session/useSession";
 import { type Constraint, constraintForKey } from "../viewport/dragPlane";
 import { type StudioPick, StudioView } from "../viewport/StudioView";
@@ -15,12 +14,12 @@ export interface ViewportProps {
   state: SessionState | null;
   models: Models;
   onOpenSmiles: (smiles: string) => void;
-  /** An atom has been dragged to a position, and the drag is not over. */
-  onDragAtom: (id: string, position: Vec3) => void;
-  /** An atom has been dropped at a position, which ends its drag. */
-  onDropAtom: (id: string, position: Vec3) => void;
-  /** A drag was abandoned, and the atom is back at `from`. */
-  onCancelDrag: (id: string, from: Vec3) => void;
+  /** Atoms have been dragged to positions, and the drag is not over. */
+  onDragAtoms: (moves: AtomMove[]) => void;
+  /** Atoms have been dropped at positions, which ends their drag. */
+  onDropAtoms: (moves: AtomMove[]) => void;
+  /** A drag was abandoned, and the atoms are back at `moves`' positions. */
+  onCancelDrag: (moves: AtomMove[]) => void;
 }
 
 const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
@@ -34,7 +33,7 @@ const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
 ];
 
 /** The canvas, which fills whatever space the workspace leaves it, and the molecule drawn on it. */
-export function Viewport({ phase, state, models, onOpenSmiles, onDragAtom, onDropAtom, onCancelDrag }: ViewportProps) {
+export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDropAtoms, onCancelDrag }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
   const [axes, setAxes] = useState(false);
@@ -130,10 +129,10 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtom, onDro
           selection.select(item);
         }
       },
-      drag: (id, position, done) => (done ? onDropAtom(id, position) : onDragAtom(id, position)),
+      drag: (moves, done) => (done ? onDropAtoms(moves) : onDragAtoms(moves)),
       dragCancel: onCancelDrag,
     });
-  }, [view, index, mode, selection, hover, onDragAtom, onDropAtom, onCancelDrag]);
+  }, [view, index, mode, selection, hover, onDragAtoms, onDropAtoms, onCancelDrag]);
 
   const frame = () => {
     if (!view || !index) {
