@@ -6,6 +6,11 @@ import type { SessionPhase } from "../session/useSession";
 export interface ToolbarProps {
   phase: SessionPhase;
   tools: ToolModel;
+  /** Whether any atom is selected, which is what a lock applies to. */
+  canLock: boolean;
+  /** Whether every selected atom is locked, so that the button unlocks them. */
+  lockPressed: boolean;
+  onToggleLock: () => void;
   layout: LayoutState;
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   canUndo: boolean;
@@ -17,7 +22,7 @@ export interface ToolbarProps {
 
 const WAITING = "Not built yet";
 
-export function Toolbar({ phase, tools, layout, onCollapse, canUndo, canRedo, saved, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, onUndo, onRedo }: ToolbarProps) {
   const { tool } = useObservable(tools);
 
   return (
@@ -45,6 +50,16 @@ export function Toolbar({ phase, tools, layout, onCollapse, canUndo, canRedo, sa
         </button>
         <button type="button" className="tool" disabled title={WAITING}>
           Rotate
+        </button>
+        <button
+          type="button"
+          className="tool"
+          disabled={!canLock}
+          aria-pressed={lockPressed}
+          title="Lock the selected atoms so they cannot be moved, or unlock them (L)"
+          onClick={onToggleLock}
+        >
+          Lock
         </button>
       </div>
 

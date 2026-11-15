@@ -12,6 +12,8 @@ export interface InspectorProps {
   models: Models;
   /** Puts an atom at a position. */
   onMoveAtom: (id: string, position: Vec3) => void;
+  /** Locks or unlocks atoms. */
+  onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
 /**
@@ -20,7 +22,7 @@ export interface InspectorProps {
  * The active item decides what is shown. With nothing selected it shows the session; with a
  * mixture of kinds it says what the mixture is and does not guess at a pane.
  */
-export function Inspector({ state, models, onMoveAtom }: InspectorProps) {
+export function Inspector({ state, models, onMoveAtom, onLockAtoms }: InspectorProps) {
   const { selection, index } = models;
   const { items, active } = useObservable(selection);
 
@@ -48,7 +50,7 @@ export function Inspector({ state, models, onMoveAtom }: InspectorProps) {
           {items.length} {active.kind}s selected. Showing {describe(active, index)}.
         </p>
       )}
-      <ItemPane item={active} index={index} models={models} onMoveAtom={onMoveAtom} />
+      <ItemPane item={active} index={index} models={models} onMoveAtom={onMoveAtom} onLockAtoms={onLockAtoms} />
     </>
   );
 }
@@ -58,13 +60,14 @@ interface ItemPaneProps {
   index: StateIndex;
   models: Models;
   onMoveAtom: (id: string, position: Vec3) => void;
+  onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
-function ItemPane({ item, index, models, onMoveAtom }: ItemPaneProps) {
+function ItemPane({ item, index, models, onMoveAtom, onLockAtoms }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
       const atom = index.atoms.get(item.id);
-      return atom ? <AtomPane key={atom.id} atom={atom} index={index} models={models} onMove={onMoveAtom} /> : null;
+      return atom ? <AtomPane key={atom.id} atom={atom} index={index} models={models} onMove={onMoveAtom} onLock={onLockAtoms} /> : null;
     }
     case "bond": {
       const bond = index.bonds.get(item.id);
@@ -136,9 +139,10 @@ interface AtomPaneProps {
   index: StateIndex;
   models: Models;
   onMove: (id: string, position: Vec3) => void;
+  onLock: (ids: string[], locked: boolean) => void;
 }
 
-function AtomPane({ atom, index, models, onMove }: AtomPaneProps) {
+function AtomPane({ atom, index, models, onMove, onLock }: AtomPaneProps) {
   const { position } = atom;
   const fragment = index.fragmentOf({ kind: "atom", id: atom.id });
   const state = index.state;
@@ -166,8 +170,16 @@ function AtomPane({ atom, index, models, onMove }: AtomPaneProps) {
           <span className="unit">Å</span>
         </dd>
         {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
-        <Property name="Pinned" value={state.pinned.includes(atom.id) ? "yes" : "no"} />
-        <Property name="Locked" value={locked ? "yes" : "no"} />
+        <dt>Locked</dt>
+        <dd>
+          <input
+            type="checkbox"
+            checked={locked}
+            aria-label={`Lock ${index.label(atom.id)} against edits`}
+            title="A locked atom cannot be moved, by dragging or by typing a position"
+            onChange={(event) => onLock([atom.id], event.target.checked)}
+          />
+        </dd>
         {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
       </dl>
 

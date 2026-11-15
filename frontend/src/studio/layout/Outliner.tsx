@@ -99,6 +99,7 @@ export function Outliner({ state, models }: OutlinerProps) {
         onPointerLeave={() => hover.hover(null)}
       >
         {label}
+        {item.kind === "atom" && state.locked.includes(item.id) && <PadlockMark />}
       </button>
     );
   };
@@ -210,4 +211,14 @@ function Disclosure({ label, depth, expanded, onToggle }: DisclosureProps) {
 
 function indent(depth: number): CSSProperties {
   return { paddingLeft: `${depth * 0.85}rem` };
+}
+
+/** A small padlock after a locked atom's name. */
+function PadlockMark() {
+  return (
+    <svg className="lock-mark" viewBox="0 0 12 14" width="10" height="12" role="img" aria-label="locked">
+      <path d="M3.2 6V4.2a2.8 2.8 0 0 1 5.6 0V6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="1.2" y="6" width="9.6" height="7" rx="1.6" fill="currentColor" />
+    </svg>
+  );
 }

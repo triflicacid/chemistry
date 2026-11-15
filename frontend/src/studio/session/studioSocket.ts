@@ -1,5 +1,5 @@
 import type { Vec3 } from "../../api/types/structure";
-import type { EditApplied, PatchAck, ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
+import type { EditApplied, LockAck, PatchAck, ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
 
 /** The error the server answered a message with. */
 export class StudioError extends Error {
@@ -223,6 +223,23 @@ export class StudioSocket {
       "atom.patch",
       { session_id: sessionId, base_version: baseVersion, commit, atoms },
       ["atom.patch.ack", "conflict"],
+    );
+  }
+
+  /**
+   * Locks or unlocks atoms.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param atoms the atoms to lock or unlock
+   * @param locked true to lock them, false to unlock them
+   * @returns the acknowledgement, or a conflict carrying the state the session is actually in
+   */
+  lockAtoms(sessionId: string, baseVersion: number, atoms: string[], locked: boolean): Promise<LockAck | SessionConflict> {
+    return this.request<LockAck | SessionConflict>(
+      "atom.lock",
+      { session_id: sessionId, base_version: baseVersion, atoms, locked },
+      ["atom.lock.ack", "conflict"],
     );
   }
 

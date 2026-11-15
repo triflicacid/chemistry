@@ -35,7 +35,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 3;
+    private static final int PROTOCOL_VERSION = 4;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -300,6 +300,70 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Locks or unlocks atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void lock(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.LockRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.LockRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            TypedJsonSocketListener.error(context, "atom.lock", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.atoms() == null || request.atoms().isEmpty() || request.atoms().contains(null) || request.locked() == null)
+        {
+            TypedJsonSocketListener.error(context, "atom.lock", sequence, "INVALID_MESSAGE",
+                    "atoms are required, and locked says whether to lock or unlock them");
+            return;
+        }
+
+        StudioSession session = current(context, "atom.lock", sequence, request.sessionId(), request.baseVersion());
+        if (session == null)
+        {
+            return;
+        }
+
+        synchronized (session)
+        {
+            long before = session.version();
+            long version;
+            try
+            {
+                version = session.lock(request.atoms(), request.locked());
+            }
+            catch (StudioEditException refused)
+            {
+                TypedJsonSocketListener.error(context, "atom.lock", sequence, refused.code(), refused.getMessage());
+                return;
+            }
+
+            // what is locked is kept with the molecule, so a change to it is worth saving as an edit is
+            if (version != before)
+            {
+                save(session);
+            }
+
+            Map<String, Object> ack = new LinkedHashMap<>();
+            ack.put("type", "atom.lock.ack");
+            ack.put("sequence", sequence);
+            ack.put("version", version);
+            ack.put("locked", List.copyOf(session.locked()));
+            ack.put("saved_molecule_id", session.savedMoleculeId());
+            context.sendJson(ack);
+        }
+    }
+
+    /**
      * Takes back the latest edit.
      *
      * @param context the connection that asked
@@ -398,6 +462,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
 
         stored.setLatestStructure3d(session.structure());
+        stored.setLockedSites(session.lockedSites());
     }
 
     /**
@@ -506,6 +571,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     "session.resync", endpoint::resync,
                     "smiles.submit", endpoint::submitSmiles,
                     "atom.patch", endpoint::patch,
+                    "atom.lock", endpoint::lock,
                     "edit.undo", endpoint::undo,
                     "edit.redo", endpoint::redo));
             this.endpoint = endpoint;

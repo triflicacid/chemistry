@@ -79,9 +79,12 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
     view?.setConstraint(constraint);
   }, [view, constraint]);
 
+  // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
+  const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
+
   // X, Y and Z hold a move to an axis, and shift with one holds it to the plane across that axis
   useEffect(() => {
-    if (tool !== "move") {
+    if (tool !== "move" || blocked) {
       return;
     }
     const onKey = (event: KeyboardEvent) => {
@@ -96,7 +99,7 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tool, tools]);
+  }, [tool, tools, blocked]);
 
   useEffect(() => {
     if (!view || !index) {
@@ -154,7 +157,15 @@ export function Viewport({ phase, state, models, onOpenSmiles, onDragAtoms, onDr
           {tool === "move" && (
             <div className="tool-group" role="group" aria-label="Move constraint">
               {CONSTRAINTS.map(({ value, label, title }) => (
-                <button key={value} type="button" className="tool" aria-pressed={constraint === value} title={title} onClick={() => tools.constrain(value)}>
+                <button
+                  key={value}
+                  type="button"
+                  className="tool"
+                  aria-pressed={constraint === value}
+                  disabled={blocked}
+                  title={blocked ? "A locked atom is selected, so the selection cannot be moved" : title}
+                  onClick={() => tools.constrain(value)}
+                >
                   {label}
                 </button>
               ))}

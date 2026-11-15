@@ -60,7 +60,6 @@ export interface SessionState extends ServerEnvelope {
   atoms: SessionAtom[];
   bonds: SessionBond[];
   fragments: SessionFragment[];
-  pinned: string[];
   locked: string[];
   strain: number;
   /** Whether there is an edit to take back. */
@@ -100,6 +99,17 @@ export interface SessionConflict extends ServerEnvelope {
   state: SessionState;
 }
 
+/** The answer to a lock or unlock the session made. */
+export interface LockAck extends ServerEnvelope {
+  type: "atom.lock.ack";
+  /** The version the session is at after the change. */
+  version: number;
+  /** Every atom and bond that is now locked, not only the ones this change touched. */
+  locked: string[];
+  /** The stored molecule holding the session's work, which this change may have just created. */
+  saved_molecule_id: string | null;
+}
+
 /** The answer to an undo or redo: only the atoms it moved, not the whole state. */
 export interface EditApplied extends ServerEnvelope {
   type: "edit.applied";
@@ -125,4 +135,4 @@ export interface Pong extends ServerEnvelope {
   type: "pong";
 }
 
-export type ServerMessage = SessionReady | SessionState | SessionConflict | PatchAck | EditApplied | SocketError | Pong;
+export type ServerMessage = SessionReady | SessionState | SessionConflict | PatchAck | LockAck | EditApplied | SocketError | Pong;

@@ -10,6 +10,7 @@ import com.ruben.chemistry.validate.MoleculeValidator;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public final class StoredMolecule
 {
@@ -24,6 +25,7 @@ public final class StoredMolecule
     private volatile MoleculeMetadata metadata;
     private volatile ValidationReport validation;
     private volatile Structure3D latestStructure3d;
+    private volatile Set<Integer> lockedSites = Set.of();
 
     StoredMolecule(String id, ParsedMolecule parsed)
     {
@@ -99,5 +101,22 @@ public final class StoredMolecule
     public void setLatestStructure3d(Structure3D structure)
     {
         this.latestStructure3d = structure;
+    }
+
+    /**
+     * @return the sites of {@link #latestStructure3d()} that an editing session held locked when it saved, by
+     *     position in the structure; empty if none were
+     */
+    public Set<Integer> lockedSites()
+    {
+        return lockedSites;
+    }
+
+    /**
+     * @param sites the sites of the latest structure that are locked, by position in the structure
+     */
+    public void setLockedSites(Set<Integer> sites)
+    {
+        this.lockedSites = Set.copyOf(sites);
     }
 }

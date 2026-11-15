@@ -34,10 +34,40 @@ export class LabelFactory {
   chargeBadge(parent: Object3D, charge: number, at: Vector3, radius: number): Sprite {
     const size = Math.abs(charge);
     const text = (size === 1 ? "" : String(size)) + (charge > 0 ? "+" : "−");
-    const sprite = this.label(text, charge > 0 ? "#1f4fd8" : "#c0392b", 0.5, true);
-    // anchoring the sprite's lower left at the atom's centre, then pulling the anchor back, puts it at the upper right on screen
+    return this.cornerBadge(this.label(text, charge > 0 ? "#1f4fd8" : "#c0392b", 0.5, true), parent, at, radius, true);
+  }
+
+  /**
+   * Makes a padlock badge that sits at the lower right of an atom on screen, however the view is turned.
+   *
+   * @param parent the object the badge will be added to, whose transform maps `at` into the scene
+   * @param at where the atom is, in `parent`'s space
+   * @param radius the radius the atom is drawn with
+   * @returns a sprite that the caller adds to `parent`
+   */
+  lockBadge(parent: Object3D, at: Vector3, radius: number): Sprite {
+    const texture = this.drawn("lock", 64, 72, drawPadlock);
+    const sprite = new Sprite(new SpriteMaterial({ map: texture, depthTest: true, transparent: true }));
+    sprite.scale.set(0.2, 0.225, 1);
+    sprite.renderOrder = 10;
+    return this.cornerBadge(sprite, parent, at, radius, false);
+  }
+
+  /**
+   * Holds a sprite at a corner of an atom on screen, in front of the atom whichever way the camera looks at it.
+   *
+   * @param sprite the badge
+   * @param parent the object the badge will be added to, whose transform maps `at` into the scene
+   * @param at where the atom is, in `parent`'s space
+   * @param radius the radius the atom is drawn with
+   * @param above whether the badge is at the upper right of the atom, rather than the lower right
+   * @returns the sprite
+   */
+  private cornerBadge(sprite: Sprite, parent: Object3D, at: Vector3, radius: number, above: boolean): Sprite {
+    // anchoring the sprite's lower left at the atom's centre, then pulling the anchor back, puts it at the upper right on screen;
+    // anchoring its upper left instead puts it at the lower right
     const pull = Math.max(radius, 0.15) * 0.75;
-    sprite.center.set(-pull / sprite.scale.x, -pull / sprite.scale.y);
+    sprite.center.set(-pull / sprite.scale.x, above ? -pull / sprite.scale.y : 1 + pull / sprite.scale.y);
     sprite.position.copy(at);
     const lift = radius * 1.05;
     const toCamera = new Vector3();
@@ -57,6 +87,30 @@ export class LabelFactory {
   dispose(): void {
     this.textures.forEach((texture) => texture.dispose());
     this.textures.clear();
+  }
+
+  /**
+   * Makes a texture from a drawing, or finds the one already made for the same name.
+   *
+   * @param name what the drawing is, which is also what it is cached under
+   * @param width the texture's width in pixels
+   * @param height the texture's height in pixels
+   * @param draw paints the drawing onto a context of that size
+   * @returns the texture, which the factory owns
+   */
+  private drawn(name: string, width: number, height: number, draw: (context: CanvasRenderingContext2D, width: number, height: number) => void): CanvasTexture {
+    const key = `drawn|${name}`;
+    const cached = this.textures.get(key);
+    if (cached) {
+      return cached;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    draw(canvas.getContext("2d") as CanvasRenderingContext2D, width, height);
+    const texture = new CanvasTexture(canvas);
+    this.textures.set(key, texture);
+    return texture;
   }
 
   private textureOf(text: string, colour: string): CanvasTexture {
@@ -86,3 +140,37 @@ export class LabelFactory {
     return texture;
   }
 }
+
+/**
+ * Paints a closed padlock, as the Outliner's padlock is drawn: an arc shackle over a rounded body. A thin white
+ * outline keeps it readable against any background.
+ *
+ * @param context what to paint on
+ * @param width the width of the area, which leaves room for the outline around a drawing 12 units across
+ * @param height the height of the area, which leaves room for the outline around a drawing 14 units high
+ */
+function drawPadlock(context: CanvasRenderingContext2D, width: number, height: number): void {
+  context.translate((width - 12 * PADLOCK_SCALE) / 2, (height - 14 * PADLOCK_SCALE) / 2);
+  context.scale(PADLOCK_SCALE, PADLOCK_SCALE);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  const shackle = new Path2D("M3.2 6V4.2a2.8 2.8 0 0 1 5.6 0V6");
+  const body = new Path2D();
+  body.roundRect(1.2, 6, 9.6, 7, 1.6);
+
+  // the outline goes down first, wider than the drawing
+  context.strokeStyle = "#ffffff";
+  context.lineWidth = 1.6 + 1.2;
+  context.stroke(shackle);
+  context.stroke(body);
+
+  context.strokeStyle = "#2b2b2b";
+  context.lineWidth = 1.6;
+  context.stroke(shackle);
+  context.fillStyle = "#2b2b2b";
+  context.fill(body);
+}
+
+/** How many pixels a unit of the padlock's drawing is. */
+const PADLOCK_SCALE = 4;
