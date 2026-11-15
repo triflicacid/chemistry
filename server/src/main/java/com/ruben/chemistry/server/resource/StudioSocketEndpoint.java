@@ -9,6 +9,7 @@ import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.studio.StudioEditException;
+import com.ruben.chemistry.server.studio.StudioRequests;
 import com.ruben.chemistry.server.studio.StudioSession;
 import com.ruben.chemistry.server.studio.StudioSessionStore;
 import com.ruben.chemistry.server.studio.StudioState;
@@ -17,7 +18,6 @@ import com.ruben.chemistry.server.ws.SocketEndpoint;
 import com.ruben.chemistry.server.ws.SocketRegistry;
 import com.ruben.chemistry.server.ws.TypedJsonSocketListener;
 import com.ruben.chemistry.server.ws.WebSocketContext;
-import com.ruben.chemistry.space.Vec3;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -34,57 +34,6 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
  */
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
-    /**
-     * @param moleculeId the stored molecule to open a session on
-     * @param conformers how many conformers to embed if it has no shape yet (optional, default one)
-     */
-    public record OpenRequest(String moleculeId, Integer conformers)
-    {
-    }
-
-    /**
-     * @param sessionId the session to send state for
-     * @param sinceVersion the version the client holds, which it reports so a gap is visible in the logs
-     */
-    public record ResyncRequest(String sessionId, Long sinceVersion)
-    {
-    }
-
-    /**
-     * @param sessionId the session to rebuild
-     * @param baseVersion the version the client was looking at when it wrote the SMILES, so that a rebuild over a changed session is refused
-     * @param smiles the molecule to rebuild the session on, read as written
-     */
-    public record SubmitRequest(String sessionId, Long baseVersion, String smiles)
-    {
-    }
-
-    /**
-     * @param sessionId the session to edit
-     * @param baseVersion the version the client was looking at when it composed the patch
-     * @param commit whether this ends the edit it belongs to (optional, default true)
-     * @param atoms the atoms to change, each with only the fields that change
-     */
-    public record PatchRequest(String sessionId, Long baseVersion, Boolean commit, List<AtomPatch> atoms)
-    {
-    }
-
-    /**
-     * @param id the atom to change
-     * @param position where to put it, in angstroms
-     */
-    public record AtomPatch(String id, Vec3 position)
-    {
-    }
-
-    /**
-     * @param sessionId the session to undo or redo in
-     * @param baseVersion the version the client was looking at, so that an undo over a changed session is refused
-     */
-    public record HistoryRequest(String sessionId, Long baseVersion)
-    {
-    }
-
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
     private static final int PROTOCOL_VERSION = 3;
 
@@ -129,10 +78,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     private void open(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
     {
-        OpenRequest request;
+        StudioRequests.OpenRequest request;
         try
         {
-            request = payload(body, OpenRequest.class);
+            request = payload(body, StudioRequests.OpenRequest.class);
         }
         catch (JsonException malformed)
         {
@@ -186,10 +135,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     private void resync(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
     {
-        ResyncRequest request;
+        StudioRequests.ResyncRequest request;
         try
         {
-            request = payload(body, ResyncRequest.class);
+            request = payload(body, StudioRequests.ResyncRequest.class);
         }
         catch (JsonException malformed)
         {
@@ -223,10 +172,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     private void submitSmiles(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
     {
-        SubmitRequest request;
+        StudioRequests.SubmitRequest request;
         try
         {
-            request = payload(body, SubmitRequest.class);
+            request = payload(body, StudioRequests.SubmitRequest.class);
         }
         catch (JsonException malformed)
         {
@@ -289,10 +238,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     private void patch(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
     {
-        PatchRequest request;
+        StudioRequests.PatchRequest request;
         try
         {
-            request = payload(body, PatchRequest.class);
+            request = payload(body, StudioRequests.PatchRequest.class);
         }
         catch (JsonException malformed)
         {
@@ -388,10 +337,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     private void walk(WebSocketContext context, Map<String, Object> body, Long sequence, String type, Function<StudioSession, StudioSession.Applied> step) throws IOException
     {
-        HistoryRequest request;
+        StudioRequests.HistoryRequest request;
         try
         {
-            request = payload(body, HistoryRequest.class);
+            request = payload(body, StudioRequests.HistoryRequest.class);
         }
         catch (JsonException malformed)
         {
