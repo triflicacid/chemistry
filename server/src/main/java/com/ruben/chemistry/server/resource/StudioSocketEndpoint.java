@@ -9,6 +9,7 @@ import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.molecule.StudioSnapshot;
 import com.ruben.chemistry.server.studio.GeometryScheduler;
 import com.ruben.chemistry.server.studio.OptimisationRunner;
 import com.ruben.chemistry.server.studio.StudioEditException;
@@ -974,10 +975,11 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             session.saved(stored.id());
         }
 
-        stored.setLatestStructure3d(session.structure());
-        stored.setLockedSites(session.lockedSites());
-        stored.setPose(session.pose());
-        session.camera().ifPresent(stored::setCamera);
+        stored.setStudio(new StudioSnapshot(
+                session.structure(),
+                session.lockedSites(),
+                session.pose(),
+                session.camera().orElse(stored.studio().camera())));
     }
 
     /**

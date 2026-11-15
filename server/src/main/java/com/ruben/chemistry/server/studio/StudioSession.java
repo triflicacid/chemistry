@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.molecule.StudioSnapshot;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.BondMotion;
 import com.ruben.chemistry.space.Embedder;
@@ -187,17 +188,18 @@ public final class StudioSession
             throw new IllegalArgumentException("conformers must be 1 to " + MAX_CONFORMERS + ", but was " + conformers);
         }
 
-        Structure3D structure = source.latestStructure3d().orElse(null);
+        StudioSnapshot snapshot = source.studio();
+        Structure3D structure = snapshot.structure();
         if (structure == null)
         {
             // kept on the stored molecule, so the viewer and a second session do not embed it again
             structure = Embedder.embed(source.molecule(), Embedder.Options.DEFAULT.withConformers(conformers));
-            source.setLatestStructure3d(structure);
+            source.setStudio(snapshot.withStructure(structure));
         }
 
-        StudioSession session = build(sessionId, source.id(), source.molecule(), structure, source.lockedSites());
-        session.pose = source.pose();
-        session.camera = source.camera().orElse(null);
+        StudioSession session = build(sessionId, source.id(), source.molecule(), structure, snapshot.lockedSites());
+        session.pose = snapshot.pose();
+        session.camera = snapshot.camera();
         return session;
     }
 

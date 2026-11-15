@@ -5,6 +5,7 @@ import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.molecule.StudioSnapshot;
 import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Quaternion;
@@ -103,11 +104,11 @@ class StudioSessionTest
     void keeps_the_shape_it_embedded_on_the_molecule_it_opened()
     {
         StoredMolecule stored = store("CCO");
-        assertThat(stored.latestStructure3d()).isEmpty();
+        assertThat(stored.studio().structure()).isNull();
 
         StudioSession session = StudioSession.open("session-1", stored, 1);
 
-        assertThat(stored.latestStructure3d()).isPresent();
+        assertThat(stored.studio().structure()).isNotNull();
         assertThat(session.sourceMoleculeId()).isEqualTo(stored.id());
     }
 
@@ -116,7 +117,7 @@ class StudioSessionTest
     {
         StoredMolecule stored = store("CCO");
         Structure3D structure = Embedder.embed(stored.molecule(), Embedder.Options.DEFAULT.withSeed(7));
-        stored.setLatestStructure3d(structure);
+        stored.setStudio(stored.studio().withStructure(structure));
 
         StudioSession session = StudioSession.open("session-1", stored, 1);
 
@@ -203,7 +204,7 @@ class StudioSessionTest
         StudioSession session = open("CCO");
         session.move(List.of(new StudioSession.Move(ids(session).getFirst(), new Vec3(7, 8, 9))), true);
         StoredMolecule stored = molecules.add(com.ruben.chemistry.server.molecule.ParsedMolecule.written(session.collapsed()));
-        stored.setLatestStructure3d(session.structure());
+        stored.setStudio(stored.studio().withStructure(session.structure()));
 
         StudioSession reopened = StudioSession.open("again", stored, 1);
 
@@ -395,8 +396,7 @@ class StudioSessionTest
         List<String> ids = ids(session);
         session.lock(List.of(ids.get(1), ids.getLast()), true);
         StoredMolecule stored = molecules.add(com.ruben.chemistry.server.molecule.ParsedMolecule.written(session.collapsed()));
-        stored.setLatestStructure3d(session.structure());
-        stored.setLockedSites(session.lockedSites());
+        stored.setStudio(new StudioSnapshot(session.structure(), session.lockedSites(), Pose.IDENTITY, null));
 
         StudioSession reopened = StudioSession.open("again", stored, 1);
 
@@ -708,8 +708,7 @@ class StudioSessionTest
         Pose pose = new Pose(new Vec3(1, 2, 3), new Quaternion(0, 0, 1, 1).normalised());
         session.transform(pose, true);
         StoredMolecule stored = molecules.add(com.ruben.chemistry.server.molecule.ParsedMolecule.written(session.collapsed()));
-        stored.setLatestStructure3d(session.structure());
-        stored.setPose(session.pose());
+        stored.setStudio(new StudioSnapshot(session.structure(), Set.of(), session.pose(), null));
 
         StudioSession reopened = StudioSession.open("again", stored, 1);
 

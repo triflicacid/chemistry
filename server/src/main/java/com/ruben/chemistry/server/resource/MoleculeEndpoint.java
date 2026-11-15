@@ -1,12 +1,6 @@
 package com.ruben.chemistry.server.resource;
 
 import com.ruben.chemistry.canonical.CanonicalRanker;
-import com.ruben.chemistry.smiles.SmilesWriter;
-import com.ruben.chemistry.space.Camera;
-import com.ruben.chemistry.space.Embedder;
-import com.ruben.chemistry.space.Structure3D;
-import com.ruben.chemistry.space.StructureReader;
-import com.ruben.chemistry.space.Vec3;
 import com.ruben.chemistry.server.http.Endpoint;
 import com.ruben.chemistry.server.http.EndpointRegistry;
 import com.ruben.chemistry.server.http.HttpException;
@@ -23,16 +17,23 @@ import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.render.Match2dRender;
 import com.ruben.chemistry.server.render.MoleculeRenderer2d;
-import com.ruben.chemistry.server.render.Render2dOptions;
 import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.server.render.Render2dJson;
+import com.ruben.chemistry.server.render.Render2dOptions;
 import com.ruben.chemistry.server.render.Render3dJson;
+import com.ruben.chemistry.smiles.SmilesWriter;
+import com.ruben.chemistry.space.Camera;
+import com.ruben.chemistry.space.Embedder;
+import com.ruben.chemistry.space.Structure3D;
+import com.ruben.chemistry.space.StructureReader;
+import com.ruben.chemistry.space.Vec3;
 
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 public final class MoleculeEndpoint extends Endpoint
@@ -312,7 +313,7 @@ public final class MoleculeEndpoint extends Endpoint
 
     private Structure3D latestStructure3d(StoredMolecule stored)
     {
-        return stored.latestStructure3d()
+        return Optional.ofNullable(stored.studio().structure())
                 .orElseThrow(() -> new HttpException(404, "NOT_GENERATED", "The molecule has no 3D structure yet"));
     }
 
@@ -399,7 +400,7 @@ public final class MoleculeEndpoint extends Endpoint
         try
         {
             Structure3D structure = Embedder.embed(stored.molecule(), chosen);
-            stored.setLatestStructure3d(structure);
+            stored.setStudio(stored.studio().withStructure(structure));
             responseContext.header(MOLECULE_ID_HEADER, stored.id());
             responseContext.respond(200, Render3dJson.of(stored.molecule(), structure));
         }

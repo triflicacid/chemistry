@@ -5,12 +5,9 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.smiles.SmilesWriter;
-import com.ruben.chemistry.space.Pose;
-import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.validate.MoleculeValidator;
 
 import java.util.Optional;
-import java.util.Set;
 
 public final class StoredMolecule
 {
@@ -24,10 +21,7 @@ public final class StoredMolecule
     private volatile Render2d latest2d;
     private volatile MoleculeMetadata metadata;
     private volatile ValidationReport validation;
-    private volatile Structure3D latestStructure3d;
-    private volatile Set<Integer> lockedSites = Set.of();
-    private volatile Pose pose = Pose.IDENTITY;
-    private volatile Camera camera;
+    private volatile StudioSnapshot studio = StudioSnapshot.EMPTY;
 
     StoredMolecule(String id, ParsedMolecule parsed)
     {
@@ -94,64 +88,19 @@ public final class StoredMolecule
         this.latest2d = render;
     }
 
-    /** The most recently generated 3D structure, if any. */
-    public Optional<Structure3D> latestStructure3d()
+    /**
+     * @return what an editing session saved with this molecule, which is {@link StudioSnapshot#EMPTY} if none did
+     */
+    public StudioSnapshot studio()
     {
-        return Optional.ofNullable(latestStructure3d);
-    }
-
-    public void setLatestStructure3d(Structure3D structure)
-    {
-        this.latestStructure3d = structure;
+        return studio;
     }
 
     /**
-     * @return the sites of {@link #latestStructure3d()} that an editing session held locked when it saved, by
-     *     position in the structure; empty if none were
+     * @param snapshot the scene to keep with this molecule, replacing what was kept
      */
-    public Set<Integer> lockedSites()
+    public void setStudio(StudioSnapshot snapshot)
     {
-        return lockedSites;
-    }
-
-    /**
-     * @param sites the sites of the latest structure that are locked, by position in the structure
-     */
-    public void setLockedSites(Set<Integer> sites)
-    {
-        this.lockedSites = Set.copyOf(sites);
-    }
-
-    /**
-     * @return where an editing session left the molecule in its scene when it saved; the identity if it never
-     *     moved the molecule as a whole
-     */
-    public Pose pose()
-    {
-        return pose;
-    }
-
-    /**
-     * @param pose where the molecule sits in its scene, which the structure's own coordinates are unaffected by
-     */
-    public void setPose(Pose pose)
-    {
-        this.pose = pose;
-    }
-
-    /**
-     * @return where an editing session left the camera when it saved, if it ever said
-     */
-    public Optional<Camera> camera()
-    {
-        return Optional.ofNullable(camera);
-    }
-
-    /**
-     * @param camera where the camera was and how it looked, which a session opened on this molecule starts with
-     */
-    public void setCamera(Camera camera)
-    {
-        this.camera = camera;
+        this.studio = snapshot;
     }
 }

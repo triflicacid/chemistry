@@ -678,7 +678,7 @@ class StudioSocketEndpointTest
         socket.sendText(lock(sessionId, 1, atom, true, 2), true).join();
         String saved = (String) collector.nextJson().get("saved_molecule_id");
         assertThat(saved).isNotNull().isNotEqualTo(stored.id());
-        assertThat(stored.lockedSites()).isEmpty();
+        assertThat(stored.studio().lockedSites()).isEmpty();
 
         socket.sendText(open(saved, 3), true).join();
         assertThat(collector.nextJson().get("locked")).isEqualTo(List.of(atom));
@@ -748,14 +748,14 @@ class StudioSocketEndpointTest
                 "position", Map.of("x", 0.0, "y", 0.0, "z", 0.0),
                 "rotation", Map.of("x", 0.0, "y", 0.0, "z", 0.0, "w", 1.0)));
         assertThat(list(undone, "atoms")).isEmpty();
-        assertThat(molecules.find(saved).orElseThrow().pose().position().x()).isEqualTo(0.0);
+        assertThat(molecules.find(saved).orElseThrow().studio().pose().position().x()).isEqualTo(0.0);
 
         socket.sendText(history("edit.redo", sessionId, 4, 5), true).join();
         Map<String, Object> redone = collector.nextJson();
         assertThat(redone.get("transform")).isEqualTo(Map.of(
                 "position", Map.of("x", 2.0, "y", 0.0, "z", 0.0),
                 "rotation", Map.of("x", 0.0, "y", 0.0, "z", 0.0, "w", 1.0)));
-        assertThat(molecules.find(saved).orElseThrow().pose().position().x()).isEqualTo(2.0);
+        assertThat(molecules.find(saved).orElseThrow().studio().pose().position().x()).isEqualTo(2.0);
     }
 
     @Test
@@ -833,7 +833,7 @@ class StudioSocketEndpointTest
 
         socket.sendText(open(saved, 4), true).join();
         assertThat(collector.nextJson().get("camera")).isEqualTo(cameraState(40));
-        assertThat(stored.camera()).isEmpty();
+        assertThat(stored.studio().camera()).isNull();
     }
 
     @Test
@@ -1107,7 +1107,7 @@ class StudioSocketEndpointTest
 
         assertThat(saved).isNotNull().isNotEqualTo(stored.id());
         assertThat(molecules.find(saved)).isPresent();
-        assertThat(stored.latestStructure3d().orElseThrow().conformers().getFirst().positions().getFirst())
+        assertThat(stored.studio().structure().conformers().getFirst().positions().getFirst())
                 .isNotEqualTo(new com.ruben.chemistry.space.Vec3(4, 5, 6));
 
         // a second edit, and an undo, go to the same molecule
@@ -1115,7 +1115,7 @@ class StudioSocketEndpointTest
         assertThat(collector.nextJson()).containsEntry("saved_molecule_id", saved);
         socket.sendText(history("edit.undo", sessionId, 3, 4), true).join();
         assertThat(collector.nextJson()).containsEntry("saved_molecule_id", saved);
-        assertThat(molecules.find(saved).orElseThrow().latestStructure3d().orElseThrow().conformers().getFirst().positions().getFirst())
+        assertThat(molecules.find(saved).orElseThrow().studio().structure().conformers().getFirst().positions().getFirst())
                 .isEqualTo(new com.ruben.chemistry.space.Vec3(4, 5, 6));
 
         // opening what was saved gives the edited structure back
