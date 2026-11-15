@@ -23,6 +23,7 @@ export function App() {
     openSmiles,
     submitSmiles,
     moveAtom,
+    moveAtoms,
     dragAtoms,
     dropAtoms,
     cancelDrag,
@@ -109,6 +110,7 @@ export function App() {
 
   // stable, because the viewport listens afresh whenever one of these changes, and the session redraws this at every patch of a drag
   const move = useCallback((id: string, position: Vec3) => void moveAtom(id, position), [moveAtom]);
+  const moveMany = useCallback((moves: AtomMove[]) => void moveAtoms(moves), [moveAtoms]);
   const drop = useCallback((moves: AtomMove[]) => void dropAtoms(moves), [dropAtoms]);
   const cancel = useCallback((moves: AtomMove[]) => void cancelDrag(moves), [cancelDrag]);
   const lock = useCallback((ids: string[], locked: boolean) => void lockAtoms(ids, locked), [lockAtoms]);
@@ -177,6 +179,7 @@ export function App() {
       onOpenSmiles={openSmiles}
       onSubmitSmiles={submit}
       onMoveAtom={move}
+      onMoveAtoms={moveMany}
       onLockAtoms={lock}
       canLock={chosen.length > 0}
       lockPressed={allLocked}

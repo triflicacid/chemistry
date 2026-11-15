@@ -147,11 +147,16 @@ involve both its atoms). It says "Working it out…" while the figure is catchin
 
 Selecting something in the viewport opens the Outliner to it and scrolls it into view.
 
+Selecting a bond, or up to four atoms, labels the length of each bond selected or on those atoms (up to twelve) in the viewport, in blue,
+and the labels follow as atoms move. Hovering or selecting a bond also names its two atoms (such as `C1` and `C3`), the same names the Inspector
+uses, so you can tell which atoms a length or a Hold choice refers to.
+
 ## Inspector
 
 | Input | Action |
 |---|---|
 | Type in an atom's X, Y or Z field, then Enter or click away | Move the atom there. One edit, which can be undone |
+| Type in a bond's **Length** field, then Enter or click away | Set the bond's length. The **Hold** atom (named by its label, such as `C1`) stays put and the other moves along the bond, taking everything beyond it along; **Neither** moves both half each. In a ring only the two atoms move. One edit, which can be undone. Refused if an atom that would move is locked |
 | Esc in a field | Abandon what you typed |
 | Click a name under *Bonded to*, *Bonds* or *Joins* | Select that item (modifiers as above) |
 | Hover one | Highlight it in the viewport |

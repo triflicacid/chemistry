@@ -4,14 +4,14 @@ import {ApiError} from "../../api/http";
 import {describing, describingSmiles, requested} from "./location";
 import type {Vec3} from "../../api/types/structure";
 import type {
-    AtomMove,
-    EditApplied,
-    GeometryResult,
-    OptimiseProgress,
-    OptimiseResult,
-    PatchAck,
-    Pose,
-    SessionState,
+  AtomMove,
+  EditApplied,
+  GeometryResult,
+  OptimiseProgress,
+  OptimiseResult,
+  PatchAck,
+  Pose,
+  SessionState,
 } from "./messages";
 import {samePose} from "./pose";
 import {StudioError, StudioSocket} from "./studioSocket";
@@ -110,6 +110,8 @@ export interface Session {
   submitSmiles: (smiles: string) => Promise<SubmitResult>;
   /** Puts an atom at a position, as one edit that can be undone. */
   moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
+  /** Puts several atoms at positions, as one edit that can be undone. */
+  moveAtoms: (moves: AtomMove[]) => Promise<EditResult>;
   /**
    * Reports where dragged atoms have got to. Sends at most one patch per {@link DRAG_INTERVAL_MS}, of the latest
    * positions, none of which is yet an edit to undo.
@@ -464,6 +466,8 @@ export function useSession(client?: ChemistryApi): Session {
 
   const moveAtom = useCallback((id: string, position: Vec3) => send([{ id, position }], true), [send]);
 
+  const moveAtoms = useCallback((moves: AtomMove[]) => send(moves, true), [send]);
+
   /**
    * Puts the molecule at a pose.
    *
@@ -723,6 +727,7 @@ export function useSession(client?: ChemistryApi): Session {
     openSmiles: submit,
     submitSmiles,
     moveAtom,
+    moveAtoms,
     dragAtoms,
     dropAtoms,
     cancelDrag,

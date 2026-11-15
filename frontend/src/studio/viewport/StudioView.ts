@@ -82,6 +82,12 @@ export interface Emphasised {
   hover: Emphasis;
 }
 
+/** How many selected atoms there can be for the bonds on them to be labelled with their lengths. */
+const LENGTH_LABEL_ATOMS = 4;
+
+/** The most bonds that are labelled with their lengths at once. */
+const LENGTH_LABEL_BONDS = 12;
+
 const NO_EMPHASIS: Emphasis = { atoms: new Set(), bonds: new Set() };
 
 /** The tint of the active item: the selection's blue, brightened so that it stands out from the rest. */
@@ -235,6 +241,7 @@ export class StudioView {
   private strainResult: GeometryResult | null = null;
   /** The strain markers, which sit in the molecule's group so that they move with it, or null while there are none. */
   private strainMarks: Group | null = null;
+  private lengthMarks: Group | null = null;
   /** The atoms the gizmo is carrying, each with where it was picked up, or null while it is not carrying any. */
   private shifting: { node: AtomNode; original: Vector3 }[] | null = null;
   /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
@@ -616,6 +623,7 @@ export class StudioView {
     }
     affected.forEach((bond) => this.redraw(bond));
     this.refreshEmphasis();
+    this.drawLengths();
     this.placeGuide();
     // the handles sit on the selected atoms, so they follow when something else moves them
     if (this.gizmoMode === "atoms") {
@@ -631,6 +639,7 @@ export class StudioView {
   setEmphasis(emphasis: Emphasised): void {
     this.emphasis = emphasis;
     this.refreshEmphasis();
+    this.drawLengths();
     this.refreshGuide();
     this.syncGizmo();
   }
@@ -643,6 +652,56 @@ export class StudioView {
   setStrain(result: GeometryResult | null): void {
     this.strainResult = result;
     this.drawStrain();
+  }
+
+  /**
+   * Labels the length of each bond that is selected, and of each bond on a few selected atoms, and names the two atoms of
+   * each bond that is hovered or selected, replacing what was drawn. A selection of many atoms is not labelled, because
+   * the labels would hide what they measure.
+   */
+  private drawLengths(): void {
+    if (this.lengthMarks) {
+      this.content.remove(this.lengthMarks);
+      disposeMaterials(this.lengthMarks);
+      this.lengthMarks = null;
+    }
+
+    const { selected, hover } = this.emphasis;
+    const few = selected.atoms.size <= LENGTH_LABEL_ATOMS;
+    const measured = this.bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || (few && (selected.atoms.has(link.bond.first) || selected.atoms.has(link.bond.second))));
+    const named = this.bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || hover.bonds.has(link.bond.id));
+
+    const marks = new Group();
+    if (measured.length <= LENGTH_LABEL_BONDS) {
+      for (const { link } of measured) {
+        const first = this.atomById.get(link.bond.first);
+        const second = this.atomById.get(link.bond.second);
+        if (first && second) {
+          const note = this.kit.labels.label(`${first.at.distanceTo(second.at).toFixed(3)} Å`, "#1f3d99", 0.22);
+          note.position.copy(first.at).add(second.at).multiplyScalar(0.5);
+          marks.add(note);
+        }
+      }
+    }
+
+    // each atom is named once however many of the bonds on it are named
+    const atomsNamed = new Set(named.flatMap(({ link }) => [link.bond.first, link.bond.second]));
+    for (const id of atomsNamed) {
+      const node = this.atomById.get(id);
+      if (node) {
+        // the name sits just above the atom, which is as far as the ball reaches plus a little
+        const note = this.kit.labels.label(`${node.atom.element}${node.index + 1}`, "#222222", 0.26);
+        note.position.copy(node.at);
+        note.position.y += ballRadius(node.atom.radius, STYLE, true) + 0.25;
+        marks.add(note);
+      }
+    }
+
+    if (marks.children.length > 0) {
+      this.content.add(marks);
+      this.lengthMarks = marks;
+    }
+    this.stage.requestRender();
   }
 
   /** Draws the strain markers afresh from the report, replacing what was drawn. */
@@ -1119,6 +1178,7 @@ export class StudioView {
     disposeMaterials(this.content);
     this.content.clear();
     this.strainMarks = null;
+    this.lengthMarks = null;
     this.registry.clear();
     this.atoms = [];
     this.bonds = [];

@@ -1,14 +1,16 @@
-import type {MouseEvent, ReactNode} from "react";
+import {type MouseEvent, type ReactNode, useState} from "react";
 import {type Item, keyOf} from "../selection/items";
 import type {Models} from "../selection/models";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
 import type {Vec3} from "../../api/types/structure";
-import type {GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
+import type {AtomMove, GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
 import {eulerOf, withEuler} from "../session/pose";
 import type {Pivot} from "../selection/ToolModel";
 import {describeFinding, isCurrent} from "./findings";
 import {NumberField} from "./NumberField";
+import {type Segment, Segmented} from "./Segmented";
+import {type Hold, lengthEdit, sideOf} from "../selection/bondLength";
 
 export interface InspectorProps {
   state: SessionState | null;
@@ -17,6 +19,8 @@ export interface InspectorProps {
   models: Models;
   /** Puts an atom at a position. */
   onMoveAtom: (id: string, position: Vec3) => void;
+  /** Puts several atoms at positions, as one edit. */
+  onMoveAtoms: (moves: AtomMove[]) => void;
   /** Puts the whole molecule at a pose. */
   onMoveMolecule: (pose: Pose) => void;
   /** Locks or unlocks atoms. */
@@ -29,7 +33,7 @@ export interface InspectorProps {
  * The active item decides what is shown. With nothing selected it shows the session; with a
  * mixture of kinds it says what the mixture is and does not guess at a pane.
  */
-export function Inspector({ state, geometry, models, onMoveAtom, onMoveMolecule, onLockAtoms }: InspectorProps) {
+export function Inspector({ state, geometry, models, onMoveAtom, onMoveAtoms, onMoveMolecule, onLockAtoms }: InspectorProps) {
   const { selection, index } = models;
   const { items, active } = useObservable(selection);
 
@@ -63,6 +67,7 @@ export function Inspector({ state, geometry, models, onMoveAtom, onMoveMolecule,
         geometry={geometry}
         models={models}
         onMoveAtom={onMoveAtom}
+        onMoveAtoms={onMoveAtoms}
         onMoveMolecule={onMoveMolecule}
         onLockAtoms={onLockAtoms}
       />
@@ -76,11 +81,12 @@ interface ItemPaneProps {
   geometry: GeometryResult | null;
   models: Models;
   onMoveAtom: (id: string, position: Vec3) => void;
+  onMoveAtoms: (moves: AtomMove[]) => void;
   onMoveMolecule: (pose: Pose) => void;
   onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
-function ItemPane({ item, index, geometry, models, onMoveAtom, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
+function ItemPane({ item, index, geometry, models, onMoveAtom, onMoveAtoms, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
       const atom = index.atoms.get(item.id);
@@ -88,7 +94,7 @@ function ItemPane({ item, index, geometry, models, onMoveAtom, onMoveMolecule, o
     }
     case "bond": {
       const bond = index.bonds.get(item.id);
-      return bond ? <BondPane bond={bond} index={index} geometry={geometry} models={models} /> : null;
+      return bond ? <BondPane key={bond.id} bond={bond} index={index} geometry={geometry} models={models} onMove={onMoveAtoms} /> : null;
     }
     default:
       return <MoleculePane id={item.id} index={index} models={models} onMove={onMoveMolecule} />;
@@ -313,9 +319,17 @@ interface BondPaneProps {
   index: StateIndex;
   geometry: GeometryResult | null;
   models: Models;
+  onMove: (moves: AtomMove[]) => void;
 }
 
-function BondPane({ bond, index, geometry, models }: BondPaneProps) {
+function BondPane({ bond, index, geometry, models, onMove }: BondPaneProps) {
+  const [hold, setHold] = useState<Hold>("first");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const holds: Segment<Hold>[] = [
+    { value: "first", label: index.label(bond.first), title: `Keep ${index.label(bond.first)} where it is and move ${index.label(bond.second)}` },
+    { value: "second", label: index.label(bond.second), title: `Keep ${index.label(bond.second)} where it is and move ${index.label(bond.first)}` },
+    { value: "both", label: "Neither", title: "Move both atoms, half the change each, so the middle of the bond stays put" },
+  ];
   const first = index.atoms.get(bond.first);
   const second = index.atoms.get(bond.second);
   const length = first && second ? Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y, first.position.z - second.position.z) : null;
@@ -326,8 +340,32 @@ function BondPane({ bond, index, geometry, models }: BondPaneProps) {
         <Property name="ID" value={bond.id} mono />
         <Property name="Order" value={bond.order.toLowerCase()} />
         <Property name="Aromatic" value={bond.aromatic ? "yes" : "no"} />
-        {length !== null && <Property name="Length" value={`${length.toFixed(3)} Å`} mono />}
+        {length !== null && (
+          <>
+            <dt>Length</dt>
+            <dd className="position">
+              <NumberField
+                label={`Length of ${index.bondLabel(bond)}, in ångströms`}
+                value={length}
+                onCommit={(value) => {
+                  const edit = lengthEdit(index, bond.id, value, hold, index.state.locked);
+                  setRefusal(edit.kind === "refused" ? edit.reason : null);
+                  if (edit.kind === "moves") {
+                    onMove(edit.moves);
+                  }
+                }}
+              />
+              <span className="unit">Å</span>
+            </dd>
+            <dt>Hold</dt>
+            <dd>
+              <Segmented label="Which atom of the bond stays where it is" value={hold} options={holds} onChange={setHold} />
+            </dd>
+          </>
+        )}
       </dl>
+      {refusal !== null && <p className="panel-note">{refusal}</p>}
+      <p className="panel-note">{lengthNote(index, bond.id)}</p>
 
       <h4 className="pane-subtitle">Joins</h4>
       <Links
@@ -338,6 +376,21 @@ function BondPane({ bond, index, geometry, models }: BondPaneProps) {
       <StrainDetails atoms={[bond.first, bond.second]} index={index} geometry={geometry} models={models} />
     </>
   );
+}
+
+/**
+ * Says what changing a bond's length would do to the rest of the molecule.
+ *
+ * @param index the session's atoms and bonds
+ * @param id the bond
+ * @returns a sentence for the user
+ */
+function lengthNote(index: StateIndex, id: string): string {
+  const bond = index.bonds.get(id);
+  if (bond && sideOf(index, bond, bond.first) === null) {
+    return "This bond is in a ring, so only its two atoms move and the rest of the ring is left behind. Optimise afterwards to relax it.";
+  }
+  return "Everything beyond the atom that moves goes with it, so no other length or angle changes.";
 }
 
 interface StrainDetailsProps {
