@@ -16,13 +16,15 @@ export interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   saved: boolean;
+  /** How strained the geometry is, ready to show, or null if it has not been worked out. */
+  strain: string | null;
   onUndo: () => void;
   onRedo: () => void;
 }
 
 const WAITING = "Not built yet";
 
-export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo }: ToolbarProps) {
   const { tool } = useObservable(tools);
 
   return (
@@ -89,6 +91,7 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
 
       <span className={`status status-${phase.kind}`} role="status">
         {describe(phase)}
+        {phase.kind === "open" && strain ? ` · ${strain}` : ""}
         {phase.kind === "open" && saved ? " · edits saved" : ""}
       </span>
     </header>

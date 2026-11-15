@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -88,7 +88,6 @@ export interface SessionState extends ServerEnvelope {
   locked: string[];
   /** Where the molecule sits in the scene. The atoms' positions are in the molecule's own frame, not this one. */
   transform: Pose;
-  strain: number;
   /** Whether there is an edit to take back. */
   can_undo: boolean;
   /** Whether there is an undone edit to make again. */
@@ -163,6 +162,55 @@ export interface EditApplied extends ServerEnvelope {
   transform: Pose | null;
 }
 
+/** One term of the geometry beyond its tolerance. */
+export interface GeometryFinding {
+  kind: "bond" | "angle" | "clash";
+  /** The atoms it is between, in order. */
+  atoms: string[];
+  /** Angstroms for a bond or a clash, degrees for an angle. */
+  actual: number;
+  /** What it should be, in the same unit. */
+  ideal: number;
+  /** How many tolerances it strays by. */
+  severity: number;
+}
+
+/** Two atoms closer than they should be. */
+export interface GeometryClash {
+  first: string;
+  second: string;
+  /** Angstroms. */
+  distance: number;
+  /** The least distance they should keep, in angstroms. */
+  contact: number;
+}
+
+/** What one atom contributes to the strain. */
+export interface AtomStrain {
+  id: string;
+  strain: number;
+}
+
+/**
+ * How strained the geometry of a session is, sent on the server's own initiative once the session has been left
+ * alone. It describes the geometry at `version`, so it is out of date once the session has moved on from that.
+ */
+export interface GeometryResult extends ServerEnvelope {
+  type: "geometry.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** The total strain, where zero is a shape with nothing wrong with it; null if the calculation failed. */
+  strain: number | null;
+  /** The worst terms beyond their tolerance, worst first. */
+  findings: GeometryFinding[];
+  clashes: GeometryClash[];
+  /** Each strained atom's share of the strain. */
+  atom_strain: AtomStrain[];
+  /** Why the calculation failed, if it did. */
+  message: string | null;
+}
+
 /** A message the server could not handle, which leaves the connection open. */
 export interface SocketError extends ServerEnvelope {
   type: "error";
@@ -176,4 +224,14 @@ export interface Pong extends ServerEnvelope {
   type: "pong";
 }
 
-export type ServerMessage = SessionReady | SessionState | SessionConflict | PatchAck | TransformAck | LockAck | EditApplied | SocketError | Pong;
+export type ServerMessage =
+  | SessionReady
+  | SessionState
+  | SessionConflict
+  | PatchAck
+  | TransformAck
+  | LockAck
+  | EditApplied
+  | GeometryResult
+  | SocketError
+  | Pong;

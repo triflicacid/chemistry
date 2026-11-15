@@ -669,6 +669,47 @@ body.resizing {
   color: var(--bad);
 }
 
+.analysis-tabs {
+  margin-bottom: 0.4rem;
+}
+
+.geometry-total {
+  margin: 0 0 0.3rem;
+  font-size: 0.85rem;
+}
+
+.geometry-stale {
+  color: var(--ink-soft);
+}
+
+.findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+}
+
+.findings[data-stale="true"] {
+  opacity: 0.55;
+}
+
+.findings li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  line-height: 1.6;
+}
+
+.finding {
+  font-family: ui-monospace, monospace;
+  text-align: left;
+}
+
+.severity {
+  flex: none;
+  color: var(--ink-soft);
+}
+
 .lock-mark {
   margin-left: 6px;
   vertical-align: -1px;

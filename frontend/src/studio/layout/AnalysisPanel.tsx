@@ -1,12 +1,90 @@
-import { useEffect, useRef } from "react";
-import type { Activity } from "../session/useSession";
+import {useEffect, useRef, useState} from "react";
+import type {Models} from "../selection/models";
+import type {GeometryResult, SessionState} from "../session/messages";
+import type {Activity} from "../session/useSession";
+import {describeFinding, isCurrent} from "./findings";
 
 export interface AnalysisPanelProps {
   activity: Activity[];
+  state: SessionState | null;
+  /** What the server last said about the geometry. */
+  geometry: GeometryResult | null;
+  models: Models;
+}
+
+type Tab = "geometry" | "activity";
+
+/** How strained the geometry is and what is wrong with it, and what the session has done. */
+export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPanelProps) {
+  const [tab, setTab] = useState<Tab>("geometry");
+
+  return (
+    <>
+      <div className="tool-group analysis-tabs" role="group" aria-label="Analysis">
+        <button type="button" className="tool" aria-pressed={tab === "geometry"} onClick={() => setTab("geometry")}>
+          Geometry
+        </button>
+        <button type="button" className="tool" aria-pressed={tab === "activity"} onClick={() => setTab("activity")}>
+          Activity
+        </button>
+      </div>
+      {tab === "geometry" ? <GeometryView state={state} geometry={geometry} models={models} /> : <ActivityLog activity={activity} />}
+    </>
+  );
+}
+
+interface GeometryViewProps {
+  state: SessionState | null;
+  geometry: GeometryResult | null;
+  models: Models;
+}
+
+/** The total strain and the worst things wrong, each of which selects its atoms when clicked. */
+function GeometryView({ state, geometry, models }: GeometryViewProps) {
+  const { selection, index } = models;
+
+  if (!geometry) {
+    return <p className="panel-empty">The geometry has not been examined yet.</p>;
+  }
+  if (geometry.status === "failed" || geometry.strain === null) {
+    return <p className="panel-empty">The geometry could not be examined: {geometry.message ?? "no reason was given"}.</p>;
+  }
+
+  // a result describes the version it was made at, and the session moves on faster than the server can say how
+  const current = isCurrent(geometry, state);
+  const label = (id: string) => index?.label(id) ?? id;
+
+  return (
+    <div className="geometry">
+      <p className="geometry-total">
+        Strain <strong>{geometry.strain.toFixed(2)}</strong>
+        {!current && <span className="geometry-stale"> (updating…)</span>}
+      </p>
+      {geometry.findings.length === 0 ? (
+        <p className="panel-empty">Nothing is beyond its tolerance.</p>
+      ) : (
+        <ol className="findings" aria-label="Worst findings" data-stale={current ? undefined : "true"}>
+          {geometry.findings.map((finding) => (
+            <li key={`${finding.kind}:${finding.atoms.join(",")}`}>
+              <button
+                type="button"
+                className="link finding"
+                title="Select these atoms"
+                onClick={() => selection.replace(finding.atoms.map((id) => ({ kind: "atom", id })))}
+              >
+                {describeFinding(finding, label)}
+              </button>
+              <span className="severity">{finding.severity.toFixed(1)}× tolerance</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
 }
 
 /** What the session has done, newest at the bottom. */
-export function AnalysisPanel({ activity }: AnalysisPanelProps) {
+function ActivityLog({ activity }: { activity: Activity[] }) {
   const end = useRef<HTMLOListElement | null>(null);
 
   useEffect(() => {

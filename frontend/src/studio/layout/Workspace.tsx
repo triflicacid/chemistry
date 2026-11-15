@@ -1,7 +1,7 @@
 import type {ReactNode} from "react";
 import type {Vec3} from "../../api/types/structure";
 import type {Activity, SessionPhase, SubmitResult} from "../session/useSession";
-import type {AtomMove, Pose, SessionState} from "../session/messages";
+import type {AtomMove, GeometryResult, Pose, SessionState} from "../session/messages";
 import type {Models} from "../selection/models";
 import type {LayoutState, Panel} from "../store";
 import {AnalysisPanel} from "./AnalysisPanel";
@@ -15,6 +15,9 @@ import {Viewport} from "./Viewport";
 export interface WorkspaceProps {
   phase: SessionPhase;
   state: SessionState | null;
+  geometry: GeometryResult | null;
+  /** How strained the geometry is, ready to show, or null if it has not been worked out. */
+  strain: string | null;
   models: Models;
   activity: Activity[];
   layout: LayoutState;
@@ -39,7 +42,7 @@ export interface WorkspaceProps {
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onUndo, onRedo } = props;
+  const { phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -71,6 +74,7 @@ export function Workspace(props: WorkspaceProps) {
         canUndo={state?.can_undo ?? false}
         canRedo={state?.can_redo ?? false}
         saved={state?.saved_molecule_id != null}
+        strain={strain}
         onUndo={onUndo}
         onRedo={onRedo}
       />
@@ -91,6 +95,7 @@ export function Workspace(props: WorkspaceProps) {
         <Viewport
           phase={phase}
           state={state}
+          geometry={geometry}
           models={models}
           onOpenSmiles={onOpenSmiles}
           onDragAtoms={onDragAtoms}
@@ -109,7 +114,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <Side panel="inspector" name="Inspector" collapsed={layout.inspectorCollapsed} onCollapse={onCollapse}>
-        <Inspector state={state} models={models} onMoveAtom={onMoveAtom} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
+        <Inspector state={state} geometry={geometry} models={models} onMoveAtom={onMoveAtom} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
       </Side>
 
       {!layout.analysisCollapsed && (
@@ -122,7 +127,7 @@ export function Workspace(props: WorkspaceProps) {
         <Header name="Activity" panel="analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
         {!layout.analysisCollapsed && (
           <div className="panel-body">
-            <AnalysisPanel activity={activity} />
+            <AnalysisPanel activity={activity} state={state} geometry={geometry} models={models} />
           </div>
         )}
       </section>

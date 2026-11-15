@@ -449,6 +449,32 @@ class StudioSessionTest
     }
 
     @Test
+    void takes_a_snapshot_of_the_positions_in_atom_order_at_the_version_they_are_at()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 2, 3))), true);
+
+        StudioSession.Snapshot snapshot = session.snapshot();
+
+        assertThat(snapshot.version()).isEqualTo(2);
+        assertThat(snapshot.positions()).isEqualTo(ids(session).stream().map(session::positionOf).toList());
+        assertThat(snapshot.positions().getFirst()).isEqualTo(new Vec3(1, 2, 3));
+    }
+
+    @Test
+    void keeps_a_snapshot_as_it_was_when_the_session_moves_on()
+    {
+        StudioSession session = open("CCO");
+        StudioSession.Snapshot before = session.snapshot();
+
+        session.move(List.of(new StudioSession.Move(ids(session).getFirst(), new Vec3(9, 9, 9))), true);
+
+        assertThat(before.version()).isEqualTo(1);
+        assertThat(before.positions()).doesNotContain(new Vec3(9, 9, 9));
+    }
+
+    @Test
     void starts_with_the_molecule_where_its_own_frame_is_the_scene()
     {
         assertThat(open("CCO").pose()).isEqualTo(Pose.IDENTITY);

@@ -3,6 +3,7 @@ import {
   Color,
   Group,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   type Object3D,
   Quaternion,
@@ -24,7 +25,7 @@ import {Triad} from "../../render/triad";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
-import type {AtomMove, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
+import type {AtomMove, GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
 import type {Pivot, Space} from "../selection/ToolModel";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
@@ -98,6 +99,18 @@ interface BondNode {
   link: Link;
   drawn: { group: Group; part: Part } | null;
 }
+
+/** The colour of what marks strain. */
+const STRAIN_COLOUR = "#ff2a2a";
+
+/** The colour of the halo on an atom that is only a little strained, which turns to {@link STRAIN_COLOUR} as it gets worse. */
+const MILD_STRAIN_COLOUR = new Color("#ffc233");
+
+/** How strained, in tolerances, an atom has to be for its halo to be as strong as it gets. */
+const STRAIN_SATURATED = 6;
+
+/** The colour of the bonds that make a strained angle. */
+const ANGLE_COLOUR = "#ff9a1f";
 
 /** How far, in radians, the camera may have turned since a triad click and still count as not having moved. */
 const SAME_VIEW = 1e-3;
@@ -185,6 +198,10 @@ export class StudioView {
   /** The pose last drawn, so that an unchanged one is not drawn again. */
   private drawnPose: Pose | null = null;
   private grab: Grab | null = null;
+  /** What the session last said of its geometry, which the strain markers are drawn from. */
+  private strainResult: GeometryResult | null = null;
+  /** The strain markers, which sit in the molecule's group so that they move with it, or null while there are none. */
+  private strainMarks: Group | null = null;
   /** The atoms the gizmo is carrying, each with where it was picked up, or null while it is not carrying any. */
   private shifting: { node: AtomNode; original: Vector3 }[] | null = null;
   /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
@@ -554,6 +571,88 @@ export class StudioView {
     this.syncGizmo();
   }
 
+  /**
+   * Marks where the geometry is strained.
+   *
+   * @param result what the session said of its geometry, or null to show nothing
+   */
+  setStrain(result: GeometryResult | null): void {
+    this.strainResult = result;
+    this.drawStrain();
+  }
+
+  /** Draws the strain markers afresh from the report, replacing what was drawn. */
+  private drawStrain(): void {
+    if (this.strainMarks) {
+      this.content.remove(this.strainMarks);
+      disposeMaterials(this.strainMarks);
+      this.strainMarks = null;
+    }
+
+    const result = this.strainResult;
+    if (result && result.status === "complete" && this.atoms.length > 0) {
+      const marks = new Group();
+      for (const { id, strain } of result.atom_strain) {
+        const node = this.atomById.get(id);
+        if (!node) {
+          continue;
+        }
+        // a share is in tolerances, and six is as strained as it is worth telling apart: a faint amber halo that grows,
+        // brightens and turns solid red as it gets there
+        const amount = Math.min(1, strain / STRAIN_SATURATED);
+        const halo = new Mesh(
+          this.kit.sphereGeometry,
+          new MeshBasicMaterial({
+            color: MILD_STRAIN_COLOUR.clone().lerp(new Color(STRAIN_COLOUR), amount),
+            transparent: true,
+            opacity: 0.25 + 0.65 * amount,
+            depthWrite: false,
+          }),
+        );
+        halo.position.copy(node.at);
+        halo.scale.setScalar(ballRadius(node.atom.radius, STYLE, true) * (1.25 + 0.4 * amount));
+        halo.renderOrder = 5;
+        marks.add(halo);
+      }
+      for (const clash of result.clashes) {
+        const first = this.atomById.get(clash.first);
+        const second = this.atomById.get(clash.second);
+        if (first && second) {
+          marks.add(this.kit.cylinder(first.at, second.at, 0.03, new MeshBasicMaterial({ color: STRAIN_COLOUR, depthTest: false })));
+        }
+      }
+
+      const line = (a: Vector3, b: Vector3, colour: string, width: number) =>
+        marks.add(this.kit.cylinder(a, b, width, new MeshBasicMaterial({ color: colour, depthTest: false })));
+      for (const finding of result.findings) {
+        const nodes = finding.atoms.map((id) => this.atomById.get(id));
+        if (nodes.some((node) => !node)) {
+          continue;
+        }
+        const [first, middle, last] = nodes as AtomNode[];
+
+        if (finding.kind === "bond" && first && middle) {
+          // the bond itself, with how long it is
+          line(first.at, middle.at, STRAIN_COLOUR, 0.05);
+          const note = this.kit.labels.label(`${finding.actual.toFixed(3)} Å`, "#c00000", 0.22);
+          note.position.copy(first.at.clone().add(middle.at).multiplyScalar(0.5));
+          marks.add(note);
+        } else if (finding.kind === "angle" && first && middle && last) {
+          // the two bonds that make the angle, with how wide it is at the atom between them
+          line(middle.at, first.at, ANGLE_COLOUR, 0.035);
+          line(middle.at, last.at, ANGLE_COLOUR, 0.035);
+          const inside = first.at.clone().sub(middle.at).normalize().add(last.at.clone().sub(middle.at).normalize());
+          const note = this.kit.labels.label(`${finding.actual.toFixed(1)}°`, "#b35900", 0.22);
+          note.position.copy(middle.at).addScaledVector(inside.lengthSq() > 1e-9 ? inside.normalize() : new Vector3(0, 1, 0), 0.6);
+          marks.add(note);
+        }
+      }
+      this.content.add(marks);
+      this.strainMarks = marks;
+    }
+    this.stage.requestRender();
+  }
+
   /** Points the camera at the whole scene. */
   frameScene(): void {
     this.frameAtoms(this.atoms.map((node) => node.atom.id));
@@ -857,6 +956,7 @@ export class StudioView {
   private clear(): void {
     disposeMaterials(this.content);
     this.content.clear();
+    this.strainMarks = null;
     this.registry.clear();
     this.atoms = [];
     this.bonds = [];

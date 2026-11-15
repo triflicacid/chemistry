@@ -30,7 +30,6 @@ import java.util.Set;
  * @param fragments the disconnected parts of the molecule
  * @param locked the atoms and bonds that refuse an edit
  * @param transform where the molecule sits in the scene; the atoms' positions are in the molecule's own frame
- * @param strain how far the working geometry strays from its ideal lengths, angles and contacts
  * @param canUndo whether there is an edit to take back
  * @param canRedo whether there is an undone edit to make again
  */
@@ -47,7 +46,6 @@ public record StudioState(
         List<FragmentState> fragments,
         List<String> locked,
         Pose transform,
-        double strain,
         boolean canUndo,
         boolean canRedo)
 {
@@ -167,7 +165,6 @@ public record StudioState(
                 fragments,
                 List.copyOf(session.locked()),
                 session.pose(),
-                session.strain(),
                 session.canUndo(),
                 session.canRedo());
     }

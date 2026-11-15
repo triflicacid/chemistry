@@ -18,6 +18,7 @@ export function App() {
   const {
     phase,
     state,
+    geometry,
     activity,
     openSmiles,
     submitSmiles,
@@ -134,6 +135,17 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleLock]);
 
+  // a result describes the version it was made at, so it is out of date once the session has moved on from that
+  const strain = useMemo(() => {
+    if (!geometry) {
+      return null;
+    }
+    if (geometry.status === "failed" || geometry.strain === null) {
+      return "strain unavailable";
+    }
+    return `strain ${geometry.strain.toFixed(1)}${geometry.version === state?.version ? "" : "…"}`;
+  }, [geometry, state?.version]);
+
   const undoEdit = useCallback(() => void undo(), [undo]);
   const redoEdit = useCallback(() => void redo(), [redo]);
 
@@ -149,6 +161,8 @@ export function App() {
     <Workspace
       phase={phase}
       state={state}
+      geometry={geometry}
+      strain={strain}
       models={models}
       activity={activity}
       layout={layout}

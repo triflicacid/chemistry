@@ -3,6 +3,7 @@ package com.ruben.chemistry.server.resource;
 import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.studio.GeometryScheduler;
 import com.ruben.chemistry.server.studio.StudioSessionStore;
 import com.ruben.chemistry.server.ws.SocketHarness;
 import com.ruben.chemistry.server.ws.SocketHarness.Collector;
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StudioSocketEndpointTest
 {
     /** The start of every message, naming the protocol the client is written for. */
-    private static final String PROTOCOL = "\"protocol_version\": 6, ";
+    private static final String PROTOCOL = "\"protocol_version\": 7, ";
 
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
@@ -32,7 +33,8 @@ class StudioSocketEndpointTest
     private final MoleculeStore molecules = new MoleculeStore();
     private final MoleculeParser parser = new MoleculeParser();
 
-    private StudioSocketEndpoint endpoint = new StudioSocketEndpoint(molecules);
+    // results of examining the geometry arrive on their own, so the tests that did not ask for them are not sent any
+    private StudioSocketEndpoint endpoint = new StudioSocketEndpoint(molecules, new StudioSessionStore(), GeometryScheduler.disabled());
     private WebSocketServer server;
 
     @Test
@@ -43,7 +45,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 6L);
+        assertThat(ready).containsEntry("protocol_version", 7L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -88,13 +90,13 @@ class StudioSocketEndpointTest
         collector.next();
 
         // a stale client, a client from the future, and one that never said, each refused for its own reason
-        socket.sendText("{\"protocol_version\": 5, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
+        socket.sendText("{\"protocol_version\": 6, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
         Map<String, Object> stale = collector.nextJson();
         assertThat(error(stale)).containsEntry("code", "PROTOCOL_MISMATCH");
         assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
         assertThat((String) error(stale).get("message")).contains("out of date");
 
-        socket.sendText("{\"protocol_version\": 7, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        socket.sendText("{\"protocol_version\": 8, \"type\": \"session.open\", \"sequence\": 2}", true).join();
         assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
 
         // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
@@ -128,7 +130,7 @@ class StudioSocketEndpointTest
         assertThat(state).containsEntry("smiles", "CCO");
         assertThat(state.get("session_id")).asString().isNotBlank();
         assertThat(state.get("saved_molecule_id")).isNull();
-        assertThat(state.get("strain")).isInstanceOf(Double.class);
+        assertThat(state).doesNotContainKey("strain");
         assertThat(state.get("locked")).isEqualTo(List.of());
 
         // ethanol's three written atoms and the six hydrogens it counted
@@ -660,6 +662,66 @@ class StudioSocketEndpointTest
     }
 
     @Test
+    void should_send_the_strain_of_the_geometry_once_it_is_left_alone() throws Exception
+    {
+        endpoint = new StudioSocketEndpoint(molecules, new StudioSessionStore(), new GeometryScheduler(Duration.ofMillis(30)));
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+
+        Map<String, Object> first = collector.nextJson();
+        assertThat(first).containsEntry("type", "geometry.result").containsEntry("session_id", sessionId)
+                .containsEntry("version", 1L).containsEntry("status", "complete");
+        assertThat((Double) first.get("strain")).isZero();
+        assertThat(list(first, "clashes")).isEmpty();
+
+        // two atoms put on top of each other, which is as strained as a geometry gets
+        String atom = (String) list(opened, "atoms").getFirst().get("id");
+        Map<String, Object> other = list(opened, "atoms").get(2);
+        Map<String, Object> there = position(other);
+        socket.sendText(patch(sessionId, 1, true, atom, ((Number) there.get("x")).doubleValue(), ((Number) there.get("y")).doubleValue(),
+                ((Number) there.get("z")).doubleValue(), 2), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "atom.patch.ack");
+
+        Map<String, Object> second = collector.nextJson();
+        assertThat(second).containsEntry("type", "geometry.result").containsEntry("version", 2L);
+        assertThat((Double) second.get("strain")).isGreaterThan((Double) first.get("strain"));
+        assertThat(list(second, "findings")).isNotEmpty();
+    }
+
+    @Test
+    void should_send_one_result_for_a_drag_of_patches_and_it_for_the_last_version() throws Exception
+    {
+        endpoint = new StudioSocketEndpoint(molecules, new StudioSessionStore(), new GeometryScheduler(Duration.ofMillis(150)));
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String atom = (String) list(opened, "atoms").getFirst().get("id");
+
+        socket.sendText(patch(sessionId, 1, false, atom, 4, 4, 4, 2), true).join();
+        socket.sendText(patch(sessionId, 2, false, atom, 5, 5, 5, 3), true).join();
+        socket.sendText(patch(sessionId, 3, true, atom, 6, 6, 6, 4), true).join();
+
+        // the acknowledgements come first, and then the one result, for the version the drag ended at
+        for (int ack = 0; ack < 3; ack++)
+        {
+            assertThat(collector.nextJson()).containsEntry("type", "atom.patch.ack");
+        }
+        assertThat(collector.nextJson()).containsEntry("type", "geometry.result").containsEntry("version", 4L);
+        assertThat(collector.messages.poll(400, java.util.concurrent.TimeUnit.MILLISECONDS)).isNull();
+    }
+
+    @Test
     void should_refuse_a_lock_it_cannot_make() throws Exception
     {
         StoredMolecule stored = store("CCO");
@@ -788,7 +850,7 @@ class StudioSocketEndpointTest
     private StudioSessionStore expiringAtOnce()
     {
         StudioSessionStore expiring = new StudioSessionStore(Duration.ZERO, Clock.systemUTC());
-        endpoint = new StudioSocketEndpoint(molecules, expiring);
+        endpoint = new StudioSocketEndpoint(molecules, expiring, GeometryScheduler.disabled());
         return expiring;
     }
 

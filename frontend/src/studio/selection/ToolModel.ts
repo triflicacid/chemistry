@@ -22,12 +22,14 @@ export interface ToolState {
   pivot: Pivot;
   /** Where the pivot is when it is `point`, in the scene, in angstroms. */
   point: Vec3;
+  /** Whether strain is shown: marked in the viewport, and detailed for what is selected. */
+  strain: boolean;
 }
 
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 } });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false });
   }
 
   /**
@@ -71,6 +73,17 @@ export class ToolModel extends Observable<ToolState> {
   pivotOn(pivot: Pivot): void {
     if (this.get().pivot !== pivot) {
       this.set({ ...this.get(), pivot });
+    }
+  }
+
+  /**
+   * Shows strain, or stops showing it.
+   *
+   * @param on whether to show it
+   */
+  showStrain(on: boolean): void {
+    if (this.get().strain !== on) {
+      this.set({ ...this.get(), strain: on });
     }
   }
 

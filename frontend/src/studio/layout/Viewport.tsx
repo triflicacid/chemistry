@@ -3,15 +3,18 @@ import type {Item} from "../selection/items";
 import type {Models, PickMode} from "../selection/models";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
-import type {AtomMove, Pose, SessionState} from "../session/messages";
+import type {AtomMove, GeometryResult, Pose, SessionState} from "../session/messages";
 import type {SessionPhase} from "../session/useSession";
 import {type Constraint, constraintForKey} from "../viewport/dragPlane";
 import {type StudioPick, StudioView} from "../viewport/StudioView";
+import {isCurrent} from "./findings";
 import {OpenMolecule} from "./OpenMolecule";
 
 export interface ViewportProps {
   phase: SessionPhase;
   state: SessionState | null;
+  /** What the server last said about the geometry. */
+  geometry: GeometryResult | null;
   models: Models;
   onOpenSmiles: (smiles: string) => void;
   /** Atoms have been dragged to positions, and the drag is not over. */
@@ -42,6 +45,7 @@ const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
 export function Viewport({
   phase,
   state,
+  geometry,
   models,
   onOpenSmiles,
   onDragAtoms,
@@ -57,7 +61,7 @@ export function Viewport({
   const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickMode>("element");
   const { selection, hover, tools, index } = models;
-  const { tool, constraint, space, pivot, point } = useObservable(tools);
+  const { tool, constraint, space, pivot, point, strain } = useObservable(tools);
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -87,6 +91,12 @@ export function Viewport({
   useEffect(() => {
     view?.setDebug(debug);
   }, [view, debug]);
+
+  // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
+  const markable = strain && isCurrent(geometry, state);
+  useEffect(() => {
+    view?.setStrain(markable ? geometry : null);
+  }, [view, markable, geometry]);
 
   useEffect(() => {
     view?.setMoving(tool === "move");
@@ -258,6 +268,15 @@ export function Viewport({
           </button>
           <button type="button" className="tool" aria-pressed={axes} title="Show or hide the x, y and z axes at the origin" onClick={() => setAxes(!axes)}>
             Axes
+          </button>
+          <button
+            type="button"
+            className="tool"
+            aria-pressed={strain}
+            title="Mark what is strained: a red halo on atoms, red bonds with their lengths, orange angles with their sizes, and a red line between atoms that are too close. Selecting an atom or bond then details its strain"
+            onClick={() => tools.showStrain(!strain)}
+          >
+            Strain
           </button>
           <button
             type="button"
