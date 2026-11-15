@@ -2,6 +2,8 @@ import {
   Box3,
   Color,
   Group,
+  LineBasicMaterial,
+  type LineSegments,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -25,6 +27,7 @@ import {Primitives} from "../../render/primitives";
 import {Stage} from "../../render/stage";
 import {Triad} from "../../render/triad";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
+import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
 import type {AtomMove, GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
@@ -189,6 +192,8 @@ export class StudioView {
   private lastClick: (ScreenPoint & { at: number }) | null = null;
   /** Whether a left-drag pans the view, and a right-drag orbits it. */
   private panning = false;
+  /** The grid being shown, or null while there is none. */
+  private grid: LineSegments | null = null;
   private locked: ReadonlySet<string> = new Set();
   /** Whether pressing on an atom picks it up. */
   private moving = false;
@@ -200,7 +205,7 @@ export class StudioView {
   /**
    * The point the view was last anchored on, in the molecule's own frame so that it stays on the same spot of the
    * molecule when the molecule is moved. Panning does not change it: only framing, a right-click and a double-click do.
-   * The scene axes are drawn here.
+   * The scene axes and the grid are centred here.
    */
   private anchor = new Vector3();
   /** What the molecule's gizmo does, or null while it is not shown. */
@@ -337,7 +342,7 @@ export class StudioView {
     this.content.position.set(pose.position.x, pose.position.y, pose.position.z);
     this.content.quaternion.set(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
     this.content.updateMatrixWorld(true);
-    this.placeAxes();
+    this.placeReferences();
     this.placeGuide();
     this.stage.requestRender();
   }
@@ -360,6 +365,7 @@ export class StudioView {
    */
   setSpace(space: Space): void {
     this.space = space;
+    this.placeGrid();
     this.syncGizmo();
     this.refreshGuide();
   }
@@ -729,8 +735,53 @@ export class StudioView {
    */
   private anchorOn(world: Vector3): void {
     this.anchor = this.content.worldToLocal(world.clone());
-    this.placeAxes();
+    this.placeReferences();
     this.syncGizmo();
+  }
+
+  /** Puts the axes and the grid where they belong, which is where the anchor and the molecule now are. */
+  private placeReferences(): void {
+    this.placeAxes();
+    this.placeGrid();
+  }
+
+  /**
+   * Shows a grid in one of the scene's planes, or in all three, or takes it away.
+   * <p>
+   * The grid is centred on the orbit anchor, where the axes are drawn. In **World** space its lines run along the scene's
+   * axes; in **Local** space they turn with the molecule.
+   *
+   * @param kind the grid to show, or {@code null} for none
+   * @param plane the plane it lies in, or all three
+   */
+  setGrid(kind: GridKind | null, plane: GridPlaneChoice): void {
+    if (this.grid) {
+      this.stage.scene.remove(this.grid);
+      this.grid.geometry.dispose();
+      (this.grid.material as LineBasicMaterial).dispose();
+      this.grid = null;
+    }
+
+    if (kind) {
+      this.grid = buildGrid(kind, plane);
+      this.stage.scene.add(this.grid);
+      this.placeGrid();
+    }
+    this.stage.requestRender();
+  }
+
+  /** Moves the grid onto the anchor, and turns it with the molecule if the space is the molecule's own. */
+  private placeGrid(): void {
+    const grid = this.grid;
+    if (!grid) {
+      return;
+    }
+
+    this.content.updateMatrixWorld(true);
+    const centre = this.content.localToWorld(this.anchor.clone());
+    grid.position.copy(centre);
+    grid.quaternion.copy(this.space === "local" ? this.content.quaternion : new Quaternion());
+    this.stage.requestRender();
   }
 
   /**
@@ -854,6 +905,7 @@ export class StudioView {
     this.guide?.dispose();
     this.triad.dispose();
     disposeMaterials(this.axes);
+    this.setGrid(null, "xz");
     this.kit.dispose();
     this.stage.dispose();
     this.listeners.clear();

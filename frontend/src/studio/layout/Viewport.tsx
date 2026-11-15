@@ -6,6 +6,7 @@ import type {StateIndex} from "../selection/StateIndex";
 import type {AtomMove, GeometryResult, Pose, SessionState} from "../session/messages";
 import type {SessionPhase} from "../session/useSession";
 import {type Constraint, constraintForKey} from "../viewport/dragPlane";
+import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {type StudioPick, StudioView} from "../viewport/StudioView";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "./OpenMolecule";
@@ -58,6 +59,8 @@ export function Viewport({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
   const [axes, setAxes] = useState(false);
+  const [grid, setGrid] = useState<GridKind | "off">("off");
+  const [gridPlane, setGridPlane] = useState<GridPlaneChoice>("xz");
   const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickMode>("element");
   const { selection, hover, tools, index } = models;
@@ -91,6 +94,10 @@ export function Viewport({
   useEffect(() => {
     view?.setDebug(debug);
   }, [view, debug]);
+
+  useEffect(() => {
+    view?.setGrid(grid === "off" ? null : grid, gridPlane);
+  }, [view, grid, gridPlane]);
 
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);
@@ -280,6 +287,25 @@ export function Viewport({
           <button type="button" className="tool" aria-pressed={axes} title="Show or hide the x, y and z axes at the origin" onClick={() => setAxes(!axes)}>
             Axes
           </button>
+          <label className="tool-select" title="Show a grid: lines every angstrom, or rings and spokes about the orbit anchor. In Local space a square grid turns with the molecule">
+            Grid
+            <select value={grid} onChange={(event) => setGrid(event.target.value as GridKind | "off")}>
+              <option value="off">Off</option>
+              <option value="cartesian">Square</option>
+              <option value="polar">Polar</option>
+            </select>
+          </label>
+          {grid !== "off" && (
+            <label className="tool-select" title="The plane the grid lies in, named by the scene axes that span it, or all three at once (which reach less far)">
+              Plane
+              <select value={gridPlane} onChange={(event) => setGridPlane(event.target.value as GridPlaneChoice)}>
+                <option value="xz">XZ</option>
+                <option value="xy">XY</option>
+                <option value="yz">YZ</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+          )}
           <button
             type="button"
             className="tool"

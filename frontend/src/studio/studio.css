@@ -770,3 +770,21 @@ body.resizing {
 .optimise-bad {
   border-left-color: var(--bad);
 }
+
+.tool-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.tool-select select {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.3rem;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+}
