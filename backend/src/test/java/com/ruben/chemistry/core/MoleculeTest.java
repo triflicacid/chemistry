@@ -5,7 +5,7 @@ import com.ruben.chemistry.smiles.SmilesWriter;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.FieldSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -1219,28 +1219,18 @@ class MoleculeTest
     @Nested
     class HydrogenRoundTrip
     {
-        static final List<String> COUNTING_HYDROGENS = List.of(
-            "C", "CCO", "OC(=O)c1ccccc1", "C1CCCCC1", "[NH4+]", "[2H]C(Cl)Br", "[13CH4]",
-            "N[C@@H](C)C(=O)O", "F[C@H](Cl)Br", "F/C=C/F", "F/C=C\\F", "C/C=C/Cl");
-
         @ParameterizedTest
-        @FieldSource("COUNTING_HYDROGENS")
-        void reproduces_the_molecule_through_atoms_and_back(String smiles)
+        @CsvSource({
+            "C,4", "CCO,6", "OC(=O)c1ccccc1,6", "C1CCCCC1,12", "[NH4+],4", "[2H]C(Cl)Br,1",
+            "[13CH4],4", "N[C@@H](C)C(=O)O,7", "F[C@H](Cl)Br,1", "F/C=C/F,2", "F/C=C\\F,2", "C/C=C/Cl,5"})
+        void reproduces_the_molecule_through_atoms_and_back(String smiles, int counted)
         {
             Molecule molecule = Molecule.fromSmiles(smiles);
 
-            Molecule roundTripped = Hydrogens.asCounts(Hydrogens.asAtoms(molecule));
+            Molecule atoms = Hydrogens.asAtoms(molecule);
 
-            assertThat(canonical(roundTripped)).isEqualTo(canonical(molecule));
-        }
-
-        @ParameterizedTest
-        @FieldSource("COUNTING_HYDROGENS")
-        void moves_a_hydrogen_in_every_molecule_it_round_trips(String smiles)
-        {
-            Molecule molecule = Molecule.fromSmiles(smiles);
-
-            assertThat(Hydrogens.asAtoms(molecule).atomCount()).isGreaterThan(molecule.atomCount());
+            assertThat(atoms.atomCount()).isEqualTo(molecule.atomCount() + counted);
+            assertThat(canonical(Hydrogens.asCounts(atoms))).isEqualTo(canonical(molecule));
         }
 
         @Test
