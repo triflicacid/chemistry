@@ -137,6 +137,8 @@ export class StudioView {
   /** The session the camera was last framed on, so a new session is framed and an edit to the same one is not. */
   private framedSession: string | null = null;
   private down: { x: number; y: number } | null = null;
+  /** Where the right button was pressed, so that its release can tell a click from a pan. */
+  private rightDown: ScreenPoint | null = null;
   private locked: ReadonlySet<string> = new Set();
   /** Whether pressing on an atom picks it up. */
   private moving = false;
@@ -153,7 +155,15 @@ export class StudioView {
    * @param canvas the canvas to draw on; it is sized to its CSS box
    */
   constructor(canvas: HTMLCanvasElement) {
-    this.stage = new Stage({ canvas, sizedBy: canvas, onMove: () => this.placeGuide() });
+    this.stage = new Stage({
+      canvas,
+      sizedBy: canvas,
+      onMove: () => {
+        // the axes sit on the point the view orbits, so they show where the anchor is
+        this.axes.position.copy(this.stage.controls.target);
+        this.placeGuide();
+      },
+    });
     // off until the viewport says otherwise, so they do not flash on before it does
     this.axes.visible = false;
     this.stage.scene.add(this.content, this.axes);
@@ -166,6 +176,7 @@ export class StudioView {
     canvas.addEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
+    canvas.addEventListener("pointerup", this.onRightClick);
     canvas.addEventListener("pointercancel", this.onCancel);
     window.addEventListener("keydown", this.onKey, { capture: true });
 
@@ -371,6 +382,7 @@ export class StudioView {
     canvas.removeEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.removeEventListener("pointerdown", this.onDown);
     canvas.removeEventListener("pointerup", this.onUp);
+    canvas.removeEventListener("pointerup", this.onRightClick);
     canvas.removeEventListener("pointercancel", this.onCancel);
     window.removeEventListener("keydown", this.onKey, { capture: true });
     this.clear();
@@ -677,6 +689,36 @@ export class StudioView {
 
   private readonly onDown = (event: PointerEvent): void => {
     this.down = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+    this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
+  };
+
+  /**
+   * Re-binds the orbit anchor: a right-click that was not a pan orbits the atom nearest what was clicked, or goes back
+   * to the middle of the molecule if the click was on nothing.
+   */
+  private readonly onRightClick = (event: PointerEvent): void => {
+    const down = this.rightDown;
+    this.rightDown = null;
+    if (event.button !== 2 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_SLOP) {
+      return;
+    }
+
+    const hit = this.registry.cast(this.raycaster, this.stage.camera, this.stage.pointer(event))?.point;
+    let nearest: Vector3 | null = null;
+    let best = Infinity;
+    if (hit) {
+      for (const { at } of this.atoms) {
+        const distance = at.distanceToSquared(hit);
+        if (distance < best) {
+          best = distance;
+          nearest = at;
+        }
+      }
+    }
+
+    const box = new Box3();
+    this.atoms.forEach((node) => box.expandByPoint(node.at));
+    this.stage.pivotOn(nearest?.clone() ?? (box.isEmpty() ? new Vector3() : box.getCenter(new Vector3())));
   };
 
   private readonly onUp = (event: PointerEvent): void => {

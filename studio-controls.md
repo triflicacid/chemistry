@@ -6,6 +6,7 @@
 |---|---|
 | Left-drag | Orbit |
 | Right-drag | Pan |
+| Right-click an atom | Orbit that atom from now on (the nearest atom to the click, if it lands on a bond). Right-click empty space to go back to orbiting the middle of the molecule |
 | Scroll wheel, or middle-drag | Zoom |
 | Touch: one finger / two fingers | Orbit / zoom and pan |
 
@@ -67,7 +68,7 @@ changed on the server while you were editing, the rebuild is refused and the cur
 |---|---|
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
-| Axes | Show or hide the scene axes, which sit at the origin, and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
+| Axes | Show or hide the scene axes, which sit on the point the view orbits (so they move when you re-anchor or pan), and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
 | Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |
 
 ## Outliner
