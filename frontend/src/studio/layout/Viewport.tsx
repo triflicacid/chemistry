@@ -64,7 +64,7 @@ export function Viewport({
   const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickMode>("element");
   const { selection, hover, tools, index } = models;
-  const { tool, constraint, space, pivot, point, strain } = useObservable(tools);
+  const { tool, constraint, space, pivot, point, strain, carryHydrogens } = useObservable(tools);
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -115,6 +115,10 @@ export function Viewport({
   }, [view, constraint]);
 
   useEffect(() => {
+    view?.setCarryHydrogens(carryHydrogens);
+  }, [view, carryHydrogens]);
+
+  useEffect(() => {
     view?.setSpace(space);
   }, [view, space]);
 
@@ -153,6 +157,24 @@ export function Viewport({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [tool, tools, blocked]);
+
+  // H turns carrying hydrogens on and off. Locks do not stop it, since it is the move that a lock refuses
+  useEffect(() => {
+    if (tool !== "move") {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable]") || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.key.toLowerCase() === "h") {
+        tools.carry(!tools.get().carryHydrogens);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tool, tools]);
 
   useEffect(() => {
     if (!view || !index) {
@@ -253,6 +275,17 @@ export function Viewport({
                 </button>
               ))}
             </div>
+          )}
+          {tool === "move" && (
+            <button
+              type="button"
+              className="tool"
+              aria-pressed={carryHydrogens}
+              title="When on, moving an atom carries the hydrogens bonded to it by the same amount, so their bonds keep their lengths and angles (H). Nothing is locked"
+              onClick={() => tools.carry(!carryHydrogens)}
+            >
+              Carry H
+            </button>
           )}
           {tool === "rotate" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
           {tool === "move" && !moleculeSelected && (

@@ -27,12 +27,14 @@ export interface ToolState {
   point: Vec3;
   /** Whether strain is shown: marked in the viewport, and detailed for what is selected. */
   strain: boolean;
+  /** Whether moving an atom carries the hydrogens bonded to it. This is a convenience, and nothing is locked. */
+  carryHydrogens: boolean;
 }
 
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false });
   }
 
   /**
@@ -87,6 +89,17 @@ export class ToolModel extends Observable<ToolState> {
   showStrain(on: boolean): void {
     if (this.get().strain !== on) {
       this.set({ ...this.get(), strain: on });
+    }
+  }
+
+  /**
+   * Makes moving an atom carry the hydrogens bonded to it, or stops it.
+   *
+   * @param on whether to carry them
+   */
+  carry(on: boolean): void {
+    if (this.get().carryHydrogens !== on) {
+      this.set({ ...this.get(), carryHydrogens: on });
     }
   }
 

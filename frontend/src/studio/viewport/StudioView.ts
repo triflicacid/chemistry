@@ -27,6 +27,7 @@ import {Primitives} from "../../render/primitives";
 import {Stage} from "../../render/stage";
 import {Triad} from "../../render/triad";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
+import {withTerminalHydrogens} from "./carry";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
@@ -192,6 +193,8 @@ export class StudioView {
   private lastClick: (ScreenPoint & { at: number }) | null = null;
   /** Whether a left-drag pans the view, and a right-drag orbits it. */
   private panning = false;
+  /** Whether moving an atom carries the hydrogens bonded to it. */
+  private carryHydrogens = false;
   /** The grid being shown, or null while there is none. */
   private grid: LineSegments | null = null;
   private locked: ReadonlySet<string> = new Set();
@@ -411,9 +414,26 @@ export class StudioView {
     return [...this.emphasis.selected.atoms].flatMap((id) => this.atomById.get(id) ?? []);
   }
 
+  /**
+   * Adds the hydrogens that go with some atoms when they are moved, if that is on.
+   *
+   * @param ids the atoms to move
+   * @returns them, and, when carrying hydrogens, the terminal hydrogens bonded to them
+   */
+  private withCarried(ids: Iterable<string>): string[] {
+    if (!this.carryHydrogens) {
+      return [...ids];
+    }
+
+    return withTerminalHydrogens(ids, (id) => {
+      const node = this.atomById.get(id);
+      return node && { id, element: node.atom.element, neighbours: node.neighbours.flatMap((at) => this.atoms[at]?.atom.id ?? []) };
+    });
+  }
+
   /** A handle of the gizmo has been taken hold of in the atoms mode: the selected atoms are picked up. */
   private startShift(): void {
-    const nodes = this.selectedNodes();
+    const nodes = this.withCarried(this.emphasis.selected.atoms).flatMap((id) => this.atomById.get(id) ?? []);
     if (nodes.length === 0) {
       return;
     }
@@ -822,6 +842,18 @@ export class StudioView {
   }
 
   /**
+   * Makes moving atoms carry the hydrogens bonded to them, each by the same offset, or stops it. Only what is picked up
+   * from now on is affected: a drag already begun keeps what it took.
+   *
+   * @param enabled whether to carry them
+   */
+  setCarryHydrogens(enabled: boolean): void {
+    this.carryHydrogens = enabled;
+    this.refreshGuide();
+    this.syncGizmo();
+  }
+
+  /**
    * Makes a left-drag pan the view, with a right-drag orbiting it, or puts them back as they were: left orbits, right
    * pans. Touch follows the left button, so one finger pans and two still zoom.
    *
@@ -922,19 +954,19 @@ export class StudioView {
 
   /** Whether a locked atom is among the selected ones, which keeps the selection from being moved. */
   private selectionLocked(): boolean {
-    return [...this.emphasis.selected.atoms].some((id) => this.locked.has(id));
+    return this.withCarried(this.emphasis.selected.atoms).some((id) => this.locked.has(id));
   }
 
   /**
    * The atoms a press on an atom would pick up: the whole selection if the atom is one of several selected, and
-   * otherwise only the atom.
+   * otherwise only the atom, with the hydrogens bonded to them if those are being carried.
    *
    * @param id the atom pressed on
    * @returns the identifiers of the atoms that would move
    */
   private groupOf(id: string): string[] {
     const selected = this.emphasis.selected.atoms;
-    return selected.has(id) && selected.size > 1 ? [...selected] : [id];
+    return this.withCarried(selected.has(id) && selected.size > 1 ? selected : [id]);
   }
 
   /** Draws the guide for the current constraint afresh, or removes it when there is nothing for it to show. */
