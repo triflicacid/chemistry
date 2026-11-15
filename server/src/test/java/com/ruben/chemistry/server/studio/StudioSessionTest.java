@@ -13,11 +13,14 @@ import com.ruben.chemistry.space.Vec3;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 class StudioSessionTest
 {
@@ -475,6 +478,83 @@ class StudioSessionTest
     }
 
     @Test
+    void takes_what_an_optimisation_needs_at_the_version_it_is_at()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).get(3);
+        session.lock(List.of(atom), true);
+
+        StudioSession.OptimisationInput input = session.beginOptimisation();
+
+        assertThat(input.version()).isEqualTo(2);
+        assertThat(input.sites()).hasSize(9).contains(atom);
+        assertThat(input.structure().sites()).hasSameSizeAs(input.sites());
+        assertThat(input.lockedSites()).containsExactly(input.sites().indexOf(atom));
+        assertThat(input.structure().conformers().getFirst().positions().get(input.sites().indexOf(atom))).isEqualTo(session.positionOf(atom));
+    }
+
+    @Test
+    void refuses_to_take_an_optimisation_while_an_edit_is_in_progress()
+    {
+        StudioSession session = open("CCO");
+        session.move(List.of(new StudioSession.Move(ids(session).getFirst(), new Vec3(1, 2, 3))), false);
+
+        assertThatThrownBy(session::beginOptimisation)
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("BUSY"));
+    }
+
+    @Test
+    void files_an_optimisation_as_one_edit_and_leaves_locked_atoms_where_they_are()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        session.lock(List.of(ids.get(1)), true);
+        Vec3 held = session.positionOf(ids.get(1));
+
+        StudioSession.Applied applied = session.optimised(2, Map.of(
+                ids.get(0), new Vec3(1, 2, 3),
+                ids.get(1), new Vec3(4, 5, 6),
+                ids.get(2), new Vec3(7, 8, 9))).orElseThrow();
+
+        assertThat(applied.version()).isEqualTo(3);
+        assertThat(applied.moved()).containsOnlyKeys(ids.get(0), ids.get(2));
+        assertThat(session.positionOf(ids.get(1))).isEqualTo(held);
+        assertThat(session.canUndo()).isTrue();
+
+        session.undo();
+        assertThat(session.positionOf(ids.get(0))).isNotEqualTo(new Vec3(1, 2, 3));
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void ignores_an_optimisation_made_from_a_version_the_session_has_moved_on_from()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 where = session.positionOf(atom);
+        session.move(List.of(new StudioSession.Move(ids(session).get(1), new Vec3(1, 2, 3))), true);
+
+        assertThat(session.optimised(1, Map.of(atom, new Vec3(7, 8, 9)))).isEmpty();
+
+        assertThat(session.positionOf(atom)).isEqualTo(where);
+        assertThat(session.version()).isEqualTo(2);
+    }
+
+    @Test
+    void leaves_the_version_alone_when_an_optimisation_moves_nothing_that_matters()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 where = session.positionOf(atom);
+
+        StudioSession.Applied applied = session.optimised(1, Map.of(atom, where.plus(new Vec3(1e-9, 0, 0)))).orElseThrow();
+
+        assertThat(applied.version()).isEqualTo(1);
+        assertThat(applied.moved()).isEmpty();
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
     void starts_with_the_molecule_where_its_own_frame_is_the_scene()
     {
         assertThat(open("CCO").pose()).isEqualTo(Pose.IDENTITY);
@@ -635,6 +715,364 @@ class StudioSessionTest
 
         assertThat(reopened.pose()).isEqualTo(pose);
         assertThat(reopened.rebuilt(parser.parse("CC").molecule(), 1).pose()).isEqualTo(Pose.IDENTITY);
+    }
+
+    @Test
+    void should_give_a_bond_a_length_as_one_edit_that_can_be_undone()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        double before = session.positionOf(ids.get(0)).distanceTo(session.positionOf(ids.get(1)));
+
+        StudioSession.Applied applied = session.setBondLength(bond, 2.0, ids.get(0), true);
+
+        assertThat(session.positionOf(ids.get(0)).distanceTo(session.positionOf(ids.get(1)))).isCloseTo(2.0, within(1e-9));
+        assertThat(applied.version()).isEqualTo(2);
+        assertThat(applied.moved()).doesNotContainKey(ids.get(0)).containsKey(ids.get(1));
+        assertThat(session.canUndo()).isTrue();
+
+        session.undo();
+        assertThat(session.positionOf(ids.get(0)).distanceTo(session.positionOf(ids.get(1)))).isCloseTo(before, within(1e-9));
+    }
+
+    @Test
+    void should_carry_everything_beyond_a_bond_along_when_it_changes_length()
+    {
+        StudioSession session = open("CCO");
+        Map<String, Double> lengths = bondLengths(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+
+        session.setBondLength(bond, 1.9, ids(session).get(0), true);
+
+        // only the bond that was changed has a different length
+        Map<String, Double> after = bondLengths(session);
+        lengths.forEach((id, length) -> assertThat(after.get(id)).isCloseTo(id.equals(bond) ? 1.9 : length, within(1e-9)));
+    }
+
+    @Test
+    void should_refuse_a_length_edit_that_would_move_a_locked_atom_but_not_one_on_the_held_side()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        session.lock(List.of(ids.get(2)), true);
+
+        assertThat(code(() -> session.setBondLength(bond, 2.0, ids.get(0), true))).isEqualTo("LOCKED");
+
+        session.lock(List.of(ids.get(2)), false);
+        session.lock(List.of(ids.get(0)), true);
+        session.setBondLength(bond, 2.0, ids.get(0), true);
+        assertThat(session.canUndo()).isTrue();
+    }
+
+    @Test
+    void should_refuse_a_bond_edit_that_names_something_it_does_not_hold_or_is_not_allowed()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        long version = session.version();
+
+        assertThat(code(() -> session.setBondLength("b99", 1.5, null, true))).isEqualTo("UNKNOWN_ID");
+        assertThat(code(() -> session.setBondLength(bond, 1.5, "a99", true))).isEqualTo("UNKNOWN_ID");
+        assertThat(code(() -> session.setBondLength(bond, 50, null, true))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.setBondLength(bond, Double.NaN, null, true))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.setBondLength(bond, 1.5, ids.get(2), true))).isEqualTo("INVALID_EDIT");
+        assertThat(session.version()).isEqualTo(version);
+    }
+
+    @Test
+    void should_leave_the_version_alone_when_a_bond_already_has_the_length_asked_for()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        double length = session.positionOf(ids.get(0)).distanceTo(session.positionOf(ids.get(1)));
+
+        StudioSession.Applied applied = session.setBondLength(bond, length, null, true);
+
+        assertThat(applied.version()).isEqualTo(1);
+        assertThat(applied.moved()).isEmpty();
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_file_a_drag_of_a_bond_as_one_edit_however_many_changes_it_took()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        Map<String, Double> before = bondLengths(session);
+
+        session.setBondLength(bond, 1.7, ids.get(0), false);
+        session.setBondLength(bond, 1.9, ids.get(0), false);
+
+        // the last of the drag puts nothing further anywhere, and still ends the edit
+        StudioSession.Applied ended = session.setBondLength(bond, 1.9, ids.get(0), true);
+        assertThat(ended.moved()).isEmpty();
+        assertThat(session.canUndo()).isTrue();
+        assertThat(bondLengths(session).get(bond)).isCloseTo(1.9, within(1e-9));
+
+        session.undo();
+        assertThat(session.canUndo()).isFalse();
+        bondLengths(session).forEach((id, length) -> assertThat(length).isCloseTo(before.get(id), within(1e-9)));
+    }
+
+    @Test
+    void should_file_a_drag_of_a_torsion_as_one_edit_to_undo()
+    {
+        StudioSession session = open("CCO");
+        Atom first = session.molecule().atoms().get(0);
+        Atom second = session.molecule().atoms().get(1);
+        String bond = session.bondId(session.molecule().bondBetween(first, second).orElseThrow());
+        String from = session.atomId(session.molecule().neighboursOf(first).stream().filter(atom -> atom.element().equals("H")).findFirst().orElseThrow());
+        String to = session.atomId(session.molecule().atoms().get(2));
+        String held = session.atomId(first);
+        double start = Vec3.torsion(session.positionOf(from), session.positionOf(held), session.positionOf(session.atomId(second)), session.positionOf(to));
+
+        session.setBondTorsion(bond, from, to, start + 40, held, false);
+        session.setBondTorsion(bond, from, to, start + 80, held, false);
+        session.setBondTorsion(bond, from, to, start + 30, held, false);
+        session.setBondTorsion(bond, from, to, start + 30, held, true);
+
+        session.undo();
+
+        assertThat(session.canUndo()).isFalse();
+        assertThat(Vec3.torsion(session.positionOf(from), session.positionOf(held), session.positionOf(session.atomId(second)), session.positionOf(to)))
+                .isCloseTo(start, within(1e-9));
+    }
+
+    @Test
+    void should_work_each_change_of_a_drag_out_from_where_the_drag_began()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        Vec3 held = session.positionOf(ids.get(0));
+        Vec3 start = session.positionOf(ids.get(1));
+
+        // through zero to the other side and back, none of it committed, each change saying where the whole drag has got to
+        session.setBondLength(bond, 2.0, ids.get(0), false);
+        session.setBondLength(bond, -0.8, ids.get(0), false);
+        assertThat(session.positionOf(ids.get(1)).distanceTo(held)).isCloseTo(0.8, within(1e-9));
+        assertThat(session.positionOf(ids.get(1)).minus(held).dot(start.minus(held))).isLessThan(0);
+
+        session.setBondLength(bond, 1.2, ids.get(0), true);
+        assertThat(session.positionOf(ids.get(1)).distanceTo(held)).isCloseTo(1.2, within(1e-9));
+        assertThat(session.positionOf(ids.get(1)).minus(held).dot(start.minus(held))).isGreaterThan(0);
+
+        session.undo();
+        assertThat(session.positionOf(ids.get(1))).isEqualTo(start);
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_file_nothing_when_a_drag_comes_back_to_where_it_began()
+    {
+        StudioSession session = open("CCO");
+        Atom first = session.molecule().atoms().get(0);
+        Atom second = session.molecule().atoms().get(1);
+        String bond = session.bondId(session.molecule().bondBetween(first, second).orElseThrow());
+        String from = session.atomId(session.molecule().neighboursOf(first).stream().filter(atom -> atom.element().equals("H")).findFirst().orElseThrow());
+        String to = session.atomId(session.molecule().atoms().get(2));
+        String held = session.atomId(first);
+        double start = Vec3.torsion(session.positionOf(from), session.positionOf(held), session.positionOf(session.atomId(second)), session.positionOf(to));
+
+        session.setBondTorsion(bond, from, to, start + 40, held, false);
+        session.setBondTorsion(bond, from, to, start + 80, held, false);
+        session.setBondTorsion(bond, from, to, start, held, false);
+        session.setBondTorsion(bond, from, to, start, held, true);
+
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_put_back_atoms_an_earlier_change_of_a_drag_moved_that_a_later_one_does_not()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        Vec3 start = session.positionOf(ids.get(1));
+
+        // holding the first atom moves the second and what is beyond it, and holding the second moves the first and what is beyond it
+        session.setBondLength(bond, 2.0, ids.get(0), false);
+        session.setBondLength(bond, 2.0, ids.get(1), false);
+
+        assertThat(session.positionOf(ids.get(1))).isEqualTo(start);
+        assertThat(session.positionOf(ids.get(0)).distanceTo(start)).isCloseTo(2.0, within(1e-9));
+    }
+
+    @Test
+    void should_swing_an_angle_past_a_straight_line_and_treat_a_whole_turn_more_as_the_same()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+
+        session.setAngle(ids.get(1), ids.get(0), ids.get(2), 1, ids.get(0), true);
+        Vec3 one = session.positionOf(ids.get(2));
+        session.undo();
+
+        session.setAngle(ids.get(1), ids.get(0), ids.get(2), 361, ids.get(0), true);
+        assertThat(session.positionOf(ids.get(2)).distanceTo(one)).isLessThan(1e-9);
+        session.undo();
+
+        session.setAngle(ids.get(1), ids.get(0), ids.get(2), 200, ids.get(0), true);
+        assertThat(angleAt(session, ids.get(0), ids.get(1), ids.get(2))).isCloseTo(160, within(1e-6));
+    }
+
+    @Test
+    void should_give_a_bond_a_torsion_keeping_every_bond_length()
+    {
+        StudioSession session = open("CCO");
+        Map<String, Double> lengths = bondLengths(session);
+        Atom first = session.molecule().atoms().get(0);
+        Atom second = session.molecule().atoms().get(1);
+        String bond = session.bondId(session.molecule().bondBetween(first, second).orElseThrow());
+        String from = session.atomId(session.molecule().neighboursOf(first).stream().filter(atom -> atom.element().equals("H")).findFirst().orElseThrow());
+        String to = session.atomId(session.molecule().atoms().get(2));
+        String firstId = session.atomId(first);
+        String secondId = session.atomId(second);
+
+        StudioSession.Applied applied = session.setBondTorsion(bond, from, to, 60, firstId, true);
+
+        assertThat(Vec3.torsion(session.positionOf(from), session.positionOf(firstId), session.positionOf(secondId), session.positionOf(to)))
+                .isCloseTo(60, within(1e-6));
+        assertThat(applied.moved()).doesNotContainKeys(firstId, from);
+        bondLengths(session).forEach((id, length) -> assertThat(length).isCloseTo(lengths.get(id), within(1e-9)));
+
+        session.undo();
+        bondLengths(session).forEach((id, length) -> assertThat(length).isCloseTo(lengths.get(id), within(1e-9)));
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_refuse_to_turn_a_ring_bond_or_measure_between_the_wrong_atoms()
+    {
+        StudioSession ring = open("C1CC1");
+        Atom first = ring.molecule().atoms().get(0);
+        Atom second = ring.molecule().atoms().get(1);
+        String bond = ring.bondId(ring.molecule().bondBetween(first, second).orElseThrow());
+        String from = ring.atomId(ring.molecule().neighboursOf(first).stream().filter(atom -> atom.element().equals("H")).findFirst().orElseThrow());
+        String to = ring.atomId(ring.molecule().neighboursOf(second).stream().filter(atom -> atom.element().equals("H")).findFirst().orElseThrow());
+        assertThat(code(() -> ring.setBondTorsion(bond, from, to, 60, null, true))).isEqualTo("INVALID_EDIT");
+
+        StudioSession chain = open("CCO");
+        String middle = chain.bondId(chain.molecule().bonds().getFirst());
+        assertThat(code(() -> chain.setBondTorsion(middle, ids(chain).get(2), ids(chain).get(0), 60, null, true))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> chain.setBondTorsion(middle, "a99", ids(chain).get(2), 60, null, true))).isEqualTo("UNKNOWN_ID");
+        assertThat(chain.version()).isEqualTo(1);
+    }
+
+    @Test
+    void should_give_an_atom_an_angle_as_one_edit_that_can_be_undone()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        Map<String, Double> lengths = bondLengths(session);
+        double before = angleAt(session, ids.get(0), ids.get(1), ids.get(2));
+
+        StudioSession.Applied applied = session.setAngle(ids.get(1), ids.get(0), ids.get(2), 120, ids.get(0), true);
+
+        assertThat(angleAt(session, ids.get(0), ids.get(1), ids.get(2))).isCloseTo(120, within(1e-6));
+        assertThat(applied.moved()).containsKey(ids.get(2)).doesNotContainKeys(ids.get(0), ids.get(1));
+        bondLengths(session).forEach((id, length) -> assertThat(length).isCloseTo(lengths.get(id), within(1e-9)));
+
+        session.undo();
+        assertThat(angleAt(session, ids.get(0), ids.get(1), ids.get(2))).isCloseTo(before, within(1e-9));
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_file_a_drag_of_an_angle_as_one_edit_to_undo()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        double before = angleAt(session, ids.get(0), ids.get(1), ids.get(2));
+
+        session.setAngle(ids.get(1), ids.get(0), ids.get(2), 100, ids.get(0), false);
+        session.setAngle(ids.get(1), ids.get(0), ids.get(2), 130, ids.get(0), false);
+        session.setAngle(ids.get(1), ids.get(0), ids.get(2), 130, ids.get(0), true);
+        assertThat(angleAt(session, ids.get(0), ids.get(1), ids.get(2))).isCloseTo(130, within(1e-6));
+
+        session.undo();
+        assertThat(angleAt(session, ids.get(0), ids.get(1), ids.get(2))).isCloseTo(before, within(1e-9));
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_refuse_an_angle_that_would_move_a_locked_atom_but_not_one_on_the_held_side()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        session.lock(List.of(ids.get(2)), true);
+        assertThat(code(() -> session.setAngle(ids.get(1), ids.get(0), ids.get(2), 120, ids.get(0), true))).isEqualTo("LOCKED");
+
+        session.lock(List.of(ids.get(2)), false);
+        session.lock(List.of(ids.get(0)), true);
+        session.setAngle(ids.get(1), ids.get(0), ids.get(2), 120, ids.get(0), true);
+        assertThat(session.canUndo()).isTrue();
+    }
+
+    @Test
+    void should_refuse_an_angle_edit_that_is_not_allowed_or_names_something_it_does_not_hold()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        long version = session.version();
+
+        assertThat(code(() -> session.setAngle("a99", ids.get(0), ids.get(2), 120, null, true))).isEqualTo("UNKNOWN_ID");
+        assertThat(code(() -> session.setAngle(ids.get(1), ids.get(0), ids.get(2), Double.NaN, null, true))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.setAngle(ids.get(1), ids.get(0), ids.get(0), 120, null, true))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.setAngle(ids.get(2), ids.get(0), ids.get(1), 120, null, true))).isEqualTo("INVALID_EDIT");
+
+        StudioSession ring = open("C1CC1");
+        List<String> ringIds = ids(ring);
+        assertThat(code(() -> ring.setAngle(ringIds.get(0), ringIds.get(1), ringIds.get(2), 100, null, true))).isEqualTo("INVALID_EDIT");
+        assertThat(session.version()).isEqualTo(version);
+    }
+
+    /**
+     * @param session a session
+     * @param first an atom
+     * @param centre the atom the angle is at
+     * @param last another atom
+     * @return the angle, in degrees
+     */
+    private static double angleAt(StudioSession session, String first, String centre, String last)
+    {
+        return Vec3.angle(session.positionOf(first), session.positionOf(centre), session.positionOf(last));
+    }
+
+    /**
+     * @param session a session
+     * @return the length of each of its bonds, by bond
+     */
+    private static Map<String, Double> bondLengths(StudioSession session)
+    {
+        Map<String, Double> lengths = new LinkedHashMap<>();
+        for (Bond bond : session.molecule().bonds())
+        {
+            lengths.put(session.bondId(bond), session.positionOf(session.atomId(bond.first())).distanceTo(session.positionOf(session.atomId(bond.second()))));
+        }
+        return lengths;
+    }
+
+    /**
+     * @param edit an edit the session should refuse
+     * @return the code it refused with
+     */
+    private static String code(Runnable edit)
+    {
+        try
+        {
+            edit.run();
+        }
+        catch (StudioEditException refused)
+        {
+            return refused.code();
+        }
+        throw new AssertionError("The edit was not refused");
     }
 
     private static List<String> ids(StudioSession session)

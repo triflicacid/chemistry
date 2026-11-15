@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StudioSocketEndpointTest
 {
     /** The start of every message, naming the protocol the client is written for. */
-    private static final String PROTOCOL = "\"protocol_version\": 7, ";
+    private static final String PROTOCOL = "\"protocol_version\": 10, ";
 
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
@@ -45,7 +45,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 7L);
+        assertThat(ready).containsEntry("protocol_version", 10L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -90,13 +90,13 @@ class StudioSocketEndpointTest
         collector.next();
 
         // a stale client, a client from the future, and one that never said, each refused for its own reason
-        socket.sendText("{\"protocol_version\": 6, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
+        socket.sendText("{\"protocol_version\": 9, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
         Map<String, Object> stale = collector.nextJson();
         assertThat(error(stale)).containsEntry("code", "PROTOCOL_MISMATCH");
         assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
         assertThat((String) error(stale).get("message")).contains("out of date");
 
-        socket.sendText("{\"protocol_version\": 8, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        socket.sendText("{\"protocol_version\": 11, \"type\": \"session.open\", \"sequence\": 2}", true).join();
         assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
 
         // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
@@ -490,6 +490,151 @@ class StudioSocketEndpointTest
     }
 
     @Test
+    void should_give_a_bond_a_length_and_answer_with_the_atoms_that_moved() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        Map<String, Object> bond = list(opened, "bonds").getFirst();
+        String first = (String) bond.get("first");
+        String second = (String) bond.get("second");
+
+        socket.sendText(bondEdit("bond.length", sessionId, 1, 2,
+                "\"bond\": \"" + bond.get("id") + "\", \"length\": 2.0, \"hold\": \"" + first + "\""), true).join();
+        Map<String, Object> ack = collector.nextJson();
+
+        assertThat(ack).containsEntry("type", "bond.length.ack").containsEntry("sequence", 2L).containsEntry("version", 2L)
+                .containsEntry("status", "applied").containsEntry("can_undo", true);
+        List<Map<String, Object>> moved = list(ack, "atoms");
+        assertThat(moved).extracting(atom -> atom.get("id")).contains(second).doesNotContain(first);
+
+        socket.sendText(history("edit.undo", sessionId, 2, 3), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "edit.applied").containsEntry("version", 3L);
+    }
+
+    @Test
+    void should_keep_a_bond_drag_out_of_the_history_until_it_is_committed() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        Map<String, Object> bond = list(opened, "bonds").getFirst();
+        String target = "\"bond\": \"" + bond.get("id") + "\", \"hold\": \"" + bond.get("first") + "\"";
+
+        socket.sendText(bondEdit("bond.length", sessionId, 1, 2, target + ", \"length\": 1.8, \"commit\": false"), true).join();
+        Map<String, Object> dragged = collector.nextJson();
+        // an edit in progress can be cancelled, but is not yet worth saving
+        assertThat(dragged).containsEntry("version", 2L).containsEntry("saved_molecule_id", null);
+        assertThat(list(dragged, "atoms")).isNotEmpty();
+
+        socket.sendText(bondEdit("bond.length", sessionId, 2, 3, target + ", \"length\": 1.8"), true).join();
+        Map<String, Object> dropped = collector.nextJson();
+        assertThat(dropped).containsEntry("version", 2L).containsEntry("can_undo", true);
+        assertThat(list(dropped, "atoms")).isEmpty();
+        assertThat(dropped.get("saved_molecule_id")).isNotNull();
+    }
+
+    @Test
+    void should_give_a_bond_a_torsion_and_refuse_what_it_cannot() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        List<Map<String, Object>> atoms = list(opened, "atoms");
+        Map<String, Object> bond = list(opened, "bonds").getFirst();
+        String hydrogen = (String) atoms.stream().filter(atom -> atom.get("element").equals("H")).findFirst().orElseThrow().get("id");
+        String oxygen = (String) atoms.get(2).get("id");
+
+        // the first hydrogen is on the first carbon, and the oxygen is on the second
+        socket.sendText(bondEdit("bond.torsion", sessionId, 1, 2,
+                "\"bond\": \"" + bond.get("id") + "\", \"from\": \"" + hydrogen + "\", \"to\": \"" + oxygen + "\", \"angle\": 60, \"hold\": \"" + bond.get("first") + "\""), true).join();
+        Map<String, Object> ack = collector.nextJson();
+        assertThat(ack).containsEntry("type", "bond.torsion.ack").containsEntry("version", 2L);
+        assertThat(list(ack, "atoms")).isNotEmpty();
+
+        socket.sendText(bondEdit("bond.torsion", sessionId, 2, 3,
+                "\"bond\": \"" + bond.get("id") + "\", \"from\": \"" + oxygen + "\", \"to\": \"" + hydrogen + "\", \"angle\": 60"), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_EDIT");
+
+        socket.sendText(bondEdit("bond.torsion", sessionId, 2, 4, "\"bond\": \"" + bond.get("id") + "\""), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText(bondEdit("bond.length", sessionId, 1, 5, "\"bond\": \"" + bond.get("id") + "\", \"length\": 1.5"), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "conflict");
+    }
+
+    @Test
+    void should_give_an_atom_an_angle_and_refuse_what_it_cannot() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        List<Map<String, Object>> atoms = list(opened, "atoms");
+        String carbon = (String) atoms.get(0).get("id");
+        String centre = (String) atoms.get(1).get("id");
+        String oxygen = (String) atoms.get(2).get("id");
+        String ends = "\"centre\": \"" + centre + "\", \"from\": \"" + carbon + "\", \"to\": \"" + oxygen + "\"";
+
+        socket.sendText(bondEdit("atom.angle", sessionId, 1, 2, ends + ", \"angle\": 120, \"hold\": \"" + carbon + "\""), true).join();
+        Map<String, Object> ack = collector.nextJson();
+        assertThat(ack).containsEntry("type", "atom.angle.ack").containsEntry("version", 2L).containsEntry("can_undo", true);
+        assertThat(list(ack, "atoms")).extracting(atom -> atom.get("id")).contains(oxygen).doesNotContain(carbon, centre);
+
+        socket.sendText(bondEdit("atom.angle", sessionId, 2, 3,
+                "\"centre\": \"" + centre + "\", \"from\": \"" + carbon + "\", \"to\": \"" + carbon + "\", \"angle\": 120"), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_EDIT");
+
+        socket.sendText(bondEdit("atom.angle", sessionId, 2, 4, "\"centre\": \"" + centre + "\""), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText(bondEdit("atom.angle", sessionId, 1, 5, ends + ", \"angle\": 100"), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "conflict");
+    }
+
+    @Test
+    void should_refuse_to_change_a_bond_it_does_not_hold_or_to_an_unreasonable_length() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        Map<String, Object> bond = list(opened, "bonds").getFirst();
+
+        socket.sendText(bondEdit("bond.length", sessionId, 1, 2, "\"bond\": \"b999\", \"length\": 1.5"), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "UNKNOWN_ID");
+
+        socket.sendText(bondEdit("bond.length", sessionId, 1, 3, "\"bond\": \"" + bond.get("id") + "\", \"length\": 99"), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_EDIT");
+
+        socket.sendText(bondEdit("bond.length", sessionId, 1, 4, "\"bond\": \"" + bond.get("id") + "\""), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+    }
+
+    @Test
     void should_lock_atoms_refuse_to_move_them_and_unlock_them() throws Exception
     {
         StoredMolecule stored = store("CCO");
@@ -719,6 +864,136 @@ class StudioSocketEndpointTest
         }
         assertThat(collector.nextJson()).containsEntry("type", "geometry.result").containsEntry("version", 4L);
         assertThat(collector.messages.poll(400, java.util.concurrent.TimeUnit.MILLISECONDS)).isNull();
+    }
+
+    @Test
+    void should_relax_a_distorted_geometry_as_one_edit_that_can_be_undone() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        Map<String, Object> atom = list(opened, "atoms").getFirst();
+        Map<String, Object> from = position(atom);
+        socket.sendText(patch(sessionId, 1, true, (String) atom.get("id"), ((Number) from.get("x")).doubleValue() + 0.6,
+                ((Number) from.get("y")).doubleValue(), ((Number) from.get("z")).doubleValue(), 2), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "atom.patch.ack").containsEntry("version", 2L);
+
+        socket.sendText(optimise(sessionId, 2, 3), true).join();
+        Map<String, Object> started = collector.nextJson();
+        assertThat(started).containsEntry("type", "optimise.started").containsEntry("sequence", 3L).containsEntry("version", 2L);
+
+        Map<String, Object> result = untilResult(collector);
+        assertThat(result).containsEntry("session_id", sessionId)
+                .containsEntry("operation_id", started.get("operation_id"))
+                .containsEntry("base_version", 2L)
+                .containsEntry("status", "complete")
+                .containsEntry("version", 3L)
+                .containsEntry("can_undo", true);
+        assertThat(result).doesNotContainKey("model");
+        assertThat((Double) result.get("strain_after")).isLessThan((Double) result.get("strain_before"));
+        assertThat(list(result, "atoms")).isNotEmpty();
+        assertThat(result.get("saved_molecule_id")).isNotNull();
+
+        // the optimisation is one edit, so one undo takes every atom back to where the patch left it
+        socket.sendText(history("edit.undo", sessionId, 3, 4), true).join();
+        Map<String, Object> undone = collector.nextJson();
+        assertThat(undone).containsEntry("type", "edit.applied").containsEntry("version", 4L);
+        assertThat(list(undone, "atoms")).hasSameSizeAs(list(result, "atoms"));
+    }
+
+    @Test
+    void should_report_progress_while_relaxing() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        Map<String, Object> atom = list(opened, "atoms").getFirst();
+        Map<String, Object> from = position(atom);
+        socket.sendText(patch(sessionId, 1, true, (String) atom.get("id"), ((Number) from.get("x")).doubleValue() + 0.6,
+                ((Number) from.get("y")).doubleValue(), ((Number) from.get("z")).doubleValue(), 2), true).join();
+        collector.nextJson();
+
+        socket.sendText(optimise(sessionId, 2, 3), true).join();
+        List<Map<String, Object>> reports = new java.util.ArrayList<>();
+        Map<String, Object> message;
+        do
+        {
+            message = collector.nextJson();
+            if (message.get("type").equals("optimise.progress"))
+            {
+                reports.add(message);
+            }
+        }
+        while (!message.get("type").equals("optimise.result"));
+
+        // the first report is sent at once, whatever the interval
+        assertThat(reports).isNotEmpty();
+        assertThat(reports.getFirst()).containsEntry("session_id", sessionId).containsEntry("iteration", 0L);
+        assertThat(reports.getFirst().get("energy")).isInstanceOf(Double.class);
+    }
+
+    @Test
+    void should_refuse_to_relax_while_an_edit_is_in_progress() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        socket.sendText(patch(sessionId, 1, false, (String) list(opened, "atoms").getFirst().get("id"), 4, 4, 4, 2), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "atom.patch.ack");
+
+        socket.sendText(optimise(sessionId, 2, 3), true).join();
+
+        Map<String, Object> refusal = collector.nextJson();
+        assertThat(refusal).containsEntry("type", "error").containsEntry("answering", "optimise.start");
+        assertThat(error(refusal)).containsEntry("code", "BUSY");
+    }
+
+    @Test
+    void should_answer_an_optimise_made_on_a_stale_version_with_a_conflict() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText(optimise(sessionId, 7, 2), true).join();
+
+        Map<String, Object> conflict = collector.nextJson();
+        assertThat(conflict).containsEntry("type", "conflict").containsEntry("expected_version", 1L).containsEntry("base_version", 7L);
+    }
+
+    @Test
+    void should_say_whether_there_was_an_optimisation_to_cancel() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"optimise.cancel\", \"sequence\": 2, \"session_id\": \"" + sessionId + "\"}", true).join();
+
+        assertThat(collector.nextJson()).containsEntry("type", "optimise.cancel.ack").containsEntry("sequence", 2L).containsEntry("cancelling", false);
     }
 
     @Test
@@ -972,6 +1247,20 @@ class StudioSocketEndpointTest
     }
 
     /**
+     * @param type the message type, {@code bond.length} or {@code bond.torsion}
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client says it was looking at
+     * @param sequence the message's sequence number
+     * @param fields the rest of the message's fields, written as JSON members
+     * @return a bond edit message
+     */
+    private static String bondEdit(String type, String sessionId, long baseVersion, int sequence, String fields)
+    {
+        return "{" + PROTOCOL + "\"type\": \"" + type + "\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"base_version\": " + baseVersion + ", " + fields + "}";
+    }
+
+    /**
      * @param type {@code edit.undo} or {@code edit.redo}
      * @param sessionId the session to step through
      * @param baseVersion the version the client says it was looking at
@@ -982,6 +1271,34 @@ class StudioSocketEndpointTest
     {
         return "{" + PROTOCOL + "\"type\": \"" + type + "\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + "}";
+    }
+
+    /**
+     * @param sessionId the session to optimise
+     * @param baseVersion the version the client says it was looking at
+     * @param sequence the message's sequence number
+     * @return an {@code optimise.start} message
+     */
+    private static String optimise(String sessionId, long baseVersion, int sequence)
+    {
+        return "{" + PROTOCOL + "\"type\": \"optimise.start\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"base_version\": " + baseVersion + "}";
+    }
+
+    /**
+     * @param collector what the connection has been sent
+     * @return the next {@code optimise.result}, skipping the progress that comes before it
+     */
+    private static Map<String, Object> untilResult(Collector collector) throws InterruptedException
+    {
+        Map<String, Object> message = collector.nextJson();
+        while (!message.get("type").equals("optimise.result"))
+        {
+            assertThat(message).containsEntry("type", "optimise.progress");
+            message = collector.nextJson();
+        }
+
+        return message;
     }
 
     @SuppressWarnings("unchecked")

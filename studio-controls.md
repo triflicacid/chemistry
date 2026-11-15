@@ -6,13 +6,16 @@
 |---|---|
 | Left-drag | Orbit |
 | Right-drag | Pan |
-| Right-click an atom | Orbit that atom from now on (the nearest atom to the click, if it lands on a bond). Right-click empty space to go back to orbiting the middle of the molecule |
-| Scroll wheel, or middle-drag | Zoom |
-| Touch: one finger / two fingers | Orbit / zoom and pan |
+| **Pan** tool (toolbar), left-drag | Pan the view. Right-drag orbits instead while it is on, so both are within reach with one button or a trackpad. A click still selects. The cursor is a hand |
+| Double-click an atom, or right-click it | Bring it to the middle of the view, keeping the angle and distance, and orbit it from now on (the nearest atom to the click, if it lands on a bond). On empty space, go back to the middle of the molecule. The molecule's handles move onto it too when their pivot is the orbit anchor. The second click of a double-click does not also select or deselect |
+| Scroll wheel | Zoom towards the point under the pointer, which also moves the view, so a molecule can be brought closer without a pan. The view then orbits around where it has got to, not around the atom last double-clicked; the molecule's handles stay on that atom |
+| Drag the **roll ring** (the faint ring round the axes triad, lower left) | Roll the view: it turns about the way you are looking, so the picture turns in the screen's plane about the middle of the view, and follows the pointer round the ring one for one (counterclockwise is counterclockwise), however far from the ring the pointer goes. Nothing in the scene moves and nothing is sent to the server. Double-click the ring to take the roll out, so that up is up again. Orbiting afterwards turns about the tilted up. The ring brightens when the pointer is over it and while it is turned, and is left out of screenshots. **Frame selection**, and a click on a letter of the triad, also take the roll out. A press on the ring does not orbit, select or pick up an atom behind it. There are no keys for it |
+| Middle-drag | Zoom |
+| Touch: one finger / two fingers | Orbit (pan with the **Pan** tool) / zoom and pan |
 
 The browser's context menu is disabled over the viewport.
 
-With **Axes** on, the triad in the lower left turns with the camera. Click one of its letters to look at
+The small triad in the lower left, inside the roll ring, is always shown and turns with the camera. Click one of its letters to look at
 the molecule from along that axis (X is the view from the right, Y from above, Z from the front). Click
 the same letter again, without having turned the camera since, to look from the other side; once the
 camera has been turned, the next click starts from the positive side again. The click does not orbit,
@@ -44,6 +47,7 @@ Choose **Move** in the toolbar (**Select** goes back). Then:
 | X, Y or Z | Hold the move to that axis |
 | Shift+X, Shift+Y or Shift+Z | Hold it to the plane across that axis (yz, xz, xy) |
 | The same key again | Let go of the constraint |
+| H, or **Carry H** in the viewport | Turn on carrying hydrogens: moving an atom, by dragging it or by the handles, takes the hydrogens bonded to it by the same offset, so their bond lengths and angles stay as they are. Off by default, and a convenience only: nothing is locked, and with it off moving a carbon stretches its C–H bonds. It carries a hydrogen bonded to that atom and to nothing else, however the hydrogen came to be there (written in the SMILES or implied by it, and deuterium and tritium too), but not one shared between two atoms. With several atoms selected each brings its own, none twice. Moving a hydrogen itself carries nothing. A locked hydrogen that would be carried stops the move, as a locked atom in a selection does. What is taken is decided when the atom is picked up |
 | Constraint buttons in the viewport | The same, by mouse: Free, X, Y, Z, YZ, XZ, XY |
 | Taking hold of a handle (below) | Sets the constraint to match it: an arrow is X, Y or Z, a square is a plane, the middle is Free. The buttons follow, and the keys and a direct drag after it use it |
 | Drag an arrow or square on the handles | With atoms selected, handles sit on the active atom, or on the centre of the selected atoms, and carry all of them by the same offset along an axis or within a plane. They follow **World** / **Local** (below). Hidden while a locked atom is selected. Release, and Esc, are as for dragging an atom |
@@ -62,7 +66,8 @@ coordinates, so every bond length and angle is as it was.
 | Input | Action |
 |---|---|
 | **Move** tool, drag an arrow or a square on the handles | Carry the molecule along that axis, or within that plane |
-| **Rotate** tool, click an atom | Select its molecule, anchor the view on that atom and make the anchor the pivot, so the rings turn the molecule about that atom. Clicking another atom moves the pivot there |
+| **Rotate** tool, **Molecule** (the choice that Rotate starts on), click an atom | Select its molecule, anchor the view on that atom and make the anchor the pivot, so the rings turn the molecule about that atom. Clicking another atom moves the pivot there |
+| **Rotate** tool, **Bonds & angles** | Turns something inside the molecule instead, and picks single atoms and bonds whatever **Pick whole molecule** says (the button is off while it is chosen). Click a bond to turn about it (its torsion), or an atom to change an angle at it; see *Inspector* below. The choice is a lozenge in the viewport's right-hand buttons, shown with Rotate. It is the only thing that decides what an atom click means, so it does not matter in what order you pick a tool and an atom |
 | **Rotate** tool, drag a ring | Turn the molecule about the pivot, around that axis. The outer ring turns it about the view direction |
 | Esc during a drag | Abandon it; the molecule goes back where it was picked up |
 | Release | Drop it. The whole drag is one undo step |
@@ -89,14 +94,32 @@ changed on the server while you were editing, the rebuild is refused and the cur
 
 ## Viewport buttons
 
+The buttons over the viewport are in two groups. The **left** group sets what is shown: the axes, a grid, strain marks,
+move guides, and a screenshot. The **right** group acts on the molecule or the view, some of it only with certain tools:
+**World** / **Local** and the move constraint buttons (see above), **Carry H**, and the two below. The right group wraps
+rather than running under the left one when the viewport is narrow.
+
+A choice of one thing from several, such as the tool, **World** / **Local**, the move constraint, the **Grid** and **Plane**, and the Geometry and
+Activity tabs, is drawn as one lozenge divided by faint lines into sections, which are hovered and pressed one at a time. It behaves as
+radio buttons do: one section is always selected, and choosing another replaces it. While a section has focus the arrow keys
+move the choice, and Tab passes the lozenge as one stop.
+
+**Left**
+
+| Button | Action |
+|---|---|
+| Axes | Show or hide the scene axes, which sit on the orbit anchor, a fixed point on the molecule (so they stay with the molecule when you pan or zoom, and move when you re-anchor or move the molecule). Off by default. The small labelled X, Y, Z triad in the lower left is not part of this: it is always shown |
+| Grid, and Plane | **Grid** shows **Square** lines, **Polar** nested spheres, or **Off** (the default). **Square** lies in a plane, picked with **Plane** (shown only for Square): XZ, XY, YZ, or **All**, which draws all three at once and reaches only 10 Å so that three crossing sheets do not swamp the molecule. It has a line every angstrom counted from the anchor, a stronger one every 5, and its two central lines coloured as the axes they run along. **Polar** is spherical, so it fills space and has no plane: a sphere every angstrom out to 15 Å, stronger every 5, each drawn as lines of latitude and longitude every 30°, with the poles on the scene's y axis (up) and the six half-axes from the centre in the axes' colours. Both are centred on the orbit anchor, where the axes are drawn (so right-click or double-click an atom to move the grid onto it), with lines along the scene's axes in **World** space and along the molecule's own in **Local** space, where they turn with the molecule. They fade out with distance, are drawn faintly with atoms in front of them, cannot be picked, and appear in screenshots. The spacing, the extents, the major interval and the latitude and longitude angle are constants in `viewport/grid.ts` |
+| Strain | Mark what is strained: a red halo on each strained atom (stronger the more strained), each strained bond in red with its length, each strained angle as its two bonds in orange with its size, and a red line between each pair of atoms that are too close. Shown only while the strain figure is current, so it disappears while you drag and comes back when you pause. While it is on, selecting an atom or a bond details its strain in the Inspector |
+| Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule. It also draws the plane of an angle (a faint violet sheet through the atom and its two bonds) while the Inspector is showing that angle |
+| Screenshot | Download `molecule.png`: what the camera sees at the moment of the click, including any strain marks and handles that are showing, and the axes and the small triad when **Axes** is on (but never the roll ring). Where nothing is drawn the background is transparent. The picture is the size of the canvas |
+
+**Right**
+
 | Button | Action |
 |---|---|
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
-| Axes | Show or hide the scene axes, which sit on the point the view orbits (so they move when you re-anchor or pan), and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
-| Strain | Mark what is strained: a red halo on each strained atom (stronger the more strained), each strained bond in red with its length, each strained angle as its two bonds in orange with its size, and a red line between each pair of atoms that are too close. Shown only while the strain figure is current, so it disappears while you drag and comes back when you pause. While it is on, selecting an atom or a bond details its strain in the Inspector |
-| Screenshot | Download `molecule.png`: what the camera sees at the moment of the click, including any strain marks, handles and axes triad that are showing. Where nothing is drawn the background is transparent. The picture is the size of the canvas |
-| Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |
 
 ## Strain
 
@@ -125,12 +148,22 @@ involve both its atoms). It says "Working it out…" while the figure is catchin
 
 Selecting something in the viewport opens the Outliner to it and scrolls it into view.
 
+Selecting a bond, or up to four atoms, labels the length of each bond selected or on those atoms (up to twelve) in the viewport, in blue,
+and the labels follow as atoms move. Hovering or selecting a bond also names its two atoms (such as `C1` and `C3`), the same names the Inspector
+uses, so you can tell which atoms a length or a Hold choice refers to.
+
 ## Inspector
 
 | Input | Action |
 |---|---|
 | Type in an atom's X, Y or Z field, then Enter or click away | Move the atom there. One edit, which can be undone |
+| Type in a bond's **Length** field, then Enter or click away | Set the bond's length. The **Hold** atom (named by its label, such as `C1`) stays put and the other moves along the bond, taking everything beyond it along; **Neither** moves both half each. In a ring only the two atoms move. One edit, which can be undone. Refused if an atom that would move is locked |
+| Type in a bond's **Torsion** field, then Enter or click away | Turn one side of the bond about it until the angle between the two **From** atoms is the value typed. **Hold** says which side stays; **Neither** turns both half each. Ring bonds cannot be turned. One edit, which can be undone |
+| Type in an atom's **Angle** field, then Enter or click away | Swing one of two bonds at the atom, with everything beyond it, in the plane of the two, until the angle between the **Between** atoms is the value typed. It is a full turn: 0 puts the two on top of each other, 180 in a line, and past 180 the bond swings through the straight line to the other side, so 361 is 1 and -1 is 359. **Hold** says which side stays, and **Neither** swings both half each. The atom's other bonds stay put. One edit, which can be undone. Refused for a bond in a ring or if an atom that would move is locked |
+| Select one atom, with Rotate on **Bonds & angles**, and drag the ring at it | Change the angle between the **Between** atoms. One edit, which Esc abandons. Not offered where a bond that would swing is in a ring |
 | Esc in a field | Abandon what you typed |
+| Select one bond, with the Move tool, and drag the arrow along it | Change its length. The atom shown by **Hold** stays; the arrow is on the atom that moves. Slid past nothing, the length goes negative and the moving side passes through the held atom to the other side. One edit, which Esc abandons |
+| Select one bond, with Rotate on **Bonds & angles**, and drag the ring about it | Change its torsion between the **From** atoms. One edit, which Esc abandons. Not offered for a ring bond |
 | Click a name under *Bonded to*, *Bonds* or *Joins* | Select that item (modifiers as above) |
 | Hover one | Highlight it in the viewport |
 

@@ -1,11 +1,19 @@
 import type {ReactNode} from "react";
 import type {Vec3} from "../../api/types/structure";
-import type {Activity, SessionPhase, SubmitResult} from "../session/useSession";
-import type {AtomMove, GeometryResult, Pose, SessionState} from "../session/messages";
+import type {
+    Activity,
+    EditResult,
+    OptimisationOutcome,
+    Optimising,
+    SessionPhase,
+    SubmitResult
+} from "../session/useSession";
+import type {AtomMove, BondEdit, GeometryResult, Pose, SessionState} from "../session/messages";
 import type {Models} from "../selection/models";
 import type {LayoutState, Panel} from "../store";
 import {AnalysisPanel} from "./AnalysisPanel";
 import {Inspector} from "./Inspector";
+import {OptimiseNotice} from "./OptimiseNotice";
 import {Outliner} from "./Outliner";
 import {SmilesBar} from "./SmilesBar";
 import {Splitter} from "./Splitter";
@@ -26,6 +34,9 @@ export interface WorkspaceProps {
   onOpenSmiles: (smiles: string) => void;
   onSubmitSmiles: (smiles: string) => Promise<SubmitResult>;
   onMoveAtom: (id: string, position: Vec3) => void;
+  onSetBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
+  onSetBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
+  onSetAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   onLockAtoms: (ids: string[], locked: boolean) => void;
   canLock: boolean;
   lockPressed: boolean;
@@ -37,12 +48,19 @@ export interface WorkspaceProps {
   onDragMolecule: (pose: Pose) => void;
   onDropMolecule: (pose: Pose) => void;
   onCancelMoleculeDrag: (from: Pose) => void;
+  onDragBond: (edit: BondEdit) => void;
+  onDropBond: (edit: BondEdit) => void;
+  onCancelBondDrag: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  optimising: Optimising | null;
+  outcome: OptimisationOutcome | null;
+  onOptimise: () => void;
+  onCancelOptimise: () => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onUndo, onRedo } = props;
+  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -65,6 +83,10 @@ export function Workspace(props: WorkspaceProps) {
     <div className="workspace" style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}>
       <Toolbar
         phase={phase}
+        optimising={optimising}
+        canOptimise={phase.kind === "open" && state !== null}
+        onOptimise={onOptimise}
+        onCancelOptimise={onCancelOptimise}
         tools={models.tools}
         canLock={canLock}
         lockPressed={lockPressed}
@@ -104,7 +126,11 @@ export function Workspace(props: WorkspaceProps) {
           onDragMolecule={onDragMolecule}
           onDropMolecule={onDropMolecule}
           onCancelMoleculeDrag={onCancelMoleculeDrag}
+          onDragBond={onDragBond}
+          onDropBond={onDropBond}
+          onCancelBondDrag={onCancelBondDrag}
         />
+        <OptimiseNotice outcome={outcome} />
       </div>
 
       {!layout.inspectorCollapsed && (
@@ -114,7 +140,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <Side panel="inspector" name="Inspector" collapsed={layout.inspectorCollapsed} onCollapse={onCollapse}>
-        <Inspector state={state} geometry={geometry} models={models} onMoveAtom={onMoveAtom} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
+        <Inspector state={state} geometry={geometry} models={models} onMoveAtom={onMoveAtom} onSetBondLength={onSetBondLength} onSetBondTorsion={onSetBondTorsion} onSetAngle={onSetAngle} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
       </Side>
 
       {!layout.analysisCollapsed && (
@@ -127,7 +153,7 @@ export function Workspace(props: WorkspaceProps) {
         <Header name="Activity" panel="analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
         {!layout.analysisCollapsed && (
           <div className="panel-body">
-            <AnalysisPanel activity={activity} state={state} geometry={geometry} models={models} />
+            <AnalysisPanel activity={activity} state={state} geometry={geometry} outcome={outcome} models={models} />
           </div>
         )}
       </section>

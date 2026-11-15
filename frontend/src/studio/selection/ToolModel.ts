@@ -1,9 +1,19 @@
 import type {Vec3} from "../../api/types/structure";
+import type {Hold} from "./bondLength";
 import type {Constraint} from "../viewport/dragPlane";
 import {Observable} from "./observable";
 
-/** What a left-drag does: select, move atoms or the whole molecule, or rotate the whole molecule. */
-export type Tool = "select" | "move" | "rotate";
+/**
+ * What a left-drag does: select, move atoms or the whole molecule, rotate the whole molecule, or pan the view, in which
+ * case a right-drag orbits it instead.
+ */
+export type Tool = "select" | "move" | "rotate" | "pan";
+
+/**
+ * What the rotate tool turns: the whole molecule, about a pivot, or something inside it, which is a bond that is clicked,
+ * turned about to change its torsion, or an atom that is clicked, whose angle between two of its bonds is changed.
+ */
+export type RotateMode = "molecule" | "parts";
 
 /** Which axes a constraint, and the molecule's gizmo, is measured along: the scene's or the molecule's own. */
 export type Space = "world" | "local";
@@ -14,22 +24,46 @@ export type Space = "world" | "local";
  */
 export type Pivot = "anchor" | "centre" | "origin" | "point";
 
+/** A torsion being shown: the bond it is about, and the atom at each end it is measured from. */
+export interface TorsionView {
+  bond: string;
+  first: string;
+  second: string;
+}
+
+/** An angle being shown: the atom it is at, and the two atoms bonded to it that it is measured between. */
+export interface AngleView {
+  centre: string;
+  from: string;
+  to: string;
+}
+
 /** The tool in use, and what a move is held to. */
 export interface ToolState {
   tool: Tool;
   constraint: Constraint;
   space: Space;
   pivot: Pivot;
+  /** What the rotate tool turns. */
+  rotate: RotateMode;
   /** Where the pivot is when it is `point`, in the scene, in angstroms. */
   point: Vec3;
   /** Whether strain is shown: marked in the viewport, and detailed for what is selected. */
   strain: boolean;
+  /** Whether moving an atom carries the hydrogens bonded to it. This is a convenience, and nothing is locked. */
+  carryHydrogens: boolean;
+  /** The torsion the Inspector is showing for the selected bond, which the viewport marks, or null for none. */
+  torsion: TorsionView | null;
+  /** The angle the Inspector is showing for the selected atom, which the viewport marks, or null for none. */
+  angle: AngleView | null;
+  /** Which atom of a bond stays where it is when the bond is lengthened or turned, by the Inspector or by dragging a handle. */
+  hold: Hold;
 }
 
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotate: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, hold: "first" });
   }
 
   /**
@@ -77,6 +111,17 @@ export class ToolModel extends Observable<ToolState> {
   }
 
   /**
+   * Chooses what the rotate tool turns.
+   *
+   * @param rotate the whole molecule, or something inside it
+   */
+  rotating(rotate: RotateMode): void {
+    if (this.get().rotate !== rotate) {
+      this.set({ ...this.get(), rotate });
+    }
+  }
+
+  /**
    * Shows strain, or stops showing it.
    *
    * @param on whether to show it
@@ -84,6 +129,52 @@ export class ToolModel extends Observable<ToolState> {
   showStrain(on: boolean): void {
     if (this.get().strain !== on) {
       this.set({ ...this.get(), strain: on });
+    }
+  }
+
+  /**
+   * Makes moving an atom carry the hydrogens bonded to it, or stops it.
+   *
+   * @param on whether to carry them
+   */
+  carry(on: boolean): void {
+    if (this.get().carryHydrogens !== on) {
+      this.set({ ...this.get(), carryHydrogens: on });
+    }
+  }
+
+  /**
+   * Chooses which atom of a bond stays where it is when the bond is lengthened or turned.
+   *
+   * @param hold the first atom, the second, or neither
+   */
+  holding(hold: Hold): void {
+    if (this.get().hold !== hold) {
+      this.set({ ...this.get(), hold });
+    }
+  }
+
+  /**
+   * Says which torsion the viewport should mark.
+   *
+   * @param torsion the bond and the atoms it is measured between, or null for none
+   */
+  showTorsion(torsion: TorsionView | null): void {
+    const was = this.get().torsion;
+    if (was?.bond !== torsion?.bond || was?.first !== torsion?.first || was?.second !== torsion?.second) {
+      this.set({ ...this.get(), torsion });
+    }
+  }
+
+  /**
+   * Says which angle the viewport should mark.
+   *
+   * @param angle the atom and the two atoms it is measured between, or null for none
+   */
+  showAngle(angle: AngleView | null): void {
+    const was = this.get().angle;
+    if (was?.centre !== angle?.centre || was?.from !== angle?.from || was?.to !== angle?.to) {
+      this.set({ ...this.get(), angle });
     }
   }
 

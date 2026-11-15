@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import type {Vec3} from "../api/types/structure";
-import type {AtomMove, Pose} from "./session/messages";
+import type {AtomMove, BondEdit, Pose} from "./session/messages";
 import {Workspace} from "./layout/Workspace";
 import {createModels} from "./selection/models";
 import {useObservable} from "./selection/observable";
@@ -23,6 +23,12 @@ export function App() {
     openSmiles,
     submitSmiles,
     moveAtom,
+    setBondLength,
+    setBondTorsion,
+    setAngle,
+    dragBond,
+    dropBond,
+    cancelBondDrag,
     dragAtoms,
     dropAtoms,
     cancelDrag,
@@ -31,6 +37,10 @@ export function App() {
     dropMolecule,
     cancelMoleculeDrag,
     lockAtoms,
+    optimising,
+    outcome,
+    optimise,
+    cancelOptimise,
     undo,
     redo,
   } = useSession();
@@ -111,6 +121,8 @@ export function App() {
   const moveWhole = useCallback((pose: Pose) => void moveMolecule(pose), [moveMolecule]);
   const dropWhole = useCallback((pose: Pose) => void dropMolecule(pose), [dropMolecule]);
   const cancelWhole = useCallback((from: Pose) => void cancelMoleculeDrag(from), [cancelMoleculeDrag]);
+  const dropBondHandle = useCallback((edit: BondEdit) => void dropBond(edit), [dropBond]);
+  const cancelBondHandle = useCallback(() => void cancelBondDrag(), [cancelBondDrag]);
 
   // the toolbar button and the L key lock the selected atoms, or unlock them if all of them are locked already.
   // A selected molecule stands for every atom in it
@@ -146,6 +158,8 @@ export function App() {
     return `strain ${geometry.strain.toFixed(1)}${geometry.version === state?.version ? "" : "…"}`;
   }, [geometry, state?.version]);
 
+  const startOptimise = useCallback(() => void optimise(), [optimise]);
+  const stopOptimise = useCallback(() => void cancelOptimise(), [cancelOptimise]);
   const undoEdit = useCallback(() => void undo(), [undo]);
   const redoEdit = useCallback(() => void redo(), [redo]);
 
@@ -171,6 +185,9 @@ export function App() {
       onOpenSmiles={openSmiles}
       onSubmitSmiles={submit}
       onMoveAtom={move}
+      onSetBondLength={setBondLength}
+      onSetBondTorsion={setBondTorsion}
+      onSetAngle={setAngle}
       onLockAtoms={lock}
       canLock={chosen.length > 0}
       lockPressed={allLocked}
@@ -182,8 +199,15 @@ export function App() {
       onDragMolecule={dragMolecule}
       onDropMolecule={dropWhole}
       onCancelMoleculeDrag={cancelWhole}
+      onDragBond={dragBond}
+      onDropBond={dropBondHandle}
+      onCancelBondDrag={cancelBondHandle}
       onUndo={undoEdit}
       onRedo={redoEdit}
+      optimising={optimising}
+      outcome={outcome}
+      onOptimise={startOptimise}
+      onCancelOptimise={stopOptimise}
     />
   );
 }

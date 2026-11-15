@@ -1,6 +1,13 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {StudioError, StudioSocket} from "./studioSocket";
-import {type GeometryResult, PROTOCOL_VERSION, type SessionAtom, type SessionState} from "./messages";
+import {
+  type GeometryResult,
+  type OptimiseProgress,
+  type OptimiseResult,
+  PROTOCOL_VERSION,
+  type SessionAtom,
+  type SessionState,
+} from "./messages";
 import {IDENTITY_POSE} from "./pose";
 
 const STUDIO_URL = process.env.WS_URL ?? "ws://localhost:8081/ws/studio";
@@ -240,6 +247,98 @@ describe("the Studio socket", () => {
     expect(redone.type === "edit.applied" && redone.atoms[0]!.position).toEqual(target);
   });
 
+  it("gives a bond a length and a torsion, answering with the atoms that moved, and refuses what it cannot", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const bond = opened.bonds[0]!;
+    const distance = (state: SessionState, a: string, b: string) => {
+      const [p, q] = [a, b].map((id) => state.atoms.find((atom) => atom.id === id)!.position);
+      return Math.hypot(p!.x - q!.x, p!.y - q!.y, p!.z - q!.z);
+    };
+
+    const longer = await socket.setBondLength(opened.session_id, opened.version, bond.id, 2, bond.first);
+    expect(longer.type).toBe("bond.length.ack");
+    if (longer.type !== "bond.length.ack") {
+      return;
+    }
+    expect(longer.version).toBe(opened.version + 1);
+    expect(longer.atoms.map((atom) => atom.id)).toContain(bond.second);
+    expect(longer.atoms.map((atom) => atom.id)).not.toContain(bond.first);
+
+    // a bond to a hydrogen on the first carbon and the oxygen on the second, turned about the bond between them
+    const hydrogen = opened.atoms.find((atom) => atom.element === "H")!;
+    const oxygen = opened.atoms[2]!;
+    const turned = await socket.setBondTorsion(opened.session_id, longer.version, bond.id, hydrogen.id, oxygen.id, 60, bond.first);
+    expect(turned.type).toBe("bond.torsion.ack");
+    expect(turned.type === "bond.torsion.ack" && turned.atoms.length).toBeGreaterThan(0);
+
+    await expect(socket.setBondTorsion(opened.session_id, longer.version + 1, bond.id, oxygen.id, hydrogen.id, 60, null)).rejects.toMatchObject({ code: "INVALID_EDIT" });
+    await expect(socket.setBondLength(opened.session_id, longer.version + 1, bond.id, 99, null)).rejects.toMatchObject({ code: "INVALID_EDIT" });
+
+    const stale = await socket.setBondLength(opened.session_id, opened.version, bond.id, 1.5, null);
+    expect(stale.type).toBe("conflict");
+    if (stale.type === "conflict") {
+      expect(distance(stale.state, bond.first, bond.second)).toBeCloseTo(2, 6);
+    }
+  });
+
+  it("drags a bond as several uncommitted changes and one commit, which is one edit to undo", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const bond = opened.bonds[0]!;
+
+    const first = await socket.setBondLength(opened.session_id, opened.version, bond.id, 1.7, bond.first, false);
+    expect(first.type).toBe("bond.length.ack");
+    if (first.type !== "bond.length.ack") {
+      return;
+    }
+    const second = await socket.setBondLength(opened.session_id, first.version, bond.id, 1.9, bond.first, false);
+    expect(second.type === "bond.length.ack" && second.saved_molecule_id).toBeNull();
+    if (second.type !== "bond.length.ack") {
+      return;
+    }
+
+    const dropped = await socket.setBondLength(opened.session_id, second.version, bond.id, 1.9, bond.first, true);
+    expect(dropped.type === "bond.length.ack" && dropped.atoms).toEqual([]);
+    if (dropped.type !== "bond.length.ack") {
+      return;
+    }
+    expect(dropped.can_undo).toBe(true);
+    expect(dropped.saved_molecule_id).not.toBeNull();
+
+    const undone = await socket.step("undo", opened.session_id, dropped.version);
+    expect(undone.type === "edit.applied" && undone.can_undo).toBe(false);
+  });
+
+  it("gives an atom's two bonds an angle, as a drag of uncommitted changes and one commit, and refuses what it cannot", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const [carbon, centre, oxygen] = opened.atoms as [SessionAtom, SessionAtom, SessionAtom];
+
+    const first = await socket.setAngle(opened.session_id, opened.version, centre.id, carbon.id, oxygen.id, 100, carbon.id, false);
+    expect(first.type).toBe("atom.angle.ack");
+    if (first.type !== "atom.angle.ack") {
+      return;
+    }
+    expect(first.atoms.map((atom) => atom.id)).toContain(oxygen.id);
+    expect(first.atoms.map((atom) => atom.id)).not.toContain(carbon.id);
+
+    const dropped = await socket.setAngle(opened.session_id, first.version, centre.id, carbon.id, oxygen.id, 130, carbon.id, true);
+    expect(dropped.type === "atom.angle.ack" && dropped.can_undo).toBe(true);
+    if (dropped.type !== "atom.angle.ack") {
+      return;
+    }
+
+    // an angle needs two different atoms
+    await expect(socket.setAngle(opened.session_id, dropped.version, centre.id, carbon.id, carbon.id, 120, null)).rejects.toMatchObject({ code: "INVALID_EDIT" });
+
+    const undone = await socket.step("undo", opened.session_id, dropped.version);
+    expect(undone.type === "edit.applied" && undone.can_undo).toBe(false);
+  });
+
   it("answers a patch made on a stale version with a conflict, and refuses an unknown atom", async () => {
     const stored = await store("CCO");
     const socket = await connected();
@@ -327,6 +426,50 @@ describe("the Studio socket", () => {
     expect(results[1]!.strain).toBeGreaterThan(10);
     expect(results[1]!.findings.length).toBeGreaterThan(0);
     expect(results[1]!.clashes.length).toBeGreaterThan(0);
+  });
+
+  it("relaxes a distorted geometry as one edit, reporting progress, and takes it back in one undo", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const progress: OptimiseProgress[] = [];
+    const results: OptimiseResult[] = [];
+    socket.on<OptimiseProgress>("optimise.progress", (message) => progress.push(message));
+    socket.on<OptimiseResult>("optimise.result", (message) => results.push(message));
+
+    const opened = await socket.openSession(stored.id);
+    const first = opened.atoms[0]!;
+    const distorted = await socket.patchAtoms(opened.session_id, opened.version, [
+      { id: first.id, position: { ...first.position, x: first.position.x + 0.6 } },
+    ]);
+    if (distorted.type !== "atom.patch.ack") {
+      throw new Error(`Expected the patch to be acknowledged, not ${distorted.type}`);
+    }
+
+    const started = await socket.optimise(opened.session_id, distorted.version);
+    expect(started.type).toBe("optimise.started");
+
+    await vi.waitFor(() => expect(results).toHaveLength(1), { timeout: TIMEOUT_MS });
+    const [result] = results as [OptimiseResult];
+    expect(result).toMatchObject({ session_id: opened.session_id, base_version: distorted.version, status: "complete", can_undo: true });
+    expect(result.version).toBe(distorted.version + 1);
+    expect(result.atoms.length).toBeGreaterThan(0);
+    expect(result.strain_after!).toBeLessThan(result.strain_before!);
+    expect(progress[0]).toMatchObject({ session_id: opened.session_id, iteration: 0 });
+
+    const undone = await socket.step("undo", opened.session_id, result.version);
+    expect(undone.type === "edit.applied" && undone.atoms.map((atom) => atom.id).sort()).toEqual(result.atoms.map((atom) => atom.id).sort());
+  });
+
+  it("answers an optimise made on a stale version with a conflict, and a cancel with nothing to stop as not cancelling", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+
+    const stale = await socket.optimise(opened.session_id, opened.version + 5);
+    expect(stale.type).toBe("conflict");
+
+    const cancel = await socket.cancelOptimise(opened.session_id);
+    expect(cancel.cancelling).toBe(false);
   });
 
   it("refuses a rotation of no length", async () => {

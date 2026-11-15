@@ -6,6 +6,7 @@ package com.ruben.chemistry.space;
 final class Minimiser
 {
     /** A function of the coordinates, with its slope. */
+    @FunctionalInterface
     interface Objective
     {
         /**
@@ -14,6 +15,18 @@ final class Minimiser
          * @return the value
          */
         double evaluate(double[] x, double[] gradient);
+    }
+
+    /** Told how a minimisation is getting on, and able to stop it. */
+    @FunctionalInterface
+    interface Progress
+    {
+        /**
+         * @param iteration how many steps have been taken so far
+         * @param energy the value at the current coordinates
+         * @return {@code true} to carry on, {@code false} to stop with the coordinates reached so far
+         */
+        boolean continues(int iteration, double energy);
     }
 
     private static final int MEMORY = 8;
@@ -33,6 +46,18 @@ final class Minimiser
      */
     static double minimise(Objective strain, double[] x, int iterations)
     {
+        return minimise(strain, x, iterations, (iteration, energy) -> true);
+    }
+
+    /**
+     * @param strain what to minimise
+     * @param x the starting coordinates, replaced by the result
+     * @param iterations the most steps to take
+     * @param progress told the energy before every step, and able to stop the minimisation
+     * @return the strain at the result
+     */
+    static double minimise(Objective strain, double[] x, int iterations, Progress progress)
+    {
         int size = x.length;
         double[] gradient = new double[size];
         double energy = strain.evaluate(x, gradient);
@@ -50,6 +75,11 @@ final class Minimiser
 
         for (int iteration = 0; iteration < iterations; iteration++)
         {
+            if (!progress.continues(iteration, energy))
+            {
+                break;
+            }
+
             double norm = norm(gradient);
             if (norm < 1e-4)
             {

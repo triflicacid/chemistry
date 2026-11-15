@@ -1,35 +1,58 @@
 import {useEffect, useRef, useState} from "react";
 import type {Models} from "../selection/models";
 import type {GeometryResult, SessionState} from "../session/messages";
-import type {Activity} from "../session/useSession";
+import type {Activity, OptimisationOutcome} from "../session/useSession";
 import {describeFinding, isCurrent} from "./findings";
+import {describeOutcome} from "./optimisation";
+import {type Segment, Segmented} from "./Segmented";
 
 export interface AnalysisPanelProps {
   activity: Activity[];
   state: SessionState | null;
   /** What the server last said about the geometry. */
   geometry: GeometryResult | null;
+  /** How the latest optimisation ended, or null if there has been none. */
+  outcome: OptimisationOutcome | null;
   models: Models;
 }
 
 type Tab = "geometry" | "activity";
 
+const TABS: Segment<Tab>[] = [
+  { value: "geometry", label: "Geometry" },
+  { value: "activity", label: "Activity" },
+];
+
 /** How strained the geometry is and what is wrong with it, and what the session has done. */
-export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPanelProps) {
+export function AnalysisPanel({ activity, state, geometry, outcome, models }: AnalysisPanelProps) {
   const [tab, setTab] = useState<Tab>("geometry");
 
   return (
     <>
-      <div className="tool-group analysis-tabs" role="group" aria-label="Analysis">
-        <button type="button" className="tool" aria-pressed={tab === "geometry"} onClick={() => setTab("geometry")}>
-          Geometry
-        </button>
-        <button type="button" className="tool" aria-pressed={tab === "activity"} onClick={() => setTab("activity")}>
-          Activity
-        </button>
+      <div className="analysis-tabs">
+        <Segmented label="Analysis" value={tab} options={TABS} onChange={setTab} />
       </div>
-      {tab === "geometry" ? <GeometryView state={state} geometry={geometry} models={models} /> : <ActivityLog activity={activity} />}
+      {tab === "geometry" ? (
+        <>
+          {outcome && <LastOptimisation outcome={outcome} />}
+          <GeometryView state={state} geometry={geometry} models={models} />
+        </>
+      ) : (
+        <ActivityLog activity={activity} />
+      )}
     </>
+  );
+}
+
+/** How the latest optimisation went, kept here after the notice over the viewport has faded. */
+function LastOptimisation({ outcome }: { outcome: OptimisationOutcome }) {
+  const described = describeOutcome(outcome);
+
+  return (
+    <div className={`last-optimisation optimise-${described.tone}`}>
+      <strong>{described.headline}</strong>
+      {described.detail && <span>{described.detail}</span>}
+    </div>
   );
 }
 

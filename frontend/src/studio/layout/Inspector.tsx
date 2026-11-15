@@ -1,4 +1,4 @@
-import type {MouseEvent, ReactNode} from "react";
+import {type MouseEvent, type ReactNode, useEffect, useState} from "react";
 import {type Item, keyOf} from "../selection/items";
 import type {Models} from "../selection/models";
 import {useObservable} from "../selection/observable";
@@ -6,9 +6,14 @@ import type {StateIndex} from "../selection/StateIndex";
 import type {Vec3} from "../../api/types/structure";
 import type {GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
 import {eulerOf, withEuler} from "../session/pose";
+import type {EditResult} from "../session/useSession";
 import type {Pivot} from "../selection/ToolModel";
 import {describeFinding, isCurrent} from "./findings";
 import {NumberField} from "./NumberField";
+import {type Segment, Segmented} from "./Segmented";
+import {type Hold, sideOf} from "../selection/bondLength";
+import {defaultReference, heaviestFirst, referencesAt, torsion} from "../selection/torsion";
+import {angleAt, angleMovers, choosePair} from "../selection/angle";
 
 export interface InspectorProps {
   state: SessionState | null;
@@ -17,6 +22,12 @@ export interface InspectorProps {
   models: Models;
   /** Puts an atom at a position. */
   onMoveAtom: (id: string, position: Vec3) => void;
+  /** Asks the session to give a bond a length, holding an atom of it or neither. */
+  onSetBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
+  /** Asks the session to give a bond a torsion between two atoms, holding an atom of it or neither. */
+  onSetBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
+  /** Asks the session to give an atom's two bonds an angle, holding the atom at the end of one of them or neither. */
+  onSetAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   /** Puts the whole molecule at a pose. */
   onMoveMolecule: (pose: Pose) => void;
   /** Locks or unlocks atoms. */
@@ -29,7 +40,7 @@ export interface InspectorProps {
  * The active item decides what is shown. With nothing selected it shows the session; with a
  * mixture of kinds it says what the mixture is and does not guess at a pane.
  */
-export function Inspector({ state, geometry, models, onMoveAtom, onMoveMolecule, onLockAtoms }: InspectorProps) {
+export function Inspector({ state, geometry, models, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onMoveMolecule, onLockAtoms }: InspectorProps) {
   const { selection, index } = models;
   const { items, active } = useObservable(selection);
 
@@ -63,6 +74,9 @@ export function Inspector({ state, geometry, models, onMoveAtom, onMoveMolecule,
         geometry={geometry}
         models={models}
         onMoveAtom={onMoveAtom}
+        onSetBondLength={onSetBondLength}
+        onSetBondTorsion={onSetBondTorsion}
+        onSetAngle={onSetAngle}
         onMoveMolecule={onMoveMolecule}
         onLockAtoms={onLockAtoms}
       />
@@ -76,19 +90,22 @@ interface ItemPaneProps {
   geometry: GeometryResult | null;
   models: Models;
   onMoveAtom: (id: string, position: Vec3) => void;
+  onSetBondLength: InspectorProps["onSetBondLength"];
+  onSetBondTorsion: InspectorProps["onSetBondTorsion"];
+  onSetAngle: InspectorProps["onSetAngle"];
   onMoveMolecule: (pose: Pose) => void;
   onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
-function ItemPane({ item, index, geometry, models, onMoveAtom, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
+function ItemPane({ item, index, geometry, models, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
       const atom = index.atoms.get(item.id);
-      return atom ? <AtomPane key={atom.id} atom={atom} index={index} geometry={geometry} models={models} onMove={onMoveAtom} onLock={onLockAtoms} /> : null;
+      return atom ? <AtomPane key={atom.id} atom={atom} index={index} geometry={geometry} models={models} onMove={onMoveAtom} onLock={onLockAtoms} onSetAngle={onSetAngle} /> : null;
     }
     case "bond": {
       const bond = index.bonds.get(item.id);
-      return bond ? <BondPane bond={bond} index={index} geometry={geometry} models={models} /> : null;
+      return bond ? <BondPane key={bond.id} bond={bond} index={index} geometry={geometry} models={models} onSetLength={onSetBondLength} onSetTorsion={onSetBondTorsion} /> : null;
     }
     default:
       return <MoleculePane id={item.id} index={index} models={models} onMove={onMoveMolecule} />;
@@ -251,9 +268,10 @@ interface AtomPaneProps {
   models: Models;
   onMove: (id: string, position: Vec3) => void;
   onLock: (ids: string[], locked: boolean) => void;
+  onSetAngle: InspectorProps["onSetAngle"];
 }
 
-function AtomPane({ atom, index, geometry, models, onMove, onLock }: AtomPaneProps) {
+function AtomPane({ atom, index, geometry, models, onMove, onLock, onSetAngle }: AtomPaneProps) {
   const { position } = atom;
   const fragment = index.fragmentOf({ kind: "atom", id: atom.id });
   const state = index.state;
@@ -292,6 +310,7 @@ function AtomPane({ atom, index, geometry, models, onMove, onLock }: AtomPanePro
           />
         </dd>
         {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
+        <AngleRows centre={atom.id} index={index} models={models} onSetAngle={onSetAngle} />
       </dl>
 
       <h4 className="pane-subtitle">Bonded to</h4>
@@ -308,16 +327,140 @@ function AtomPane({ atom, index, geometry, models, onMove, onLock }: AtomPanePro
   );
 }
 
+interface AngleRowsProps {
+  centre: string;
+  index: StateIndex;
+  models: Models;
+  onSetAngle: InspectorProps["onSetAngle"];
+}
+
+/**
+ * The rows that give an atom's two bonds an angle: the angle, which atoms it is measured between, and which of them stays
+ * where it is. Nothing is shown for an atom with fewer than two neighbours.
+ */
+function AngleRows({ centre, index, models, onSetAngle }: AngleRowsProps) {
+  const { tools } = models;
+  const { hold } = useObservable(tools);
+  const [chosen, setChosen] = useState<{ from?: string; to?: string }>({});
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const neighbours = heaviestFirst(index, index.neighboursOf(centre));
+  const pair = choosePair(index, centre, chosen);
+
+  // the viewport marks the angle shown here, and stops when the rows go
+  const markedFrom = pair?.from;
+  const markedTo = pair?.to;
+  useEffect(() => {
+    tools.showAngle(markedFrom && markedTo ? { centre, from: markedFrom, to: markedTo } : null);
+    return () => tools.showAngle(null);
+  }, [tools, centre, markedFrom, markedTo]);
+
+  const a = pair && index.atoms.get(pair.from);
+  const b = index.atoms.get(centre);
+  const c = pair && index.atoms.get(pair.to);
+  if (!pair || !a || !b || !c) {
+    return null;
+  }
+
+  const heldAtom = hold === "first" ? pair.from : hold === "second" ? pair.to : null;
+  const holds: Segment<Hold>[] = [
+    { value: "first", label: index.label(pair.from), title: `Keep ${index.label(pair.from)} where it is and swing ${index.label(pair.to)}` },
+    { value: "second", label: index.label(pair.to), title: `Keep ${index.label(pair.to)} where it is and swing ${index.label(pair.from)}` },
+    { value: "both", label: "Neither", title: "Swing both, half the change each, so the line that bisects the angle stays put" },
+  ];
+  const inRing = angleMovers(index, centre, pair, "both") === null;
+  const select = (value: string, label: string, onChange: (id: string) => void) => (
+    <select value={value} aria-label={label} onChange={(event) => onChange(event.target.value)}>
+      {neighbours.map((id) => (
+        <option key={id} value={id}>
+          {index.label(id)}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <>
+      <dt>Angle</dt>
+      <dd className="position">
+        <NumberField
+          label={`Angle at ${index.label(centre)} between ${index.label(pair.from)} and ${index.label(pair.to)}, in degrees`}
+          value={angleAt(a.position, b.position, c.position)}
+          digits={1}
+          onCommit={(value) => void onSetAngle(centre, pair.from, pair.to, value, heldAtom).then((result) => setRefusal(result.kind === "refused" ? result.message : null))}
+        />
+        <span className="unit">°</span>
+      </dd>
+      <dt>Between</dt>
+      <dd className="position">
+        {select(pair.from, `One atom the angle at ${index.label(centre)} is measured to`, (id) => setChosen({ ...chosen, from: id }))}
+        <span className="unit">and</span>
+        {select(pair.to, `The other atom the angle at ${index.label(centre)} is measured to`, (id) => setChosen({ ...chosen, to: id }))}
+      </dd>
+      <dt>Hold</dt>
+      <dd>
+        <Segmented label="Which atom of the angle stays where it is" value={hold} options={holds} onChange={(next) => tools.holding(next)} />
+      </dd>
+      <dd className="note-row">
+        {refusal !== null && <p className="panel-note">{refusal}</p>}
+        <p className="panel-note">
+          {inRing
+            ? "A bond at this atom is in a ring, so the side beyond it cannot swing without tearing the ring. Hold the other atom to swing the one that is free."
+            : "Swings everything beyond the atom that moves about this atom, in the plane of the two bonds, so no length changes. The other bonds on the atom stay where they are. Past 180° the bond swings through the straight line to the other side, and 361° is 1°."}
+        </p>
+      </dd>
+    </>
+  );
+}
+
 interface BondPaneProps {
   bond: SessionBond;
   index: StateIndex;
   geometry: GeometryResult | null;
   models: Models;
+  onSetLength: InspectorProps["onSetBondLength"];
+  onSetTorsion: InspectorProps["onSetBondTorsion"];
 }
 
-function BondPane({ bond, index, geometry, models }: BondPaneProps) {
+function BondPane({ bond, index, geometry, models, onSetLength, onSetTorsion }: BondPaneProps) {
+  const { tools } = models;
+  // which atom stays is shared with the viewport's handle on the bond
+  const { hold } = useObservable(tools);
+  const setHold = (next: Hold) => tools.holding(next);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const holds: Segment<Hold>[] = [
+    { value: "first", label: index.label(bond.first), title: `Keep ${index.label(bond.first)} where it is and move ${index.label(bond.second)}` },
+    { value: "second", label: index.label(bond.second), title: `Keep ${index.label(bond.second)} where it is and move ${index.label(bond.first)}` },
+    { value: "both", label: "Neither", title: "Move both atoms, half the change each, so the middle of the bond stays put" },
+  ];
+  const [chosen, setChosen] = useState<{ first?: string; second?: string }>({});
+
+  // the atoms the torsion is measured from: the user's choice where it still stands, else the heaviest neighbour
+  const near = referencesAt(index, bond, "first");
+  const far = referencesAt(index, bond, "second");
+  const fallback = defaultReference(index, bond);
+  const reference = fallback && {
+    first: chosen.first && near.includes(chosen.first) ? chosen.first : fallback.first,
+    second: chosen.second && far.includes(chosen.second) ? chosen.second : fallback.second,
+  };
+  const inRing = sideOf(index, bond, bond.first) === null;
+
+  // the viewport marks the torsion shown here, and stops when the pane goes
+  const markedFirst = reference?.first;
+  const markedSecond = reference?.second;
+  useEffect(() => {
+    tools.showTorsion(markedFirst && markedSecond ? { bond: bond.id, first: markedFirst, second: markedSecond } : null);
+    return () => tools.showTorsion(null);
+  }, [tools, bond.id, markedFirst, markedSecond]);
+
+  // the session decides what an edit does and whether it is allowed; this only says why it was not
+  const heldAtom = hold === "first" ? bond.first : hold === "second" ? bond.second : null;
+  const told = (result: EditResult) => setRefusal(result.kind === "refused" ? result.message : null);
+
   const first = index.atoms.get(bond.first);
   const second = index.atoms.get(bond.second);
+  const a = reference && index.atoms.get(reference.first);
+  const d = reference && index.atoms.get(reference.second);
+  const angle = first && second && a && d ? torsion(a.position, first.position, second.position, d.position) : null;
   const length = first && second ? Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y, first.position.z - second.position.z) : null;
   return (
     <>
@@ -326,8 +469,67 @@ function BondPane({ bond, index, geometry, models }: BondPaneProps) {
         <Property name="ID" value={bond.id} mono />
         <Property name="Order" value={bond.order.toLowerCase()} />
         <Property name="Aromatic" value={bond.aromatic ? "yes" : "no"} />
-        {length !== null && <Property name="Length" value={`${length.toFixed(3)} Å`} mono />}
+        {length !== null && (
+          <>
+            <dt>Length</dt>
+            <dd className="position">
+              <NumberField
+                label={`Length of ${index.bondLabel(bond)}, in ångströms`}
+                value={length}
+                onCommit={(value) => void onSetLength(bond.id, value, heldAtom).then(told)}
+              />
+              <span className="unit">Å</span>
+            </dd>
+            <dt>Hold</dt>
+            <dd>
+              <Segmented label="Which atom of the bond stays where it is" value={hold} options={holds} onChange={setHold} />
+            </dd>
+            {reference && angle !== null && (
+              <>
+                <dt>Torsion</dt>
+                <dd className="position">
+                  <NumberField
+                    label={`Torsion about ${index.bondLabel(bond)}, from ${index.label(reference.first)} to ${index.label(reference.second)}, in degrees`}
+                    value={angle}
+                    digits={1}
+                    disabled={inRing}
+                    onCommit={(value) => void onSetTorsion(bond.id, reference.first, reference.second, value, heldAtom).then(told)}
+                  />
+                  <span className="unit">°</span>
+                </dd>
+                <dt>From</dt>
+                <dd className="position">
+                  <select
+                    value={reference.first}
+                    aria-label={`The atom on ${index.label(bond.first)} the torsion is measured from`}
+                    onChange={(event) => setChosen({ ...chosen, first: event.target.value })}
+                  >
+                    {near.map((id) => (
+                      <option key={id} value={id}>
+                        {index.label(id)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="unit">to</span>
+                  <select
+                    value={reference.second}
+                    aria-label={`The atom on ${index.label(bond.second)} the torsion is measured from`}
+                    onChange={(event) => setChosen({ ...chosen, second: event.target.value })}
+                  >
+                    {far.map((id) => (
+                      <option key={id} value={id}>
+                        {index.label(id)}
+                      </option>
+                    ))}
+                  </select>
+                </dd>
+              </>
+            )}
+          </>
+        )}
       </dl>
+      {refusal !== null && <p className="panel-note">{refusal}</p>}
+      <p className="panel-note">{lengthNote(index, bond.id)}</p>
 
       <h4 className="pane-subtitle">Joins</h4>
       <Links
@@ -338,6 +540,21 @@ function BondPane({ bond, index, geometry, models }: BondPaneProps) {
       <StrainDetails atoms={[bond.first, bond.second]} index={index} geometry={geometry} models={models} />
     </>
   );
+}
+
+/**
+ * Says what changing a bond's length would do to the rest of the molecule.
+ *
+ * @param index the session's atoms and bonds
+ * @param id the bond
+ * @returns a sentence for the user
+ */
+function lengthNote(index: StateIndex, id: string): string {
+  const bond = index.bonds.get(id);
+  if (bond && sideOf(index, bond, bond.first) === null) {
+    return "This bond is in a ring, so only its two atoms move and the rest of the ring is left behind. Optimise afterwards to relax it. It cannot be turned, so its torsion is read-only.";
+  }
+  return "Everything beyond the atom that moves goes with it, so no other length or angle changes. A negative length passes it through the held atom to the other side. The torsion turns that side about the bond.";
 }
 
 interface StrainDetailsProps {

@@ -1,10 +1,33 @@
 import {useObservable} from "../selection/observable";
-import type {ToolModel} from "../selection/ToolModel";
+import type {Tool, ToolModel} from "../selection/ToolModel";
 import type {LayoutState, Panel} from "../store";
-import type {SessionPhase} from "../session/useSession";
+import type {Optimising, SessionPhase} from "../session/useSession";
+import {type Segment, Segmented} from "./Segmented";
+
+/** What a left-drag does, one at a time. */
+const TOOLS: Segment<Tool>[] = [
+  { value: "select", label: "Select", title: "Dragging an atom orbits the camera, like dragging anywhere else" },
+  {
+    value: "move",
+    label: "Move",
+    title: "Dragging an atom moves it, and with a molecule selected its handles move the whole molecule. Hold an atom to an axis or plane with X, Y and Z, or the buttons in the viewport",
+  },
+  { value: "rotate", label: "Rotate", title: "Turn the whole molecule about a pivot, or choose Bonds & angles to turn about a bond or change an angle" },
+  {
+    value: "pan",
+    label: "Pan",
+    title: "Dragging pans the view and right-dragging orbits it. Scrolling zooms towards the pointer. Double-click an atom to centre the view on it",
+  },
+];
 
 export interface ToolbarProps {
   phase: SessionPhase;
+  /** The optimisation under way, or null if there is none. */
+  optimising: Optimising | null;
+  /** Whether there is a structure to optimise. */
+  canOptimise: boolean;
+  onOptimise: () => void;
+  onCancelOptimise: () => void;
   tools: ToolModel;
   /** Whether any atom is selected, which is what a lock applies to. */
   canLock: boolean;
@@ -21,9 +44,7 @@ export interface ToolbarProps {
   onUndo: () => void;
   onRedo: () => void;}
 
-const WAITING = "Not built yet";
-
-export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo }: ToolbarProps) {
   const { tool } = useObservable(tools);
 
   return (
@@ -31,33 +52,7 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
       <span className="brand">Molecular Studio</span>
 
       <div className="tool-group" role="group" aria-label="Tools">
-        <button
-          type="button"
-          className="tool"
-          aria-pressed={tool === "select"}
-          title="Dragging an atom orbits the camera, like dragging anywhere else"
-          onClick={() => tools.use("select")}
-        >
-          Select
-        </button>
-        <button
-          type="button"
-          className="tool"
-          aria-pressed={tool === "move"}
-          title="Dragging an atom moves it, and with a molecule selected its handles move the whole molecule. Hold an atom to an axis or plane with X, Y and Z, or the buttons in the viewport"
-          onClick={() => tools.use("move")}
-        >
-          Move
-        </button>
-        <button
-          type="button"
-          className="tool"
-          aria-pressed={tool === "rotate"}
-          title="With a molecule selected, drag a ring to turn the whole molecule about its pivot"
-          onClick={() => tools.use("rotate")}
-        >
-          Rotate
-        </button>
+        <Segmented label="Tool" value={tool} options={TOOLS} onChange={(next) => tools.use(next)} />
         <button
           type="button"
           className="tool"
@@ -77,9 +72,21 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
         <button type="button" className="tool" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" onClick={onRedo}>
           Redo
         </button>
-        <button type="button" className="tool" disabled title={WAITING}>
-          Optimise
-        </button>      </div>
+        <button
+          type="button"
+          className="tool"
+          disabled={!optimising && !canOptimise}
+          aria-pressed={optimising !== null}
+          title={
+            optimising
+              ? "Stop optimising. The structure is left as it was"
+              : "Relax the geometry to lower its strain, keeping its stereochemistry and holding locked atoms where they are. One undo takes it back"
+          }
+          onClick={optimising ? onCancelOptimise : onOptimise}
+        >
+          {optimising ? "Stop" : "Optimise"}
+        </button>
+      </div>
 
       <div className="tool-group tool-group-end" role="group" aria-label="Panels">
         <PanelToggle panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} />
@@ -89,6 +96,7 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
 
       <span className={`status status-${phase.kind}`} role="status">
         {describe(phase)}
+        {phase.kind === "open" && optimising ? ` · optimising, step ${optimising.iteration}` : ""}
         {phase.kind === "open" && strain ? ` · ${strain}` : ""}
         {phase.kind === "open" && saved ? " · edits saved" : ""}
       </span>
