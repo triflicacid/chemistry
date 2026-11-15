@@ -35,7 +35,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 4;
+    private static final int PROTOCOL_VERSION = 5;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -523,6 +523,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         Map<String, Object> fields = new LinkedHashMap<>(body);
         fields.remove("type");
         fields.remove("sequence");
+        fields.remove("protocol_version");
         return RecordConverter.bind(fields, type, JsonNames::of);
     }
 
@@ -575,6 +576,28 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     "edit.undo", endpoint::undo,
                     "edit.redo", endpoint::redo));
             this.endpoint = endpoint;
+        }
+
+        /**
+         * Refuses a message that was not written for this server's protocol.
+         */
+        @Override
+        protected boolean accepts(WebSocketContext context, Map<String, Object> body, String type, Long sequence) throws IOException
+        {
+            Object sent = body.get("protocol_version");
+            if (sent instanceof Number number && number.doubleValue() == PROTOCOL_VERSION)
+            {
+                return true;
+            }
+
+            String what = sent instanceof Number number
+                    ? (number.doubleValue() < PROTOCOL_VERSION
+                            ? "is out of date: reload the page"
+                            : "is newer than this server: restart the server")
+                    : "did not name its protocol_version: reload the page";
+            TypedJsonSocketListener.error(context, type, sequence, "PROTOCOL_MISMATCH",
+                    "This server speaks protocol " + PROTOCOL_VERSION + ", and the client " + what);
+            return false;
         }
 
         @Override

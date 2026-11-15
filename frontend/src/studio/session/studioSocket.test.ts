@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioError, StudioSocket } from "./studioSocket";
-import type { SessionState } from "./messages";
+import { PROTOCOL_VERSION, type SessionState } from "./messages";
 
 const STUDIO_URL = process.env.WS_URL ?? "ws://localhost:8081/ws/studio";
 const API_URL = process.env.API_URL ?? "http://localhost:8080";
@@ -102,7 +102,7 @@ describe("the Studio socket", () => {
     const ready = await socket.connect();
 
     expect(ready.type).toBe("session.ready");
-    expect(ready.protocol_version).toBe(4);
+    expect(ready.protocol_version).toBe(PROTOCOL_VERSION);
     expect(ready.connection_id).toMatch(/^ws-/);
     expect(socket.isOpen).toBe(true);
   });
@@ -279,5 +279,78 @@ describe("the Studio socket", () => {
     const socket = new StudioSocket({ url: STUDIO_URL });
 
     expect(() => socket.send("ping")).toThrow(StudioError);
+  });
+});
+
+/** A server that greets with whatever protocol it is told to, and records what it is sent, with no network involved. */
+function stubServer(protocol: number): { sent: string[]; restore: () => void } {
+  const real = globalThis.WebSocket;
+  const sent: string[] = [];
+
+  class Stub extends EventTarget {
+    static readonly OPEN = 1;
+    readyState = 1;
+    closed = false;
+
+    constructor() {
+      super();
+      queueMicrotask(() => {
+        const data = JSON.stringify({ type: "session.ready", connection_id: "ws-stub", protocol_version: protocol });
+        this.dispatchEvent(Object.assign(new Event("message"), { data }));
+      });
+    }
+
+    send(text: string): void {
+      sent.push(text);
+    }
+
+    close(): void {
+      this.closed = true;
+      this.readyState = 3;
+    }
+  }
+
+  globalThis.WebSocket = Stub as unknown as typeof WebSocket;
+  return {
+    sent,
+    restore: () => {
+      globalThis.WebSocket = real;
+    },
+  };
+}
+
+describe("StudioSocket protocol check", () => {
+  it("names its protocol in every message it sends", async () => {
+    const stub = stubServer(PROTOCOL_VERSION);
+    try {
+      const socket = new StudioSocket({ url: "ws://stub", keepAliveMs: 0 });
+      await socket.connect();
+      socket.send("ping");
+      socket.send("session.resync", { session_id: "s" });
+
+      expect(stub.sent.map((text) => JSON.parse(text).protocol_version)).toEqual([PROTOCOL_VERSION, PROTOCOL_VERSION]);
+      socket.close();
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("refuses a server that speaks another protocol, and says which side is out of date", async () => {
+    for (const [protocol, advice] of [
+      [PROTOCOL_VERSION - 1, "restart"],
+      [PROTOCOL_VERSION + 1, "reload"],
+    ] as const) {
+      const stub = stubServer(protocol);
+      try {
+        const told = vi.fn();
+        const socket = new StudioSocket({ url: "ws://stub", keepAliveMs: 0, onIncompatible: told });
+
+        await expect(socket.connect()).rejects.toMatchObject({ code: "PROTOCOL_MISMATCH", message: expect.stringContaining(advice) });
+        expect(told).toHaveBeenCalledOnce();
+        expect(stub.sent).toEqual([]);
+      } finally {
+        stub.restore();
+      }
+    }
   });
 });

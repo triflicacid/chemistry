@@ -1,5 +1,12 @@
 import type { Vec3 } from "../../api/types/structure";
 
+/**
+ * The version of the session protocol this client is written for. It goes in every message, and the server refuses
+ * a message that names another, so it is raised whenever a message changes in a way an older server or client would
+ * misread. The server raises its own to match.
+ */
+export const PROTOCOL_VERSION = 5;
+
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
   type: string;

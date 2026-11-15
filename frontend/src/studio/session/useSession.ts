@@ -190,6 +190,12 @@ export function useSession(client?: ChemistryApi): Session {
           });
       },
       onDrop: (why) => note(`The connection dropped (${why}); reconnecting`, true),
+      onIncompatible: (error) => {
+        if (held.current) {
+          setPhase({ kind: "failed", message: error.message });
+          note(error.message, true);
+        }
+      },
     });
     socketRef.current = socket;
 

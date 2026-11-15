@@ -1,5 +1,14 @@
 import type { Vec3 } from "../../api/types/structure";
-import type { EditApplied, LockAck, PatchAck, ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
+import {
+  type EditApplied,
+  type LockAck,
+  type PatchAck,
+  PROTOCOL_VERSION,
+  type ServerEnvelope,
+  type SessionConflict,
+  type SessionReady,
+  type SessionState,
+} from "./messages";
 
 /** The error the server answered a message with. */
 export class StudioError extends Error {
@@ -27,6 +36,8 @@ export interface StudioSocketOptions {
   onReady?: (ready: SessionReady) => void;
   /** Told when the connection drops, before a reconnect is scheduled. */
   onDrop?: (reason: string) => void;
+  /** Told when the server greets the connection speaking another protocol, after which the socket gives up on it. */
+  onIncompatible?: (error: StudioError) => void;
 }
 
 /** A message waiting for its reply. */
@@ -50,8 +61,8 @@ export const ANY = "*";
 /** The Studio editing channel: sends typed messages, matches replies, and reconnects if dropped. */
 export class StudioSocket {
   private readonly url: string;
-  private readonly options: Required<Omit<StudioSocketOptions, "url" | "onReady" | "onDrop">> &
-    Pick<StudioSocketOptions, "onReady" | "onDrop">;
+  private readonly options: Required<Omit<StudioSocketOptions, "url" | "onReady" | "onDrop" | "onIncompatible">> &
+    Pick<StudioSocketOptions, "onReady" | "onDrop" | "onIncompatible">;
 
   private socket: WebSocket | null = null;
   private sequence = 0;
@@ -81,7 +92,11 @@ export class StudioSocket {
 
       const greeted = this.on<SessionReady>("session.ready", (ready) => {
         greeted();
-        resolve(ready);
+        if (ready.protocol_version === PROTOCOL_VERSION) {
+          resolve(ready);
+        } else {
+          reject(mismatch(ready.protocol_version));
+        }
       });
 
       socket.addEventListener("message", (event) => this.receive(String(event.data)));
@@ -131,7 +146,7 @@ export class StudioSocket {
     }
 
     const sequence = ++this.sequence;
-    this.socket.send(JSON.stringify({ ...payload, type, sequence }));
+    this.socket.send(JSON.stringify({ ...payload, type, sequence, protocol_version: PROTOCOL_VERSION }));
     this.rearm();
     return sequence;
   }
@@ -271,8 +286,17 @@ export class StudioSocket {
     this.rearm();
 
     if (message.type === "session.ready") {
+      const ready = message as SessionReady;
+      if (ready.protocol_version !== PROTOCOL_VERSION) {
+        this.wanted = false;
+        this.notify(message);
+        this.socket?.close();
+        this.options.onIncompatible?.(mismatch(ready.protocol_version));
+        return;
+      }
+
       this.attempt = 0;
-      this.options.onReady?.(message as SessionReady);
+      this.options.onReady?.(ready);
     }
 
     this.answer(message);
@@ -352,6 +376,18 @@ export class StudioSocket {
       }
     }, this.options.keepAliveMs);
   }
+}
+
+/**
+ * @param server the protocol the server says it speaks
+ * @returns the error to report, which says which side is out of date
+ */
+function mismatch(server: number): StudioError {
+  const advice =
+    server < PROTOCOL_VERSION
+      ? "The server is out of date: restart it."
+      : "This page is out of date: reload it.";
+  return new StudioError("PROTOCOL_MISMATCH", `This page speaks protocol ${PROTOCOL_VERSION} and the server speaks ${server}. ${advice}`);
 }
 
 /** Where the page's own host serves the channel, which the dev server proxies to the backend. */

@@ -23,6 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class StudioSocketEndpointTest
 {
+    /** The start of every message, naming the protocol the client is written for. */
+    private static final String PROTOCOL = "\"protocol_version\": 5, ";
+
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
 
@@ -40,7 +43,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 4L);
+        assertThat(ready).containsEntry("protocol_version", 5L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -57,7 +60,7 @@ class StudioSocketEndpointTest
         WebSocket socket = studio(collector);
         collector.next();
 
-        socket.sendText("{\"type\": \"bond.patch\", \"sequence\": 7}", true).join();
+        socket.sendText("{" + PROTOCOL + "\"type\": \"bond.patch\", \"sequence\": 7}", true).join();
         Map<String, Object> unknown = collector.nextJson();
         assertThat(unknown).containsEntry("type", "error").containsEntry("answering", "bond.patch");
         assertThat(unknown).containsEntry("sequence", 7L);
@@ -74,6 +77,37 @@ class StudioSocketEndpointTest
         // the session survived all three
         socket.sendText("{\"type\": \"ping\"}", true).join();
         assertThat(collector.nextJson()).containsEntry("type", "pong");
+    }
+
+    @Test
+    void should_refuse_a_message_written_for_another_protocol_before_anything_else() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        // a stale client, a client from the future, and one that never said, each refused for its own reason
+        socket.sendText("{\"protocol_version\": 4, \"type\": \"session.open\", \"sequence\": 1, \"molecule_id\": \"" + stored.id() + "\"}", true).join();
+        Map<String, Object> stale = collector.nextJson();
+        assertThat(error(stale)).containsEntry("code", "PROTOCOL_MISMATCH");
+        assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
+        assertThat((String) error(stale).get("message")).contains("out of date");
+
+        socket.sendText("{\"protocol_version\": 6, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
+
+        // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
+        socket.sendText("{\"type\": \"bond.patch\", \"sequence\": 3}", true).join();
+        Map<String, Object> unnamed = collector.nextJson();
+        assertThat(error(unnamed)).containsEntry("code", "PROTOCOL_MISMATCH");
+        assertThat((String) error(unnamed).get("message")).contains("did not name");
+
+        // nothing was opened, and a ping needs no version
+        socket.sendText("{\"type\": \"ping\", \"sequence\": 4}", true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "pong");
+        socket.sendText(open(stored.id(), 5), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "session.state").containsEntry("version", 1L);
     }
 
     @Test
@@ -155,13 +189,13 @@ class StudioSocketEndpointTest
         WebSocket socket = studio(collector);
         collector.next();
 
-        socket.sendText("{\"type\": \"session.open\", \"sequence\": 1}", true).join();
+        socket.sendText("{" + PROTOCOL + "\"type\": \"session.open\", \"sequence\": 1}", true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
 
-        socket.sendText("{\"type\": \"session.open\", \"molecule_id\": \"x\", \"shape\": \"round\"}", true).join();
+        socket.sendText("{" + PROTOCOL + "\"type\": \"session.open\", \"molecule_id\": \"x\", \"shape\": \"round\"}", true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
 
-        socket.sendText("{\"type\": \"session.open\", \"molecule_id\": \"" + store("CCO").id()
+        socket.sendText("{" + PROTOCOL + "\"type\": \"session.open\", \"molecule_id\": \"" + store("CCO").id()
                 + "\", \"conformers\": 0}", true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
     }
@@ -372,7 +406,7 @@ class StudioSocketEndpointTest
         WebSocket socket = studio(collector);
         collector.next();
 
-        socket.sendText("{\"type\": \"smiles.submit\", \"sequence\": 1}", true).join();
+        socket.sendText("{" + PROTOCOL + "\"type\": \"smiles.submit\", \"sequence\": 1}", true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
 
         socket.sendText(submit("not-a-session", 1, "CCO", 2), true).join();
@@ -445,7 +479,7 @@ class StudioSocketEndpointTest
         socket.sendText(patch(sessionId, 1, true, "a999", 1, 1, 1, 2), true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "UNKNOWN_ID");
 
-        socket.sendText("{\"type\": \"atom.patch\", \"sequence\": 3, \"session_id\": \"" + sessionId
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.patch\", \"sequence\": 3, \"session_id\": \"" + sessionId
                 + "\", \"base_version\": 1, \"atoms\": [{\"id\": \"a1\"}]}", true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
 
@@ -522,7 +556,7 @@ class StudioSocketEndpointTest
         socket.sendText(lock(sessionId, 1, "a999", true, 2), true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "UNKNOWN_ID");
 
-        socket.sendText("{\"type\": \"atom.lock\", \"sequence\": 3, \"session_id\": \"" + sessionId
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.lock\", \"sequence\": 3, \"session_id\": \"" + sessionId
                 + "\", \"base_version\": 1, \"atoms\": [\"a1\"]}", true).join();
         assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
 
@@ -682,7 +716,7 @@ class StudioSocketEndpointTest
      */
     private static String open(String moleculeId, int sequence)
     {
-        return "{\"type\": \"session.open\", \"sequence\": " + sequence + ", \"molecule_id\": \"" + moleculeId + "\"}";
+        return "{" + PROTOCOL + "\"type\": \"session.open\", \"sequence\": " + sequence + ", \"molecule_id\": \"" + moleculeId + "\"}";
     }
 
     /**
@@ -692,7 +726,7 @@ class StudioSocketEndpointTest
      */
     private static String resync(String sessionId, int sequence)
     {
-        return "{\"type\": \"session.resync\", \"sequence\": " + sequence
+        return "{" + PROTOCOL + "\"type\": \"session.resync\", \"sequence\": " + sequence
                 + ", \"session_id\": \"" + sessionId + "\", \"since_version\": 1}";
     }
 
@@ -705,7 +739,7 @@ class StudioSocketEndpointTest
      */
     private static String submit(String sessionId, long baseVersion, String smiles, int sequence)
     {
-        return "{\"type\": \"smiles.submit\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+        return "{" + PROTOCOL + "\"type\": \"smiles.submit\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + ", \"smiles\": \"" + smiles + "\"}";
     }
 
@@ -722,7 +756,7 @@ class StudioSocketEndpointTest
      */
     private static String patch(String sessionId, long baseVersion, boolean commit, String atom, double x, double y, double z, int sequence)
     {
-        return "{\"type\": \"atom.patch\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+        return "{" + PROTOCOL + "\"type\": \"atom.patch\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + ", \"commit\": " + commit + ", \"atoms\": [{\"id\": \"" + atom
                 + "\", \"position\": {\"x\": " + x + ", \"y\": " + y + ", \"z\": " + z + "}}]}";
     }
@@ -737,7 +771,7 @@ class StudioSocketEndpointTest
      */
     private static String lock(String sessionId, long baseVersion, String atom, boolean locked, int sequence)
     {
-        return "{\"type\": \"atom.lock\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+        return "{" + PROTOCOL + "\"type\": \"atom.lock\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + ", \"atoms\": [\"" + atom + "\"], \"locked\": " + locked + "}";
     }
 
@@ -750,7 +784,7 @@ class StudioSocketEndpointTest
      */
     private static String history(String type, String sessionId, long baseVersion, int sequence)
     {
-        return "{\"type\": \"" + type + "\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+        return "{" + PROTOCOL + "\"type\": \"" + type + "\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + "}";
     }
 

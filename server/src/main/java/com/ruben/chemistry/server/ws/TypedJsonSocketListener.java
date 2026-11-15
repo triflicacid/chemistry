@@ -66,6 +66,11 @@ public abstract class TypedJsonSocketListener implements WebSocketListener
             return;
         }
 
+        if (!accepts(context, body, type, sequence))
+        {
+            return;
+        }
+
         MessageHandler handler = handlers.get(type);
         if (handler == null)
         {
@@ -74,6 +79,21 @@ public abstract class TypedJsonSocketListener implements WebSocketListener
         }
 
         handler.handle(context, body, sequence);
+    }
+
+    /**
+     * Decides whether a message may go on to its handler.
+     *
+     * @param context the connection that sent the message
+     * @param body the parsed message
+     * @param type the message's type
+     * @param sequence the message's sequence number, if it had one
+     * @return {@code true} to handle the message, which is what this does unless overridden
+     * @throws IOException if the connection cannot be written
+     */
+    protected boolean accepts(WebSocketContext context, Map<String, Object> body, String type, Long sequence) throws IOException
+    {
+        return true;
     }
 
     /**
