@@ -2,8 +2,11 @@ import type {Vec3} from "../../api/types/structure";
 import type {Constraint} from "../viewport/dragPlane";
 import {Observable} from "./observable";
 
-/** What a left-drag does: select, move atoms or the whole molecule, or rotate the whole molecule. */
-export type Tool = "select" | "move" | "rotate";
+/**
+ * What a left-drag does: select, move atoms or the whole molecule, rotate the whole molecule, or pan the view, in which
+ * case a right-drag orbits it instead.
+ */
+export type Tool = "select" | "move" | "rotate" | "pan";
 
 /** Which axes a constraint, and the molecule's gizmo, is measured along: the scene's or the molecule's own. */
 export type Space = "world" | "local";

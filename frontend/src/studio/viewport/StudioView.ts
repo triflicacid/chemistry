@@ -5,11 +5,13 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  MOUSE,
   type Object3D,
   Quaternion,
   Ray,
   Raycaster,
   type Sprite,
+  TOUCH,
   Vector3
 } from "three";
 import type {Vec3} from "../../api/types/structure";
@@ -118,6 +120,9 @@ const SAME_VIEW = 1e-3;
 /** How far the pointer may move between pressing and releasing and still count as a click. */
 const CLICK_SLOP = 4;
 
+/** The longest, in milliseconds, between two clicks that make a double-click. */
+const DOUBLE_CLICK_MS = 350;
+
 const STYLE: Style = "ball_and_stick";
 
 /** An atom that moves with a drag. */
@@ -180,6 +185,10 @@ export class StudioView {
   private down: { x: number; y: number } | null = null;
   /** Where the right button was pressed, so that its release can tell a click from a pan. */
   private rightDown: ScreenPoint | null = null;
+  /** The last click, so that a second one soon after and in the same place can be told for a double-click. */
+  private lastClick: (ScreenPoint & { at: number }) | null = null;
+  /** Whether a left-drag pans the view, and a right-drag orbits it. */
+  private panning = false;
   private locked: ReadonlySet<string> = new Set();
   /** Whether pressing on an atom picks it up. */
   private moving = false;
@@ -190,7 +199,8 @@ export class StudioView {
   private pivotPoint = new Vector3();
   /**
    * The point the view was last anchored on, in the molecule's own frame so that it stays on the same spot of the
-   * molecule when the molecule is moved. Panning does not change it: only framing and a right-click do.
+   * molecule when the molecule is moved. Panning does not change it: only framing, a right-click and a double-click do.
+   * The scene axes are drawn here.
    */
   private anchor = new Vector3();
   /** What the molecule's gizmo does, or null while it is not shown. */
@@ -219,11 +229,12 @@ export class StudioView {
       canvas,
       sizedBy: canvas,
       onMove: () => {
-        // the axes sit on the point the view orbits, so they show where the anchor is
-        this.axes.position.copy(this.stage.controls.target);
         this.placeGuide();
       },
     });
+    // scrolling goes towards what the pointer is over, which also moves the view, so a molecule can be brought closer
+    // without a pan. It moves the point the view orbits, but not the anchor the molecule's handles sit on
+    this.stage.controls.zoomToCursor = true;
     // off until the viewport says otherwise, so they do not flash on before it does
     this.axes.visible = false;
     this.stage.scene.add(this.content, this.axes, this.guideFrame);
@@ -326,6 +337,7 @@ export class StudioView {
     this.content.position.set(pose.position.x, pose.position.y, pose.position.z);
     this.content.quaternion.set(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
     this.content.updateMatrixWorld(true);
+    this.placeAxes();
     this.placeGuide();
     this.stage.requestRender();
   }
@@ -717,7 +729,19 @@ export class StudioView {
    */
   private anchorOn(world: Vector3): void {
     this.anchor = this.content.worldToLocal(world.clone());
+    this.placeAxes();
     this.syncGizmo();
+  }
+
+  /**
+   * Puts the axes on the anchor, which is fixed to the molecule. They are not put on the point the camera orbits,
+   * which a pan and a zoom towards the pointer both move along with the camera, so that they would sit in the middle of
+   * the view however it was panned and make the molecule look as if it were the thing moving.
+   */
+  private placeAxes(): void {
+    this.content.updateMatrixWorld(true);
+    this.axes.position.copy(this.content.localToWorld(this.anchor.clone()));
+    this.stage.requestRender();
   }
 
   /**
@@ -744,6 +768,21 @@ export class StudioView {
       this.stage.canvas.style.cursor = "";
     }
     this.refreshGuide();
+  }
+
+  /**
+   * Makes a left-drag pan the view, with a right-drag orbiting it, or puts them back as they were: left orbits, right
+   * pans. Touch follows the left button, so one finger pans and two still zoom.
+   *
+   * @param enabled whether a left-drag pans
+   */
+  setPanning(enabled: boolean): void {
+    this.panning = enabled;
+    const controls = this.stage.controls;
+    controls.mouseButtons.LEFT = enabled ? MOUSE.PAN : MOUSE.ROTATE;
+    controls.mouseButtons.RIGHT = enabled ? MOUSE.ROTATE : MOUSE.PAN;
+    controls.touches.ONE = enabled ? TOUCH.PAN : TOUCH.ROTATE;
+    this.stage.canvas.style.cursor = enabled ? "grab" : "";
   }
 
   /**
@@ -1145,12 +1184,12 @@ export class StudioView {
 
     // an atom the move tool would refuse to pick up, because it or one moving with it is locked, says so
     const refused = this.moving && pick?.kind === "atom" && this.groupOf(pick.id).some((id) => this.locked.has(id));
-    this.stage.canvas.style.cursor = overTriad ? "pointer" : refused ? "not-allowed" : "";
+    this.stage.canvas.style.cursor = overTriad ? "pointer" : refused ? "not-allowed" : this.panning ? "grab" : "";
     this.listeners.forEach((listener) => listener.hover?.(pick, { x: event.clientX, y: event.clientY }));
   };
 
   private readonly onLeave = (): void => {
-    this.stage.canvas.style.cursor = "";
+    this.stage.canvas.style.cursor = this.panning ? "grab" : "";
     this.listeners.forEach((listener) => listener.hover?.(null, { x: 0, y: 0 }));
   };
 
@@ -1158,11 +1197,14 @@ export class StudioView {
     // a press on the molecule's gizmo is the gizmo's, and when it lets go it must not also select what is under it
     this.down = event.button === 0 && !this.gizmo.hovered ? { x: event.clientX, y: event.clientY } : null;
     this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
+    if (this.panning && event.button === 0) {
+      this.stage.canvas.style.cursor = "grabbing";
+    }
   };
 
   /**
-   * Re-binds the orbit anchor: a right-click that was not a pan orbits the atom nearest what was clicked, or goes back
-   * to the middle of the molecule if the click was on nothing.
+   * Re-binds the orbit anchor: a right-click that was not a pan or an orbit centres the view on the atom nearest what was
+   * clicked, or goes back to the middle of the molecule if the click was on nothing.
    */
   private readonly onRightClick = (event: PointerEvent): void => {
     const down = this.rightDown;
@@ -1171,6 +1213,16 @@ export class StudioView {
       return;
     }
 
+    this.centreOn(event);
+  };
+
+  /**
+   * Brings the atom nearest where the pointer is to the middle of the view, which then orbits it and which the molecule's
+   * handles sit on, keeping the view's angle and distance. Over nothing, it goes back to the middle of the molecule.
+   *
+   * @param event the pointer event that says where
+   */
+  private centreOn(event: PointerEvent): void {
     const hit = this.registry.cast(this.raycaster, this.stage.camera, this.stage.pointer(event))?.point;
     let nearest: Vector3 | null = null;
     let best = Infinity;
@@ -1190,9 +1242,13 @@ export class StudioView {
     const anchored = nearest?.clone() ?? (box.isEmpty() ? new Vector3() : box.getCenter(new Vector3()));
     this.stage.pivotOn(anchored);
     this.anchorOn(anchored);
-  };
+  }
 
   private readonly onUp = (event: PointerEvent): void => {
+    if (this.panning && event.button === 0) {
+      this.stage.canvas.style.cursor = "grab";
+    }
+
     const grab = this.grab;
     if (grab) {
       this.releaseGrab();
@@ -1214,6 +1270,18 @@ export class StudioView {
     if (event.button !== 0 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_SLOP) {
       return;
     }
+
+    // the second click of a double-click centres the view and is not also a click, which on an atom the first one selected
+    // would deselect again
+    const now = performance.now();
+    const last = this.lastClick;
+    if (last && now - last.at < DOUBLE_CLICK_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= CLICK_SLOP) {
+      this.lastClick = null;
+      this.centreOn(event);
+      return;
+    }
+    this.lastClick = { x: event.clientX, y: event.clientY, at: now };
+
     const pick = this.pickAt(event);
     this.listeners.forEach((listener) => listener.click?.(pick, event.shiftKey || event.ctrlKey || event.metaKey));
   };

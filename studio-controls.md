@@ -6,9 +6,11 @@
 |---|---|
 | Left-drag | Orbit |
 | Right-drag | Pan |
-| Right-click an atom | Orbit that atom from now on (the nearest atom to the click, if it lands on a bond). Right-click empty space to go back to orbiting the middle of the molecule |
-| Scroll wheel, or middle-drag | Zoom |
-| Touch: one finger / two fingers | Orbit / zoom and pan |
+| **Pan** tool (toolbar), left-drag | Pan the view. Right-drag orbits instead while it is on, so both are within reach with one button or a trackpad. A click still selects. The cursor is a hand |
+| Double-click an atom, or right-click it | Bring it to the middle of the view, keeping the angle and distance, and orbit it from now on (the nearest atom to the click, if it lands on a bond). On empty space, go back to the middle of the molecule. The molecule's handles move onto it too when their pivot is the orbit anchor. The second click of a double-click does not also select or deselect |
+| Scroll wheel | Zoom towards the point under the pointer, which also moves the view, so a molecule can be brought closer without a pan. The view then orbits around where it has got to, not around the atom last double-clicked; the molecule's handles stay on that atom |
+| Middle-drag | Zoom |
+| Touch: one finger / two fingers | Orbit (pan with the **Pan** tool) / zoom and pan |
 
 The browser's context menu is disabled over the viewport.
 
@@ -93,7 +95,7 @@ changed on the server while you were editing, the rebuild is refused and the cur
 |---|---|
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
-| Axes | Show or hide the scene axes, which sit on the point the view orbits (so they move when you re-anchor or pan), and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
+| Axes | Show or hide the scene axes, which sit on the orbit anchor, a fixed point on the molecule (so they stay with the molecule when you pan or zoom, and move when you re-anchor or move the molecule), and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
 | Strain | Mark what is strained: a red halo on each strained atom (stronger the more strained), each strained bond in red with its length, each strained angle as its two bonds in orange with its size, and a red line between each pair of atoms that are too close. Shown only while the strain figure is current, so it disappears while you drag and comes back when you pause. While it is on, selecting an atom or a bond details its strain in the Inspector |
 | Screenshot | Download `molecule.png`: what the camera sees at the moment of the click, including any strain marks, handles and axes triad that are showing. Where nothing is drawn the background is transparent. The picture is the size of the canvas |
 | Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |

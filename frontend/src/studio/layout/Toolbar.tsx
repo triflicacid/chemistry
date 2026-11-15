@@ -65,6 +65,15 @@ export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOp
         <button
           type="button"
           className="tool"
+          aria-pressed={tool === "pan"}
+          title="Dragging pans the view and right-dragging orbits it. Scrolling zooms towards the pointer. Double-click an atom to centre the view on it"
+          onClick={() => tools.use("pan")}
+        >
+          Pan
+        </button>
+        <button
+          type="button"
+          className="tool"
           disabled={!canLock}
           aria-pressed={lockPressed}
           title="Lock the selected atoms so they cannot be moved, or unlock them (L)"

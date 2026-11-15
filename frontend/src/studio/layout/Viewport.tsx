@@ -100,6 +100,7 @@ export function Viewport({
 
   useEffect(() => {
     view?.setMoving(tool === "move");
+    view?.setPanning(tool === "pan");
   }, [view, tool]);
 
   useEffect(() => {
