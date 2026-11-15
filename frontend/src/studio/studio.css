@@ -348,13 +348,25 @@ body.resizing {
   height: 100%;
 }
 
+/* the viewport's controls: what is shown on the left, and what to do, with what is selected or in hand, on the right */
 .viewport-tools {
   position: absolute;
   top: 0.5rem;
-  right: 0.5rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
+  /* each side keeps to its own half, so that neither runs under the other in a narrow viewport */
+  max-width: calc(50% - 0.75rem);
+}
+
+.viewport-tools-left {
+  left: 0.5rem;
+}
+
+.viewport-tools-right {
+  right: 0.5rem;
+  justify-content: flex-end;
 }
 
 .viewport-hint {

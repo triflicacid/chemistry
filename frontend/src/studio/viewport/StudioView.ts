@@ -24,11 +24,13 @@ import {disposeMaterials} from "../../render/dispose";
 import {applyTints, HOVER_TINT, SELECTED_TINT} from "../../render/emphasis";
 import {type Part, PartRegistry} from "../../render/parts";
 import {Primitives} from "../../render/primitives";
+import {sweep} from "../../render/roll";
 import {Stage} from "../../render/stage";
 import {Triad} from "../../render/triad";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
 import {withTerminalHydrogens} from "./carry";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
+import {RollRing} from "./rollRing";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
 import type {AtomMove, GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
@@ -127,6 +129,13 @@ const CLICK_SLOP = 4;
 /** The longest, in milliseconds, between two clicks that make a double-click. */
 const DOUBLE_CLICK_MS = 350;
 
+/** The side of the square the axes triad is drawn in, and how far it is from the canvas's lower left corner, in CSS pixels. */
+const TRIAD_SIZE = 110;
+const TRIAD_MARGIN = 24;
+
+/** How far the middle of the triad, which the roll ring goes round, is from the canvas's left and bottom edges. */
+const TRIAD_CENTRE = TRIAD_MARGIN + TRIAD_SIZE / 2;
+
 const STYLE: Style = "ball_and_stick";
 
 /** An atom that moves with a drag. */
@@ -162,7 +171,9 @@ interface Grab {
 export class StudioView {
   private readonly stage: Stage;
   private readonly kit = new Primitives();
-  private readonly triad = new Triad(this.kit.labels);
+  private readonly triad = new Triad(this.kit.labels, TRIAD_SIZE, TRIAD_MARGIN);
+  /** The dial round the triad that rolls the view. */
+  private readonly ring = new RollRing(TRIAD_CENTRE);
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
   /** Holds everything drawn of the molecule, positioned in the scene by its pose. Atoms are placed in this group's own frame. */
@@ -193,6 +204,10 @@ export class StudioView {
   private lastClick: (ScreenPoint & { at: number }) | null = null;
   /** Whether a left-drag pans the view, and a right-drag orbits it. */
   private panning = false;
+  /** The roll ring being turned, with the angle the pointer was last at round it, or null while it is not. */
+  private rolling: { last: number } | null = null;
+  /** When the ring was last pressed, so that a second press soon after can level the view. */
+  private lastRingPress = 0;
   /** Whether moving an atom carries the hydrogens bonded to it. */
   private carryHydrogens = false;
   /** The grid being shown, or null while there is none. */
@@ -245,6 +260,7 @@ export class StudioView {
     this.stage.controls.zoomToCursor = true;
     // off until the viewport says otherwise, so they do not flash on before it does
     this.axes.visible = false;
+    this.triad.visible = true;
     this.stage.scene.add(this.content, this.axes, this.guideFrame);
     this.gizmo = new MoleculeGizmo(this.stage, this.content, {
       grab: (axis) => {
@@ -268,12 +284,22 @@ export class StudioView {
       shift: (offset, done) => this.shiftAtoms(offset, done),
       shiftCancel: () => this.cancelShift(),
     });
-    this.stage.addOverlay((renderer, camera) => this.triad.draw(renderer, camera));
+    this.stage.addOverlay((renderer, camera, capturing) => {
+      // the triad is always there to be read, but is only part of a picture of the molecule if the axes are
+      if (!capturing || this.axes.visible) {
+        this.triad.draw(renderer, camera);
+      }
+      // the ring is for turning the view, and does not belong in a picture of the molecule
+      if (!capturing) {
+        this.ring.draw(renderer);
+      }
+    });
 
     canvas.addEventListener("pointermove", this.onMove);
     canvas.addEventListener("pointerleave", this.onLeave);
     // captured, so that this hears the press before the orbit controls do and can keep them from turning the camera
     canvas.addEventListener("pointerdown", this.onTriad, { capture: true });
+    canvas.addEventListener("pointerdown", this.onRing, { capture: true });
     canvas.addEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
@@ -816,13 +842,14 @@ export class StudioView {
   }
 
   /**
-   * Shows or hides the scene axes.
+   * Shows or hides the scene axes, the arrows at the orbit anchor. The small triad in the corner, inside the roll ring,
+   * is always shown, so that the way the view is turned can always be read and the ring has something to go round, but
+   * a saved picture only has it when the axes are shown.
    *
    * @param visible whether to show them
    */
   setAxes(visible: boolean): void {
     this.axes.visible = visible;
-    this.triad.visible = visible;
     this.stage.requestRender();
   }
 
@@ -926,6 +953,7 @@ export class StudioView {
     canvas.removeEventListener("pointermove", this.onMove);
     canvas.removeEventListener("pointerleave", this.onLeave);
     canvas.removeEventListener("pointerdown", this.onTriad, { capture: true });
+    canvas.removeEventListener("pointerdown", this.onRing, { capture: true });
     canvas.removeEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.removeEventListener("pointerdown", this.onDown);
     canvas.removeEventListener("pointerup", this.onUp);
@@ -936,6 +964,7 @@ export class StudioView {
     this.gizmo.dispose();
     this.guide?.dispose();
     this.triad.dispose();
+    this.ring.dispose();
     disposeMaterials(this.axes);
     this.setGrid(null, "xz");
     this.kit.dispose();
@@ -1182,6 +1211,45 @@ export class StudioView {
     this.snapped = { axis, sign, orientation: this.stage.camera.quaternion.clone() };
   };
 
+  /**
+   * A press on the roll ring takes hold of it, and turning it rolls the view by as far as the pointer goes round. A
+   * second press soon after, in the same place, takes the roll out instead.
+   */
+  private readonly onRing = (event: PointerEvent): void => {
+    const box = this.stage.canvas.getBoundingClientRect();
+    if (event.button !== 0 || !this.ring.hit(box, event.clientX, event.clientY)) {
+      return;
+    }
+
+    // the press is the ring's: it must not orbit the camera, pick up an atom behind it, or clear the selection
+    event.stopImmediatePropagation();
+    event.preventDefault();
+
+    const now = performance.now();
+    if (now - this.lastRingPress < DOUBLE_CLICK_MS) {
+      this.lastRingPress = 0;
+      this.stage.level();
+      return;
+    }
+    this.lastRingPress = now;
+
+    this.stage.controls.enabled = false;
+    this.stage.canvas.setPointerCapture(event.pointerId);
+    this.stage.canvas.style.cursor = "grabbing";
+    this.rolling = { last: this.ring.angleAt(box, event.clientX, event.clientY) };
+    this.ring.active = true;
+    this.stage.requestRender();
+  };
+
+  /** Lets go of the roll ring, giving the camera its controls back. */
+  private endRoll(): void {
+    this.rolling = null;
+    this.ring.active = false;
+    this.stage.controls.enabled = true;
+    this.stage.canvas.style.cursor = this.panning ? "grab" : "";
+    this.stage.requestRender();
+  }
+
   private readonly onGrab = (event: PointerEvent): void => {
     if (event.button === 0 && this.gizmo.hovered) {
       // a handle of the molecule's gizmo is under the pointer, which takes hold of it, and the camera must stay put
@@ -1240,6 +1308,15 @@ export class StudioView {
   };
 
   private readonly onMove = (event: PointerEvent): void => {
+    const rolling = this.rolling;
+    if (rolling && event.buttons !== 0) {
+      // the picture turns as far as the pointer has gone round the ring since the last move, however far from it
+      const angle = this.ring.angleAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+      this.stage.roll(sweep(rolling.last, angle));
+      rolling.last = angle;
+      return;
+    }
+
     const grab = this.grab;
     if (grab && event.buttons !== 0) {
       if (!grab.dragging) {
@@ -1264,15 +1341,24 @@ export class StudioView {
       return;
     }
     const overTriad = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) !== null;
+    const overRing = !overTriad && this.ring.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+    if (overRing !== this.ring.hovered) {
+      this.ring.hovered = overRing;
+      this.stage.requestRender();
+    }
     const pick = this.pickAt(event);
 
     // an atom the move tool would refuse to pick up, because it or one moving with it is locked, says so
     const refused = this.moving && pick?.kind === "atom" && this.groupOf(pick.id).some((id) => this.locked.has(id));
-    this.stage.canvas.style.cursor = overTriad ? "pointer" : refused ? "not-allowed" : this.panning ? "grab" : "";
+    this.stage.canvas.style.cursor = overTriad ? "pointer" : overRing ? "grab" : refused ? "not-allowed" : this.panning ? "grab" : "";
     this.listeners.forEach((listener) => listener.hover?.(pick, { x: event.clientX, y: event.clientY }));
   };
 
   private readonly onLeave = (): void => {
+    if (this.ring.hovered) {
+      this.ring.hovered = false;
+      this.stage.requestRender();
+    }
     this.stage.canvas.style.cursor = this.panning ? "grab" : "";
     this.listeners.forEach((listener) => listener.hover?.(null, { x: 0, y: 0 }));
   };
@@ -1329,6 +1415,11 @@ export class StudioView {
   }
 
   private readonly onUp = (event: PointerEvent): void => {
+    if (this.rolling) {
+      this.endRoll();
+      return;
+    }
+
     if (this.panning && event.button === 0) {
       this.stage.canvas.style.cursor = "grab";
     }
@@ -1371,6 +1462,9 @@ export class StudioView {
   };
 
   private readonly onCancel = (): void => {
+    if (this.rolling) {
+      this.endRoll();
+    }
     this.down = null;
     this.cancelDrag();
   };

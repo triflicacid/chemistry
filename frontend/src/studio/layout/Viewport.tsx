@@ -255,112 +255,117 @@ export function Viewport({
     <section className="viewport" aria-label="3D viewport">
       <canvas ref={canvasRef} className="viewport-canvas" />
       {state && (
-        <div className="viewport-tools" role="group" aria-label="View">
-          {(tool === "move" || (tool === "rotate" && moleculeSelected)) && (
-            <div className="tool-group" role="group" aria-label="Space">
-              {(["world", "local"] as const).map((each) => (
-                <button
-                  key={each}
-                  type="button"
-                  className="tool"
-                  aria-pressed={space === each}
-                  title={
-                    each === "world"
-                      ? "Measure moves and handles along the scene's axes"
-                      : "Measure moves and handles along the molecule's own axes, which turn with it"
-                  }
-                  onClick={() => tools.useSpace(each)}
-                >
-                  {each === "world" ? "World" : "Local"}
-                </button>
-              ))}
-            </div>
-          )}
-          {tool === "move" && (
+        <>
+          <div className="viewport-tools viewport-tools-left" role="group" aria-label="Display">
+            <button type="button" className="tool" aria-pressed={axes} title="Show or hide the x, y and z axes at the orbit anchor. The small triad in the corner is always shown" onClick={() => setAxes(!axes)}>
+              Axes
+            </button>
+            <label className="tool-select" title="Show a grid: lines every angstrom, or rings and spokes about the orbit anchor. In Local space a square grid turns with the molecule">
+              Grid
+              <select value={grid} onChange={(event) => setGrid(event.target.value as GridKind | "off")}>
+                <option value="off">Off</option>
+                <option value="cartesian">Square</option>
+                <option value="polar">Polar</option>
+              </select>
+            </label>
+            {grid !== "off" && (
+              <label className="tool-select" title="The plane the grid lies in, named by the scene axes that span it, or all three at once (which reach less far)">
+                Plane
+                <select value={gridPlane} onChange={(event) => setGridPlane(event.target.value as GridPlaneChoice)}>
+                  <option value="xz">XZ</option>
+                  <option value="xy">XY</option>
+                  <option value="yz">YZ</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
+            )}
             <button
               type="button"
               className="tool"
-              aria-pressed={carryHydrogens}
-              title="When on, moving an atom carries the hydrogens bonded to it by the same amount, so their bonds keep their lengths and angles (H). Nothing is locked"
-              onClick={() => tools.carry(!carryHydrogens)}
+              aria-pressed={strain}
+              title="Mark what is strained: a red halo on atoms, red bonds with their lengths, orange angles with their sizes, and a red line between atoms that are too close. Selecting an atom or bond then details its strain"
+              onClick={() => tools.showStrain(!strain)}
             >
-              Carry H
+              Strain
             </button>
-          )}
-          {tool === "rotate" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
-          {tool === "move" && !moleculeSelected && (
-            <div className="tool-group" role="group" aria-label="Move constraint">
-              {CONSTRAINTS.map(({ value, label, title }) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="tool"
-                  aria-pressed={constraint === value}
-                  disabled={blocked}
-                  title={blocked ? "A locked atom is selected, so the selection cannot be moved" : title}
-                  onClick={() => tools.constrain(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          <button type="button" className="tool" title="Centre the camera on the selection, or on everything if nothing is selected" onClick={frame}>
-            Frame selection
-          </button>
-          <button
-            type="button"
-            className="tool"
-            aria-pressed={mode === "molecule"}
-            title="When on, clicking or hovering an atom or bond picks the whole molecule it belongs to"
-            onClick={() => setMode(mode === "molecule" ? "element" : "molecule")}
-          >
-            Pick whole molecule
-          </button>
-          <button type="button" className="tool" aria-pressed={axes} title="Show or hide the x, y and z axes at the origin" onClick={() => setAxes(!axes)}>
-            Axes
-          </button>
-          <label className="tool-select" title="Show a grid: lines every angstrom, or rings and spokes about the orbit anchor. In Local space a square grid turns with the molecule">
-            Grid
-            <select value={grid} onChange={(event) => setGrid(event.target.value as GridKind | "off")}>
-              <option value="off">Off</option>
-              <option value="cartesian">Square</option>
-              <option value="polar">Polar</option>
-            </select>
-          </label>
-          {grid !== "off" && (
-            <label className="tool-select" title="The plane the grid lies in, named by the scene axes that span it, or all three at once (which reach less far)">
-              Plane
-              <select value={gridPlane} onChange={(event) => setGridPlane(event.target.value as GridPlaneChoice)}>
-                <option value="xz">XZ</option>
-                <option value="xy">XY</option>
-                <option value="yz">YZ</option>
-                <option value="all">All</option>
-              </select>
-            </label>
-          )}
-          <button
-            type="button"
-            className="tool"
-            aria-pressed={strain}
-            title="Mark what is strained: a red halo on atoms, red bonds with their lengths, orange angles with their sizes, and a red line between atoms that are too close. Selecting an atom or bond then details its strain"
-            onClick={() => tools.showStrain(!strain)}
-          >
-            Strain
-          </button>
-          <button type="button" className="tool" title="Save a picture of what the camera sees as a PNG" onClick={screenshot}>
-            Screenshot
-          </button>
-          <button
-            type="button"
-            className="tool"
-            aria-pressed={debug}
-            title="Draw guides for moving: the axis or plane the selected atom is held to, as arrows or a faint plane"
-            onClick={() => setDebug(!debug)}
-          >
-            Debug
-          </button>
-        </div>
+            <button
+              type="button"
+              className="tool"
+              aria-pressed={debug}
+              title="Draw guides for moving: the axis or plane the selected atom is held to, as arrows or a faint plane"
+              onClick={() => setDebug(!debug)}
+            >
+              Debug
+            </button>
+            <button type="button" className="tool" title="Save a picture of what the camera sees as a PNG" onClick={screenshot}>
+              Screenshot
+            </button>
+          </div>
+
+          <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
+            {(tool === "move" || (tool === "rotate" && moleculeSelected)) && (
+              <div className="tool-group" role="group" aria-label="Space">
+                {(["world", "local"] as const).map((each) => (
+                  <button
+                    key={each}
+                    type="button"
+                    className="tool"
+                    aria-pressed={space === each}
+                    title={
+                      each === "world"
+                        ? "Measure moves and handles along the scene's axes"
+                        : "Measure moves and handles along the molecule's own axes, which turn with it"
+                    }
+                    onClick={() => tools.useSpace(each)}
+                  >
+                    {each === "world" ? "World" : "Local"}
+                  </button>
+                ))}
+              </div>
+            )}
+            {tool === "move" && (
+              <button
+                type="button"
+                className="tool"
+                aria-pressed={carryHydrogens}
+                title="When on, moving an atom carries the hydrogens bonded to it by the same amount, so their bonds keep their lengths and angles (H). Nothing is locked"
+                onClick={() => tools.carry(!carryHydrogens)}
+              >
+                Carry H
+              </button>
+            )}
+            {tool === "rotate" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
+            {tool === "move" && !moleculeSelected && (
+              <div className="tool-group" role="group" aria-label="Move constraint">
+                {CONSTRAINTS.map(({ value, label, title }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="tool"
+                    aria-pressed={constraint === value}
+                    disabled={blocked}
+                    title={blocked ? "A locked atom is selected, so the selection cannot be moved" : title}
+                    onClick={() => tools.constrain(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button type="button" className="tool" title="Centre the camera on the selection, or on everything if nothing is selected" onClick={frame}>
+              Frame selection
+            </button>
+            <button
+              type="button"
+              className="tool"
+              aria-pressed={mode === "molecule"}
+              title="When on, clicking or hovering an atom or bond picks the whole molecule it belongs to"
+              onClick={() => setMode(mode === "molecule" ? "element" : "molecule")}
+            >
+              Pick whole molecule
+            </button>
+          </div>
+        </>
       )}
       {phase.kind === "wanted" ? (
         <div className="viewport-overlay">

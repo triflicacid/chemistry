@@ -9,12 +9,13 @@
 | **Pan** tool (toolbar), left-drag | Pan the view. Right-drag orbits instead while it is on, so both are within reach with one button or a trackpad. A click still selects. The cursor is a hand |
 | Double-click an atom, or right-click it | Bring it to the middle of the view, keeping the angle and distance, and orbit it from now on (the nearest atom to the click, if it lands on a bond). On empty space, go back to the middle of the molecule. The molecule's handles move onto it too when their pivot is the orbit anchor. The second click of a double-click does not also select or deselect |
 | Scroll wheel | Zoom towards the point under the pointer, which also moves the view, so a molecule can be brought closer without a pan. The view then orbits around where it has got to, not around the atom last double-clicked; the molecule's handles stay on that atom |
+| Drag the **roll ring** (the faint ring round the axes triad, lower left) | Roll the view: it turns about the way you are looking, so the picture turns in the screen's plane about the middle of the view, and follows the pointer round the ring one for one (counterclockwise is counterclockwise), however far from the ring the pointer goes. Nothing in the scene moves and nothing is sent to the server. Double-click the ring to take the roll out, so that up is up again. Orbiting afterwards turns about the tilted up. The ring brightens when the pointer is over it and while it is turned, and is left out of screenshots. **Frame selection**, and a click on a letter of the triad, also take the roll out. A press on the ring does not orbit, select or pick up an atom behind it. There are no keys for it |
 | Middle-drag | Zoom |
 | Touch: one finger / two fingers | Orbit (pan with the **Pan** tool) / zoom and pan |
 
 The browser's context menu is disabled over the viewport.
 
-With **Axes** on, the triad in the lower left turns with the camera. Click one of its letters to look at
+The small triad in the lower left, inside the roll ring, is always shown and turns with the camera. Click one of its letters to look at
 the molecule from along that axis (X is the view from the right, Y from above, Z from the front). Click
 the same letter again, without having turned the camera since, to look from the other side; once the
 camera has been turned, the next click starts from the positive side again. The click does not orbit,
@@ -92,15 +93,27 @@ changed on the server while you were editing, the rebuild is refused and the cur
 
 ## Viewport buttons
 
+The buttons over the viewport are in two groups. The **left** group sets what is shown: the axes, a grid, strain marks,
+move guides, and a screenshot. The **right** group acts on the molecule or the view, some of it only with certain tools:
+**World** / **Local** and the move constraint buttons (see above), **Carry H**, and the two below. The right group wraps
+rather than running under the left one when the viewport is narrow.
+
+**Left**
+
+| Button | Action |
+|---|---|
+| Axes | Show or hide the scene axes, which sit on the orbit anchor, a fixed point on the molecule (so they stay with the molecule when you pan or zoom, and move when you re-anchor or move the molecule). Off by default. The small labelled X, Y, Z triad in the lower left is not part of this: it is always shown |
+| Grid, and Plane | **Grid** shows **Square** lines, or **Polar** rings and spokes, in one plane, or **Off** (the default). **Plane** (shown with a grid on) picks XZ, XY, YZ, or **All**, which draws all three at once and reaches only 10 Å so that three crossing sheets do not swamp the molecule. A square grid has a line every angstrom counted from the anchor, with a stronger one every 5, and its two central lines coloured as the axes they run along. Both kinds are centred on the orbit anchor, where the axes are drawn (so right-click or double-click an atom to move the grid onto it), with lines along the scene's axes in **World** space and along the molecule's own in **Local** space, where they turn with the molecule. A polar grid has a ring every angstrom, stronger every 5, and a spoke every 30°. Both fade out by 30 Å (10 Å for All), are drawn faintly with atoms in front of them, cannot be picked, and appear in screenshots. The spacing, both extents, major interval and spoke angle are constants in `viewport/grid.ts` |
+| Strain | Mark what is strained: a red halo on each strained atom (stronger the more strained), each strained bond in red with its length, each strained angle as its two bonds in orange with its size, and a red line between each pair of atoms that are too close. Shown only while the strain figure is current, so it disappears while you drag and comes back when you pause. While it is on, selecting an atom or a bond details its strain in the Inspector |
+| Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |
+| Screenshot | Download `molecule.png`: what the camera sees at the moment of the click, including any strain marks and handles that are showing, and the axes and the small triad when **Axes** is on (but never the roll ring). Where nothing is drawn the background is transparent. The picture is the size of the canvas |
+
+**Right**
+
 | Button | Action |
 |---|---|
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
-| Axes | Show or hide the scene axes, which sit on the orbit anchor, a fixed point on the molecule (so they stay with the molecule when you pan or zoom, and move when you re-anchor or move the molecule), and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
-| Strain | Mark what is strained: a red halo on each strained atom (stronger the more strained), each strained bond in red with its length, each strained angle as its two bonds in orange with its size, and a red line between each pair of atoms that are too close. Shown only while the strain figure is current, so it disappears while you drag and comes back when you pause. While it is on, selecting an atom or a bond details its strain in the Inspector |
-| Grid, and Plane | **Grid** shows **Square** lines, or **Polar** rings and spokes, in one plane, or **Off** (the default). **Plane** (shown with a grid on) picks XZ, XY, YZ, or **All**, which draws all three at once and reaches only 10 Å so that three crossing sheets do not swamp the molecule. A square grid has a line every angstrom counted from the anchor, with a stronger one every 5, and its two central lines coloured as the axes they run along. Both kinds are centred on the orbit anchor, where the axes are drawn (so right-click or double-click an atom to move the grid onto it), with lines along the scene's axes in **World** space and along the molecule's own in **Local** space, where they turn with the molecule. A polar grid has a ring every angstrom, stronger every 5, and a spoke every 30°. Both fade out by 30 Å (10 Å for All), are drawn faintly with atoms in front of them, cannot be picked, and appear in screenshots. The spacing, both extents, major interval and spoke angle are constants in `viewport/grid.ts` |
-| Screenshot | Download `molecule.png`: what the camera sees at the moment of the click, including any strain marks, handles and axes triad that are showing. Where nothing is drawn the background is transparent. The picture is the size of the canvas |
-| Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |
 
 ## Strain
 
