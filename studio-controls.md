@@ -95,6 +95,7 @@ changed on the server while you were editing, the rebuild is refused and the cur
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
 | Axes | Show or hide the scene axes, which sit on the point the view orbits (so they move when you re-anchor or pan), and a small labelled X, Y, Z triad in the lower left that turns with the camera. Off by default |
 | Strain | Mark what is strained: a red halo on each strained atom (stronger the more strained), each strained bond in red with its length, each strained angle as its two bonds in orange with its size, and a red line between each pair of atoms that are too close. Shown only while the strain figure is current, so it disappears while you drag and comes back when you pause. While it is on, selecting an atom or a bond details its strain in the Inspector |
+| Screenshot | Download `molecule.png`: what the camera sees at the moment of the click, including any strain marks, handles and axes triad that are showing. Where nothing is drawn the background is transparent. The picture is the size of the canvas |
 | Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |
 
 ## Strain

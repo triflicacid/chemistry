@@ -1,14 +1,6 @@
-import {
-  AmbientLight,
-  DirectionalLight,
-  PerspectiveCamera,
-  Scene,
-  Vector2,
-  Vector3,
-  WebGLRenderer,
-} from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { UP } from "./primitives";
+import {AmbientLight, DirectionalLight, PerspectiveCamera, Scene, Vector2, Vector3, WebGLRenderer,} from "three";
+import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
+import {UP} from "./primitives";
 
 /** The camera's vertical field of view, in degrees. */
 export const FIELD_OF_VIEW = 30;
@@ -153,6 +145,17 @@ export class Stage {
   render(): void {
     this.renderer.render(this.scene, this.camera);
     this.overlays.forEach((draw) => draw(this.renderer, this.camera));
+  }
+
+  /**
+   * Draws the scene now and reads the canvas back as an image, exactly as the camera sees it.
+   *
+   * @returns a PNG data URL, with the background transparent wherever nothing is drawn
+   */
+  capture(): string {
+    // the drawing buffer is cleared once the page has shown it, so it is read in the same task that draws it
+    this.render();
+    return this.renderer.domElement.toDataURL("image/png");
   }
 
   /** Stops following the size, cancels any waiting draw, and releases the renderer and controls. */

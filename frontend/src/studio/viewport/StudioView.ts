@@ -653,6 +653,15 @@ export class StudioView {
     this.stage.requestRender();
   }
 
+  /**
+   * Takes a picture of what the camera sees, with the markings and handles that are showing.
+   *
+   * @returns a PNG data URL
+   */
+  capture(): string {
+    return this.stage.capture();
+  }
+
   /** Points the camera at the whole scene. */
   frameScene(): void {
     this.frameAtoms(this.atoms.map((node) => node.atom.id));

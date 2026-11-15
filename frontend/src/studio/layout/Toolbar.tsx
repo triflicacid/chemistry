@@ -19,8 +19,7 @@ export interface ToolbarProps {
   /** How strained the geometry is, ready to show, or null if it has not been worked out. */
   strain: string | null;
   onUndo: () => void;
-  onRedo: () => void;
-}
+  onRedo: () => void;}
 
 const WAITING = "Not built yet";
 
@@ -80,8 +79,7 @@ export function Toolbar({ phase, tools, canLock, lockPressed, onToggleLock, layo
         </button>
         <button type="button" className="tool" disabled title={WAITING}>
           Optimise
-        </button>
-      </div>
+        </button>      </div>
 
       <div className="tool-group tool-group-end" role="group" aria-label="Panels">
         <PanelToggle panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} />

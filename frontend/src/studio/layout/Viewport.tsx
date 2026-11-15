@@ -211,6 +211,16 @@ export function Viewport({
     view.frameAtoms([...atoms, ...ends]);
   };
 
+  const screenshot = () => {
+    if (!view) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = view.capture();
+    link.download = "molecule.png";
+    link.click();
+  };
+
   return (
     <section className="viewport" aria-label="3D viewport">
       <canvas ref={canvasRef} className="viewport-canvas" />
@@ -277,6 +287,9 @@ export function Viewport({
             onClick={() => tools.showStrain(!strain)}
           >
             Strain
+          </button>
+          <button type="button" className="tool" title="Save a picture of what the camera sees as a PNG" onClick={screenshot}>
+            Screenshot
           </button>
           <button
             type="button"
