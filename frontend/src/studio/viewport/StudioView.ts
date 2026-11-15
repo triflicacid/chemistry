@@ -8,6 +8,7 @@ import { applyTints, HOVER_TINT, SELECTED_TINT } from "../../render/emphasis";
 import { type Part, PartRegistry } from "../../render/parts";
 import { Primitives } from "../../render/primitives";
 import { Stage } from "../../render/stage";
+import { Triad } from "../../render/triad";
 import { type Constraint, dragged, pointOnConstraint } from "./dragPlane";
 import { type Guide, makeGuide } from "./guides";
 import type { SessionAtom, SessionBond, SessionState } from "../session/messages";
@@ -104,6 +105,7 @@ interface Grab {
 export class StudioView {
   private readonly stage: Stage;
   private readonly kit = new Primitives();
+  private readonly triad = new Triad(this.kit.labels);
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
   private readonly content = new Group();
@@ -140,6 +142,7 @@ export class StudioView {
     // off until the viewport says otherwise, so they do not flash on before it does
     this.axes.visible = false;
     this.stage.scene.add(this.content, this.axes);
+    this.stage.addOverlay((renderer, camera) => this.triad.draw(renderer, camera));
 
     canvas.addEventListener("pointermove", this.onMove);
     canvas.addEventListener("pointerleave", this.onLeave);
@@ -273,6 +276,7 @@ export class StudioView {
    */
   setAxes(visible: boolean): void {
     this.axes.visible = visible;
+    this.triad.visible = visible;
     this.stage.requestRender();
   }
 
@@ -353,6 +357,7 @@ export class StudioView {
     window.removeEventListener("keydown", this.onKey, { capture: true });
     this.clear();
     this.guide?.dispose();
+    this.triad.dispose();
     disposeMaterials(this.axes);
     this.kit.dispose();
     this.stage.dispose();

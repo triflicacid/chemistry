@@ -37,6 +37,7 @@ export class Stage {
   readonly controls: OrbitControls;
 
   private readonly resizer: ResizeObserver;
+  private readonly overlays = new Set<(renderer: WebGLRenderer, camera: PerspectiveCamera) => void>();
   private pending = 0;
 
   constructor(private readonly options: StageOptions) {
@@ -124,9 +125,21 @@ export class Stage {
     }
   }
 
-  /** Draws the scene now. */
+  /**
+   * Adds something to draw over the scene each time it is drawn, such as a corner widget.
+   *
+   * @param draw draws it, given the renderer and the camera the scene was just drawn with
+   * @returns how to take it away again
+   */
+  addOverlay(draw: (renderer: WebGLRenderer, camera: PerspectiveCamera) => void): () => void {
+    this.overlays.add(draw);
+    return () => this.overlays.delete(draw);
+  }
+
+  /** Draws the scene now, then whatever has been added to draw over it. */
   render(): void {
     this.renderer.render(this.scene, this.camera);
+    this.overlays.forEach((draw) => draw(this.renderer, this.camera));
   }
 
   /** Stops following the size, cancels any waiting draw, and releases the renderer and controls. */
