@@ -31,10 +31,21 @@ import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS}
 import {withTerminalHydrogens} from "./carry";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
 import {RollRing} from "./rollRing";
+import {BondGizmo, type BondGizmoMode} from "./bondGizmo";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
-import type {AtomMove, GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
-import type {Pivot, Space} from "../selection/ToolModel";
+import type {
+  AtomMove,
+  BondEdit,
+  GeometryResult,
+  Pose,
+  SessionAtom,
+  SessionBond,
+  SessionState
+} from "../session/messages";
+import type {Hold} from "../selection/bondLength";
+import type {Pivot, Space, TorsionView} from "../selection/ToolModel";
+import {torsion} from "../selection/torsion";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
 export interface StudioPick {
@@ -67,6 +78,21 @@ export interface StudioViewListener {
   moleculeDrag?(pose: Pose, done: boolean): void;
   /** A drag of the molecule was abandoned, and it was put back at `from`, where it was picked up. */
   moleculeDragCancel?(from: Pose): void;
+  /** A bond's handle has put the bond at `edit`. `done` is true for the last report, when the handle is let go. */
+  bondDrag?(edit: BondEdit, done: boolean): void;
+  /** A drag of a bond's handle was abandoned, and the session is to put the bond back. */
+  bondDragCancel?(): void;
+}
+
+/** A handle on a bond: what it does, which bond, and which atom stays where it is. */
+export interface BondHandle {
+  mode: BondGizmoMode;
+  bond: string;
+  hold: Hold;
+  /** For a handle that turns the bond, the atom bonded to its first atom that the torsion is measured from. */
+  from?: string;
+  /** For a handle that turns the bond, the atom bonded to its second atom that the torsion is measured to. */
+  to?: string;
 }
 
 /** Atoms and bonds, by identifier, to draw with emphasis. */
@@ -187,6 +213,10 @@ export class StudioView {
   /** Turns a guide to the frame it is drawn in: the scene's, the molecule's, or the camera's. */
   private readonly guideFrame = new Group();
   private readonly gizmo: MoleculeGizmo;
+  private readonly bondGizmo: BondGizmo;
+
+  /** The handle on a bond that is being offered, or null for none. */
+  private bondHandle: BondHandle | null = null;
   private readonly axes = makeAxes();
   private readonly listeners = new Set<StudioViewListener>();
 
@@ -242,6 +272,7 @@ export class StudioView {
   /** The strain markers, which sit in the molecule's group so that they move with it, or null while there are none. */
   private strainMarks: Group | null = null;
   private lengthMarks: Group | null = null;
+  private torsionShown: TorsionView | null = null;
   /** The atoms the gizmo is carrying, each with where it was picked up, or null while it is not carrying any. */
   private shifting: { node: AtomNode; original: Vector3 }[] | null = null;
   /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
@@ -291,6 +322,13 @@ export class StudioView {
       shift: (offset, done) => this.shiftAtoms(offset, done),
       shiftCancel: () => this.cancelShift(),
     });
+    this.bondGizmo = new BondGizmo(this.stage, {
+      change: (value, done) => this.bondChanged(value, done),
+      cancel: () => {
+        this.syncBondGizmo();
+        this.listeners.forEach((listener) => listener.bondDragCancel?.());
+      },
+    });
     this.stage.addOverlay((renderer, camera, capturing) => {
       // the triad is always there to be read, but is only part of a picture of the molecule if the axes are
       if (!capturing || this.axes.visible) {
@@ -339,6 +377,7 @@ export class StudioView {
       this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
       this.refreshLocks();
       this.syncGizmo();
+      this.syncBondGizmo();
       return;
     }
 
@@ -352,6 +391,7 @@ export class StudioView {
       this.frameScene();
     }
     this.syncGizmo();
+    this.syncBondGizmo();
   }
 
   /**
@@ -416,6 +456,76 @@ export class StudioView {
     this.pivot = pivot;
     this.pivotPoint.set(point.x, point.y, point.z);
     this.syncGizmo();
+  }
+
+  /**
+   * Offers a handle on a bond, or takes it away: an arrow along the bond that slides to change its length, or a ring
+   * about it that turns to change its torsion. Dragging it reports through the listeners' `bondDrag`, and the session
+   * moves the atoms.
+   *
+   * @param handle what the handle does and to which bond, or null for none
+   */
+  setBondHandle(handle: BondHandle | null): void {
+    this.bondHandle = handle;
+    this.syncBondGizmo();
+  }
+
+  /** Brings the bond's handle to where its bond is now, or takes it away. A handle being dragged is left alone. */
+  private syncBondGizmo(): void {
+    const handle = this.bondHandle;
+    const link = handle && this.bonds.find((bond) => bond.link.bond.id === handle.bond)?.link;
+    const first = link && this.atomById.get(link.bond.first);
+    const second = link && this.atomById.get(link.bond.second);
+    if (!handle || !link || !first || !second) {
+      this.bondGizmo.hide();
+      return;
+    }
+
+    const a = this.worldOf(first);
+    const b = this.worldOf(second);
+    if (handle.mode === "length") {
+      // the arrow sits on the atom that moves, which for neither held is the second
+      const onFirst = handle.hold === "second";
+      this.bondGizmo.show("length", onFirst ? a : b, b.clone().sub(a), a.distanceTo(b), onFirst ? -1 : 1);
+      return;
+    }
+
+    const from = handle.from && this.atomById.get(handle.from);
+    const to = handle.to && this.atomById.get(handle.to);
+    if (!from || !to) {
+      this.bondGizmo.hide();
+      return;
+    }
+    this.bondGizmo.show("turn", a.clone().add(b).multiplyScalar(0.5), b.clone().sub(a), torsion(from.at, first.at, second.at, to.at), 1);
+  }
+
+  /**
+   * Tells the listeners where the bond's handle has got to.
+   *
+   * @param value the length or torsion the handle has put the bond at
+   * @param done whether the handle has just been let go
+   */
+  private bondChanged(value: number, done: boolean): void {
+    const handle = this.bondHandle;
+    const link = handle && this.bonds.find((bond) => bond.link.bond.id === handle.bond)?.link;
+    if (!handle || !link) {
+      return;
+    }
+
+    const hold = handle.hold === "first" ? link.bond.first : handle.hold === "second" ? link.bond.second : null;
+    const edit: BondEdit =
+      handle.mode === "length"
+        ? { kind: "length", bond: handle.bond, value, hold }
+        : { kind: "torsion", bond: handle.bond, from: handle.from ?? "", to: handle.to ?? "", value, hold };
+    this.listeners.forEach((listener) => listener.bondDrag?.(edit, done));
+    if (done) {
+      this.syncBondGizmo();
+    }
+  }
+
+  /** Whether the pointer is over a handle of the molecule's or of a bond, so that pressing would take hold of it. */
+  private get handleHovered(): boolean {
+    return this.gizmo.hovered || this.bondGizmo.hovered;
   }
 
   /** Brings the gizmo into line with its mode, space, pivot and the molecule's pose. A gizmo being dragged is left alone. */
@@ -624,6 +734,7 @@ export class StudioView {
     affected.forEach((bond) => this.redraw(bond));
     this.refreshEmphasis();
     this.drawLengths();
+    this.syncBondGizmo();
     this.placeGuide();
     // the handles sit on the selected atoms, so they follow when something else moves them
     if (this.gizmoMode === "atoms") {
@@ -652,6 +763,17 @@ export class StudioView {
   setStrain(result: GeometryResult | null): void {
     this.strainResult = result;
     this.drawStrain();
+  }
+
+  /**
+   * Marks a torsion: the two bonds to the atoms it is measured from, their names, and its angle at the middle of the
+   * bond it is about.
+   *
+   * @param torsion the torsion to mark, or null for none
+   */
+  setTorsion(torsion: TorsionView | null): void {
+    this.torsionShown = torsion;
+    this.drawLengths();
   }
 
   /**
@@ -697,11 +819,44 @@ export class StudioView {
       }
     }
 
+    this.markTorsion(marks);
+
     if (marks.children.length > 0) {
       this.content.add(marks);
       this.lengthMarks = marks;
     }
     this.stage.requestRender();
+  }
+
+  /**
+   * Adds the marks of the torsion being shown, if its atoms are all drawn.
+   *
+   * @param marks the group to add them to
+   */
+  private markTorsion(marks: Group): void {
+    const shown = this.torsionShown;
+    const bond = shown && this.bonds.find(({ link }) => link.bond.id === shown.bond)?.link.bond;
+    const [a, b, c, d] = shown && bond ? [shown.first, bond.first, bond.second, shown.second].map((id) => this.atomById.get(id)) : [];
+    if (!a || !b || !c || !d) {
+      return;
+    }
+
+    const line = new MeshBasicMaterial({ color: ANGLE_COLOUR, depthTest: false });
+    marks.add(this.kit.cylinder(a.at, b.at, 0.035, line));
+    marks.add(this.kit.cylinder(c.at, d.at, 0.035, line.clone()));
+
+    for (const node of [a, d]) {
+      const name = this.kit.labels.label(`${node.atom.element}${node.index + 1}`, "#222222", 0.26);
+      name.position.copy(node.at);
+      name.position.y += ballRadius(node.atom.radius, STYLE, true) + 0.25;
+      marks.add(name);
+    }
+
+    const angle = torsion(a.at, b.at, c.at, d.at);
+    const note = this.kit.labels.label(`${angle.toFixed(1)}°`, "#b35900", 0.24);
+    note.position.copy(b.at).add(c.at).multiplyScalar(0.5);
+    note.position.y -= 0.3;
+    marks.add(note);
   }
 
   /** Draws the strain markers afresh from the report, replacing what was drawn. */
@@ -1022,6 +1177,7 @@ export class StudioView {
     window.removeEventListener("keydown", this.onKey, { capture: true });
     this.clear();
     this.gizmo.dispose();
+    this.bondGizmo.dispose();
     this.guide?.dispose();
     this.triad.dispose();
     this.ring.dispose();
@@ -1312,8 +1468,8 @@ export class StudioView {
   }
 
   private readonly onGrab = (event: PointerEvent): void => {
-    if (event.button === 0 && this.gizmo.hovered) {
-      // a handle of the molecule's gizmo is under the pointer, which takes hold of it, and the camera must stay put
+    if (event.button === 0 && this.handleHovered) {
+      // a handle is under the pointer, which takes hold of it, and the camera must stay put
       this.stage.controls.enabled = false;
       return;
     }
@@ -1361,6 +1517,9 @@ export class StudioView {
     if (event.key === "Escape" && this.gizmo.dragging) {
       event.stopPropagation();
       this.gizmo.cancel();
+    } else if (event.key === "Escape" && this.bondGizmo.dragging) {
+      event.stopPropagation();
+      this.bondGizmo.cancel();
     } else if (event.key === "Escape" && this.grab?.dragging) {
       // the key abandons the drag and goes no further, so it does not also clear the selection
       event.stopPropagation();
@@ -1425,8 +1584,8 @@ export class StudioView {
   };
 
   private readonly onDown = (event: PointerEvent): void => {
-    // a press on the molecule's gizmo is the gizmo's, and when it lets go it must not also select what is under it
-    this.down = event.button === 0 && !this.gizmo.hovered ? { x: event.clientX, y: event.clientY } : null;
+    // a press on a handle is the handle's, and when it lets go it must not also select what is under it
+    this.down = event.button === 0 && !this.handleHovered ? { x: event.clientX, y: event.clientY } : null;
     this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
     if (this.panning && event.button === 0) {
       this.stage.canvas.style.cursor = "grabbing";

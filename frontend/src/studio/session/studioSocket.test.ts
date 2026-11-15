@@ -247,6 +247,71 @@ describe("the Studio socket", () => {
     expect(redone.type === "edit.applied" && redone.atoms[0]!.position).toEqual(target);
   });
 
+  it("gives a bond a length and a torsion, answering with the atoms that moved, and refuses what it cannot", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const bond = opened.bonds[0]!;
+    const distance = (state: SessionState, a: string, b: string) => {
+      const [p, q] = [a, b].map((id) => state.atoms.find((atom) => atom.id === id)!.position);
+      return Math.hypot(p!.x - q!.x, p!.y - q!.y, p!.z - q!.z);
+    };
+
+    const longer = await socket.setBondLength(opened.session_id, opened.version, bond.id, 2, bond.first);
+    expect(longer.type).toBe("bond.length.ack");
+    if (longer.type !== "bond.length.ack") {
+      return;
+    }
+    expect(longer.version).toBe(opened.version + 1);
+    expect(longer.atoms.map((atom) => atom.id)).toContain(bond.second);
+    expect(longer.atoms.map((atom) => atom.id)).not.toContain(bond.first);
+
+    // a bond to a hydrogen on the first carbon and the oxygen on the second, turned about the bond between them
+    const hydrogen = opened.atoms.find((atom) => atom.element === "H")!;
+    const oxygen = opened.atoms[2]!;
+    const turned = await socket.setBondTorsion(opened.session_id, longer.version, bond.id, hydrogen.id, oxygen.id, 60, bond.first);
+    expect(turned.type).toBe("bond.torsion.ack");
+    expect(turned.type === "bond.torsion.ack" && turned.atoms.length).toBeGreaterThan(0);
+
+    await expect(socket.setBondTorsion(opened.session_id, longer.version + 1, bond.id, oxygen.id, hydrogen.id, 60, null)).rejects.toMatchObject({ code: "INVALID_EDIT" });
+    await expect(socket.setBondLength(opened.session_id, longer.version + 1, bond.id, 99, null)).rejects.toMatchObject({ code: "INVALID_EDIT" });
+
+    const stale = await socket.setBondLength(opened.session_id, opened.version, bond.id, 1.5, null);
+    expect(stale.type).toBe("conflict");
+    if (stale.type === "conflict") {
+      expect(distance(stale.state, bond.first, bond.second)).toBeCloseTo(2, 6);
+    }
+  });
+
+  it("drags a bond as several uncommitted changes and one commit, which is one edit to undo", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const bond = opened.bonds[0]!;
+
+    const first = await socket.setBondLength(opened.session_id, opened.version, bond.id, 1.7, bond.first, false);
+    expect(first.type).toBe("bond.length.ack");
+    if (first.type !== "bond.length.ack") {
+      return;
+    }
+    const second = await socket.setBondLength(opened.session_id, first.version, bond.id, 1.9, bond.first, false);
+    expect(second.type === "bond.length.ack" && second.saved_molecule_id).toBeNull();
+    if (second.type !== "bond.length.ack") {
+      return;
+    }
+
+    const dropped = await socket.setBondLength(opened.session_id, second.version, bond.id, 1.9, bond.first, true);
+    expect(dropped.type === "bond.length.ack" && dropped.atoms).toEqual([]);
+    if (dropped.type !== "bond.length.ack") {
+      return;
+    }
+    expect(dropped.can_undo).toBe(true);
+    expect(dropped.saved_molecule_id).not.toBeNull();
+
+    const undone = await socket.step("undo", opened.session_id, dropped.version);
+    expect(undone.type === "edit.applied" && undone.can_undo).toBe(false);
+  });
+
   it("answers a patch made on a stale version with a conflict, and refuses an unknown atom", async () => {
     const stored = await store("CCO");
     const socket = await connected();

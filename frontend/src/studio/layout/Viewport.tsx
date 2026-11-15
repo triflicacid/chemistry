@@ -4,7 +4,9 @@ import type {Models, PickMode} from "../selection/models";
 import type {Space} from "../selection/ToolModel";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
-import type {AtomMove, GeometryResult, Pose, SessionState} from "../session/messages";
+import type {AtomMove, BondEdit, GeometryResult, Pose, SessionState} from "../session/messages";
+import {movers} from "../selection/bondLength";
+import {defaultReference} from "../selection/torsion";
 import type {SessionPhase} from "../session/useSession";
 import {type Constraint, constraintForKey} from "../viewport/dragPlane";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
@@ -32,6 +34,12 @@ export interface ViewportProps {
   onDropMolecule: (pose: Pose) => void;
   /** A drag of the molecule was abandoned, and it is back at `from`. */
   onCancelMoleculeDrag: (from: Pose) => void;
+  /** A bond's handle has been dragged to a length or torsion, and the drag is not over. */
+  onDragBond: (edit: BondEdit) => void;
+  /** A bond's handle has been dropped at a length or torsion, which ends its drag. */
+  onDropBond: (edit: BondEdit) => void;
+  /** A drag of a bond's handle was abandoned. */
+  onCancelBondDrag: () => void;
 }
 
 const GRIDS: Segment<GridKind | "off">[] = [
@@ -75,6 +83,9 @@ export function Viewport({
   onDragMolecule,
   onDropMolecule,
   onCancelMoleculeDrag,
+  onDragBond,
+  onDropBond,
+  onCancelBondDrag,
 }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -84,7 +95,7 @@ export function Viewport({
   const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickMode>("element");
   const { selection, hover, tools, index } = models;
-  const { tool, constraint, space, pivot, point, strain, carryHydrogens } = useObservable(tools);
+  const { tool, constraint, space, pivot, point, strain, carryHydrogens, torsion, hold } = useObservable(tools);
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -139,6 +150,10 @@ export function Viewport({
   }, [view, carryHydrogens]);
 
   useEffect(() => {
+    view?.setTorsion(torsion);
+  }, [view, torsion]);
+
+  useEffect(() => {
     view?.setSpace(space);
   }, [view, space]);
 
@@ -155,6 +170,34 @@ export function Viewport({
   useEffect(() => {
     view?.setGizmo(gizmo);
   }, [view, gizmo]);
+
+  // a selected bond has a handle: an arrow along it with the move tool, which slides to change its length, and a ring about
+  // it with the rotate tool, which turns to change its torsion. There is none where an atom it would move is locked
+  const bondItem = selected.items.length === 1 ? selected.items[0] : undefined;
+  const bondId = bondItem?.kind === "bond" ? bondItem.id : null;
+  const locked = state?.locked;
+  useEffect(() => {
+    const bond = bondId !== null && index ? index.bonds.get(bondId) : undefined;
+    if (!view || !index || !bond || (tool !== "move" && tool !== "rotate")) {
+      view?.setBondHandle(null);
+      return;
+    }
+
+    const turning = tool === "rotate";
+    const moving = movers(index, bond, hold, turning);
+    if (!moving || [...moving].some((id) => locked?.includes(id))) {
+      view.setBondHandle(null);
+      return;
+    }
+    if (!turning) {
+      view.setBondHandle({ mode: "length", bond: bond.id, hold });
+      return;
+    }
+
+    // the Inspector says which atoms it measures from when it is showing this bond, and the heaviest neighbours are the default
+    const measured = torsion?.bond === bond.id ? torsion : defaultReference(index, bond);
+    view.setBondHandle(measured ? { mode: "turn", bond: bond.id, hold, from: measured.first, to: measured.second } : null);
+  }, [view, index, bondId, tool, hold, torsion, locked]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
@@ -246,8 +289,10 @@ export function Viewport({
       constraint: (held) => tools.constrain(held),
       moleculeDrag: (pose, done) => (done ? onDropMolecule(pose) : onDragMolecule(pose)),
       moleculeDragCancel: onCancelMoleculeDrag,
+      bondDrag: (edit, done) => (done ? onDropBond(edit) : onDragBond(edit)),
+      bondDragCancel: onCancelBondDrag,
     });
-  }, [view, index, mode, selection, hover, tools, onDragAtoms, onDropAtoms, onCancelDrag, onDragMolecule, onDropMolecule, onCancelMoleculeDrag]);
+  }, [view, index, mode, selection, hover, tools, onDragAtoms, onDropAtoms, onCancelDrag, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag]);
 
   const frame = () => {
     if (!view || !index) {

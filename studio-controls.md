@@ -157,7 +157,10 @@ uses, so you can tell which atoms a length or a Hold choice refers to.
 |---|---|
 | Type in an atom's X, Y or Z field, then Enter or click away | Move the atom there. One edit, which can be undone |
 | Type in a bond's **Length** field, then Enter or click away | Set the bond's length. The **Hold** atom (named by its label, such as `C1`) stays put and the other moves along the bond, taking everything beyond it along; **Neither** moves both half each. In a ring only the two atoms move. One edit, which can be undone. Refused if an atom that would move is locked |
+| Type in a bond's **Torsion** field, then Enter or click away | Turn one side of the bond about it until the angle between the two **From** atoms is the value typed. **Hold** says which side stays; **Neither** turns both half each. Ring bonds cannot be turned. One edit, which can be undone |
 | Esc in a field | Abandon what you typed |
+| Select one bond, with the Move tool, and drag the arrow along it | Change its length. The atom shown by **Hold** stays; the arrow is on the atom that moves. One edit, which Esc abandons |
+| Select one bond, with the Rotate tool, and drag the ring about it | Change its torsion between the **From** atoms. One edit, which Esc abandons. Not offered for a ring bond |
 | Click a name under *Bonded to*, *Bonds* or *Joins* | Select that item (modifiers as above) |
 | Hover one | Highlight it in the viewport |
 

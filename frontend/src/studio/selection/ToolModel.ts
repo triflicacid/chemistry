@@ -1,4 +1,5 @@
 import type {Vec3} from "../../api/types/structure";
+import type {Hold} from "./bondLength";
 import type {Constraint} from "../viewport/dragPlane";
 import {Observable} from "./observable";
 
@@ -17,6 +18,13 @@ export type Space = "world" | "local";
  */
 export type Pivot = "anchor" | "centre" | "origin" | "point";
 
+/** A torsion being shown: the bond it is about, and the atom at each end it is measured from. */
+export interface TorsionView {
+  bond: string;
+  first: string;
+  second: string;
+}
+
 /** The tool in use, and what a move is held to. */
 export interface ToolState {
   tool: Tool;
@@ -29,12 +37,16 @@ export interface ToolState {
   strain: boolean;
   /** Whether moving an atom carries the hydrogens bonded to it. This is a convenience, and nothing is locked. */
   carryHydrogens: boolean;
+  /** The torsion the Inspector is showing for the selected bond, which the viewport marks, or null for none. */
+  torsion: TorsionView | null;
+  /** Which atom of a bond stays where it is when the bond is lengthened or turned, by the Inspector or by dragging a handle. */
+  hold: Hold;
 }
 
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, hold: "first" });
   }
 
   /**
@@ -100,6 +112,29 @@ export class ToolModel extends Observable<ToolState> {
   carry(on: boolean): void {
     if (this.get().carryHydrogens !== on) {
       this.set({ ...this.get(), carryHydrogens: on });
+    }
+  }
+
+  /**
+   * Chooses which atom of a bond stays where it is when the bond is lengthened or turned.
+   *
+   * @param hold the first atom, the second, or neither
+   */
+  holding(hold: Hold): void {
+    if (this.get().hold !== hold) {
+      this.set({ ...this.get(), hold });
+    }
+  }
+
+  /**
+   * Says which torsion the viewport should mark.
+   *
+   * @param torsion the bond and the atoms it is measured between, or null for none
+   */
+  showTorsion(torsion: TorsionView | null): void {
+    const was = this.get().torsion;
+    if (was?.bond !== torsion?.bond || was?.first !== torsion?.first || was?.second !== torsion?.second) {
+      this.set({ ...this.get(), torsion });
     }
   }
 

@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.smiles.SmilesWriter;
+import com.ruben.chemistry.space.BondMotion;
 import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Structure3D;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * One open Molecular Studio workspace.
@@ -39,8 +41,8 @@ public final class StudioSession
     /** The most committed edits kept to undo. */
     public static final int MAX_UNDO = 200;
 
-    /** How far, in angstroms, an atom must be moved by an optimisation for the move to count. */
-    private static final double OPTIMISATION_RESOLUTION = 1e-6;
+    /** How far, in angstroms, an atom must be moved by a computed edit, such as an optimisation, for the move to count. */
+    private static final double MOVE_RESOLUTION = 1e-6;
 
     /**
      * One atom to put somewhere.
@@ -443,7 +445,7 @@ public final class StudioSession
         positions.forEach((id, position) ->
         {
             Vec3 from = geometry.get(id);
-            if (from != null && !locked.contains(id) && from.minus(position).length() > OPTIMISATION_RESOLUTION)
+            if (from != null && !locked.contains(id) && from.minus(position).length() > MOVE_RESOLUTION)
             {
                 moves.add(new Move(id, position));
             }
@@ -458,6 +460,132 @@ public final class StudioSession
         Map<String, Vec3> moved = new LinkedHashMap<>();
         moves.forEach(move -> moved.put(move.atomId(), move.position()));
         return Optional.of(new Applied(next, moved, null));
+    }
+
+    /**
+     * Gives a bond a length, as one edit that can be undone. The atoms move along the bond, and the atoms beyond them go
+     * with them if the bond is not in a ring; see {@link BondMotion#withLength}.
+     *
+     * @param bondId the bond to change
+     * @param length the length to give it, in angstroms
+     * @param heldId the atom of the bond to leave where it is, or {@code null} to hold neither
+     * @param commit whether this ends the edit it belongs to; a change that does not is part of a drag, which is one
+     *     edit to undo however many of them it took
+     * @return what moved and the version after it, which is the version the session was at if nothing moved
+     * @throws StudioEditException with {@code UNKNOWN_ID} for a bond or atom this session does not hold,
+     *     {@code INVALID_EDIT} if the length is not allowed or the held atom is not on the bond, and {@code LOCKED} if
+     *     an atom that would move is locked
+     */
+    public synchronized Applied setBondLength(String bondId, double length, String heldId, boolean commit)
+    {
+        Bond bond = bondNamed(bondId);
+        Atom held = heldId == null ? null : atomNamed(heldId);
+        return reshape(() -> BondMotion.withLength(molecule, bond, this::positionOfAtom, length, held), commit);
+    }
+
+    /**
+     * Gives a bond a torsion, as one edit that can be undone, by turning one side of it about the bond; see
+     * {@link BondMotion#withTorsion}.
+     *
+     * @param bondId the bond to turn about
+     * @param fromId an atom bonded to the bond's first atom, which the torsion is measured from
+     * @param toId an atom bonded to the bond's second atom, which the torsion is measured to
+     * @param degrees the torsion to give it, in degrees
+     * @param heldId the atom of the bond whose side stays where it is, or {@code null} to hold neither
+     * @param commit whether this ends the edit it belongs to; a change that does not is part of a drag, which is one
+     *     edit to undo however many of them it took
+     * @return what moved and the version after it, which is the version the session was at if nothing moved
+     * @throws StudioEditException with {@code UNKNOWN_ID} for a bond or atom this session does not hold,
+     *     {@code INVALID_EDIT} if the bond is in a ring, the atoms measured between are not bonded one to each end, or
+     *     the held atom is not on the bond, and {@code LOCKED} if an atom that would move is locked
+     */
+    public synchronized Applied setBondTorsion(String bondId, String fromId, String toId, double degrees, String heldId, boolean commit)
+    {
+        Bond bond = bondNamed(bondId);
+        Atom from = atomNamed(fromId);
+        Atom to = atomNamed(toId);
+        Atom held = heldId == null ? null : atomNamed(heldId);
+        return reshape(() -> BondMotion.withTorsion(molecule, bond, from, to, this::positionOfAtom, degrees, held), commit);
+    }
+
+    /**
+     * Makes the moves a bond edit works out.
+     *
+     * @param plan works out where atoms go, refusing by throwing {@link IllegalArgumentException}
+     * @param commit whether this ends the edit it belongs to. A commit that moves nothing, because the edit before it
+     *     in the same drag already put the atoms there, still ends that edit
+     * @return what moved, which is nothing if every atom was already where it was sent
+     * @throws StudioEditException with {@code INVALID_EDIT} if the plan refused, and {@code LOCKED} if an atom that
+     *     would move is locked
+     */
+    private Applied reshape(Supplier<Map<Atom, Vec3>> plan, boolean commit)
+    {
+        Map<Atom, Vec3> placed;
+        try
+        {
+            placed = plan.get();
+        }
+        catch (IllegalArgumentException refused)
+        {
+            throw new StudioEditException("INVALID_EDIT", refused.getMessage());
+        }
+
+        List<Move> moves = new ArrayList<>();
+        for (Atom atom : molecule.atoms())
+        {
+            Vec3 to = placed.get(atom);
+            if (to != null && positionOfAtom(atom).minus(to).length() > MOVE_RESOLUTION)
+            {
+                moves.add(new Move(atomIds.get(atom), to));
+            }
+        }
+        long next = move(moves, commit);
+        Map<String, Vec3> moved = new LinkedHashMap<>();
+        moves.forEach(move -> moved.put(move.atomId(), move.position()));
+        return new Applied(next, moved, null);
+    }
+
+    /**
+     * @param atom an atom of this session's molecule, by reference
+     * @return where it is
+     */
+    private Vec3 positionOfAtom(Atom atom)
+    {
+        return geometry.get(atomIds.get(atom));
+    }
+
+    /**
+     * @param id an atom's identifier
+     * @return the atom
+     * @throws StudioEditException with {@code UNKNOWN_ID} if this session holds no such atom
+     */
+    private Atom atomNamed(String id)
+    {
+        for (Atom atom : molecule.atoms())
+        {
+            if (id != null && id.equals(atomIds.get(atom)))
+            {
+                return atom;
+            }
+        }
+        throw new StudioEditException("UNKNOWN_ID", "This session holds no atom '" + id + "'");
+    }
+
+    /**
+     * @param id a bond's identifier
+     * @return the bond
+     * @throws StudioEditException with {@code UNKNOWN_ID} if this session holds no such bond
+     */
+    private Bond bondNamed(String id)
+    {
+        for (Bond bond : molecule.bonds())
+        {
+            if (id != null && id.equals(bondId(bond)))
+            {
+                return bond;
+            }
+        }
+        throw new StudioEditException("UNKNOWN_ID", "This session holds no bond '" + id + "'");
     }
 
     /**

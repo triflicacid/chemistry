@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import type {Vec3} from "../api/types/structure";
-import type {AtomMove, Pose} from "./session/messages";
+import type {AtomMove, BondEdit, Pose} from "./session/messages";
 import {Workspace} from "./layout/Workspace";
 import {createModels} from "./selection/models";
 import {useObservable} from "./selection/observable";
@@ -23,7 +23,11 @@ export function App() {
     openSmiles,
     submitSmiles,
     moveAtom,
-    moveAtoms,
+    setBondLength,
+    setBondTorsion,
+    dragBond,
+    dropBond,
+    cancelBondDrag,
     dragAtoms,
     dropAtoms,
     cancelDrag,
@@ -110,13 +114,14 @@ export function App() {
 
   // stable, because the viewport listens afresh whenever one of these changes, and the session redraws this at every patch of a drag
   const move = useCallback((id: string, position: Vec3) => void moveAtom(id, position), [moveAtom]);
-  const moveMany = useCallback((moves: AtomMove[]) => void moveAtoms(moves), [moveAtoms]);
   const drop = useCallback((moves: AtomMove[]) => void dropAtoms(moves), [dropAtoms]);
   const cancel = useCallback((moves: AtomMove[]) => void cancelDrag(moves), [cancelDrag]);
   const lock = useCallback((ids: string[], locked: boolean) => void lockAtoms(ids, locked), [lockAtoms]);
   const moveWhole = useCallback((pose: Pose) => void moveMolecule(pose), [moveMolecule]);
   const dropWhole = useCallback((pose: Pose) => void dropMolecule(pose), [dropMolecule]);
   const cancelWhole = useCallback((from: Pose) => void cancelMoleculeDrag(from), [cancelMoleculeDrag]);
+  const dropBondHandle = useCallback((edit: BondEdit) => void dropBond(edit), [dropBond]);
+  const cancelBondHandle = useCallback(() => void cancelBondDrag(), [cancelBondDrag]);
 
   // the toolbar button and the L key lock the selected atoms, or unlock them if all of them are locked already.
   // A selected molecule stands for every atom in it
@@ -179,7 +184,8 @@ export function App() {
       onOpenSmiles={openSmiles}
       onSubmitSmiles={submit}
       onMoveAtom={move}
-      onMoveAtoms={moveMany}
+      onSetBondLength={setBondLength}
+      onSetBondTorsion={setBondTorsion}
       onLockAtoms={lock}
       canLock={chosen.length > 0}
       lockPressed={allLocked}
@@ -191,6 +197,9 @@ export function App() {
       onDragMolecule={dragMolecule}
       onDropMolecule={dropWhole}
       onCancelMoleculeDrag={cancelWhole}
+      onDragBond={dragBond}
+      onDropBond={dropBondHandle}
+      onCancelBondDrag={cancelBondHandle}
       onUndo={undoEdit}
       onRedo={redoEdit}
       optimising={optimising}

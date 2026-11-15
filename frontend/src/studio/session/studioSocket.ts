@@ -1,5 +1,6 @@
 import type {Vec3} from "../../api/types/structure";
 import {
+    type BondEditAck,
     type EditApplied,
     type LockAck,
     type OptimiseCancelAck,
@@ -242,6 +243,47 @@ export class StudioSocket {
       "atom.patch",
       { session_id: sessionId, base_version: baseVersion, commit, atoms },
       ["atom.patch.ack", "conflict"],
+    );
+  }
+
+  /**
+   * Gives a bond a length. The server works out which atoms move, and answers with where they went.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param bond the bond to change
+   * @param length the length to give it, in angstroms
+   * @param hold the atom of the bond to leave where it is, or null to hold neither
+   * @param commit whether this ends the edit it belongs to; one that does not is part of a drag
+   * @returns the acknowledgement, or a conflict carrying the state the session is actually in
+   */
+  setBondLength(sessionId: string, baseVersion: number, bond: string, length: number, hold: string | null, commit = true): Promise<BondEditAck | SessionConflict> {
+    return this.request<BondEditAck | SessionConflict>(
+      "bond.length",
+      { session_id: sessionId, base_version: baseVersion, bond, length, hold, commit },
+      ["bond.length.ack", "conflict"],
+    );
+  }
+
+  /**
+   * Gives a bond a torsion, by turning one side of it. The server works out which atoms move, and answers with where
+   * they went.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param bond the bond to turn about
+   * @param from the atom bonded to the bond's first atom that the torsion is measured from
+   * @param to the atom bonded to the bond's second atom that the torsion is measured to
+   * @param angle the torsion to give it, in degrees
+   * @param hold the atom of the bond whose side stays where it is, or null to hold neither
+   * @param commit whether this ends the edit it belongs to; one that does not is part of a drag
+   * @returns the acknowledgement, or a conflict carrying the state the session is actually in
+   */
+  setBondTorsion(sessionId: string, baseVersion: number, bond: string, from: string, to: string, angle: number, hold: string | null, commit = true): Promise<BondEditAck | SessionConflict> {
+    return this.request<BondEditAck | SessionConflict>(
+      "bond.torsion",
+      { session_id: sessionId, base_version: baseVersion, bond, from, to, angle, hold, commit },
+      ["bond.torsion.ack", "conflict"],
     );
   }
 

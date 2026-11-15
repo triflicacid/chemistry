@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
@@ -38,7 +39,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 8;
+    private static final int PROTOCOL_VERSION = 9;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -654,6 +655,129 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Gives a bond a length.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void bondLength(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.BondLengthRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.BondLengthRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("bond.length", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.bond() == null || request.length() == null)
+        {
+            context.error("bond.length", sequence, "INVALID_MESSAGE", "bond and length are required");
+            return;
+        }
+
+        reshape(context, "bond.length", sequence, request.sessionId(), request.baseVersion(),
+                request.commit() == null || request.commit(),
+                (session, commit) -> session.setBondLength(request.bond(), request.length(), request.hold(), commit));
+    }
+
+    /**
+     * Gives a bond a torsion.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void bondTorsion(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.BondTorsionRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.BondTorsionRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("bond.torsion", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.bond() == null || request.from() == null || request.to() == null || request.angle() == null)
+        {
+            context.error("bond.torsion", sequence, "INVALID_MESSAGE", "bond, from, to and angle are required");
+            return;
+        }
+
+        reshape(context, "bond.torsion", sequence, request.sessionId(), request.baseVersion(),
+                request.commit() == null || request.commit(),
+                (session, commit) -> session.setBondTorsion(request.bond(), request.from(), request.to(), request.angle(), request.hold(), commit));
+    }
+
+    /**
+     * Makes an edit the session works out the atoms' new positions for, and answers with where they went.
+     *
+     * @param context the connection that asked
+     * @param type the type of the message, for the reply, which is this followed by {@code .ack}
+     * @param sequence the message's sequence number, if it had one
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at
+     * @param commit whether this ends the edit it belongs to
+     * @param edit what to do to the session, given whether it commits
+     * @throws IOException if the connection cannot be written
+     */
+    private void reshape(WebSocketContext context, String type, Long sequence, String sessionId, Long baseVersion, boolean commit, BiFunction<StudioSession, Boolean, StudioSession.Applied> edit) throws IOException
+    {
+        StudioSession session = current(context, type, sequence, sessionId, baseVersion);
+        if (session == null)
+        {
+            return;
+        }
+
+        synchronized (session)
+        {
+            long before = session.version();
+            StudioSession.Applied applied;
+            try
+            {
+                applied = edit.apply(session, commit);
+            }
+            catch (StudioEditException refused)
+            {
+                context.error(type, sequence, refused.code(), refused.getMessage());
+                return;
+            }
+
+            // an edit in progress is not yet something worth keeping
+            if (commit && session.canUndo())
+            {
+                save(session);
+            }
+            if (applied.version() != before)
+            {
+                recalculate(session);
+            }
+
+            Map<String, Object> reply = new LinkedHashMap<>();
+            reply.put("type", type + ".ack");
+            reply.put("sequence", sequence);
+            reply.put("version", applied.version());
+            reply.put("status", "applied");
+            reply.put("can_undo", session.canUndo());
+            reply.put("can_redo", session.canRedo());
+            reply.put("saved_molecule_id", session.savedMoleculeId());
+            reply.put("atoms", applied.moved().entrySet().stream()
+                    .map(moved -> Map.of("id", moved.getKey(), "position", moved.getValue()))
+                    .toList());
+            context.sendJson(reply);
+        }
+    }
+
+    /**
      * Steps a session back or forward through its history and answers with the atoms that moved.
      *
      * @param context the connection that asked
@@ -887,17 +1011,19 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         private StudioSocket(StudioSocketEndpoint endpoint)
         {
-            super(Map.of(
-                    "session.open", endpoint::open,
-                    "session.resync", endpoint::resync,
-                    "smiles.submit", endpoint::submitSmiles,
-                    "atom.patch", endpoint::patch,
-                    "molecule.transform", endpoint::transform,
-                    "atom.lock", endpoint::lock,
-                    "optimise.start", endpoint::optimise,
-                    "optimise.cancel", endpoint::cancelOptimise,
-                    "edit.undo", endpoint::undo,
-                    "edit.redo", endpoint::redo));
+            super(Map.<String, MessageHandler>ofEntries(
+                    Map.entry("session.open", endpoint::open),
+                    Map.entry("session.resync", endpoint::resync),
+                    Map.entry("smiles.submit", endpoint::submitSmiles),
+                    Map.entry("atom.patch", endpoint::patch),
+                    Map.entry("molecule.transform", endpoint::transform),
+                    Map.entry("atom.lock", endpoint::lock),
+                    Map.entry("bond.length", endpoint::bondLength),
+                    Map.entry("bond.torsion", endpoint::bondTorsion),
+                    Map.entry("optimise.start", endpoint::optimise),
+                    Map.entry("optimise.cancel", endpoint::cancelOptimise),
+                    Map.entry("edit.undo", endpoint::undo),
+                    Map.entry("edit.redo", endpoint::redo)));
             this.endpoint = endpoint;
         }
 

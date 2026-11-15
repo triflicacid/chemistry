@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -110,6 +110,45 @@ export interface PatchAck extends ServerEnvelope {
   can_redo: boolean;
   /** The stored molecule holding the session's work, which this edit may have just created. */
   saved_molecule_id: string | null;
+}
+
+/**
+ * A change to a bond that a handle drags: its length, or its torsion between two atoms bonded one to each end. The
+ * value is where the drag has got to, not how far it has come, so a report can be sent again without effect.
+ */
+export type BondEdit =
+  | {
+      kind: "length";
+      bond: string;
+      /** The length, in angstroms. */
+      value: number;
+      /** The atom of the bond to leave where it is, or null to hold neither. */
+      hold: string | null;
+    }
+  | {
+      kind: "torsion";
+      bond: string;
+      /** The atom bonded to the bond's first atom that the torsion is measured from. */
+      from: string;
+      /** The atom bonded to the bond's second atom that the torsion is measured to. */
+      to: string;
+      /** The torsion, in degrees. */
+      value: number;
+      hold: string | null;
+    };
+
+/** The answer to a change of a bond's length or torsion that the session applied. */
+export interface BondEditAck extends ServerEnvelope {
+  type: "bond.length.ack" | "bond.torsion.ack";
+  /** The version the session is at after the change, which is the one before it if nothing needed to move. */
+  version: number;
+  status: "applied";
+  can_undo: boolean;
+  can_redo: boolean;
+  /** The stored molecule holding the session's work, which this edit may have just created. */
+  saved_molecule_id: string | null;
+  /** Where each atom the change moved now is. */
+  atoms: { id: string; position: Vec3 }[];
 }
 
 /** The answer to a move of the molecule as a whole that the session applied. */
@@ -288,6 +327,7 @@ export type ServerMessage =
   | SessionConflict
   | PatchAck
   | TransformAck
+  | BondEditAck
   | LockAck
   | EditApplied
   | OptimiseStarted

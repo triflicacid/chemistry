@@ -4,14 +4,17 @@ import {ApiError} from "../../api/http";
 import {describing, describingSmiles, requested} from "./location";
 import type {Vec3} from "../../api/types/structure";
 import type {
-  AtomMove,
-  EditApplied,
-  GeometryResult,
-  OptimiseProgress,
-  OptimiseResult,
-  PatchAck,
-  Pose,
-  SessionState,
+    AtomMove,
+    BondEdit,
+    BondEditAck,
+    EditApplied,
+    GeometryResult,
+    OptimiseProgress,
+    OptimiseResult,
+    PatchAck,
+    Pose,
+    SessionConflict,
+    SessionState,
 } from "./messages";
 import {samePose} from "./pose";
 import {StudioError, StudioSocket} from "./studioSocket";
@@ -110,8 +113,22 @@ export interface Session {
   submitSmiles: (smiles: string) => Promise<SubmitResult>;
   /** Puts an atom at a position, as one edit that can be undone. */
   moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
-  /** Puts several atoms at positions, as one edit that can be undone. */
-  moveAtoms: (moves: AtomMove[]) => Promise<EditResult>;
+  /**
+   * Gives a bond a length, as one edit that can be undone. The server works out which atoms move: the far side comes
+   * along unless the bond is in a ring.
+   */
+  setBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
+  /** Gives a bond a torsion by turning one side of it, as one edit that can be undone. The server refuses ring bonds. */
+  setBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
+  /**
+   * Reports where a handle dragging a bond has got to. Sends at most one change per {@link DRAG_INTERVAL_MS}, of the
+   * latest, none of which is yet an edit to undo.
+   */
+  dragBond: (edit: BondEdit) => void;
+  /** Ends a drag of a bond at a value, as one edit that can be undone however many changes the drag sent. */
+  dropBond: (edit: BondEdit) => Promise<EditResult>;
+  /** Abandons a drag of a bond, putting every atom the drag moved back where it was picked up. */
+  cancelBondDrag: () => Promise<EditResult>;
   /**
    * Reports where dragged atoms have got to. Sends at most one patch per {@link DRAG_INTERVAL_MS}, of the latest
    * positions, none of which is yet an edit to undo.
@@ -466,7 +483,75 @@ export function useSession(client?: ChemistryApi): Session {
 
   const moveAtom = useCallback((id: string, position: Vec3) => send([{ id, position }], true), [send]);
 
-  const moveAtoms = useCallback((moves: AtomMove[]) => send(moves, true), [send]);
+  /**
+   * Asks the server to reshape a bond, and puts the atoms it says moved where it says.
+   *
+   * @param ask makes the request, given the socket and the state it is made on
+   * @param message what to say in the log when it is done, or null to say nothing, as for part of a drag
+   */
+  const reshape = useCallback(
+    (ask: (socket: StudioSocket, base: SessionState) => Promise<BondEditAck | SessionConflict>, message: string | null): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
+
+        try {
+          const reply = await ask(socket, base);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note("The structure changed under your edit, so it was not applied", true);
+            return { kind: "conflict" };
+          }
+
+          // a resync that landed meanwhile is authoritative, and already says where the atoms are
+          if (held.current?.version === base.version) {
+            adopt(patched(base, reply.atoms, reply));
+          }
+          if (message !== null) {
+            note(message);
+          }
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
+  /**
+   * Sends a change to a bond.
+   *
+   * @param edit what to change it to
+   * @param commit whether this ends the edit it belongs to; a change that does not is part of a drag
+   */
+  const sendBond = useCallback(
+    (edit: BondEdit, commit: boolean): Promise<EditResult> => {
+      const message = !commit
+        ? null
+        : edit.kind === "length"
+          ? `Set ${edit.bond} to ${edit.value.toFixed(3)} Å`
+          : `Turned ${edit.bond} to a torsion of ${edit.value.toFixed(1)}°`;
+      return reshape(
+        (socket, base) =>
+          edit.kind === "length"
+            ? socket.setBondLength(base.session_id, base.version, edit.bond, edit.value, edit.hold, commit)
+            : socket.setBondTorsion(base.session_id, base.version, edit.bond, edit.from, edit.to, edit.value, edit.hold, commit),
+        message,
+      );
+    },
+    [reshape],
+  );
+
+  const setBondLength = useCallback((bond: string, length: number, hold: string | null) => sendBond({ kind: "length", bond, value: length, hold }, true), [sendBond]);
+
+  const setBondTorsion = useCallback(
+    (bond: string, from: string, to: string, angle: number, hold: string | null) => sendBond({ kind: "torsion", bond, from, to, value: angle, hold }, true),
+    [sendBond],
+  );
 
   /**
    * Puts the molecule at a pose.
@@ -558,6 +643,17 @@ export function useSession(client?: ChemistryApi): Session {
 
   const dragMolecule = useCallback((pose: Pose) => reporting("molecule", pose, samePose, (latest) => void sendPose(latest, false)), [reporting, sendPose]);
 
+  /** Where every atom was when the drag of a bond began, which cancelling it puts back, or null while none is under way. */
+  const bondOrigin = useRef<Map<string, Vec3> | null>(null);
+
+  const dragBond = useCallback(
+    (edit: BondEdit) => {
+      bondOrigin.current ??= new Map((held.current?.atoms ?? []).map((atom) => [atom.id, atom.position]));
+      reporting(`bond:${edit.kind}:${edit.bond}`, edit, (first, second) => first.value === second.value && first.hold === second.hold, (latest) => void sendBond(latest, false));
+    },
+    [reporting, sendBond],
+  );
+
   /** Ends the drag in progress, if there is one, so that nothing it still had waiting is sent. */
   const closeDrag = useCallback((): Drag | null => {
     const current = drag.current;
@@ -587,6 +683,31 @@ export function useSession(client?: ChemistryApi): Session {
     },
     [closeDrag, send],
   );
+
+  const dropBond = useCallback(
+    (edit: BondEdit) => {
+      closeDrag();
+      bondOrigin.current = null;
+      return sendBond(edit, true);
+    },
+    [closeDrag, sendBond],
+  );
+
+  const cancelBondDrag = useCallback(async (): Promise<EditResult> => {
+    const ended = closeDrag();
+    const origin = bondOrigin.current;
+    bondOrigin.current = null;
+    if (!ended?.sent || !origin) {
+      return { kind: "applied" };
+    }
+
+    // the atoms are put back by a patch that commits, which records nothing to undo because they end where they began
+    const back = (held.current?.atoms ?? []).filter((atom) => {
+      const was = origin.get(atom.id);
+      return was !== undefined && (was.x !== atom.position.x || was.y !== atom.position.y || was.z !== atom.position.z);
+    });
+    return back.length === 0 ? { kind: "applied" } : send(back.map((atom) => ({ id: atom.id, position: origin.get(atom.id) as Vec3 })), true);
+  }, [closeDrag, send]);
 
   const dropMolecule = useCallback(
     (pose: Pose) => {
@@ -727,7 +848,11 @@ export function useSession(client?: ChemistryApi): Session {
     openSmiles: submit,
     submitSmiles,
     moveAtom,
-    moveAtoms,
+    setBondLength,
+    setBondTorsion,
+    dragBond,
+    dropBond,
+    cancelBondDrag,
     dragAtoms,
     dropAtoms,
     cancelDrag,
@@ -759,7 +884,7 @@ function sameSpots(first: AtomMove[], second: AtomMove[]): boolean {
  * @param ack the session's acknowledgement, which says the version and history it is now at
  * @param transform where the molecule now sits, if the change moved it as a whole
  */
-function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | EditApplied | OptimiseResult, transform: Pose | null = null): SessionState {
+function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | BondEditAck | EditApplied | OptimiseResult, transform: Pose | null = null): SessionState {
   const to = new Map(moves.map((move) => [move.id, move.position]));
   return {
     ...base,
