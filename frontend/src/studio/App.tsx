@@ -12,7 +12,7 @@ const SETTLE_MS = 200;
 export function App() {
   const store = useMemo(() => new StudioStore(), []);
   const [layout, setLayout] = useState(store.layout);
-  const { phase, state, activity, openSmiles, submitSmiles } = useSession();
+  const { phase, state, activity, openSmiles, submitSmiles, moveAtom, undo, redo } = useSession();
 
   const shared = useMemo(createModels, []);
   const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
@@ -48,6 +48,27 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [shared]);
 
+  // inside a text field the keys belong to the field, which has an undo of its own
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable]") || !(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        void undo();
+      } else if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        void redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
   // a rebuilt structure issues every identifier afresh, so none of the old ones still names what it did
   const submit = useCallback(
     async (smiles: string) => {
@@ -80,6 +101,9 @@ export function App() {
       onCollapse={collapse}
       onOpenSmiles={openSmiles}
       onSubmitSmiles={submit}
+      onMoveAtom={(id, position) => void moveAtom(id, position)}
+      onUndo={() => void undo()}
+      onRedo={() => void redo()}
     />
   );
 }

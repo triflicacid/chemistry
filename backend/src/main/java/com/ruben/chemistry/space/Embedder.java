@@ -114,6 +114,36 @@ public final class Embedder
             }
         }
 
+        return describe(topology, kept);
+    }
+
+    /**
+     * Describes a molecule in a shape found some other way, as {@link #embed} would describe one it found itself.
+     *
+     * @param molecule the molecule
+     * @param positions where each node is, in angstroms
+     * @param strain the strain to report for the shape
+     * @return the molecule's structure, with the one conformer; positions are kept as given, not centred
+     * @throws IllegalArgumentException if there is not one position for every node
+     */
+    public static Structure3D placed(Molecule molecule, List<Vec3> positions, double strain)
+    {
+        Topology topology = new Topology(molecule);
+        if (positions.size() != topology.count)
+        {
+            throw new IllegalArgumentException("The molecule has " + topology.count + " nodes, but " + positions.size() + " positions were given");
+        }
+
+        return describe(topology, List.of(new Structure3D.Conformer(strain, List.copyOf(positions))));
+    }
+
+    /**
+     * @param topology the molecule's nodes and links
+     * @param conformers the shapes found
+     * @return the structure they are shapes of
+     */
+    private static Structure3D describe(Topology topology, List<Structure3D.Conformer> conformers)
+    {
         List<Structure3D.Site> sites = new ArrayList<>();
         for (int node = 0; node < topology.count; node++)
         {
@@ -124,7 +154,7 @@ public final class Embedder
         {
             connections.add(new Structure3D.Connection(link.first(), link.second(), link.order(), link.source()));
         }
-        return new Structure3D(List.copyOf(sites), List.copyOf(connections), List.copyOf(kept));
+        return new Structure3D(List.copyOf(sites), List.copyOf(connections), List.copyOf(conformers));
     }
 
     /**

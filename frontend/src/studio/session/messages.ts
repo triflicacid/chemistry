@@ -63,6 +63,22 @@ export interface SessionState extends ServerEnvelope {
   pinned: string[];
   locked: string[];
   strain: number;
+  /** Whether there is an edit to take back. */
+  can_undo: boolean;
+  /** Whether there is an undone edit to make again. */
+  can_redo: boolean;
+}
+
+/** The answer to an atom patch the session applied. */
+export interface PatchAck extends ServerEnvelope {
+  type: "atom.patch.ack";
+  /** The version the session is at after the patch. */
+  version: number;
+  status: "applied";
+  can_undo: boolean;
+  can_redo: boolean;
+  /** The stored molecule holding the session's work, which this edit may have just created. */
+  saved_molecule_id: string | null;
 }
 
 /**
@@ -78,6 +94,18 @@ export interface SessionConflict extends ServerEnvelope {
   state: SessionState;
 }
 
+/** The answer to an undo or redo: only the atoms it moved, not the whole state. */
+export interface EditApplied extends ServerEnvelope {
+  type: "edit.applied";
+  /** The version the session is at after the step. */
+  version: number;
+  can_undo: boolean;
+  can_redo: boolean;
+  saved_molecule_id: string | null;
+  /** Where each atom the step touched is now. */
+  atoms: { id: string; position: Vec3 }[];
+}
+
 /** A message the server could not handle, which leaves the connection open. */
 export interface SocketError extends ServerEnvelope {
   type: "error";
@@ -91,4 +119,4 @@ export interface Pong extends ServerEnvelope {
   type: "pong";
 }
 
-export type ServerMessage = SessionReady | SessionState | SessionConflict | SocketError | Pong;
+export type ServerMessage = SessionReady | SessionState | SessionConflict | PatchAck | EditApplied | SocketError | Pong;

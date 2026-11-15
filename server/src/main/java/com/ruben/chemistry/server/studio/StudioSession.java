@@ -9,8 +9,12 @@ import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.space.Vec3;
+import com.ruben.chemistry.util.IdentitySet;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -29,6 +33,39 @@ public final class StudioSession
     /** The most conformers one message may ask to embed. */
     public static final int MAX_CONFORMERS = 20;
 
+    /** The most committed edits kept to undo. */
+    public static final int MAX_UNDO = 200;
+
+    /**
+     * One atom to put somewhere.
+     *
+     * @param atomId the atom to move
+     * @param position where to put it, in angstroms
+     */
+    public record Move(String atomId, Vec3 position)
+    {
+    }
+
+    /**
+     * What an undo or redo did.
+     *
+     * @param version the version after it
+     * @param moved where each atom it touched is now
+     */
+    public record Applied(long version, Map<String, Vec3> moved)
+    {
+    }
+
+    /**
+     * One committed edit.
+     *
+     * @param before where each atom the edit touched was
+     * @param after where each of them is after it
+     */
+    private record Edit(Map<String, Vec3> before, Map<String, Vec3> after)
+    {
+    }
+
     private final String sessionId;
     private final String sourceMoleculeId;
     private final Molecule molecule;
@@ -46,6 +83,24 @@ public final class StudioSession
 
     /** The molecule this session last saved, or null if it has saved none. */
     private String savedMoleculeId;
+
+    /** The working graph with its hydrogens counted, or null until saving first asks for it. */
+    private Molecule collapsed;
+
+    /** The structure of {@link #collapsed}, whose conformer is a placeholder, or null until saving first asks for it. */
+    private Structure3D structureShape;
+
+    /** The atom each node of {@link #collapsed}'s structure is, in node order. */
+    private List<String> nodeAtoms;
+
+    /** Committed edits, the latest last. */
+    private final Deque<Edit> done = new ArrayDeque<>();
+
+    /** Edits undone and not yet overtaken by a new one, the next to redo last. */
+    private final Deque<Edit> undone = new ArrayDeque<>();
+
+    /** Where each atom was before the uncommitted moves that have touched it, so a commit can say what it replaced. */
+    private final Map<String, Vec3> uncommitted = new LinkedHashMap<>();
 
     private long version = 1;
     private String smiles;
@@ -105,7 +160,8 @@ public final class StudioSession
      *
      * @param molecule the molecule to rebuild on, whose hydrogens may still be counts
      * @param conformers how many conformers to embed
-     * @return the new session, one version on from this one, with this session's name, source and saved molecule
+     * @return the new session, one version on from this one, with this session's name and source; it has saved
+     *     nothing, because the molecule this session saved describes a structure that no longer exists
      * @throws IllegalArgumentException if {@code conformers} is outside 1 to {@link #MAX_CONFORMERS}
      * @throws IllegalStateException if no shape could be embedded, or the shape found does not describe the molecule's atoms one for one
      */
@@ -119,7 +175,6 @@ public final class StudioSession
         Structure3D structure = Embedder.embed(molecule, Embedder.Options.DEFAULT.withConformers(conformers));
         StudioSession next = build(sessionId, sourceMoleculeId, molecule, structure);
         next.version = version + 1;
-        next.savedMoleculeId = savedMoleculeId;
         return next;
     }
 
@@ -170,6 +225,219 @@ public final class StudioSession
         }
 
         return new StudioSession(sessionId, sourceMoleculeId, working, atomIds, bondIds, geometry, wasImplicit, conformer.strain());
+    }
+
+    /**
+     * Puts atoms where they are asked to go.
+     *
+     * @param moves the atoms to move; a later move of an atom overrides an earlier one
+     * @param commit whether this ends the edit it belongs to
+     * @return the version after the patch, which is the one before it if nothing was moved
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold,
+     *     {@code LOCKED} for one that is locked, and {@code INVALID_MESSAGE} for a position that is not finite
+     */
+    public synchronized long move(List<Move> moves, boolean commit)
+    {
+        for (Move move : moves)
+        {
+            if (!geometry.containsKey(move.atomId()))
+            {
+                throw new StudioEditException("UNKNOWN_ID", "This session holds no atom '" + move.atomId() + "'");
+            }
+            if (locked.contains(move.atomId()))
+            {
+                throw new StudioEditException("LOCKED", "Atom " + move.atomId() + " is locked against edits");
+            }
+
+            Vec3 to = move.position();
+            if (!Double.isFinite(to.x()) || !Double.isFinite(to.y()) || !Double.isFinite(to.z()))
+            {
+                throw new StudioEditException("INVALID_MESSAGE", "The position of atom " + move.atomId() + " is not a finite number");
+            }
+        }
+
+        boolean moved = false;
+        for (Move move : moves)
+        {
+            Vec3 from = geometry.get(move.atomId());
+            if (!from.equals(move.position()))
+            {
+                uncommitted.putIfAbsent(move.atomId(), from);
+                geometry.put(move.atomId(), move.position());
+                moved = true;
+            }
+        }
+
+        if (commit)
+        {
+            record(uncommitted);
+            uncommitted.clear();
+        }
+
+        if (moved)
+        {
+            version++;
+        }
+
+        return version;
+    }
+
+    /**
+     * Takes back the latest committed edit. An edit still in progress is cancelled instead.
+     *
+     * @return the atoms it moved and the version after it
+     * @throws StudioEditException with {@code NOTHING_TO_UNDO} if there is nothing to take back
+     */
+    public synchronized Applied undo()
+    {
+        if (!uncommitted.isEmpty())
+        {
+            Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
+            geometry.putAll(restored);
+            uncommitted.clear();
+            return new Applied(++version, restored);
+        }
+
+        Edit edit = done.pollLast();
+        if (edit == null)
+        {
+            throw new StudioEditException("NOTHING_TO_UNDO", "There is nothing to undo");
+        }
+
+        geometry.putAll(edit.before());
+        undone.addLast(edit);
+        return new Applied(++version, edit.before());
+    }
+
+    /**
+     * Makes again the edit most recently undone.
+     *
+     * @return the atoms it moved and the version after it
+     * @throws StudioEditException with {@code NOTHING_TO_REDO} if no undone edit is waiting
+     */
+    public synchronized Applied redo()
+    {
+        Edit edit = undone.pollLast();
+        if (edit == null)
+        {
+            throw new StudioEditException("NOTHING_TO_REDO", "There is nothing to redo");
+        }
+
+        geometry.putAll(edit.after());
+        done.addLast(edit);
+        return new Applied(++version, edit.after());
+    }
+
+    /**
+     * @return the working graph with its hydrogens taken back into counts, which is how it is stored
+     */
+    public synchronized Molecule collapsed()
+    {
+        prepareStructure();
+        return collapsed;
+    }
+
+    /**
+     * Describes the working geometry as the structure of {@link #collapsed()}, which is what saving stores.
+     *
+     * @return the structure, whose positions are the working positions, not recentred
+     */
+    public synchronized Structure3D structure()
+    {
+        prepareStructure();
+
+        List<Vec3> positions = new ArrayList<>(nodeAtoms.size());
+        nodeAtoms.forEach(id -> positions.add(geometry.get(id)));
+
+        return new Structure3D(
+                structureShape.sites(),
+                structureShape.connections(),
+                List.of(new Structure3D.Conformer(strain, positions)));
+    }
+
+    /** Works out, the first time it is needed, what saving stores that does not change as atoms move. */
+    private void prepareStructure()
+    {
+        if (collapsed != null)
+        {
+            return;
+        }
+
+        Map<Atom, List<Atom>> absorbed = Hydrogens.absorbedBy(molecule);
+        Set<Atom> gone = IdentitySet.of();
+        absorbed.values().forEach(gone::addAll);
+        List<Atom> kept = molecule.atoms().stream().filter(atom -> !gone.contains(atom)).toList();
+
+        // the collapsed molecule lists the hydrogens it implies atom by atom, after every atom it holds
+        List<String> order = new ArrayList<>();
+        kept.forEach(atom -> order.add(atomIds.get(atom)));
+        for (Atom atom : kept)
+        {
+            absorbed.getOrDefault(atom, List.of()).forEach(hydrogen -> order.add(atomIds.get(hydrogen)));
+        }
+
+        Molecule counted = Hydrogens.asCounts(molecule);
+        structureShape = Embedder.placed(counted, order.stream().map(geometry::get).toList(), strain);
+        nodeAtoms = List.copyOf(order);
+        collapsed = counted;
+    }
+
+    /**
+     * Notes the stored molecule that holds this session's work.
+     *
+     * @param moleculeId the stored molecule
+     */
+    public synchronized void saved(String moleculeId)
+    {
+        this.savedMoleculeId = moleculeId;
+    }
+
+    /**
+     * @return whether {@link #undo()} has anything to take back
+     */
+    public synchronized boolean canUndo()
+    {
+        return !done.isEmpty() || !uncommitted.isEmpty();
+    }
+
+    /**
+     * @return whether {@link #redo()} has anything to make again
+     */
+    public synchronized boolean canRedo()
+    {
+        return !undone.isEmpty();
+    }
+
+    /**
+     * Files the moves since the last commit as one undoable edit.
+     *
+     * @param before where each atom moved since the last commit was when it started
+     */
+    private void record(Map<String, Vec3> before)
+    {
+        Map<String, Vec3> then = new LinkedHashMap<>();
+        Map<String, Vec3> now = new LinkedHashMap<>();
+        for (Map.Entry<String, Vec3> entry : before.entrySet())
+        {
+            Vec3 current = geometry.get(entry.getKey());
+            if (!current.equals(entry.getValue()))
+            {
+                then.put(entry.getKey(), entry.getValue());
+                now.put(entry.getKey(), current);
+            }
+        }
+
+        if (then.isEmpty())
+        {
+            return;
+        }
+
+        done.addLast(new Edit(then, now));
+        undone.clear();
+        while (done.size() > MAX_UNDO)
+        {
+            done.pollFirst();
+        }
     }
 
     /**

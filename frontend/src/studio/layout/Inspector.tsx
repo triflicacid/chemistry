@@ -3,20 +3,24 @@ import { type Item, keyOf } from "../selection/items";
 import type { Models } from "../selection/models";
 import { useObservable } from "../selection/observable";
 import type { StateIndex } from "../selection/StateIndex";
+import type { Vec3 } from "../../api/types/structure";
 import type { SessionAtom, SessionBond, SessionState } from "../session/messages";
+import { NumberField } from "./NumberField";
 
 export interface InspectorProps {
   state: SessionState | null;
   models: Models;
+  /** Puts an atom at a position. */
+  onMoveAtom: (id: string, position: Vec3) => void;
 }
 
 /**
- * The properties of whatever is selected, read-only.
+ * The properties of whatever is selected. An atom's position can be edited.
  *
  * The active item decides what is shown. With nothing selected it shows the session; with a
  * mixture of kinds it says what the mixture is and does not guess at a pane.
  */
-export function Inspector({ state, models }: InspectorProps) {
+export function Inspector({ state, models, onMoveAtom }: InspectorProps) {
   const { selection, index } = models;
   const { items, active } = useObservable(selection);
 
@@ -44,7 +48,7 @@ export function Inspector({ state, models }: InspectorProps) {
           {items.length} {active.kind}s selected. Showing {describe(active, index)}.
         </p>
       )}
-      <ItemPane item={active} index={index} models={models} />
+      <ItemPane item={active} index={index} models={models} onMoveAtom={onMoveAtom} />
     </>
   );
 }
@@ -53,13 +57,14 @@ interface ItemPaneProps {
   item: Item;
   index: StateIndex;
   models: Models;
+  onMoveAtom: (id: string, position: Vec3) => void;
 }
 
-function ItemPane({ item, index, models }: ItemPaneProps) {
+function ItemPane({ item, index, models, onMoveAtom }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
       const atom = index.atoms.get(item.id);
-      return atom ? <AtomPane atom={atom} index={index} models={models} /> : null;
+      return atom ? <AtomPane key={atom.id} atom={atom} index={index} models={models} onMove={onMoveAtom} /> : null;
     }
     case "bond": {
       const bond = index.bonds.get(item.id);
@@ -130,12 +135,14 @@ interface AtomPaneProps {
   atom: SessionAtom;
   index: StateIndex;
   models: Models;
+  onMove: (id: string, position: Vec3) => void;
 }
 
-function AtomPane({ atom, index, models }: AtomPaneProps) {
-  const { x, y, z } = atom.position;
+function AtomPane({ atom, index, models, onMove }: AtomPaneProps) {
+  const { position } = atom;
   const fragment = index.fragmentOf({ kind: "atom", id: atom.id });
   const state = index.state;
+  const locked = state.locked.includes(atom.id);
   return (
     <>
       <h3 className="pane-title">Atom {index.label(atom.id)}</h3>
@@ -145,10 +152,22 @@ function AtomPane({ atom, index, models }: AtomPaneProps) {
         {atom.isotope > 0 && <Property name="Isotope" value={String(atom.isotope)} />}
         <Property name="Charge" value={signed(atom.charge)} />
         <Property name="Aromatic" value={atom.aromatic ? "yes" : "no"} />
-        <Property name="Position" value={`${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)} Å`} mono />
+        <dt>Position</dt>
+        <dd className="position">
+          {(["x", "y", "z"] as const).map((axis) => (
+            <NumberField
+              key={axis}
+              label={`${axis.toUpperCase()} position of ${index.label(atom.id)}, in ångströms`}
+              value={position[axis]}
+              disabled={locked}
+              onCommit={(value) => onMove(atom.id, { ...position, [axis]: value })}
+            />
+          ))}
+          <span className="unit">Å</span>
+        </dd>
         {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
         <Property name="Pinned" value={state.pinned.includes(atom.id) ? "yes" : "no"} />
-        <Property name="Locked" value={state.locked.includes(atom.id) ? "yes" : "no"} />
+        <Property name="Locked" value={locked ? "yes" : "no"} />
         {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
       </dl>
 

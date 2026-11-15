@@ -96,6 +96,27 @@ public final class Hydrogens
     }
 
     /**
+     * Finds the hydrogens {@link #asCounts(Molecule)} would absorb, and what each would be counted on.
+     *
+     * @param molecule the molecule to look in
+     * @return each atom that would take a count, by reference, with the hydrogens that would become it
+     */
+    public static Map<Atom, List<Atom>> absorbedBy(Molecule molecule)
+    {
+        Map<Atom, List<Atom>> absorbed = new IdentityHashMap<>();
+        for (Atom atom : molecule.atoms())
+        {
+            Atom owner = ownerIfCountable(molecule, atom);
+            if (owner != null)
+            {
+                absorbed.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(atom);
+            }
+        }
+
+        return absorbed;
+    }
+
+    /**
      * Rewrites a molecule so that the hydrogens a count can account for are no longer atoms.
      * <p>
      * A hydrogen is absorbed only where a count says everything the atom did: it must be uncharged, unlabelled by
@@ -114,17 +135,9 @@ public final class Hydrogens
      */
     public static Molecule asCounts(Molecule molecule)
     {
+        Map<Atom, List<Atom>> absorbed = absorbedBy(molecule);
         Map<Atom, Atom> ownerOf = new IdentityHashMap<>();
-        Map<Atom, List<Atom>> absorbed = new IdentityHashMap<>();
-        for (Atom atom : molecule.atoms())
-        {
-            Atom owner = ownerIfCountable(molecule, atom);
-            if (owner != null)
-            {
-                ownerOf.put(atom, owner);
-                absorbed.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(atom);
-            }
-        }
+        absorbed.forEach((owner, hydrogens) -> hydrogens.forEach(hydrogen -> ownerOf.put(hydrogen, owner)));
 
         if (ownerOf.isEmpty())
         {

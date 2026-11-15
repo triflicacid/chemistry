@@ -32,6 +32,8 @@ import java.util.Set;
  * @param pinned the atoms relaxation must not move
  * @param locked the atoms and bonds that refuse an edit
  * @param strain how far the working geometry strays from its ideal lengths, angles and contacts
+ * @param canUndo whether there is an edit to take back
+ * @param canRedo whether there is an undone edit to make again
  */
 public record StudioState(
         String type,
@@ -46,7 +48,9 @@ public record StudioState(
         List<FragmentState> fragments,
         List<String> pinned,
         List<String> locked,
-        double strain)
+        double strain,
+        boolean canUndo,
+        boolean canRedo)
 {
     /** The type this message is sent as. */
     public static final String TYPE = "session.state";
@@ -164,7 +168,9 @@ public record StudioState(
                 fragments,
                 List.copyOf(session.pinned()),
                 List.copyOf(session.locked()),
-                session.strain());
+                session.strain(),
+                session.canUndo(),
+                session.canRedo());
     }
 
     /**

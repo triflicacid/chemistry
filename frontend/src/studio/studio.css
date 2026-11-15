@@ -592,6 +592,42 @@ body.resizing {
   font-family: ui-monospace, monospace;
 }
 
+.properties dd.position {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: visible;
+}
+
+.number-field {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  padding: 0.1rem 0.3rem;
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+}
+
+.number-field:disabled {
+  color: var(--ink-soft);
+}
+
+.number-field[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.number-field[data-stale] {
+  border-color: var(--hover);
+}
+
+.unit {
+  color: var(--ink-soft);
+}
+
 /* Activity */
 
 .activity {
