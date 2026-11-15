@@ -1,4 +1,5 @@
-import type { MoleculeId, MoleculeMetadata } from "../api/types";
+import type { MoleculeMetadata } from "../../api/types/metadata";
+import type { MoleculeId } from "../../api/types/stored";
 import { Selection } from "../store";
 import type { FaultState, MoleculeView } from "../view/MoleculeView";
 import { FormulaView } from "./FormulaView";

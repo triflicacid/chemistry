@@ -1,4 +1,5 @@
-import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, Span, SystemInfo } from "../api/types";
+import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, SystemInfo } from "../../api/types/metadata";
+import type { Span } from "../../api/types/span";
 import { FormulaView } from "./FormulaView";
 import { SmilesText } from "./SmilesText";
 import type { Highlight } from "./SmilesText";

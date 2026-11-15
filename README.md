@@ -38,3 +38,13 @@ cd frontend
 pnpm install
 pnpm dev
 ```
+
+It serves two separate pages from the one dev server:
+
+| Page | URL | Source | What it is |
+| --- | --- | --- | --- |
+| Viewer | `/` | `src/viewer` | Paste or load SMILES and inspect molecules in 2D and 3D. Plain TypeScript. |
+| Studio | `/studio/` | `src/studio` | The molecular editing workspace. React. |
+
+They are built as separate bundles and share only `src/api`: the HTTP client and the
+types the server's messages are described by. Everything else is private to its page.

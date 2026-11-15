@@ -1,4 +1,4 @@
-import type { MoleculeId } from "./api/types";
+import type { MoleculeId } from "../api/types/stored";
 
 /** The atoms and bonds the user has selected, by index. Not tied to how the molecule is drawn. */
 export class Selection {

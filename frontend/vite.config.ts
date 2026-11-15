@@ -1,6 +1,16 @@
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  plugins: [react({ include: "src/studio/**" })],
+  build: {
+    rollupOptions: {
+      input: {
+        viewer: "index.html",
+        studio: "studio/index.html",
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

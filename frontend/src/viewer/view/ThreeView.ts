@@ -25,7 +25,9 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { CameraPose, Conjugation3D, Connection3D, Diagnostics3D, MatchHighlight, OptionValues, Site3D, Structure3D, Vector } from "../api/types";
+import type { MatchHighlight } from "../../api/types/match";
+import type { OptionValues } from "../../api/types/options";
+import type { CameraPose, Conjugation3D, Connection3D, Diagnostics3D, Site3D, Structure3D, Vec3 } from "../../api/types/structure";
 import type { FaultSeverity, FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
 
 /** The matches of a SMARTS pattern to show in a view. */
@@ -366,7 +368,7 @@ export class ThreeView implements MoleculeView {
 
   /** Where the camera is now, so the server can draw what it sees. */
   cameraPose(): CameraPose {
-    const vector = ({ x, y, z }: Vector3): Vector => ({ x, y, z });
+    const vector = ({ x, y, z }: Vector3): Vec3 => ({ x, y, z });
     return {
       eye: vector(this.camera.position),
       target: vector(this.controls.target),

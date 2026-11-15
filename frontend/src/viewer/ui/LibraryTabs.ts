@@ -1,4 +1,4 @@
-import type { ChemistryApi } from "../api/ChemistryApi";
+import type { ChemistryApi } from "../../api/ChemistryApi";
 import { libraryAction, libraryCell, libraryRow, type LibraryTab } from "./LibraryDialog";
 
 /**

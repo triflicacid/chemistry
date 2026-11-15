@@ -1,5 +1,12 @@
 import { ApiError, HttpClient } from "./http";
-import type { LibraryEntry, MatchData, MatchResult, MoleculeId, MoleculeMetadata, OptionDescriptor, OptionValues, ProjectionRequest, QueryEntry, Scene, StoredMolecule, Structure3D, ValidationReport } from "./types";
+import type { LibraryEntry, QueryEntry } from "./types/library";
+import type { MatchData, MatchResult } from "./types/match";
+import type { MoleculeMetadata } from "./types/metadata";
+import type { OptionDescriptor, OptionValues } from "./types/options";
+import type { ProjectionRequest, Scene } from "./types/scene";
+import type { MoleculeId, StoredMolecule } from "./types/stored";
+import type { Structure3D } from "./types/structure";
+import type { ValidationReport } from "./types/validation";
 
 /** Carries the id of the molecule an SVG was drawn from. */
 const MOLECULE_ID_HEADER = "X-Molecule-Id";

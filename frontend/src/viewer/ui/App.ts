@@ -1,5 +1,5 @@
-import type { ChemistryApi } from "../api/ChemistryApi";
-import { ApiError } from "../api/http";
+import type { ChemistryApi } from "../../api/ChemistryApi";
+import { ApiError } from "../../api/http";
 import { ViewStore, type PanelState } from "../store";
 import { LibraryDialog } from "./LibraryDialog";
 import { moleculeTab, queryTab } from "./LibraryTabs";
