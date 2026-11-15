@@ -188,6 +188,126 @@ class StudioSessionTest
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void moves_atoms_and_bumps_the_version()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+
+        long version = session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 2, 3))), true);
+
+        assertThat(version).isEqualTo(2);
+        assertThat(session.version()).isEqualTo(2);
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 2, 3));
+    }
+
+    @Test
+    void leaves_the_version_alone_when_nothing_moves()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+
+        long version = session.move(List.of(new StudioSession.Move(atom, session.positionOf(atom))), true);
+
+        assertThat(version).isEqualTo(1);
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void refuses_a_patch_whole_when_any_of_it_cannot_be_made()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 before = session.positionOf(atom);
+
+        assertThatThrownBy(() -> session.move(List.of(
+                new StudioSession.Move(atom, new Vec3(1, 2, 3)),
+                new StudioSession.Move("nope", Vec3.ZERO)), true))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("UNKNOWN_ID"));
+        assertThatThrownBy(() -> session.move(List.of(new StudioSession.Move(atom, new Vec3(Double.NaN, 0, 0))), true))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("INVALID_MESSAGE"));
+
+        assertThat(session.positionOf(atom)).isEqualTo(before);
+        assertThat(session.version()).isEqualTo(1);
+    }
+
+    @Test
+    void undoes_and_redoes_a_committed_move()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 before = session.positionOf(atom);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 2, 3))), true);
+
+        session.undo();
+        assertThat(session.positionOf(atom)).isEqualTo(before);
+        assertThat(session.canUndo()).isFalse();
+        assertThat(session.canRedo()).isTrue();
+
+        session.redo();
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 2, 3));
+        assertThat(session.canRedo()).isFalse();
+
+        // an undo is a change too, so versions only ever grow
+        assertThat(session.version()).isEqualTo(4);
+    }
+
+    @Test
+    void undoes_a_drag_sent_as_several_patches_in_one_step()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 before = session.positionOf(atom);
+
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 0, 0))), false);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(2, 0, 0))), false);
+        assertThat(session.canUndo()).isTrue();
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(3, 0, 0))), true);
+
+        session.undo();
+
+        assertThat(session.positionOf(atom)).isEqualTo(before);
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void cancels_an_edit_in_progress_instead_of_undoing_the_one_before()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 0, 0))), true);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(2, 0, 0))), false);
+
+        session.undo();
+
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 0, 0));
+        assertThat(session.canUndo()).isTrue();
+    }
+
+    @Test
+    void forgets_what_could_be_redone_once_a_new_edit_is_made()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 0, 0))), true);
+        session.undo();
+
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(5, 0, 0))), true);
+
+        assertThat(session.canRedo()).isFalse();
+        assertThatThrownBy(session::redo)
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("NOTHING_TO_REDO"));
+    }
+
+    @Test
+    void has_nothing_to_undo_when_nothing_has_been_done()
+    {
+        StudioSession session = open("CCO");
+
+        assertThatThrownBy(session::undo)
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("NOTHING_TO_UNDO"));
+    }
+
     /**
      * @param session a session
      * @return what it calls each of its atoms, in the order it holds them

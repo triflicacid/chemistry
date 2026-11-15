@@ -63,6 +63,20 @@ export interface SessionState extends ServerEnvelope {
   pinned: string[];
   locked: string[];
   strain: number;
+  /** Whether there is an edit to take back. */
+  can_undo: boolean;
+  /** Whether there is an undone edit to make again. */
+  can_redo: boolean;
+}
+
+/** The answer to an atom patch the session applied. */
+export interface PatchAck extends ServerEnvelope {
+  type: "atom.patch.ack";
+  /** The version the session is at after the patch. */
+  version: number;
+  status: "applied";
+  can_undo: boolean;
+  can_redo: boolean;
 }
 
 /**
@@ -91,4 +105,4 @@ export interface Pong extends ServerEnvelope {
   type: "pong";
 }
 
-export type ServerMessage = SessionReady | SessionState | SessionConflict | SocketError | Pong;
+export type ServerMessage = SessionReady | SessionState | SessionConflict | PatchAck | SocketError | Pong;

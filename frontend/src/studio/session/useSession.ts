@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChemistryApi } from "../../api/ChemistryApi";
 import { ApiError } from "../../api/http";
 import { describing, describingSmiles, requested } from "./location";
-import type { SessionState } from "./messages";
+import type { Vec3 } from "../../api/types/structure";
+import type { PatchAck, SessionState } from "./messages";
 import { StudioError, StudioSocket } from "./studioSocket";
 
 /** How far the session has got towards being editable. */
@@ -30,6 +31,12 @@ export type SubmitResult =
   | { kind: "conflict" }
   | { kind: "refused"; message: string };
 
+/** How an edit to the structure came out. */
+export type EditResult =
+  | { kind: "applied" }
+  | { kind: "conflict" }
+  | { kind: "refused"; message: string };
+
 export interface Session {
   phase: SessionPhase;
   state: SessionState | null;
@@ -38,6 +45,12 @@ export interface Session {
   openSmiles: (smiles: string) => void;
   /** Rebuilds the open session's structure from SMILES text. */
   submitSmiles: (smiles: string) => Promise<SubmitResult>;
+  /** Puts an atom at a position, as one edit that can be undone. */
+  moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
+  /** Takes back the latest edit. */
+  undo: () => Promise<EditResult>;
+  /** Makes the latest undone edit again. */
+  redo: () => Promise<EditResult>;
 }
 
 /**
@@ -56,6 +69,7 @@ export function useSession(client?: ChemistryApi): Session {
 
   const socketRef = useRef<StudioSocket | null>(null);
   const held = useRef<SessionState | null>(null);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
   const note = useCallback((message: string, failed = false) => {
     setActivity((before) => [...before, { at: Date.now(), message, failed }].slice(-HISTORY));
@@ -216,7 +230,97 @@ export function useSession(client?: ChemistryApi): Session {
     [adopt, note],
   );
 
-  return { phase, state, activity, openSmiles: submit, submitSmiles };
+  /**
+   * Runs edits one at a time, each on the version the one before left. Sent together, they
+   * would all carry the same base version and every one after the first would be refused.
+   */
+  const serially = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.current.then(task, task);
+    queue.current = run.catch(() => undefined);
+    return run;
+  }, []);
+
+  const moveAtom = useCallback(
+    (id: string, position: Vec3): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
+
+        try {
+          const reply = await socket.patchAtoms(base.session_id, base.version, [{ id, position }]);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note("The structure changed under your edit, so it was not applied", true);
+            return { kind: "conflict" };
+          }
+
+          // a resync that landed meanwhile is authoritative, and already says where the atom is
+          if (held.current?.version === base.version) {
+            adopt(patched(base, id, position, reply));
+          }
+          note(`Moved ${id} to ${position.x.toFixed(3)}, ${position.y.toFixed(3)}, ${position.z.toFixed(3)}`);
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
+  const step = useCallback(
+    (direction: "undo" | "redo"): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
+
+        try {
+          const reply = await socket.step(direction, base.session_id, base.version);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note(`The structure changed, so the ${direction} was not made`, true);
+            return { kind: "conflict" };
+          }
+
+          adopt(reply);
+          note(direction === "undo" ? "Undid the last edit" : "Redid the last undone edit");
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
+  const undo = useCallback(() => step("undo"), [step]);
+  const redo = useCallback(() => step("redo"), [step]);
+
+  return { phase, state, activity, openSmiles: submit, submitSmiles, moveAtom, undo, redo };
+}
+
+/**
+ * The state after the session accepted a move, without waiting for it to send the whole state again.
+ *
+ * @param base the state the move was made on
+ * @param id the atom that moved
+ * @param position where it went
+ * @param ack the session's acknowledgement, which says the version and history it is now at
+ */
+function patched(base: SessionState, id: string, position: Vec3, ack: PatchAck): SessionState {
+  return {
+    ...base,
+    version: ack.version,
+    can_undo: ack.can_undo,
+    can_redo: ack.can_redo,
+    atoms: base.atoms.map((atom) => (atom.id === id ? { ...atom, position } : atom)),
+  };
 }
 
 /** Whether the failure was the molecule itself being unusable, rather than the server or network. */

@@ -8,6 +8,7 @@ import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.studio.StudioEditException;
 import com.ruben.chemistry.server.studio.StudioSession;
 import com.ruben.chemistry.server.studio.StudioSessionStore;
 import com.ruben.chemistry.server.studio.StudioState;
@@ -16,12 +17,15 @@ import com.ruben.chemistry.server.ws.SocketEndpoint;
 import com.ruben.chemistry.server.ws.SocketRegistry;
 import com.ruben.chemistry.server.ws.TypedJsonSocketListener;
 import com.ruben.chemistry.server.ws.WebSocketContext;
+import com.ruben.chemistry.space.Vec3;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.ToLongFunction;
 
 import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 
@@ -55,8 +59,34 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     {
     }
 
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the patch
+     * @param commit whether this ends the edit it belongs to (optional, default true)
+     * @param atoms the atoms to change, each with only the fields that change
+     */
+    public record PatchRequest(String sessionId, Long baseVersion, Boolean commit, List<AtomPatch> atoms)
+    {
+    }
+
+    /**
+     * @param id the atom to change
+     * @param position where to put it, in angstroms
+     */
+    public record AtomPatch(String id, Vec3 position)
+    {
+    }
+
+    /**
+     * @param sessionId the session to undo or redo in
+     * @param baseVersion the version the client was looking at, so that an undo over a changed session is refused
+     */
+    public record HistoryRequest(String sessionId, Long baseVersion)
+    {
+    }
+
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 2;
+    private static final int PROTOCOL_VERSION = 3;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -204,29 +234,16 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        if (request.sessionId() == null || request.baseVersion() == null || request.smiles() == null)
+        if (request.smiles() == null)
         {
             TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_MESSAGE",
                     "session_id, base_version and smiles are required");
             return;
         }
 
-        StudioSession session = sessions.find(request.sessionId()).orElse(null);
+        StudioSession session = current(context, "smiles.submit", sequence, request.sessionId(), request.baseVersion());
         if (session == null)
         {
-            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "NO_SESSION",
-                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
-            return;
-        }
-
-        if (request.baseVersion() != session.version())
-        {
-            Map<String, Object> conflict = new LinkedHashMap<>();
-            conflict.put("type", "conflict");
-            conflict.put("sequence", sequence);
-            conflict.put("expected_version", session.version());
-            conflict.put("base_version", request.baseVersion());
-            conflict.put("state", StudioState.of(session, null));
             return;
         }
 
@@ -260,6 +277,186 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         sessions.replace(rebuilt);
         context.sendJson(StudioState.of(rebuilt, sequence));
+    }
+
+    /**
+     * Moves atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void patch(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        PatchRequest request;
+        try
+        {
+            request = payload(body, PatchRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            TypedJsonSocketListener.error(context, "atom.patch", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.atoms() == null || request.atoms().isEmpty()
+                || request.atoms().stream().anyMatch(atom -> atom == null || atom.id() == null || atom.position() == null))
+        {
+            TypedJsonSocketListener.error(context, "atom.patch", sequence, "INVALID_MESSAGE",
+                    "atoms are required, and each needs an id and a position");
+            return;
+        }
+
+        StudioSession session = current(context, "atom.patch", sequence, request.sessionId(), request.baseVersion());
+        if (session == null)
+        {
+            return;
+        }
+
+        List<StudioSession.Move> moves = request.atoms().stream()
+                .map(atom -> new StudioSession.Move(atom.id(), atom.position()))
+                .toList();
+
+        synchronized (session)
+        {
+            long version;
+            try
+            {
+                version = session.move(moves, request.commit() == null || request.commit());
+            }
+            catch (StudioEditException refused)
+            {
+                TypedJsonSocketListener.error(context, "atom.patch", sequence, refused.code(), refused.getMessage());
+                return;
+            }
+
+            Map<String, Object> ack = new LinkedHashMap<>();
+            ack.put("type", "atom.patch.ack");
+            ack.put("sequence", sequence);
+            ack.put("version", version);
+            ack.put("status", "applied");
+            ack.put("can_undo", session.canUndo());
+            ack.put("can_redo", session.canRedo());
+            context.sendJson(ack);
+        }
+    }
+
+    /**
+     * Takes back the latest edit.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void undo(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        walk(context, body, sequence, "edit.undo", StudioSession::undo);
+    }
+
+    /**
+     * Makes the latest undone edit again.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void redo(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        walk(context, body, sequence, "edit.redo", StudioSession::redo);
+    }
+
+    /**
+     * Steps a session back or forward through its history and answers with the state that results.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @param type the type of the message, for the reply
+     * @param step what to do to the session
+     * @throws IOException if the connection cannot be written
+     */
+    private void walk(WebSocketContext context, Map<String, Object> body, Long sequence, String type, ToLongFunction<StudioSession> step) throws IOException
+    {
+        HistoryRequest request;
+        try
+        {
+            request = payload(body, HistoryRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            TypedJsonSocketListener.error(context, type, sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = current(context, type, sequence, request.sessionId(), request.baseVersion());
+        if (session == null)
+        {
+            return;
+        }
+
+        synchronized (session)
+        {
+            try
+            {
+                step.applyAsLong(session);
+            }
+            catch (StudioEditException refused)
+            {
+                TypedJsonSocketListener.error(context, type, sequence, refused.code(), refused.getMessage());
+                return;
+            }
+
+            context.sendJson(StudioState.of(session, sequence));
+        }
+    }
+
+    /**
+     * Finds the session a mutation is for and checks the mutation was made on its current version.
+     * When it cannot be used, replies with the error or conflict that says why.
+     *
+     * @param context the connection that asked
+     * @param type the type of the message, for the reply
+     * @param sequence the message's sequence number, if it had one
+     * @param sessionId the session the message names, if it did
+     * @param baseVersion the version the message was based on, if it said
+     * @return the session, or {@code null} if a reply has already been sent
+     * @throws IOException if the connection cannot be written
+     */
+    private StudioSession current(WebSocketContext context, String type, Long sequence, String sessionId, Long baseVersion) throws IOException
+    {
+        if (sessionId == null || baseVersion == null)
+        {
+            TypedJsonSocketListener.error(context, type, sequence, "INVALID_MESSAGE", "session_id and base_version are required");
+            return null;
+        }
+
+        StudioSession session = sessions.find(sessionId).orElse(null);
+        if (session == null)
+        {
+            TypedJsonSocketListener.error(context, type, sequence, "NO_SESSION",
+                    "No session is open as '" + sessionId + "'; open one on a molecule");
+            return null;
+        }
+
+        synchronized (session)
+        {
+            if (baseVersion != session.version())
+            {
+                Map<String, Object> conflict = new LinkedHashMap<>();
+                conflict.put("type", "conflict");
+                conflict.put("sequence", sequence);
+                conflict.put("expected_version", session.version());
+                conflict.put("base_version", baseVersion);
+                conflict.put("state", StudioState.of(session, null));
+                context.sendJson(conflict);
+                return null;
+            }
+        }
+
+        return session;
     }
 
     /**
@@ -320,7 +517,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             super(Map.of(
                     "session.open", endpoint::open,
                     "session.resync", endpoint::resync,
-                    "smiles.submit", endpoint::submitSmiles));
+                    "smiles.submit", endpoint::submitSmiles,
+                    "atom.patch", endpoint::patch,
+                    "edit.undo", endpoint::undo,
+                    "edit.redo", endpoint::redo));
             this.endpoint = endpoint;
         }
 

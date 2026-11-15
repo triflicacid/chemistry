@@ -5,11 +5,15 @@ export interface ToolbarProps {
   phase: SessionPhase;
   layout: LayoutState;
   onCollapse: (panel: Panel, collapsed: boolean) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 const WAITING = "Not built yet";
 
-export function Toolbar({ phase, layout, onCollapse }: ToolbarProps) {
+export function Toolbar({ phase, layout, onCollapse, canUndo, canRedo, onUndo, onRedo }: ToolbarProps) {
   return (
     <header className="toolbar">
       <span className="brand">Molecular Studio</span>
@@ -27,10 +31,10 @@ export function Toolbar({ phase, layout, onCollapse }: ToolbarProps) {
       </div>
 
       <div className="tool-group" role="group" aria-label="Edits">
-        <button type="button" className="tool" disabled title={WAITING}>
+        <button type="button" className="tool" disabled={!canUndo} title="Undo (Ctrl+Z)" onClick={onUndo}>
           Undo
         </button>
-        <button type="button" className="tool" disabled title={WAITING}>
+        <button type="button" className="tool" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" onClick={onRedo}>
           Redo
         </button>
         <button type="button" className="tool" disabled title={WAITING}>

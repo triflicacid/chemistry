@@ -102,7 +102,7 @@ describe("the Studio socket", () => {
     const ready = await socket.connect();
 
     expect(ready.type).toBe("session.ready");
-    expect(ready.protocol_version).toBe(2);
+    expect(ready.protocol_version).toBe(3);
     expect(ready.connection_id).toMatch(/^ws-/);
     expect(socket.isOpen).toBe(true);
   });
@@ -210,6 +210,46 @@ describe("the Studio socket", () => {
     const again = await socket.resync(opened.session_id, opened.version);
     expect(again.version).toBe(opened.version);
     expect(again.smiles).toBe("CCO");
+  });
+
+  it("moves an atom, acknowledges it, and undoes and redoes it", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const first = opened.atoms[0]!;
+    const target = { x: 4, y: 5, z: 6 };
+
+    const ack = await socket.patchAtoms(opened.session_id, opened.version, [{ id: first.id, position: target }]);
+    expect(ack.type).toBe("atom.patch.ack");
+    if (ack.type !== "atom.patch.ack") {
+      return;
+    }
+    expect(ack.version).toBe(opened.version + 1);
+    expect(ack.can_undo).toBe(true);
+
+    const undone = await socket.step("undo", opened.session_id, ack.version);
+    expect(undone.type).toBe("session.state");
+    const state = undone as SessionState;
+    expect(state.atoms[0]!.position).toEqual(first.position);
+    expect(state.can_redo).toBe(true);
+
+    const redone = (await socket.step("redo", opened.session_id, state.version)) as SessionState;
+    expect(redone.atoms[0]!.position).toEqual(target);
+  });
+
+  it("answers a patch made on a stale version with a conflict, and refuses an unknown atom", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const where = { x: 1, y: 1, z: 1 };
+
+    const stale = await socket.patchAtoms(opened.session_id, opened.version + 5, [{ id: opened.atoms[0]!.id, position: where }]);
+    expect(stale.type).toBe("conflict");
+
+    await expect(socket.patchAtoms(opened.session_id, opened.version, [{ id: "a999", position: where }])).rejects.toMatchObject({
+      code: "UNKNOWN_ID",
+      answering: "atom.patch",
+    });
   });
 
   it("refuses to send on a connection that is not open", () => {

@@ -40,7 +40,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 2L);
+        assertThat(ready).containsEntry("protocol_version", 3L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -57,9 +57,9 @@ class StudioSocketEndpointTest
         WebSocket socket = studio(collector);
         collector.next();
 
-        socket.sendText("{\"type\": \"atom.patch\", \"sequence\": 7}", true).join();
+        socket.sendText("{\"type\": \"bond.patch\", \"sequence\": 7}", true).join();
         Map<String, Object> unknown = collector.nextJson();
-        assertThat(unknown).containsEntry("type", "error").containsEntry("answering", "atom.patch");
+        assertThat(unknown).containsEntry("type", "error").containsEntry("answering", "bond.patch");
         assertThat(unknown).containsEntry("sequence", 7L);
         assertThat(error(unknown)).containsEntry("code", "UNKNOWN_TYPE");
 
@@ -380,6 +380,114 @@ class StudioSocketEndpointTest
         assertThat(error(collector.nextJson())).containsEntry("code", "NO_SESSION");
     }
 
+    @Test
+    void should_move_an_atom_and_acknowledge_the_patch() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String atom = (String) list(opened, "atoms").getFirst().get("id");
+
+        socket.sendText(patch(sessionId, 1, true, atom, 1.5, -2, 0.25, 2), true).join();
+        Map<String, Object> ack = collector.nextJson();
+
+        assertThat(ack).containsEntry("type", "atom.patch.ack");
+        assertThat(ack).containsEntry("sequence", 2L);
+        assertThat(ack).containsEntry("version", 2L);
+        assertThat(ack).containsEntry("status", "applied");
+        assertThat(ack).containsEntry("can_undo", true);
+
+        socket.sendText(resync(sessionId, 3), true).join();
+        Map<String, Object> state = collector.nextJson();
+        assertThat(state).containsEntry("version", 2L).containsEntry("can_undo", true).containsEntry("can_redo", false);
+        assertThat(list(state, "atoms").getFirst().get("position"))
+                .isEqualTo(Map.of("x", 1.5, "y", -2.0, "z", 0.25));
+    }
+
+    @Test
+    void should_answer_a_patch_made_on_a_stale_version_with_a_conflict() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String atom = (String) list(opened, "atoms").getFirst().get("id");
+
+        socket.sendText(patch(sessionId, 7, true, atom, 9, 9, 9, 2), true).join();
+        Map<String, Object> conflict = collector.nextJson();
+
+        assertThat(conflict).containsEntry("type", "conflict");
+        assertThat(conflict).containsEntry("expected_version", 1L);
+        assertThat(conflict).containsEntry("base_version", 7L);
+        assertThat(conflict.get("state")).isInstanceOfSatisfying(Map.class, state ->
+                assertThat(state).containsEntry("version", 1L));
+    }
+
+    @Test
+    void should_refuse_a_patch_of_an_atom_it_does_not_hold() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText(patch(sessionId, 1, true, "a999", 1, 1, 1, 2), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "UNKNOWN_ID");
+
+        socket.sendText("{\"type\": \"atom.patch\", \"sequence\": 3, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1, \"atoms\": [{\"id\": \"a1\"}]}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText(resync(sessionId, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("version", 1L);
+    }
+
+    @Test
+    void should_undo_and_redo_a_move_and_say_when_there_is_nothing_to_do() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        Map<String, Object> first = list(opened, "atoms").getFirst();
+
+        socket.sendText(history("edit.undo", sessionId, 1, 2), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "NOTHING_TO_UNDO");
+
+        socket.sendText(patch(sessionId, 1, true, (String) first.get("id"), 4, 4, 4, 3), true).join();
+        collector.next();
+
+        socket.sendText(history("edit.undo", sessionId, 2, 4), true).join();
+        Map<String, Object> undone = collector.nextJson();
+        assertThat(undone).containsEntry("type", "session.state").containsEntry("version", 3L);
+        assertThat(undone).containsEntry("can_undo", false).containsEntry("can_redo", true);
+        assertThat(list(undone, "atoms").getFirst().get("position")).isEqualTo(first.get("position"));
+
+        socket.sendText(history("edit.redo", sessionId, 3, 5), true).join();
+        Map<String, Object> redone = collector.nextJson();
+        assertThat(redone).containsEntry("version", 4L);
+        assertThat(list(redone, "atoms").getFirst().get("position")).isEqualTo(Map.of("x", 4.0, "y", 4.0, "z", 4.0));
+
+        socket.sendText(history("edit.redo", sessionId, 4, 6), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "NOTHING_TO_REDO");
+    }
+
     /**
      * Serves this test's connections from a store that gives a session no grace at all, so
      * that letting go of one retires it rather than the test waiting out a window.
@@ -459,6 +567,37 @@ class StudioSocketEndpointTest
     {
         return "{\"type\": \"smiles.submit\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + ", \"smiles\": \"" + smiles + "\"}";
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client says it was looking at
+     * @param commit whether the patch ends its edit
+     * @param atom the atom to move
+     * @param x where to put it
+     * @param y where to put it
+     * @param z where to put it
+     * @param sequence the message's sequence number
+     * @return an {@code atom.patch} message
+     */
+    private static String patch(String sessionId, long baseVersion, boolean commit, String atom, double x, double y, double z, int sequence)
+    {
+        return "{\"type\": \"atom.patch\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"base_version\": " + baseVersion + ", \"commit\": " + commit + ", \"atoms\": [{\"id\": \"" + atom
+                + "\", \"position\": {\"x\": " + x + ", \"y\": " + y + ", \"z\": " + z + "}}]}";
+    }
+
+    /**
+     * @param type {@code edit.undo} or {@code edit.redo}
+     * @param sessionId the session to step through
+     * @param baseVersion the version the client says it was looking at
+     * @param sequence the message's sequence number
+     * @return that message
+     */
+    private static String history(String type, String sessionId, long baseVersion, int sequence)
+    {
+        return "{\"type\": \"" + type + "\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"base_version\": " + baseVersion + "}";
     }
 
     @SuppressWarnings("unchecked")

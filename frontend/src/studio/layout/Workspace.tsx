@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Vec3 } from "../../api/types/structure";
 import type { Activity, SessionPhase, SubmitResult } from "../session/useSession";
 import type { SessionState } from "../session/messages";
 import type { Models } from "../selection/models";
@@ -21,10 +22,13 @@ export interface WorkspaceProps {
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   onOpenSmiles: (smiles: string) => void;
   onSubmitSmiles: (smiles: string) => Promise<SubmitResult>;
+  onMoveAtom: (id: string, position: Vec3) => void;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles } = props;
+  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -45,7 +49,15 @@ export function Workspace(props: WorkspaceProps) {
 
   return (
     <div className="workspace" style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}>
-      <Toolbar phase={phase} layout={layout} onCollapse={onCollapse} />
+      <Toolbar
+        phase={phase}
+        layout={layout}
+        onCollapse={onCollapse}
+        canUndo={state?.can_undo ?? false}
+        canRedo={state?.can_redo ?? false}
+        onUndo={onUndo}
+        onRedo={onRedo}
+      />
 
       <SmilesBar state={state} onSubmit={onSubmitSmiles} />
 
@@ -70,7 +82,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <Side panel="inspector" name="Inspector" collapsed={layout.inspectorCollapsed} onCollapse={onCollapse}>
-        <Inspector state={state} models={models} />
+        <Inspector state={state} models={models} onMoveAtom={onMoveAtom} />
       </Side>
 
       {!layout.analysisCollapsed && (

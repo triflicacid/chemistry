@@ -1,4 +1,5 @@
-import type { ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
+import type { Vec3 } from "../../api/types/structure";
+import type { PatchAck, ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
 
 /** The error the server answered a message with. */
 export class StudioError extends Error {
@@ -199,6 +200,44 @@ export class StudioSocket {
     return this.request<SessionState | SessionConflict>(
       "smiles.submit",
       { session_id: sessionId, base_version: baseVersion, smiles },
+      ["session.state", "conflict"],
+    );
+  }
+
+  /**
+   * Moves atoms.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param atoms the atoms to move, each with where to put it
+   * @param commit whether this ends the edit it belongs to, and so is something to undo
+   * @returns the acknowledgement, or a conflict carrying the state the session is actually in
+   */
+  patchAtoms(
+    sessionId: string,
+    baseVersion: number,
+    atoms: { id: string; position: Vec3 }[],
+    commit = true,
+  ): Promise<PatchAck | SessionConflict> {
+    return this.request<PatchAck | SessionConflict>(
+      "atom.patch",
+      { session_id: sessionId, base_version: baseVersion, commit, atoms },
+      ["atom.patch.ack", "conflict"],
+    );
+  }
+
+  /**
+   * Takes back or makes again an edit.
+   *
+   * @param direction which way to step through the session's history
+   * @param sessionId the session to step through
+   * @param baseVersion the version the caller was looking at
+   * @returns the state after the step, or a conflict carrying the state the session is actually in
+   */
+  step(direction: "undo" | "redo", sessionId: string, baseVersion: number): Promise<SessionState | SessionConflict> {
+    return this.request<SessionState | SessionConflict>(
+      `edit.${direction}`,
+      { session_id: sessionId, base_version: baseVersion },
       ["session.state", "conflict"],
     );
   }

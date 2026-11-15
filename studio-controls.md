@@ -59,7 +59,23 @@ Selecting something in the viewport opens the Outliner to it and scrolls it into
 
 | Input | Action |
 |---|---|
+| Type in an atom's X, Y or Z field, then Enter or click away | Move the atom there. One edit, which can be undone |
+| Esc in a field | Abandon what you typed |
 | Click a name under *Bonded to*, *Bonds* or *Joins* | Select that item (modifiers as above) |
 | Hover one | Highlight it in the viewport |
 
+A field you are typing in is yours: updates from the session do not overwrite it. If the value
+changes underneath you its border turns yellow, and leaving the field still applies what you typed.
+An atom that is locked cannot be edited.
+
 Tint colours: yellow is hovered, light blue is active, blue is selected.
+
+## Undo and redo
+
+| Input | Action |
+|---|---|
+| **Undo** button, or Ctrl/Cmd+Z | Take back the latest edit |
+| **Redo** button, or Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y | Make the latest undone edit again |
+
+Inside a text field the keys are the field's own. Rebuilding from SMILES clears the history,
+because every atom and bond identifier it refers to is retired.
