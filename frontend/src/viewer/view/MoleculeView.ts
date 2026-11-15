@@ -1,17 +1,11 @@
+import type { Pick } from "../../render/parts";
+
+export type { Pick };
+
 /** A position on screen, in client pixels. */
 export interface Point {
   x: number;
   y: number;
-}
-
-/** An atom or bond under the pointer. `index` is null for parts the drawing added, such as inferred bonds. */
-export interface Pick {
-  kind: "atom" | "bond";
-  index: number | null;
-  /** What the drawing recorded about the part, such as `element` or `order` for ones it added. */
-  data: Readonly<Record<string, string>>;
-  /** Identifies the part to the view that made it; equal for the same part. Not for callers to look inside. */
-  handle: unknown;
 }
 
 /** Transient emphasis, such as for what the pointer is over. */

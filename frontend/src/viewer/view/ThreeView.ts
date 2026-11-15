@@ -1,34 +1,27 @@
 import {
-  AmbientLight,
-  ArrowHelper,
   Box3,
-  CanvasTexture,
   Color,
-  ConeGeometry,
-  CylinderGeometry,
-  DirectionalLight,
   Group,
-  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
-  PerspectiveCamera,
-  Quaternion,
   Raycaster,
-  Scene as ThreeScene,
-  SphereGeometry,
-  Sprite,
-  SpriteMaterial,
-  Vector2,
   Vector3,
-  WebGLRenderer,
 } from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { MatchHighlight } from "../../api/types/match";
 import type { OptionValues } from "../../api/types/options";
 import type { CameraPose, Conjugation3D, Connection3D, Diagnostics3D, Site3D, Structure3D, Vec3 } from "../../api/types/structure";
-import type { FaultSeverity, FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
+import { AXIS_LENGTH, makeAxes } from "../../render/axes";
+import { aromaticCentres } from "../../render/aromatic";
+import { ballRadius, buildBond, LONE_ATOM_RADIUS, type Style } from "../../render/bonds";
+import { disposeMaterials } from "../../render/dispose";
+import { BOND_HALO, fade, HALO_GROWTH, HALO_PADDING, haloMaterial } from "../../render/halo";
+import { angleArc, piCloud, piLabel, piOrbitals } from "../../render/overlays";
+import { type Part, PartRegistry, type Pick } from "../../render/parts";
+import { Primitives } from "../../render/primitives";
+import { FIELD_OF_VIEW, Stage } from "../../render/stage";
+import type { FaultSeverity, FaultState, Highlights, MoleculeView, SelectionState, ViewListener } from "./MoleculeView";
 
 /** The matches of a SMARTS pattern to show in a view. */
 export interface MatchLook {
@@ -39,13 +32,6 @@ export interface MatchLook {
   recolour: boolean;
   labels: boolean;
 }
-
-const HALO_PADDING = 0.12;
-const HALO_GROWTH = 0.08;
-const BOND_HALO = 0.17;
-const HALO_OPACITY = 0.45;
-
-type Style = "ball_and_stick" | "sticks" | "wireframe" | "spacefill";
 
 interface Settings {
   style: Style;
@@ -63,17 +49,6 @@ interface Settings {
   debugThreshold: number;
 }
 
-interface Part {
-  pick: Pick;
-  object: Object3D;
-  /** The molecule atom or bond index, or -1 if the drawing added it. */
-  index: number;
-}
-
-const BALL_FRACTION = 0.25;
-const LONE_ATOM_RADIUS = 0.2;
-const AXIS_LENGTH = 2.5;
-const FIELD_OF_VIEW = 30;
 const HOVER = new Color("#ffd33d");
 const END_COLOURS = [new Color("#ffd33d"), new Color("#79c0ff"), new Color("#ffa657")];
 const SELECTED = new Color("#58a6ff");
@@ -84,17 +59,7 @@ const FAULT_COLOURS: Record<FaultSeverity, Color> = {
   info: new Color("#0969da"),
 };
 const STRAIN = new Color("#e02020");
-const PI = "#16a085";
-/** How wide a pi lobe is drawn, and how much wider each electron it holds draws it, in angstroms. */
-const PI_LOBE_RADIUS = 0.08;
-const PI_LOBE_PER_ELECTRON = 0.04;
-/** How far along the way to its tip a lobe starts, leaving the nucleus clear. */
-const PI_LOBE_START = 0.15;
-/** How wide and how thick the lozenge of a pi cloud is drawn, in angstroms. */
-const PI_CLOUD_WIDTH = 0.22;
-const PI_CLOUD_THICKNESS = 0.1;
 const STRAIN_SATURATES_AT = 6;
-const UP = new Vector3(0, 1, 0);
 
 const DEFAULTS: Settings = {
   style: "ball_and_stick",
@@ -135,26 +100,19 @@ function settingsOf(options: OptionValues): Settings {
 export class ThreeView implements MoleculeView {
   readonly element = document.createElement("div");
 
-  private readonly renderer = new WebGLRenderer({ antialias: true, alpha: true });
-  private readonly scene = new ThreeScene();
-  private readonly camera = new PerspectiveCamera(FIELD_OF_VIEW, 1, 0.1, 1000);
-  private readonly controls: OrbitControls;
+  private readonly stage: Stage;
   private readonly raycaster = new Raycaster();
-  private readonly resizer: ResizeObserver;
-  private readonly unitCylinder = new CylinderGeometry(1, 1, 1, 12, 1, false);
-  private readonly unitSphere = new SphereGeometry(1, 24, 16);
-  private readonly unitCone = new ConeGeometry(1, 1, 12);
+  private readonly kit = new Primitives();
+  private readonly registry = new PartRegistry();
 
   private content = new Group();
   private settings: Settings;
-  private parts: Part[] = [];
   private atomParts = new Map<number, Part>();
   private listeners = new Set<ViewListener>();
   private selection: SelectionState = { atoms: new Set(), bonds: new Set() };
   private highlights: Highlights = { hover: null, ends: [] };
   private faults: FaultState | null = null;
   private matchLook: MatchLook | null = null;
-  private frame = 0;
   private radius = 3;
   /** The middle of what is drawn, which the view starts out orbiting. */
   private centre = new Vector3();
@@ -166,7 +124,6 @@ export class ThreeView implements MoleculeView {
   private linkOf = new Map<unknown, Connection3D>();
   private rightDown: { x: number; y: number } | null = null;
   private axes: Group | null = null;
-  private readonly textures = new Map<string, CanvasTexture>();
 
   constructor(
     private readonly structure: Structure3D,
@@ -176,30 +133,14 @@ export class ThreeView implements MoleculeView {
     this.settings = settingsOf(options);
     this.element.className = "view3d";
 
-    const canvas = this.renderer.domElement;
+    this.stage = new Stage({ sizedBy: this.element, onMove: () => this.syncAxes() });
+    const canvas = this.stage.canvas;
     this.element.append(canvas);
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-
-    this.scene.add(this.camera);
-    this.scene.add(new AmbientLight(0xffffff, 0.75));
-    const light = new DirectionalLight(0xffffff, 1.1);
-    light.position.set(0.4, 0.8, 1);
-    this.camera.add(light);
-
-    this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.enableDamping = false;
-    this.controls.addEventListener("change", () => {
-      this.syncAxes();
-      this.requestRender();
-    });
 
     canvas.addEventListener("pointermove", this.onMove);
     canvas.addEventListener("pointerleave", this.onLeave);
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
-
-    this.resizer = new ResizeObserver(() => this.resize());
-    this.resizer.observe(this.element);
 
     this.build();
     this.resetView();
@@ -370,19 +311,19 @@ export class ThreeView implements MoleculeView {
   cameraPose(): CameraPose {
     const vector = ({ x, y, z }: Vector3): Vec3 => ({ x, y, z });
     return {
-      eye: vector(this.camera.position),
-      target: vector(this.controls.target),
-      up: vector(this.camera.up),
+      eye: vector(this.stage.camera.position),
+      target: vector(this.stage.controls.target),
+      up: vector(this.stage.camera.up),
       field_of_view: FIELD_OF_VIEW,
     };
   }
 
   /** The molecule atoms of everything drawn that is inside what the camera sees now. */
   visibleAtoms(): number[] {
-    this.camera.updateMatrixWorld();
+    this.stage.camera.updateMatrixWorld();
     const seen = new Set<number>();
     for (const { atom, at } of this.sitePoints.values()) {
-      const ndc = at.clone().project(this.camera);
+      const ndc = at.clone().project(this.stage.camera);
       if (Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1 && Math.abs(ndc.z) <= 1) {
         seen.add(atom);
       }
@@ -394,60 +335,37 @@ export class ThreeView implements MoleculeView {
 
   exportImage(): Promise<Blob> {
     // drawn just before reading, as the canvas is cleared once presented
-    this.renderer.render(this.scene, this.camera);
+    this.stage.render();
     return new Promise((resolve, reject) => {
-      this.renderer.domElement.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not make an image"))), "image/png");
+      this.stage.canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not make an image"))), "image/png");
     });
   }
 
   resetView(): void {
-    const distance = (1.1 * this.radius) / Math.sin((FIELD_OF_VIEW * Math.PI) / 360);
-    const yaw = (30 * Math.PI) / 180;
-    const pitch = (20 * Math.PI) / 180;
-    this.camera.position.set(
-      Math.cos(pitch) * Math.sin(yaw) * distance,
-      Math.sin(pitch) * distance,
-      Math.cos(pitch) * Math.cos(yaw) * distance,
-    ).add(this.centre);
-    this.controls.target.copy(this.centre);
-    this.syncAxes();
-    this.camera.up.copy(UP);
-    this.controls.update();
-    this.requestRender();
+    this.stage.frame(this.centre, this.radius);
   }
 
   dispose(): void {
-    cancelAnimationFrame(this.frame);
-    this.resizer.disconnect();
-    const canvas = this.renderer.domElement;
+    const canvas = this.stage.canvas;
     canvas.removeEventListener("pointermove", this.onMove);
     canvas.removeEventListener("pointerleave", this.onLeave);
     canvas.removeEventListener("pointerdown", this.onDown);
     canvas.removeEventListener("pointerup", this.onUp);
-    this.controls.dispose();
     this.clearContent();
-    this.textures.forEach((texture) => texture.dispose());
-    this.unitCylinder.dispose();
-    this.unitSphere.dispose();
-    this.unitCone.dispose();
-    this.renderer.dispose();
+    this.kit.dispose();
+    this.stage.dispose();
     this.listeners.clear();
   }
 
   private clearContent(): void {
-    this.content.traverse((object) => {
-      if (object instanceof Mesh || object instanceof Sprite) {
-        const material = object.material;
-        (Array.isArray(material) ? material : [material]).forEach((each) => each.dispose());
-      }
-    });
-    this.scene.remove(this.content);
+    disposeMaterials(this.content);
+    this.stage.scene.remove(this.content);
   }
 
   private build(): void {
     this.clearContent();
     this.content = new Group();
-    this.parts = [];
+    this.registry.clear();
     this.atomParts = new Map();
     this.siteOf = new Map();
     this.linkOf = new Map();
@@ -484,14 +402,14 @@ export class ThreeView implements MoleculeView {
       if (!shown[site.index]) {
         continue;
       }
-      const size = this.ballRadius(site, bonded.has(site.index));
+      const size = ballRadius(site.radius, this.settings.style, bonded.has(site.index));
       const at = point(site.index);
       radius = Math.max(radius, at.distanceTo(this.centre) + Math.max(size, this.settings.style === "spacefill" ? 0 : 0.3));
       // an implied hydrogen is highlighted with the atom it hangs off
       const owners = atomSets.flatMap((set, i) => (set.has(site.atom) ? [i] : []));
       owners.forEach((owner, order) => {
         const colour = look?.matches[owner]?.colour ?? "#ffd43b";
-        const halo = new Mesh(this.unitSphere, this.haloMaterial(colour));
+        const halo = new Mesh(this.kit.sphereGeometry, haloMaterial(colour));
         halo.position.copy(at);
         halo.scale.setScalar(Math.max(size, LONE_ATOM_RADIUS) + HALO_PADDING + HALO_GROWTH * order);
         halo.renderOrder = -1;
@@ -506,11 +424,11 @@ export class ThreeView implements MoleculeView {
         if (look?.recolour && first !== undefined) {
           colour.set(look.matches[first]?.colour ?? site.colour);
         }
-        const ball = new Mesh(this.unitSphere, new MeshStandardMaterial({ color: colour, roughness: 0.5 }));
+        const ball = new Mesh(this.kit.sphereGeometry, new MeshStandardMaterial({ color: colour, roughness: 0.5 }));
         ball.position.copy(at);
         ball.scale.setScalar(size);
-        this.fade(ball, dimmed(owners));
-        const part = this.addPart("atom", site.implied ? null : site.atom, { element: site.element, ...this.matchNote(owners) }, ball);
+        fade(ball, dimmed(owners));
+        const part = this.registry.add("atom", site.implied ? null : site.atom, { element: site.element, ...this.matchNote(owners) }, ball);
         this.siteOf.set(part.pick.handle, site.index);
         this.atomParts.set(site.index, part);
         this.content.add(ball);
@@ -518,19 +436,23 @@ export class ThreeView implements MoleculeView {
     }
 
     if (this.settings.style !== "spacefill") {
-      const aromaticRings = this.aromaticCentres(links, point);
+      const aromaticRings = aromaticCentres(links, point);
       for (const link of links) {
         const owners = bondSets.flatMap((set, i) => (ThreeView.bondMatched(link, sites, set, atomSets[i] ?? new Set()) ? [i] : []));
-        const group = this.addBond(link, sites, point, neighbours, aromaticRings.get(link), this.matchNote(owners));
+        const group = buildBond(this.kit, link, sites, this.settings.style, point, neighbours, aromaticRings.get(link));
         if (group) {
-          this.fade(group, dimmed(owners));
+          const part = this.registry.add("bond", link.bond >= 0 ? link.bond : null, { order: link.order.toLowerCase(), ...this.matchNote(owners) }, group);
+          this.linkOf.set(part.pick.handle, link);
+          this.registry.claimChildren(part);
+          this.content.add(group);
+          fade(group, dimmed(owners));
         }
         owners.forEach((owner, order) => {
-          const halo = this.cylinder(
+          const halo = this.kit.cylinder(
             point(link.first),
             point(link.second),
             BOND_HALO + HALO_GROWTH * order,
-            this.haloMaterial(look?.matches[owner]?.colour ?? "#ffd43b"),
+            haloMaterial(look?.matches[owner]?.colour ?? "#ffd43b"),
           );
           halo.renderOrder = -1;
           this.content.add(halo);
@@ -545,7 +467,8 @@ export class ThreeView implements MoleculeView {
     if (this.settings.charges) {
       for (const site of sites) {
         if (shown[site.index] && site.charge !== 0) {
-          this.addCharge(site, point(site.index), this.ballRadius(site, bonded.has(site.index)));
+          const radius = ballRadius(site.radius, this.settings.style, bonded.has(site.index));
+          this.content.add(this.kit.labels.chargeBadge(this.content, site.charge, point(site.index), radius));
         }
       }
     }
@@ -557,9 +480,9 @@ export class ThreeView implements MoleculeView {
     }
 
     this.radius = radius + (this.settings.axes ? AXIS_LENGTH / 2 : 0.5);
-    this.scene.add(this.content);
+    this.stage.scene.add(this.content);
     this.refreshEmphasis();
-    this.requestRender();
+    this.stage.requestRender();
   }
 
   /** Whether a bond is in a match: the bond to an implied hydrogen is in it if the atom the hydrogen hangs off is. */
@@ -580,29 +503,12 @@ export class ThreeView implements MoleculeView {
     return { match: this.matchLook?.merged ? `Matched (${owners.length})` : "Matched" };
   }
 
-  private haloMaterial(colour: string): MeshBasicMaterial {
-    return new MeshBasicMaterial({ color: colour, transparent: true, opacity: HALO_OPACITY, depthWrite: false });
-  }
-
-  /** Makes everything in `object` see-through, if `opacity` is below 1. */
-  private fade(object: Object3D, opacity: number): void {
-    if (opacity >= 1) {
-      return;
-    }
-    object.traverse((each) => {
-      if (each instanceof Mesh && each.material instanceof MeshStandardMaterial) {
-        each.material.transparent = true;
-        each.material.opacity = opacity;
-      }
-    });
-  }
-
   /** Numbers the atoms and bonds of the matches, as the 2D drawing does. */
   private addMatchLabels(look: MatchLook, sites: Site3D[], links: Connection3D[], point: (index: number) => Vector3): void {
     const atomSites = new Map(sites.filter((site) => !site.implied).map((site) => [site.atom, site.index]));
     const bondLinks = new Map(links.filter((link) => link.bond >= 0).map((link) => [link.bond, link]));
     const add = (text: string, at: Vector3) => {
-      const sprite = this.label(text, "#1a1a1a", 0.32);
+      const sprite = this.kit.labels.label(text, "#1a1a1a", 0.32);
       sprite.position.copy(at);
       this.content.add(sprite);
     };
@@ -622,252 +528,15 @@ export class ThreeView implements MoleculeView {
     }
   }
 
-  private ballRadius(site: Site3D, bonded: boolean): number {
-    switch (this.settings.style) {
-      case "spacefill":
-        return site.radius;
-      case "ball_and_stick":
-        return BALL_FRACTION * site.radius;
-      default:
-        return bonded ? 0 : LONE_ATOM_RADIUS;
-    }
-  }
-
-  private addPart(kind: "atom" | "bond", index: number | null, data: Record<string, string>, object: Object3D): Part {
-    const part: Part = { pick: { kind, index, data, handle: object }, object, index: index ?? -1 };
-    object.userData.part = part;
-    this.parts.push(part);
-    return part;
-  }
-
-  /** The centre of the ring system each aromatic bond is in, so the dashed line can sit on the inside. */
-  private aromaticCentres(links: Connection3D[], point: (index: number) => Vector3): Map<Connection3D, Vector3> {
-    const aromatic = links.filter((link) => link.order === "AROMATIC");
-    const touching = new Map<number, Connection3D[]>();
-    for (const link of aromatic) {
-      touching.set(link.first, [...(touching.get(link.first) ?? []), link]);
-      touching.set(link.second, [...(touching.get(link.second) ?? []), link]);
-    }
-
-    const centres = new Map<Connection3D, Vector3>();
-    for (const start of aromatic) {
-      if (centres.has(start)) {
-        continue;
-      }
-      const group = new Set<Connection3D>([start]);
-      const atoms = new Set<number>();
-      const queue = [start];
-      while (queue.length > 0) {
-        const link = queue.pop() as Connection3D;
-        for (const atom of [link.first, link.second]) {
-          atoms.add(atom);
-          for (const next of touching.get(atom) ?? []) {
-            if (!group.has(next)) {
-              group.add(next);
-              queue.push(next);
-            }
-          }
-        }
-      }
-      const centre = new Vector3();
-      atoms.forEach((atom) => centre.add(point(atom)));
-      centre.divideScalar(atoms.size);
-      group.forEach((link) => centres.set(link, centre));
-    }
-    return centres;
-  }
-
-  private addBond(
-    link: Connection3D,
-    sites: Site3D[],
-    point: (index: number) => Vector3,
-    neighbours: Map<number, number[]>,
-    ringCentre: Vector3 | undefined,
-    note: Record<string, string>,
-  ): Group | null {
-    const from = point(link.first);
-    const to = point(link.second);
-    const along = to.clone().sub(from);
-    if (along.lengthSq() < 1e-12) {
-      return null;
-    }
-    along.normalize();
-
-    const stick = this.settings.style === "sticks";
-    const thin = this.settings.style === "wireframe";
-    const width = stick ? 0.15 : thin ? 0.02 : 0.07;
-    const spacing = stick ? 0.2 : thin ? 0.08 : 0.14;
-
-    const across = this.across(link, from, to, along, point, neighbours, ringCentre);
-    const group = new Group();
-    const lines: { offset: number; dashed: boolean; width: number }[] = (() => {
-      switch (link.order) {
-        case "DOUBLE":
-          return [-0.5, 0.5].map((side) => ({ offset: side * spacing, dashed: false, width: width * 0.7 }));
-        case "TRIPLE":
-          return [-1, 0, 1].map((side) => ({ offset: side * spacing, dashed: false, width: width * 0.6 }));
-        case "QUADRUPLE":
-          return [-1.5, -0.5, 0.5, 1.5].map((side) => ({ offset: side * spacing, dashed: false, width: width * 0.5 }));
-        case "AROMATIC":
-          return [
-            { offset: 0, dashed: false, width },
-            { offset: spacing * 1.4, dashed: true, width: width * 0.7 },
-          ];
-        default:
-          return [{ offset: 0, dashed: false, width }];
-      }
-    })();
-
-    const first = new Color(sites[link.first]?.colour ?? "#888888");
-    const second = new Color(sites[link.second]?.colour ?? "#888888");
-    for (const line of lines) {
-      const shift = across.clone().multiplyScalar(line.offset);
-      const a = from.clone().add(shift);
-      const b = to.clone().add(shift);
-      if (line.dashed) {
-        const inset = a.distanceTo(b) * 0.15;
-        a.addScaledVector(along, inset);
-        b.addScaledVector(along, -inset);
-        this.dashes(group, a, b, line.width, first, second);
-      } else {
-        const middle = a.clone().add(b).multiplyScalar(0.5);
-        group.add(this.cylinder(a, middle, line.width, new MeshStandardMaterial({ color: first, roughness: 0.5 })));
-        group.add(this.cylinder(middle, b, line.width, new MeshStandardMaterial({ color: second, roughness: 0.5 })));
-      }
-    }
-
-    const part = this.addPart("bond", link.bond >= 0 ? link.bond : null, { order: link.order.toLowerCase(), ...note }, group);
-    this.linkOf.set(part.pick.handle, link);
-    group.traverse((object) => {
-      object.userData.part = part;
-    });
-    this.content.add(group);
-    return group;
-  }
-
-  /** Which way a bond's extra lines are laid out: towards the ring, or into the plane of a neighbour. */
-  private across(
-    link: Connection3D,
-    from: Vector3,
-    to: Vector3,
-    along: Vector3,
-    point: (index: number) => Vector3,
-    neighbours: Map<number, number[]>,
-    ringCentre: Vector3 | undefined,
-  ): Vector3 {
-    const candidates: Vector3[] = [];
-    if (ringCentre) {
-      candidates.push(ringCentre.clone().sub(from.clone().add(to).multiplyScalar(0.5)));
-    }
-    for (const [atom, other] of [[link.first, link.second], [link.second, link.first]] as const) {
-      for (const next of neighbours.get(atom) ?? []) {
-        if (next !== other) {
-          candidates.push(point(next).sub(point(atom)));
-        }
-      }
-    }
-    for (const candidate of candidates) {
-      const flat = candidate.addScaledVector(along, -candidate.dot(along));
-      if (flat.lengthSq() > 1e-6) {
-        return flat.normalize();
-      }
-    }
-    const any = Math.abs(along.x) < 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
-    return along.clone().cross(any).normalize();
-  }
-
-  private dashes(group: Group, a: Vector3, b: Vector3, width: number, first: Color, second: Color): void {
-    const length = a.distanceTo(b);
-    const period = 0.2;
-    const count = Math.max(1, Math.round(length / period));
-    const step = length / count;
-    const direction = b.clone().sub(a).normalize();
-    for (let i = 0; i < count; i++) {
-      const start = a.clone().addScaledVector(direction, i * step + step * 0.15);
-      const end = a.clone().addScaledVector(direction, i * step + step * 0.85);
-      const colour = i < count / 2 ? first : second;
-      group.add(this.cylinder(start, end, width, new MeshStandardMaterial({ color: colour, roughness: 0.5 })));
-    }
-  }
-
-  private cylinder(a: Vector3, b: Vector3, radius: number, material: MeshStandardMaterial | MeshBasicMaterial): Mesh {
-    const mesh = new Mesh(this.unitCylinder, material);
-    const along = b.clone().sub(a);
-    const length = along.length();
-    mesh.position.copy(a).addScaledVector(along, 0.5);
-    if (length > 1e-9) {
-      mesh.quaternion.copy(new Quaternion().setFromUnitVectors(UP, along.normalize()));
-    }
-    mesh.scale.set(radius, Math.max(length, 1e-6), radius);
-    return mesh;
-  }
-
-  private label(text: string, colour: string, height: number, occluded = false): Sprite {
-    const key = `${text}|${colour}`;
-    let texture = this.textures.get(key);
-    if (!texture) {
-      const canvas = document.createElement("canvas");
-      const font = "bold 64px sans-serif";
-      const context = canvas.getContext("2d") as CanvasRenderingContext2D;
-      context.font = font;
-      canvas.width = Math.ceil(context.measureText(text).width) + 16;
-      canvas.height = 96;
-      context.font = font;
-      context.textAlign = "center";
-      context.textBaseline = "middle";
-      context.lineWidth = 12;
-      context.strokeStyle = "#ffffff";
-      context.lineJoin = "round";
-      context.strokeText(text, canvas.width / 2, canvas.height / 2);
-      context.fillStyle = colour;
-      context.fillText(text, canvas.width / 2, canvas.height / 2);
-      texture = new CanvasTexture(canvas);
-      this.textures.set(key, texture);
-    }
-    const image = texture.image as HTMLCanvasElement;
-    const sprite = new Sprite(new SpriteMaterial({ map: texture, depthTest: occluded, transparent: true }));
-    sprite.scale.set((height * image.width) / image.height, height, 1);
-    sprite.renderOrder = 10;
-    return sprite;
-  }
-
-  private addCharge(site: Site3D, at: Vector3, radius: number): void {
-    const size = Math.abs(site.charge);
-    const text = (size === 1 ? "" : String(size)) + (site.charge > 0 ? "+" : "\u2212");
-    const sprite = this.label(text, site.charge > 0 ? "#1f4fd8" : "#c0392b",     0.5, true);
-    // anchoring the sprite's lower left at the atom's centre, then pulling the anchor back, puts it at the upper right on screen
-    const pull = Math.max(radius, 0.15) * 0.75;
-    sprite.center.set(-pull / sprite.scale.x, -pull / sprite.scale.y);
-    sprite.position.copy(at);
-    // depth-tested, so lift the label out of its own atom towards the camera; other atoms can still occlude it
-    const lift = radius * 1.05;
-    const toCamera = new Vector3();
-    const world = new Vector3();
-    sprite.onBeforeRender = (_renderer, _scene, camera) => {
-      sprite.position.copy(at);
-      this.content.localToWorld(world.copy(at));
-      toCamera.copy(camera.position).sub(world).normalize();
-      this.content.worldToLocal(world.copy(world).addScaledVector(toCamera, lift));
-      sprite.position.copy(world);
-      sprite.updateMatrixWorld();
-    };
-    this.content.add(sprite);
-  }
-
   /** Axes sit on the point the view orbits, so they show where the pivot is. */
   private addAxes(): void {
-    const colours = [0xe41a1c, 0x2ca02c, 0x1f4fd8];
-    const axes = new Group();
-    [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)].forEach((direction, i) => {
-      axes.add(new ArrowHelper(direction, new Vector3(), AXIS_LENGTH, colours[i], 0.5, 0.36));
-    });
-    this.axes = axes;
+    this.axes = makeAxes();
     this.syncAxes();
-    this.content.add(axes);
+    this.content.add(this.axes);
   }
 
   private syncAxes(): void {
-    this.axes?.position.copy(this.controls.target);
+    this.axes?.position.copy(this.stage.controls.target);
   }
 
   private addDebug(
@@ -879,7 +548,7 @@ export class ThreeView implements MoleculeView {
     const over = (deviation: number, tolerance: number) => deviation / tolerance >= this.settings.debugThreshold;
     const visible = (...atoms: number[]) => atoms.every((atom) => shown[atom]);
     const line = (a: Vector3, b: Vector3, colour: string, width = 0.02) =>
-      this.content.add(this.cylinder(a, b, width, new MeshBasicMaterial({ color: colour, depthTest: false })));
+      this.content.add(this.kit.cylinder(a, b, width, new MeshBasicMaterial({ color: colour, depthTest: false })));
 
     if (this.settings.debugBonds) {
       for (const length of diagnostics.lengths) {
@@ -887,7 +556,7 @@ export class ThreeView implements MoleculeView {
           const a = point(length.first);
           const b = point(length.second);
           line(a, b, "#e02020", 0.04);
-          const note = this.label(`${length.actual.toFixed(3)} \u00c5`, "#c00000", 0.22);
+          const note = this.kit.labels.label(`${length.actual.toFixed(3)} \u00c5`, "#c00000", 0.22);
           note.position.copy(a.clone().add(b).multiplyScalar(0.5));
           this.content.add(note);
         }
@@ -897,7 +566,8 @@ export class ThreeView implements MoleculeView {
     if (this.settings.debugAngles) {
       for (const angle of diagnostics.angles) {
         if (visible(angle.first, angle.middle, angle.second) && over(Math.abs(angle.actual - angle.ideal), tolerances.angle)) {
-          this.arc(point(angle.middle), point(angle.first), point(angle.second), `${angle.actual.toFixed(1)}\u00b0`);
+          const text = `${angle.actual.toFixed(1)}\u00b0`;
+          this.content.add(...angleArc(this.kit, point(angle.middle), point(angle.first), point(angle.second), text));
         }
       }
     }
@@ -915,7 +585,7 @@ export class ThreeView implements MoleculeView {
       }
       for (const torsion of worst.values()) {
         line(point(torsion.first), point(torsion.fourth), "#8e44ad");
-        const note = this.label(`${torsion.actual.toFixed(1)}\u00b0`, "#6c3483", 0.22);
+        const note = this.kit.labels.label(`${torsion.actual.toFixed(1)}\u00b0`, "#6c3483", 0.22);
         note.position.copy(point(torsion.second).add(point(torsion.third)).multiplyScalar(0.5));
         this.content.add(note);
       }
@@ -927,7 +597,7 @@ export class ThreeView implements MoleculeView {
           const a = point(clash.first);
           const b = point(clash.second);
           line(a, b, "#e67e22", 0.03);
-          const note = this.label(`${(clash.contact - clash.distance).toFixed(2)} \u00c5`, "#a04000", 0.22);
+          const note = this.kit.labels.label(`${(clash.contact - clash.distance).toFixed(2)} \u00c5`, "#a04000", 0.22);
           note.position.copy(a.clone().add(b).multiplyScalar(0.5));
           this.content.add(note);
         }
@@ -939,7 +609,7 @@ export class ThreeView implements MoleculeView {
         if (shown[pair.node]) {
           const tip = new Vector3(pair.tip.x, pair.tip.y, pair.tip.z);
           line(point(pair.node), tip, "#2e86c1", 0.015);
-          const lobe = new Mesh(this.unitSphere, new MeshBasicMaterial({ color: "#2e86c1", transparent: true, opacity: 0.4 }));
+          const lobe = new Mesh(this.kit.sphereGeometry, new MeshBasicMaterial({ color: "#2e86c1", transparent: true, opacity: 0.4 }));
           lobe.position.copy(tip);
           lobe.scale.setScalar(0.12);
           this.content.add(lobe);
@@ -950,121 +620,17 @@ export class ThreeView implements MoleculeView {
     if (this.settings.debugPiSystems || this.settings.debugPiOrbitals) {
       for (const system of diagnostics.conjugations) {
         if (this.settings.debugPiSystems) {
-          this.addPiCloud(system, point, shown);
+          this.content.add(...piCloud(this.kit, system, point, shown));
         }
         if (this.settings.debugPiOrbitals) {
-          this.addPiOrbitals(system, point, shown);
+          this.content.add(...piOrbitals(this.kit, system, point, shown));
         }
-        this.addPiLabel(system, point, shown);
+        const note = piLabel(this.kit, system, point, shown);
+        if (note) {
+          this.content.add(note);
+        }
       }
     }
-  }
-
-  /** Draws a system's pi cloud: a lozenge lying over every bond of it, on each face of the system. */
-  private addPiCloud(system: Conjugation3D, point: (index: number) => Vector3, shown: boolean[]): void {
-    for (const cloud of system.clouds) {
-      if (!shown[cloud.first] || !shown[cloud.second]) {
-        continue;
-      }
-      const above = new Vector3(cloud.above.x, cloud.above.y, cloud.above.z);
-      const below = new Vector3(cloud.below.x, cloud.below.y, cloud.below.z);
-      // the lozenge runs the length of its bond, so one meets the next around a ring
-      const along = point(cloud.second).clone().sub(point(cloud.first)).multiplyScalar(0.5);
-      const normal = above.clone().sub(below);
-      for (const face of [above, below]) {
-        this.content.add(this.blob(face, along, normal, PI_CLOUD_WIDTH, PI_CLOUD_THICKNESS));
-      }
-    }
-  }
-
-  /**
-   * Draws the p orbital standing on each atom of a system, as a lobe either side of the plane it
-   * lies in. A lobe is wider the more electrons its atom lends, so pyrrole's nitrogen, which lends
-   * its pair, is told apart from the carbons that lend one each.
-   */
-  private addPiOrbitals(system: Conjugation3D, point: (index: number) => Vector3, shown: boolean[]): void {
-    for (const orbital of system.orbitals) {
-      if (!shown[orbital.node]) {
-        continue;
-      }
-      const nucleus = point(orbital.node);
-      const width = PI_LOBE_RADIUS + PI_LOBE_PER_ELECTRON * orbital.electrons;
-      for (const tip of [orbital.above, orbital.below]) {
-        const reach = new Vector3(tip.x, tip.y, tip.z).sub(nucleus);
-        const along = reach.clone().multiplyScalar((1 - PI_LOBE_START) / 2);
-        const centre = nucleus.clone().addScaledVector(reach, PI_LOBE_START).add(along);
-        this.content.add(this.blob(centre, along, null, width, width));
-      }
-    }
-  }
-
-  /** Labels a system with what it amounts to, in the middle of its atoms. */
-  private addPiLabel(system: Conjugation3D, point: (index: number) => Vector3, shown: boolean[]): void {
-    const nodes = system.orbitals.filter((orbital) => shown[orbital.node]);
-    if (nodes.length === 0) {
-      return;
-    }
-    const middle = new Vector3();
-    nodes.forEach((orbital) => middle.add(point(orbital.node)));
-
-    const note = this.label(`${system.aromaticity.toLowerCase()} · ${system.pi_electrons} π`, PI, 0.26, true);
-    note.position.copy(middle.divideScalar(nodes.length));
-    this.content.add(note);
-  }
-
-  /**
-   * An ellipsoid for a pi overlay: `along` is half its long axis, `width` half the short axis
-   * across that, and `thickness` half the one along `normal`, which is flattened out of the plane.
-   * A round lobe passes no normal.
-   */
-  private blob(centre: Vector3, along: Vector3, normal: Vector3 | null, width: number, thickness: number): Mesh {
-    const mesh = new Mesh(this.unitSphere, new MeshBasicMaterial({ color: PI, transparent: true, opacity: 0.3, depthWrite: false }));
-    const length = along.length();
-    mesh.position.copy(centre);
-    if (length > 1e-9) {
-      const y = along.clone().normalize();
-      const z = (normal ?? ThreeView.sideways(y)).clone().addScaledVector(y, -(normal ?? ThreeView.sideways(y)).dot(y));
-      if (z.lengthSq() > 1e-12) {
-        z.normalize();
-        mesh.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(new Vector3().crossVectors(y, z), y, z));
-      } else {
-        mesh.quaternion.copy(new Quaternion().setFromUnitVectors(UP, y));
-      }
-    }
-    mesh.scale.set(width, Math.max(length, 1e-6), thickness);
-    return mesh;
-  }
-
-  /** Any direction at right angles to `axis`. */
-  private static sideways(axis: Vector3): Vector3 {
-    const helper = Math.abs(axis.x) < 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
-    return new Vector3().crossVectors(axis, helper).normalize();
-  }
-
-  /** An arc between two bonds at `middle`, labelled with the angle. */
-  private arc(middle: Vector3, a: Vector3, b: Vector3, text: string): void {
-    const u = a.clone().sub(middle).normalize();
-    const v = b.clone().sub(middle).normalize();
-    const sweep = Math.acos(Math.min(1, Math.max(-1, u.dot(v))));
-    const w = v.clone().addScaledVector(u, -v.dot(u));
-    if (w.lengthSq() < 1e-9) {
-      return;
-    }
-    w.normalize();
-
-    const at = (fraction: number, radius: number) =>
-      middle.clone()
-        .addScaledVector(u, Math.cos(sweep * fraction) * radius)
-        .addScaledVector(w, Math.sin(sweep * fraction) * radius);
-    const steps = 16;
-    for (let i = 0; i < steps; i++) {
-      this.content.add(
-        this.cylinder(at(i / steps, 0.45), at((i + 1) / steps, 0.45), 0.02, new MeshBasicMaterial({ color: "#d35400", depthTest: false })),
-      );
-    }
-    const note = this.label(text, "#a04000", 0.22);
-    note.position.copy(at(0.5, 0.7));
-    this.content.add(note);
   }
 
   private static turn(degrees: number): number {
@@ -1078,14 +644,14 @@ export class ThreeView implements MoleculeView {
     // laid down first, so that hovering or selecting a part at fault still tints it as usual
     if (this.faults) {
       const fault = FAULT_COLOURS[this.faults.severity];
-      for (const part of this.parts) {
+      for (const part of this.registry.parts) {
         const faulted = part.index >= 0 && (part.pick.kind === "atom" ? this.faults.atoms : this.faults.bonds).has(part.index);
         if (faulted) {
           tints.set(part.object, fault);
         }
       }
     }
-    for (const part of this.parts) {
+    for (const part of this.registry.parts) {
       const selected = part.index >= 0 && (part.pick.kind === "atom" ? this.selection.atoms : this.selection.bonds).has(part.index);
       if (selected) {
         tints.set(part.object, SELECTED);
@@ -1103,7 +669,7 @@ export class ThreeView implements MoleculeView {
       tints.set(hover, HOVER);
     }
 
-    for (const part of this.parts) {
+    for (const part of this.registry.parts) {
       const tint = tints.get(part.object);
       part.object.traverse((object) => {
         if (object instanceof Mesh && object.material instanceof MeshStandardMaterial) {
@@ -1117,28 +683,19 @@ export class ThreeView implements MoleculeView {
         }
       });
     }
-    this.requestRender();
+    this.stage.requestRender();
   }
 
-  private partAt(event: PointerEvent): Part | null {
-    const box = this.renderer.domElement.getBoundingClientRect();
-    const pointer = new Vector2(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
-    this.raycaster.setFromCamera(pointer, this.camera);
-    const hits = this.raycaster.intersectObjects(this.parts.map((part) => part.object), true);
-    for (const hit of hits) {
-      const part = hit.object.userData.part as Part | undefined;
-      if (part) {
-        return part;
-      }
-    }
-    return null;
+  private castAt(event: PointerEvent): { part: Part; point: Vector3 } | null {
+    const pointer = this.stage.pointer(event);
+    return this.registry.cast(this.raycaster, this.stage.camera, pointer);
   }
 
   private readonly onMove = (event: PointerEvent): void => {
     if (event.buttons !== 0) {
       return;
     }
-    const part = this.partAt(event);
+    const part = this.castAt(event)?.part;
     this.listeners.forEach((listener) => listener.hover?.(part?.pick ?? null, { x: event.clientX, y: event.clientY }));
   };
 
@@ -1157,7 +714,7 @@ export class ThreeView implements MoleculeView {
     if (event.button !== 2 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) {
       return;
     }
-    const hit = this.hitAt(event);
+    const hit = this.castAt(event)?.point;
     let nearest: Vector3 | null = null;
     let best = Infinity;
     if (hit) {
@@ -1169,41 +726,6 @@ export class ThreeView implements MoleculeView {
         }
       }
     }
-    this.pivotOn(nearest ?? this.centre);
+    this.stage.pivotOn(nearest ?? this.centre);
   };
-
-  /** Moves the point the view orbits to `to`, carrying the camera with it so that the view keeps its angle. */
-  private pivotOn(to: Vector3): void {
-    this.camera.position.add(to.clone().sub(this.controls.target));
-    this.controls.target.copy(to);
-    this.syncAxes();
-    this.controls.update();
-    this.requestRender();
-  }
-
-  private hitAt(event: PointerEvent): Vector3 | null {
-    const box = this.renderer.domElement.getBoundingClientRect();
-    const pointer = new Vector2(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
-    this.raycaster.setFromCamera(pointer, this.camera);
-    const hits = this.raycaster.intersectObjects(this.parts.map((part) => part.object), true);
-    return hits.find((hit) => hit.object.userData.part)?.point ?? null;
-  }
-
-  private resize(): void {
-    const width = Math.max(1, this.element.clientWidth);
-    const height = Math.max(1, this.element.clientHeight);
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.requestRender();
-  }
-
-  private requestRender(): void {
-    if (this.frame === 0) {
-      this.frame = requestAnimationFrame(() => {
-        this.frame = 0;
-        this.renderer.render(this.scene, this.camera);
-      });
-    }
-  }
 }

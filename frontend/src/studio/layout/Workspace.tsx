@@ -17,11 +17,10 @@ export interface WorkspaceProps {
   onResize: (panel: Panel, size: number) => void;
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   onOpenSmiles: (smiles: string) => void;
-  onCanvas?: (canvas: HTMLCanvasElement | null) => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, activity, layout, onResize, onCollapse, onOpenSmiles, onCanvas } = props;
+  const { phase, state, activity, layout, onResize, onCollapse, onOpenSmiles } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -54,7 +53,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <div className="viewport-cell">
-        <Viewport phase={phase} onOpenSmiles={onOpenSmiles} onCanvas={onCanvas} />
+        <Viewport phase={phase} state={state} onOpenSmiles={onOpenSmiles} />
       </div>
 
       {!layout.inspectorCollapsed && (
