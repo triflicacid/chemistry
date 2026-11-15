@@ -163,7 +163,6 @@ function CameraPane({ models }: { models: Models }) {
         {single("Field of view", "Vertical field of view of the camera, in degrees", now.fov, "°", 1, (fov) => camera.edit({ fov }))}
         {single("Roll", "Roll of the camera about the way it looks, in degrees, counterclockwise positive", now.roll, "°", 2, (roll) => camera.edit({ roll }))}
       </dl>
-      <p className="panel-note">Drag to pan the view and right-drag to orbit it.</p>
     </>
   );
 }
