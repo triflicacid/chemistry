@@ -120,6 +120,8 @@ export interface Session {
   setBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
   /** Gives a bond a torsion by turning one side of it, as one edit that can be undone. The server refuses ring bonds. */
   setBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
+  /** Gives an atom's two bonds an angle by swinging one of them, as one edit that can be undone. The server refuses ring bonds. */
+  setAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   /**
    * Reports where a handle dragging a bond has got to. Sends at most one change per {@link DRAG_INTERVAL_MS}, of the
    * latest, none of which is yet an edit to undo.
@@ -534,12 +536,16 @@ export function useSession(client?: ChemistryApi): Session {
         ? null
         : edit.kind === "length"
           ? `Set ${edit.bond} to ${edit.value.toFixed(3)} Å`
-          : `Turned ${edit.bond} to a torsion of ${edit.value.toFixed(1)}°`;
+          : edit.kind === "torsion"
+            ? `Turned ${edit.bond} to a torsion of ${edit.value.toFixed(1)}°`
+            : `Set the angle at ${edit.centre} to ${edit.value.toFixed(1)}°`;
       return reshape(
         (socket, base) =>
           edit.kind === "length"
             ? socket.setBondLength(base.session_id, base.version, edit.bond, edit.value, edit.hold, commit)
-            : socket.setBondTorsion(base.session_id, base.version, edit.bond, edit.from, edit.to, edit.value, edit.hold, commit),
+            : edit.kind === "torsion"
+              ? socket.setBondTorsion(base.session_id, base.version, edit.bond, edit.from, edit.to, edit.value, edit.hold, commit)
+              : socket.setAngle(base.session_id, base.version, edit.centre, edit.from, edit.to, edit.value, edit.hold, commit),
         message,
       );
     },
@@ -547,6 +553,11 @@ export function useSession(client?: ChemistryApi): Session {
   );
 
   const setBondLength = useCallback((bond: string, length: number, hold: string | null) => sendBond({ kind: "length", bond, value: length, hold }, true), [sendBond]);
+
+  const setAngle = useCallback(
+    (centre: string, from: string, to: string, angle: number, hold: string | null) => sendBond({ kind: "angle", centre, from, to, value: angle, hold }, true),
+    [sendBond],
+  );
 
   const setBondTorsion = useCallback(
     (bond: string, from: string, to: string, angle: number, hold: string | null) => sendBond({ kind: "torsion", bond, from, to, value: angle, hold }, true),
@@ -649,7 +660,7 @@ export function useSession(client?: ChemistryApi): Session {
   const dragBond = useCallback(
     (edit: BondEdit) => {
       bondOrigin.current ??= new Map((held.current?.atoms ?? []).map((atom) => [atom.id, atom.position]));
-      reporting(`bond:${edit.kind}:${edit.bond}`, edit, (first, second) => first.value === second.value && first.hold === second.hold, (latest) => void sendBond(latest, false));
+      reporting(`bond:${edit.kind}:${edit.kind === "angle" ? edit.centre : edit.bond}`, edit, (first, second) => first.value === second.value && first.hold === second.hold, (latest) => void sendBond(latest, false));
     },
     [reporting, sendBond],
   );
@@ -850,6 +861,7 @@ export function useSession(client?: ChemistryApi): Session {
     moveAtom,
     setBondLength,
     setBondTorsion,
+    setAngle,
     dragBond,
     dropBond,
     cancelBondDrag,

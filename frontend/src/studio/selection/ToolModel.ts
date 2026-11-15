@@ -25,6 +25,13 @@ export interface TorsionView {
   second: string;
 }
 
+/** An angle being shown: the atom it is at, and the two atoms bonded to it that it is measured between. */
+export interface AngleView {
+  centre: string;
+  from: string;
+  to: string;
+}
+
 /** The tool in use, and what a move is held to. */
 export interface ToolState {
   tool: Tool;
@@ -39,6 +46,8 @@ export interface ToolState {
   carryHydrogens: boolean;
   /** The torsion the Inspector is showing for the selected bond, which the viewport marks, or null for none. */
   torsion: TorsionView | null;
+  /** The angle the Inspector is showing for the selected atom, which the viewport marks, or null for none. */
+  angle: AngleView | null;
   /** Which atom of a bond stays where it is when the bond is lengthened or turned, by the Inspector or by dragging a handle. */
   hold: Hold;
 }
@@ -46,7 +55,7 @@ export interface ToolState {
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, hold: "first" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, hold: "first" });
   }
 
   /**
@@ -135,6 +144,18 @@ export class ToolModel extends Observable<ToolState> {
     const was = this.get().torsion;
     if (was?.bond !== torsion?.bond || was?.first !== torsion?.first || was?.second !== torsion?.second) {
       this.set({ ...this.get(), torsion });
+    }
+  }
+
+  /**
+   * Says which angle the viewport should mark.
+   *
+   * @param angle the atom and the two atoms it is measured between, or null for none
+   */
+  showAngle(angle: AngleView | null): void {
+    const was = this.get().angle;
+    if (was?.centre !== angle?.centre || was?.from !== angle?.from || was?.to !== angle?.to) {
+      this.set({ ...this.get(), angle });
     }
   }
 

@@ -288,6 +288,27 @@ export class StudioSocket {
   }
 
   /**
+   * Gives an atom's two bonds an angle, by swinging one of them and everything beyond it.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param centre the atom the angle is at
+   * @param from one atom bonded to the centre
+   * @param to another atom bonded to the centre
+   * @param angle the angle to give it, in degrees
+   * @param hold `from` or `to`, whose side stays where it is, or null to hold neither
+   * @param commit whether this ends the edit it belongs to; one that does not is part of a drag
+   * @returns the acknowledgement, or a conflict carrying the state the session is actually in
+   */
+  setAngle(sessionId: string, baseVersion: number, centre: string, from: string, to: string, angle: number, hold: string | null, commit = true): Promise<BondEditAck | SessionConflict> {
+    return this.request<BondEditAck | SessionConflict>(
+      "atom.angle",
+      { session_id: sessionId, base_version: baseVersion, centre, from, to, angle, hold, commit },
+      ["atom.angle.ack", "conflict"],
+    );
+  }
+
+  /**
    * Puts the molecule somewhere in the scene, as a whole.
    *
    * @param sessionId the session to edit

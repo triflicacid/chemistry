@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -113,8 +113,9 @@ export interface PatchAck extends ServerEnvelope {
 }
 
 /**
- * A change to a bond that a handle drags: its length, or its torsion between two atoms bonded one to each end. The
- * value is where the drag has got to, not how far it has come, so a report can be sent again without effect.
+ * A change that a handle drags: a bond's length, its torsion between two atoms bonded one to each end, or the angle at
+ * an atom between two of its neighbours. The value is where the drag has got to, not how far it has come, so a report
+ * can be sent again without effect.
  */
 export type BondEdit =
   | {
@@ -135,11 +136,24 @@ export type BondEdit =
       /** The torsion, in degrees. */
       value: number;
       hold: string | null;
+    }
+  | {
+      kind: "angle";
+      /** The atom the angle is at. */
+      centre: string;
+      /** One of the two atoms bonded to the centre that the angle is measured between. */
+      from: string;
+      /** The other. */
+      to: string;
+      /** The angle, in degrees. */
+      value: number;
+      /** `from` or `to`, whose side stays where it is, or null to hold neither. */
+      hold: string | null;
     };
 
-/** The answer to a change of a bond's length or torsion that the session applied. */
+/** The answer to a change of a bond's length or torsion, or of an angle, that the session applied. */
 export interface BondEditAck extends ServerEnvelope {
-  type: "bond.length.ack" | "bond.torsion.ack";
+  type: "bond.length.ack" | "bond.torsion.ack" | "atom.angle.ack";
   /** The version the session is at after the change, which is the one before it if nothing needed to move. */
   version: number;
   status: "applied";

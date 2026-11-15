@@ -25,6 +25,7 @@ export function App() {
     moveAtom,
     setBondLength,
     setBondTorsion,
+    setAngle,
     dragBond,
     dropBond,
     cancelBondDrag,
@@ -186,6 +187,7 @@ export function App() {
       onMoveAtom={move}
       onSetBondLength={setBondLength}
       onSetBondTorsion={setBondTorsion}
+      onSetAngle={setAngle}
       onLockAtoms={lock}
       canLock={chosen.length > 0}
       lockPressed={allLocked}

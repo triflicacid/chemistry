@@ -1,12 +1,12 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {StudioError, StudioSocket} from "./studioSocket";
 import {
-    type GeometryResult,
-    type OptimiseProgress,
-    type OptimiseResult,
-    PROTOCOL_VERSION,
-    type SessionAtom,
-    type SessionState,
+  type GeometryResult,
+  type OptimiseProgress,
+  type OptimiseResult,
+  PROTOCOL_VERSION,
+  type SessionAtom,
+  type SessionState,
 } from "./messages";
 import {IDENTITY_POSE} from "./pose";
 
@@ -307,6 +307,33 @@ describe("the Studio socket", () => {
     }
     expect(dropped.can_undo).toBe(true);
     expect(dropped.saved_molecule_id).not.toBeNull();
+
+    const undone = await socket.step("undo", opened.session_id, dropped.version);
+    expect(undone.type === "edit.applied" && undone.can_undo).toBe(false);
+  });
+
+  it("gives an atom's two bonds an angle, as a drag of uncommitted changes and one commit, and refuses what it cannot", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const [carbon, centre, oxygen] = opened.atoms as [SessionAtom, SessionAtom, SessionAtom];
+
+    const first = await socket.setAngle(opened.session_id, opened.version, centre.id, carbon.id, oxygen.id, 100, carbon.id, false);
+    expect(first.type).toBe("atom.angle.ack");
+    if (first.type !== "atom.angle.ack") {
+      return;
+    }
+    expect(first.atoms.map((atom) => atom.id)).toContain(oxygen.id);
+    expect(first.atoms.map((atom) => atom.id)).not.toContain(carbon.id);
+
+    const dropped = await socket.setAngle(opened.session_id, first.version, centre.id, carbon.id, oxygen.id, 130, carbon.id, true);
+    expect(dropped.type === "atom.angle.ack" && dropped.can_undo).toBe(true);
+    if (dropped.type !== "atom.angle.ack") {
+      return;
+    }
+
+    // an angle needs two different atoms
+    await expect(socket.setAngle(opened.session_id, dropped.version, centre.id, carbon.id, carbon.id, 120, null)).rejects.toMatchObject({ code: "INVALID_EDIT" });
 
     const undone = await socket.step("undo", opened.session_id, dropped.version);
     expect(undone.type === "edit.applied" && undone.can_undo).toBe(false);

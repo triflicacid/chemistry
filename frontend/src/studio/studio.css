@@ -612,6 +612,17 @@ body.resizing {
   font-family: ui-monospace, monospace;
 }
 
+/* a note under the rows spans both columns and wraps, where a value stays on one line */
+.properties dd.note-row {
+  grid-column: 1 / -1;
+  overflow: visible;
+  white-space: normal;
+}
+
+.properties dd.note-row .panel-note:last-child {
+  margin-bottom: 0;
+}
+
 .properties dd.position {
   display: flex;
   align-items: center;

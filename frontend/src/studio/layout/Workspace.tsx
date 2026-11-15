@@ -36,6 +36,7 @@ export interface WorkspaceProps {
   onMoveAtom: (id: string, position: Vec3) => void;
   onSetBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
   onSetBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
+  onSetAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   onLockAtoms: (ids: string[], locked: boolean) => void;
   canLock: boolean;
   lockPressed: boolean;
@@ -59,7 +60,7 @@ export interface WorkspaceProps {
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onSetBondLength, onSetBondTorsion, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag, onUndo, onRedo } = props;
+  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onLockAtoms, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -139,7 +140,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <Side panel="inspector" name="Inspector" collapsed={layout.inspectorCollapsed} onCollapse={onCollapse}>
-        <Inspector state={state} geometry={geometry} models={models} onMoveAtom={onMoveAtom} onSetBondLength={onSetBondLength} onSetBondTorsion={onSetBondTorsion} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
+        <Inspector state={state} geometry={geometry} models={models} onMoveAtom={onMoveAtom} onSetBondLength={onSetBondLength} onSetBondTorsion={onSetBondTorsion} onSetAngle={onSetAngle} onMoveMolecule={onMoveMolecule} onLockAtoms={onLockAtoms} />
       </Side>
 
       {!layout.analysisCollapsed && (

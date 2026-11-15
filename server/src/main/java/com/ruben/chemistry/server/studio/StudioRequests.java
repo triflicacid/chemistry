@@ -125,6 +125,20 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param centre the atom the angle is at
+     * @param from one atom bonded to {@code centre}
+     * @param to another atom bonded to {@code centre}
+     * @param angle the angle to give it, in degrees
+     * @param hold {@code from} or {@code to}, whose side stays where it is (optional; none held if absent)
+     * @param commit whether this ends the edit it belongs to (optional, default true)
+     */
+    public record AngleRequest(String sessionId, Long baseVersion, String centre, String from, String to, Double angle, String hold, Boolean commit)
+    {
+    }
+
+    /**
      * @param sessionId the session to undo or redo in
      * @param baseVersion the version the client was looking at, so that an undo over a changed session is refused
      */

@@ -39,7 +39,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 9;
+    private static final int PROTOCOL_VERSION = 10;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -719,6 +719,38 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Gives an atom's two bonds an angle.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void angle(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.AngleRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.AngleRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("atom.angle", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.centre() == null || request.from() == null || request.to() == null || request.angle() == null)
+        {
+            context.error("atom.angle", sequence, "INVALID_MESSAGE", "centre, from, to and angle are required");
+            return;
+        }
+
+        reshape(context, "atom.angle", sequence, request.sessionId(), request.baseVersion(),
+                request.commit() == null || request.commit(),
+                (session, commit) -> session.setAngle(request.centre(), request.from(), request.to(), request.angle(), request.hold(), commit));
+    }
+
+    /**
      * Makes an edit the session works out the atoms' new positions for, and answers with where they went.
      *
      * @param context the connection that asked
@@ -1020,6 +1052,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("atom.lock", endpoint::lock),
                     Map.entry("bond.length", endpoint::bondLength),
                     Map.entry("bond.torsion", endpoint::bondTorsion),
+                    Map.entry("atom.angle", endpoint::angle),
                     Map.entry("optimise.start", endpoint::optimise),
                     Map.entry("optimise.cancel", endpoint::cancelOptimise),
                     Map.entry("edit.undo", endpoint::undo),

@@ -41,6 +41,9 @@ public final class StudioSession
     /** The most committed edits kept to undo. */
     public static final int MAX_UNDO = 200;
 
+    /** How close, in angstroms, a bond edit's result must be to where an atom was for it to be put exactly there. */
+    private static final double SNAP_DISTANCE = 1e-9;
+
     /** How far, in angstroms, an atom must be moved by a computed edit, such as an optimisation, for the move to count. */
     private static final double MOVE_RESOLUTION = 1e-6;
 
@@ -480,7 +483,7 @@ public final class StudioSession
     {
         Bond bond = bondNamed(bondId);
         Atom held = heldId == null ? null : atomNamed(heldId);
-        return reshape(() -> BondMotion.withLength(molecule, bond, this::positionOfAtom, length, held), commit);
+        return reshape(() -> BondMotion.withLength(molecule, bond, this::baselineOf, length, held), commit);
     }
 
     /**
@@ -505,13 +508,45 @@ public final class StudioSession
         Atom from = atomNamed(fromId);
         Atom to = atomNamed(toId);
         Atom held = heldId == null ? null : atomNamed(heldId);
-        return reshape(() -> BondMotion.withTorsion(molecule, bond, from, to, this::positionOfAtom, degrees, held), commit);
+        return reshape(() -> BondMotion.withTorsion(molecule, bond, from, to, this::baselineOf, degrees, held), commit);
+    }
+
+    /**
+     * Gives an atom's two bonds an angle, as one edit that can be undone, by swinging one of them and everything beyond
+     * it about the atom; see {@link BondMotion#withAngle}.
+     *
+     * @param centreId the atom the angle is at
+     * @param fromId one atom bonded to it
+     * @param toId another atom bonded to it
+     * @param degrees the angle to give it, in degrees
+     * @param heldId {@code fromId} or {@code toId}, whose side stays where it is, or {@code null} to hold neither
+     * @param commit whether this ends the edit it belongs to; a change that does not is part of a drag, which is one
+     *     edit to undo however many of them it took
+     * @return what moved and the version after it, which is the version the session was at if nothing moved
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold,
+     *     {@code INVALID_EDIT} if the angle is not allowed, the atoms are not bonded as the angle needs, or a bond that
+     *     would have to turn is in a ring, and {@code LOCKED} if an atom that would move is locked
+     */
+    public synchronized Applied setAngle(String centreId, String fromId, String toId, double degrees, String heldId, boolean commit)
+    {
+        Atom centre = atomNamed(centreId);
+        Atom from = atomNamed(fromId);
+        Atom to = atomNamed(toId);
+        Atom held = heldId == null ? null : atomNamed(heldId);
+        return reshape(() -> BondMotion.withAngle(molecule, centre, from, to, this::baselineOf, degrees, held), commit);
     }
 
     /**
      * Makes the moves a bond edit works out.
+     * <p>
+     * An edit is worked out from where the atoms were before the edit in progress began, not from where its earlier
+     * changes have put them. Each change of a drag therefore says where the whole drag has got to and does not depend on
+     * the one before, a length can be taken through zero and an angle through a straight line, and a drag that comes
+     * back to where it began ends exactly there and files nothing. Atoms an earlier change of the drag moved that this one
+     * does not are put back.
      *
-     * @param plan works out where atoms go, refusing by throwing {@link IllegalArgumentException}
+     * @param plan works out where atoms go from {@link #baselineOf}, refusing by throwing
+     *     {@link IllegalArgumentException}
      * @param commit whether this ends the edit it belongs to. A commit that moves nothing, because the edit before it
      *     in the same drag already put the atoms there, still ends that edit
      * @return what moved, which is nothing if every atom was already where it was sent
@@ -533,8 +568,19 @@ public final class StudioSession
         List<Move> moves = new ArrayList<>();
         for (Atom atom : molecule.atoms())
         {
+            Vec3 baseline = baselineOf(atom);
             Vec3 to = placed.get(atom);
-            if (to != null && positionOfAtom(atom).minus(to).length() > MOVE_RESOLUTION)
+            if (to == null && uncommitted.containsKey(atomIds.get(atom)))
+            {
+                to = baseline;
+            }
+            else if (to != null && to.distanceTo(baseline) < SNAP_DISTANCE)
+            {
+                // arithmetic leaves a trace of error, and an atom that has not moved must be exactly where it was
+                to = baseline;
+            }
+
+            if (to != null && !to.equals(positionOfAtom(atom)))
             {
                 moves.add(new Move(atomIds.get(atom), to));
             }
@@ -543,6 +589,17 @@ public final class StudioSession
         Map<String, Vec3> moved = new LinkedHashMap<>();
         moves.forEach(move -> moved.put(move.atomId(), move.position()));
         return new Applied(next, moved, null);
+    }
+
+    /**
+     * @param atom an atom of this session's molecule, by reference
+     * @return where it was before the edit in progress began, or where it is if the edit has not moved it
+     */
+    private Vec3 baselineOf(Atom atom)
+    {
+        String id = atomIds.get(atom);
+        Vec3 original = uncommitted.get(id);
+        return original != null ? original : geometry.get(id);
     }
 
     /**

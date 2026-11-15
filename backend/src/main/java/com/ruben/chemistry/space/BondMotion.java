@@ -18,10 +18,10 @@ import java.util.function.Function;
  */
 public final class BondMotion
 {
-    /** The shortest length a bond may be given, in angstroms. */
+    /** The shortest a bond may be made, in angstroms, whichever way round: at no length it has no direction. */
     public static final double MIN_LENGTH = 0.1;
 
-    /** The longest length a bond may be given, in angstroms. */
+    /** The longest a bond may be made, in angstroms, whichever way round. */
     public static final double MAX_LENGTH = 10;
 
     /** How close, in angstroms, two atoms may be before there is no line between them to move them along. */
@@ -79,17 +79,19 @@ public final class BondMotion
      * @param molecule the molecule
      * @param bond a bond of {@code molecule}, by reference
      * @param positions where each atom of {@code molecule} is
-     * @param length the length to give it, in angstroms
+     * @param length the length to give it, in angstroms, measured along the bond from its first atom towards its second
+     *     as it is in {@code positions}. A negative length puts the moving side on the far side of the held atom, passing
+     *     through it, which reverses the bond's direction; the distance between the two atoms is then its size
      * @param held an atom of the bond to leave where it is, or {@code null} to hold neither
      * @return where each atom that moves goes, keyed by reference because atoms with the same element and charge are equal
-     * @throws IllegalArgumentException if the length is not finite or outside {@link #MIN_LENGTH} to
+     * @throws IllegalArgumentException if the length is not finite or its size is outside {@link #MIN_LENGTH} to
      *     {@link #MAX_LENGTH}, {@code held} is not an atom of the bond, or the bond's atoms are at the same place
      */
     public static Map<Atom, Vec3> withLength(Molecule molecule, Bond bond, Function<Atom, Vec3> positions, double length, Atom held)
     {
-        if (!Double.isFinite(length) || length < MIN_LENGTH || length > MAX_LENGTH)
+        if (!Double.isFinite(length) || Math.abs(length) < MIN_LENGTH || Math.abs(length) > MAX_LENGTH)
         {
-            throw new IllegalArgumentException("A bond length must be between " + MIN_LENGTH + " and " + MAX_LENGTH + " angstroms");
+            throw new IllegalArgumentException("A bond length must be " + MIN_LENGTH + " to " + MAX_LENGTH + " angstroms, or the same negative");
         }
         requireEnd(bond, held);
 
@@ -212,6 +214,115 @@ public final class BondMotion
             }
         }
         return moved;
+    }
+
+    /**
+     * Works out where atoms go to give an atom's two bonds an angle, by swinging one bond and everything beyond it, about the atom.
+     * <p>
+     * The angle is at {@code centre}, between its bonds to {@code from} and to {@code to}.
+     * The swing is in the plane of the three atoms, about the line through {@code centre} perpendicular to that plane.
+     * The side of the held atom stays and the other turns; with none held, each side turns half the change, in opposite directions.
+     * If the three atoms are in a line there is no plane, and the swing is about any line perpendicular to it.
+     *
+     * @param molecule the molecule
+     * @param centre the atom the angle is at
+     * @param from one atom bonded to {@code centre}
+     * @param to another atom bonded to {@code centre}
+     * @param positions where each atom of {@code molecule} is
+     * @param degrees the angle to give it, in degrees, measured from the arm to {@code from} to the arm to {@code to}
+     *     about the normal of their plane as it is in {@code positions}, which is {@code from} crossed with {@code to}.
+     *     That is a full turn rather than the angle between two lines: 0 puts the arms on top of each other and 180 in a
+     *     line, and an angle past 180 or below 0 swings the arm through that straight line to the far side of the plane,
+     *     so 361 is 1 and -1 is 359 when an atom is held. With neither held, each arm turns half the change, so a whole
+     *     turn more or less turns each arm half a turn and gives a different result
+     * @param held {@code from} or {@code to}, whose side stays where it is, or {@code null} to hold neither
+     * @return where each atom that moves goes
+     * @throws IllegalArgumentException if the angle is not finite, {@code from} and {@code to} are not two different
+     *     atoms bonded to {@code centre}, {@code held} is neither of them, a bond that would have to turn is in a ring,
+     *     or an atom is at the same place as the centre
+     */
+    public static Map<Atom, Vec3> withAngle(Molecule molecule, Atom centre, Atom from, Atom to, Function<Atom, Vec3> positions, double degrees, Atom held)
+    {
+        if (!Double.isFinite(degrees))
+        {
+            throw new IllegalArgumentException("An angle must be a number of degrees");
+        }
+        if (from == to)
+        {
+            throw new IllegalArgumentException("An angle is measured between two different atoms");
+        }
+        if (held != null && held != from && held != to)
+        {
+            throw new IllegalArgumentException("The atom to hold must be one of the two atoms the angle is measured between");
+        }
+
+        Bond fromBond = molecule.bondBetween(centre, from)
+                .orElseThrow(() -> new IllegalArgumentException("Both atoms the angle is measured between must be bonded to the atom it is at"));
+        Bond toBond = molecule.bondBetween(centre, to)
+                .orElseThrow(() -> new IllegalArgumentException("Both atoms the angle is measured between must be bonded to the atom it is at"));
+
+        Vec3 origin = positions.apply(centre);
+        Vec3 armFrom = positions.apply(from).minus(origin);
+        Vec3 armTo = positions.apply(to).minus(origin);
+        if (armFrom.length() < COINCIDENT || armTo.length() < COINCIDENT)
+        {
+            throw new IllegalArgumentException("An atom is at the same place as the atom the angle is at, so it has no direction");
+        }
+
+        double change = degrees - Vec3.angle(positions.apply(from), origin, positions.apply(to));
+
+        // swinging the far arm away from the near one, which is the way an angle opens, is a right-handed turn about their normal
+        Vec3 normal = armFrom.cross(armTo);
+        Vec3 axis = normal.length() < 1e-9 * armFrom.length() * armTo.length() ? anyPerpendicular(armTo) : normal.normalised();
+
+        Map<Atom, Double> turns = new IdentityHashMap<>();
+        if (held != to)
+        {
+            sideBeyond(molecule, toBond, to).forEach(atom -> turns.put(atom, held == null ? change / 2 : change));
+        }
+        if (held != from)
+        {
+            sideBeyond(molecule, fromBond, from).forEach(atom -> turns.put(atom, held == null ? -change / 2 : -change));
+        }
+
+        Map<Atom, Vec3> moved = new IdentityHashMap<>();
+        for (Atom atom : molecule.atoms())
+        {
+            Double turn = turns.get(atom);
+            if (turn != null)
+            {
+                moved.put(atom, origin.plus(turned(positions.apply(atom).minus(origin), axis, Math.toRadians(turn))));
+            }
+        }
+        return moved;
+    }
+
+    /**
+     * @param molecule the molecule
+     * @param bond a bond from the atom an angle is at
+     * @param outer the atom of {@code bond} that is not the angle's atom
+     * @return the atoms beyond the bond, from the angle's atom, including {@code outer}
+     * @throws IllegalArgumentException if the bond is in a ring, so that nothing is beyond it
+     */
+    private static Set<Atom> sideBeyond(Molecule molecule, Bond bond, Atom outer)
+    {
+        return sideOf(molecule, bond, outer)
+                .orElseThrow(() -> new IllegalArgumentException("A bond the angle would have to turn is in a ring, so turning it would tear the ring"));
+    }
+
+    /**
+     * @param vector a vector that is not zero
+     * @return a unit vector perpendicular to it
+     */
+    private static Vec3 anyPerpendicular(Vec3 vector)
+    {
+        // crossing with the axis the vector points least along cannot give a zero vector
+        Vec3 least = Math.abs(vector.x()) <= Math.abs(vector.y()) && Math.abs(vector.x()) <= Math.abs(vector.z())
+                ? new Vec3(1, 0, 0)
+                : Math.abs(vector.y()) <= Math.abs(vector.z())
+                    ? new Vec3(0, 1, 0)
+                    : new Vec3(0, 0, 1);
+        return vector.cross(least).normalised();
     }
 
     /**

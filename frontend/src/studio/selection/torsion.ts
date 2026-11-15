@@ -34,12 +34,20 @@ export interface Reference {
  * @returns the atoms bonded to that end other than the one at the far end of the bond, heaviest first
  */
 export function referencesAt(index: StateIndex, bond: { first: string; second: string }, end: "first" | "second"): string[] {
-  const here = bond[end];
   const far = end === "first" ? bond.second : bond.first;
+  return heaviestFirst(index, index.neighboursOf(bond[end]).filter((id) => id !== far));
+}
+
+/**
+ * Puts atoms in order of weight.
+ *
+ * @param index the session's atoms
+ * @param ids the atoms to order
+ * @returns them, heaviest element first, ties in the order given
+ */
+export function heaviestFirst(index: StateIndex, ids: readonly string[]): string[] {
   const number = (id: string) => ELEMENTS.indexOf(index.atoms.get(id)?.element ?? "") + 1;
-  return index
-    .neighboursOf(here)
-    .filter((id) => id !== far)
+  return ids
     .map((id, place) => ({ id, place }))
     .sort((a, b) => number(b.id) - number(a.id) || a.place - b.place)
     .map(({ id }) => id);

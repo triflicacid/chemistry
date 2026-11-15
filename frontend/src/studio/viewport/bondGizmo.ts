@@ -2,10 +2,13 @@ import {MathUtils, Object3D, Quaternion, Vector3} from "three";
 import {TransformControls} from "three/examples/jsm/controls/TransformControls.js";
 import type {Stage} from "../../render/stage";
 
-/** What the handle does to a bond: slide along it to change its length, or turn about it to change its torsion. */
-export type BondGizmoMode = "length" | "turn";
+/**
+ * What the handle does: slide along a bond to change its length, turn about it to change its torsion, or turn about an
+ * atom, at right angles to the plane of two of its bonds, to change the angle between them.
+ */
+export type BondGizmoMode = "length" | "turn" | "angle";
 
-/** The shortest and longest length a drag will ask for, in angstroms, which are the limits the session accepts. */
+/** The shortest and longest a drag will make a bond, in angstroms, whichever way round, which are the limits the session accepts. */
 export const MIN_DRAGGED_LENGTH = 0.1;
 export const MAX_DRAGGED_LENGTH = 10;
 
@@ -18,14 +21,20 @@ export interface BondGizmoHooks {
 
 /**
  * How long a bond is once a handle has slid along it.
+ * <p>
+ * The length is signed, measured along the bond as it was when the handle was taken hold of. Slid past nothing, it goes
+ * negative, which puts the atoms on the other side of each other. A bond has no direction at no length, so the value
+ * jumps across the gap between the shortest length either way round.
  *
  * @param start how long it was when the handle was taken hold of
  * @param slid how far the handle has moved along the bond, from the first atom towards the second, in angstroms
  * @param sign whether the handle is on the atom that moves with the handle (1, the second atom) or away from it (-1, the first)
- * @returns the length, kept within what the session accepts
+ * @returns the signed length, with a size within what the session accepts
  */
 export function draggedLength(start: number, slid: number, sign: 1 | -1): number {
-  return MathUtils.clamp(start + sign * slid, MIN_DRAGGED_LENGTH, MAX_DRAGGED_LENGTH);
+  const length = start + sign * slid;
+  const size = MathUtils.clamp(Math.abs(length), MIN_DRAGGED_LENGTH, MAX_DRAGGED_LENGTH);
+  return length < 0 ? -size : size;
 }
 
 /**
@@ -40,7 +49,25 @@ export function draggedTorsion(start: number, turn: Quaternion): number {
   return start + MathUtils.radToDeg(2 * Math.atan2(turn.x, turn.w));
 }
 
-/** A handle on a bond: an arrow along it that slides to change its length, or a ring about it that turns to change its torsion. */
+/**
+ * How wide an angle is once a handle has turned about its axis.
+ * <p>
+ * The angle is a full turn, measured from one arm to the other about the axis the handle turns about. Turned on past a
+ * straight line it carries on, and the arm goes round to the other side of the plane, so it is not wrapped into half a
+ * circle, and the session treats an angle a whole turn more or less as the same.
+ *
+ * @param start the angle when the handle was taken hold of, in degrees
+ * @param turn how the handle has turned since, as a rotation about the axis that opens the angle
+ * @returns the angle in degrees
+ */
+export function draggedAngle(start: number, turn: Quaternion): number {
+  return draggedTorsion(start, turn);
+}
+
+/**
+ * A handle on a bond or an atom: an arrow along a bond that slides to change its length, a ring about a bond that turns
+ * to change its torsion, or a ring about an atom that turns to change the angle between two of its bonds.
+ */
 export class BondGizmo {
   private readonly controls: TransformControls;
   /** Stands where the handle is, with its x axis along the bond, which the controls move and this reads. */
@@ -179,7 +206,7 @@ export class BondGizmo {
       this.hooks.change(draggedLength(start.value, slid, this.sign), done);
     } else {
       const turn = start.rotation.clone().invert().multiply(this.proxy.quaternion);
-      this.hooks.change(draggedTorsion(start.value, turn), done);
+      this.hooks.change(this.mode === "angle" ? draggedAngle(start.value, turn) : draggedTorsion(start.value, turn), done);
     }
   }
 }

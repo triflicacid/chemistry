@@ -1,6 +1,7 @@
 import {
   Box3,
   Color,
+  DoubleSide,
   Group,
   LineBasicMaterial,
   type LineSegments,
@@ -9,6 +10,7 @@ import {
   MeshStandardMaterial,
   MOUSE,
   type Object3D,
+  PlaneGeometry,
   Quaternion,
   Ray,
   Raycaster,
@@ -31,7 +33,7 @@ import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS}
 import {withTerminalHydrogens} from "./carry";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
 import {RollRing} from "./rollRing";
-import {BondGizmo, type BondGizmoMode} from "./bondGizmo";
+import {BondGizmo} from "./bondGizmo";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
 import type {
@@ -44,8 +46,9 @@ import type {
   SessionState
 } from "../session/messages";
 import type {Hold} from "../selection/bondLength";
-import type {Pivot, Space, TorsionView} from "../selection/ToolModel";
+import type {AngleView, Pivot, Space, TorsionView} from "../selection/ToolModel";
 import {torsion} from "../selection/torsion";
+import {angleAt, planeNormal} from "../selection/angle";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
 export interface StudioPick {
@@ -84,16 +87,33 @@ export interface StudioViewListener {
   bondDragCancel?(): void;
 }
 
-/** A handle on a bond: what it does, which bond, and which atom stays where it is. */
-export interface BondHandle {
-  mode: BondGizmoMode;
-  bond: string;
-  hold: Hold;
-  /** For a handle that turns the bond, the atom bonded to its first atom that the torsion is measured from. */
-  from?: string;
-  /** For a handle that turns the bond, the atom bonded to its second atom that the torsion is measured to. */
-  to?: string;
-}
+/**
+ * A handle on a bond or an atom, and which atom stays where it is: `first` is the bond's first atom, or the angle's `from`,
+ * `second` its second atom or `to`, and `both` is neither.
+ */
+export type BondHandle =
+  | {
+      /** An arrow along the bond that slides to change its length. */
+      mode: "length";
+      bond: string;
+      hold: Hold;
+    }
+  | {
+      /** A ring about the bond that turns to change its torsion between `from`, on its first atom, and `to`, on its second. */
+      mode: "turn";
+      bond: string;
+      hold: Hold;
+      from: string;
+      to: string;
+    }
+  | {
+      /** A ring about an atom that turns to change the angle between two of its bonds. */
+      mode: "angle";
+      centre: string;
+      hold: Hold;
+      from: string;
+      to: string;
+    };
 
 /** Atoms and bonds, by identifier, to draw with emphasis. */
 export interface Emphasis {
@@ -273,6 +293,7 @@ export class StudioView {
   private strainMarks: Group | null = null;
   private lengthMarks: Group | null = null;
   private torsionShown: TorsionView | null = null;
+  private angleShown: AngleView | null = null;
   /** The atoms the gizmo is carrying, each with where it was picked up, or null while it is not carrying any. */
   private shifting: { node: AtomNode; original: Vector3 }[] | null = null;
   /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
@@ -470,13 +491,34 @@ export class StudioView {
     this.syncBondGizmo();
   }
 
-  /** Brings the bond's handle to where its bond is now, or takes it away. A handle being dragged is left alone. */
+  /** Brings the handle to where what it changes is now, or takes it away. A handle being dragged is left alone. */
   private syncBondGizmo(): void {
     const handle = this.bondHandle;
-    const link = handle && this.bonds.find((bond) => bond.link.bond.id === handle.bond)?.link;
+    if (!handle) {
+      this.bondGizmo.hide();
+      return;
+    }
+
+    if (handle.mode === "angle") {
+      const centre = this.atomById.get(handle.centre);
+      const from = this.atomById.get(handle.from);
+      const to = this.atomById.get(handle.to);
+      if (!centre || !from || !to) {
+        this.bondGizmo.hide();
+        return;
+      }
+
+      // the ring is at the atom, and turns about the line at right angles to the plane of the two bonds
+      const normal = planeNormal(minus(from.at, centre.at), minus(to.at, centre.at));
+      const axis = new Vector3(normal.x, normal.y, normal.z).applyQuaternion(this.content.quaternion);
+      this.bondGizmo.show("angle", this.worldOf(centre), axis, angleAt(from.at, centre.at, to.at), 1);
+      return;
+    }
+
+    const link = this.bonds.find((bond) => bond.link.bond.id === handle.bond)?.link;
     const first = link && this.atomById.get(link.bond.first);
     const second = link && this.atomById.get(link.bond.second);
-    if (!handle || !link || !first || !second) {
+    if (!link || !first || !second) {
       this.bondGizmo.hide();
       return;
     }
@@ -490,8 +532,8 @@ export class StudioView {
       return;
     }
 
-    const from = handle.from && this.atomById.get(handle.from);
-    const to = handle.to && this.atomById.get(handle.to);
+    const from = this.atomById.get(handle.from);
+    const to = this.atomById.get(handle.to);
     if (!from || !to) {
       this.bondGizmo.hide();
       return;
@@ -500,23 +542,32 @@ export class StudioView {
   }
 
   /**
-   * Tells the listeners where the bond's handle has got to.
+   * Tells the listeners where the handle has got to.
    *
-   * @param value the length or torsion the handle has put the bond at
+   * @param value the length, torsion or angle the handle has put what it changes at
    * @param done whether the handle has just been let go
    */
   private bondChanged(value: number, done: boolean): void {
     const handle = this.bondHandle;
-    const link = handle && this.bonds.find((bond) => bond.link.bond.id === handle.bond)?.link;
-    if (!handle || !link) {
+    if (!handle) {
       return;
     }
 
-    const hold = handle.hold === "first" ? link.bond.first : handle.hold === "second" ? link.bond.second : null;
-    const edit: BondEdit =
-      handle.mode === "length"
-        ? { kind: "length", bond: handle.bond, value, hold }
-        : { kind: "torsion", bond: handle.bond, from: handle.from ?? "", to: handle.to ?? "", value, hold };
+    let edit: BondEdit;
+    if (handle.mode === "angle") {
+      const held = handle.hold === "first" ? handle.from : handle.hold === "second" ? handle.to : null;
+      edit = { kind: "angle", centre: handle.centre, from: handle.from, to: handle.to, value, hold: held };
+    } else {
+      const link = this.bonds.find((bond) => bond.link.bond.id === handle.bond)?.link;
+      if (!link) {
+        return;
+      }
+      const held = handle.hold === "first" ? link.bond.first : handle.hold === "second" ? link.bond.second : null;
+      edit =
+        handle.mode === "length"
+          ? { kind: "length", bond: handle.bond, value, hold: held }
+          : { kind: "torsion", bond: handle.bond, from: handle.from, to: handle.to, value, hold: held };
+    }
     this.listeners.forEach((listener) => listener.bondDrag?.(edit, done));
     if (done) {
       this.syncBondGizmo();
@@ -777,6 +828,17 @@ export class StudioView {
   }
 
   /**
+   * Marks an angle: the two bonds, the names of the atoms at their ends, and its size inside it. With debugging on it also
+   * draws the plane the angle opens and closes in.
+   *
+   * @param angle the angle to mark, or null for none
+   */
+  setAngle(angle: AngleView | null): void {
+    this.angleShown = angle;
+    this.drawLengths();
+  }
+
+  /**
    * Labels the length of each bond that is selected, and of each bond on a few selected atoms, and names the two atoms of
    * each bond that is hovered or selected, replacing what was drawn. A selection of many atoms is not labelled, because
    * the labels would hide what they measure.
@@ -820,6 +882,7 @@ export class StudioView {
     }
 
     this.markTorsion(marks);
+    this.markAngle(marks);
 
     if (marks.children.length > 0) {
       this.content.add(marks);
@@ -857,6 +920,65 @@ export class StudioView {
     note.position.copy(b.at).add(c.at).multiplyScalar(0.5);
     note.position.y -= 0.3;
     marks.add(note);
+  }
+
+  /**
+   * Adds the marks of the angle being shown, if its atoms are all drawn.
+   *
+   * @param marks the group to add them to
+   */
+  private markAngle(marks: Group): void {
+    const shown = this.angleShown;
+    const centre = shown && this.atomById.get(shown.centre);
+    const from = shown && this.atomById.get(shown.from);
+    const to = shown && this.atomById.get(shown.to);
+    if (!centre || !from || !to) {
+      return;
+    }
+
+    const line = new MeshBasicMaterial({ color: ANGLE_COLOUR, depthTest: false });
+    marks.add(this.kit.cylinder(centre.at, from.at, 0.035, line));
+    marks.add(this.kit.cylinder(centre.at, to.at, 0.035, line.clone()));
+
+    for (const node of [from, to]) {
+      const name = this.kit.labels.label(`${node.atom.element}${node.index + 1}`, "#222222", 0.26);
+      name.position.copy(node.at);
+      name.position.y += ballRadius(node.atom.radius, STYLE, true) + 0.25;
+      marks.add(name);
+    }
+
+    // the size is written inside the angle, on the line that bisects it
+    const inside = from.at.clone().sub(centre.at).normalize().add(to.at.clone().sub(centre.at).normalize());
+    const note = this.kit.labels.label(`${angleAt(from.at, centre.at, to.at).toFixed(1)}°`, "#b35900", 0.24);
+    note.position.copy(centre.at).addScaledVector(inside.lengthSq() > 1e-9 ? inside.normalize() : new Vector3(0, 1, 0), 0.6);
+    marks.add(note);
+
+    if (this.debug) {
+      marks.add(this.anglePlane(centre.at, from.at, to.at));
+    }
+  }
+
+  /**
+   * Makes the plane an angle opens and closes in: a faint sheet through the atom the angle is at and the ends of its two
+   * bonds, large enough to be seen past them.
+   *
+   * @param centre where the angle is
+   * @param from the end of one bond
+   * @param to the end of the other
+   * @returns the sheet, in the molecule's own frame
+   */
+  private anglePlane(centre: Vector3, from: Vector3, to: Vector3): Mesh {
+    const normal = planeNormal(from.clone().sub(centre), to.clone().sub(centre));
+    const size = 2 * Math.max(from.distanceTo(centre), to.distanceTo(centre)) + 1;
+    const sheet = new Mesh(
+      new PlaneGeometry(size, size),
+      new MeshBasicMaterial({ color: "#7a3fff", transparent: true, opacity: 0.16, side: DoubleSide, depthWrite: false }),
+    );
+    sheet.position.copy(centre);
+    // a plane is made facing +z, which is turned to face along the normal
+    sheet.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(normal.x, normal.y, normal.z));
+    sheet.renderOrder = 4;
+    return sheet;
   }
 
   /** Draws the strain markers afresh from the report, replacing what was drawn. */
@@ -1119,6 +1241,7 @@ export class StudioView {
   setDebug(enabled: boolean): void {
     this.debug = enabled;
     this.refreshGuide();
+    this.drawLengths();
   }
 
   /**
@@ -1710,4 +1833,13 @@ function signatureOf(state: SessionState): string {
   const atoms = state.atoms.map((atom) => `${atom.id}:${atom.element}:${atom.charge}:${atom.colour}:${atom.radius}`);
   const bonds = state.bonds.map((bond) => `${bond.id}:${bond.first}:${bond.second}:${bond.order}`);
   return `${atoms.join(",")}|${bonds.join(",")}`;
+}
+
+/**
+ * @param a a point
+ * @param b another
+ * @returns the vector from `b` to `a`
+ */
+function minus(a: Vector3, b: Vector3): Vec3 {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
 }
