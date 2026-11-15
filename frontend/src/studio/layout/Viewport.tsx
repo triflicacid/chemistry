@@ -148,7 +148,25 @@ export function Viewport({
   useEffect(() => {
     view?.setMoving(tool === "move");
     view?.setPanning(tool === "pan");
-  }, [view, tool]);
+    if (tool === "pan") {
+      hover.hover(null);
+    }
+  }, [view, tool, hover]);
+
+  // the Inspector shows the camera, and its edits are made here
+  const { camera } = models;
+  useEffect(() => {
+    if (!view) {
+      return;
+    }
+    camera.report(view.cameraState());
+    const stopListening = view.listen({ camera: (now) => camera.report(now) });
+    const stopHandling = camera.handle((edit) => view.setCamera(edit));
+    return () => {
+      stopListening();
+      stopHandling();
+    };
+  }, [view, camera]);
 
   useEffect(() => {
     view?.setConstraint(constraint);
@@ -283,8 +301,13 @@ export function Viewport({
       return;
     }
     return view.listen({
-      hover: (pick) => hover.hover(pick ? resolve(pick, picking, index) : null),
+      // panning moves the view and nothing else, so nothing is hovered or picked
+      hover: (pick) => hover.hover(pick && tools.get().tool !== "pan" ? resolve(pick, picking, index) : null),
       click: (pick, additive) => {
+        if (tools.get().tool === "pan") {
+          return;
+        }
+
         // turning the whole molecule, an atom stands for its molecule, turned about that atom
         const { tool: current, rotate: turning } = tools.get();
         if (pick?.kind === "atom" && current === "rotate" && turning === "molecule") {
@@ -424,6 +447,22 @@ export function Viewport({
             )}
             <button type="button" className="tool" title="Centre the camera on the selection, or on everything if nothing is selected" onClick={frame}>
               Frame selection
+            </button>
+            <button
+              type="button"
+              className="tool"
+              title="Bring the middle of the molecule to the middle of the view, keeping the angle and distance the camera has"
+              onClick={() => view?.centreCamera()}
+            >
+              Centre camera
+            </button>
+            <button
+              type="button"
+              className="tool"
+              title="Put the camera back as it first was: level, at the default angle and field of view, framing the whole molecule"
+              onClick={() => view?.resetCamera()}
+            >
+              Reset camera
             </button>
             <button
               type="button"

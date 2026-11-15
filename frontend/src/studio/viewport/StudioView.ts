@@ -27,7 +27,7 @@ import {applyTints, HOVER_TINT, SELECTED_TINT} from "../../render/emphasis";
 import {type Part, PartRegistry} from "../../render/parts";
 import {Primitives} from "../../render/primitives";
 import {sweep} from "../../render/roll";
-import {Stage} from "../../render/stage";
+import {FIELD_OF_VIEW, Stage} from "../../render/stage";
 import {Triad} from "../../render/triad";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
 import {withTerminalHydrogens} from "./carry";
@@ -49,6 +49,7 @@ import type {Hold} from "../selection/bondLength";
 import type {AngleView, Pivot, Space, TorsionView} from "../selection/ToolModel";
 import {torsion} from "../selection/torsion";
 import {angleAt, planeNormal} from "../selection/angle";
+import {type CameraEdit, type CameraState, edited, orbitOf} from "../selection/CameraModel";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
 export interface StudioPick {
@@ -85,6 +86,8 @@ export interface StudioViewListener {
   bondDrag?(edit: BondEdit, done: boolean): void;
   /** A drag of a bond's handle was abandoned, and the session is to put the bond back. */
   bondDragCancel?(): void;
+  /** The camera moved, or its field of view changed, and is now as `camera` says. */
+  camera?(camera: CameraState): void;
 }
 
 /**
@@ -314,6 +317,8 @@ export class StudioView {
       sizedBy: canvas,
       onMove: () => {
         this.placeGuide();
+        const camera = this.cameraState();
+        this.listeners.forEach((listener) => listener.camera?.(camera));
       },
     });
     // scrolling goes towards what the pointer is over, which also moves the view, so a molecule can be brought closer
@@ -1077,6 +1082,54 @@ export class StudioView {
     return this.stage.capture();
   }
 
+  /**
+   * Says where the camera is.
+   *
+   * @returns its position, what it looks at, how it is turned about that, and its field of view
+   */
+  cameraState(): CameraState {
+    const { camera, controls } = this.stage;
+    const position = toVec3(camera.position);
+    const target = toVec3(controls.target);
+    return { position, target, ...orbitOf(position, target), fov: camera.fov, roll: (this.stage.rolledBy * 180) / Math.PI };
+  }
+
+  /**
+   * Moves the camera.
+   *
+   * @param edit what to change; one that would put the camera on what it looks at is ignored
+   */
+  setCamera(edit: CameraEdit): void {
+    const next = edited(this.cameraState(), edit);
+    if (next) {
+      this.stage.place(new Vector3(next.position.x, next.position.y, next.position.z), new Vector3(next.target.x, next.target.y, next.target.z), next.fov, (next.roll * Math.PI) / 180);
+    }
+  }
+
+  /**
+   * Brings the middle of the molecule to the middle of the view, which then orbits it and which the molecule's handles
+   * sit on, keeping the view's angle and distance.
+   */
+  centreCamera(): void {
+    const middle = this.middleOfAtoms();
+    this.stage.pivotOn(middle);
+    this.anchorOn(middle);
+  }
+
+  /** Puts the camera back as it first was: the default field of view, level, at the default angle, framing everything. */
+  resetCamera(): void {
+    // framing works out how far back to stand from the field of view, so that comes first
+    this.setCamera({ fov: FIELD_OF_VIEW });
+    this.frameScene();
+  }
+
+  /** The middle of the box round every atom, in the scene, or its origin if none is drawn. */
+  private middleOfAtoms(): Vector3 {
+    const box = new Box3();
+    this.atoms.forEach((node) => box.expandByPoint(this.worldOf(node)));
+    return box.isEmpty() ? new Vector3() : box.getCenter(new Vector3());
+  }
+
   /** Points the camera at the whole scene. */
   frameScene(): void {
     this.frameAtoms(this.atoms.map((node) => node.atom.id));
@@ -1765,9 +1818,7 @@ export class StudioView {
       }
     }
 
-    const box = new Box3();
-    this.atoms.forEach((node) => box.expandByPoint(this.worldOf(node)));
-    const anchored = nearest?.clone() ?? (box.isEmpty() ? new Vector3() : box.getCenter(new Vector3()));
+    const anchored = nearest?.clone() ?? this.middleOfAtoms();
     this.stage.pivotOn(anchored);
     this.anchorOn(anchored);
   }
