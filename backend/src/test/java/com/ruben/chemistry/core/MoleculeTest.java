@@ -1,7 +1,11 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.canonical.CanonicalRanker;
+import com.ruben.chemistry.smiles.SmilesWriter;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.FieldSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -1209,6 +1213,68 @@ class MoleculeTest
 
             assertThatThrownBy(() -> molecule.hydrogenIsotopeCounts(carbon))
                 .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    class HydrogenRoundTrip
+    {
+        static final List<String> COUNTING_HYDROGENS = List.of(
+            "C", "CCO", "OC(=O)c1ccccc1", "C1CCCCC1", "[NH4+]", "[2H]C(Cl)Br", "[13CH4]",
+            "N[C@@H](C)C(=O)O", "F[C@H](Cl)Br", "F/C=C/F", "F/C=C\\F", "C/C=C/Cl");
+
+        @ParameterizedTest
+        @FieldSource("COUNTING_HYDROGENS")
+        void reproduces_the_molecule_through_atoms_and_back(String smiles)
+        {
+            Molecule molecule = Molecule.fromSmiles(smiles);
+
+            Molecule roundTripped = Hydrogens.asCounts(Hydrogens.asAtoms(molecule));
+
+            assertThat(canonical(roundTripped)).isEqualTo(canonical(molecule));
+        }
+
+        @ParameterizedTest
+        @FieldSource("COUNTING_HYDROGENS")
+        void moves_a_hydrogen_in_every_molecule_it_round_trips(String smiles)
+        {
+            Molecule molecule = Molecule.fromSmiles(smiles);
+
+            assertThat(Hydrogens.asAtoms(molecule).atomCount()).isGreaterThan(molecule.atomCount());
+        }
+
+        @Test
+        void restores_the_stored_parity_of_a_stereocentre_exactly()
+        {
+            Molecule molecule = Molecule.fromSmiles("F[C@H](Cl)Br");
+            Atom centre = molecule.atoms().get(1);
+
+            Molecule roundTripped = Hydrogens.asCounts(Hydrogens.asAtoms(molecule));
+
+            assertThat(roundTripped.chiralityOf(roundTripped.atoms().get(1))).isEqualTo(molecule.chiralityOf(centre));
+        }
+
+        @Test
+        void restores_the_stored_configuration_of_a_double_bond_exactly()
+        {
+            Molecule molecule = Molecule.fromSmiles("F/C=C/F");
+            Bond doubleBond = molecule.bondsOf(molecule.atoms().get(1)).stream()
+                .filter(bond -> bond.order() == BondOrder.DOUBLE)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No double bond found"));
+
+            Molecule roundTripped = Hydrogens.asCounts(Hydrogens.asAtoms(molecule));
+            Bond restored = roundTripped.bondsOf(roundTripped.atoms().get(1)).stream()
+                .filter(bond -> bond.order() == BondOrder.DOUBLE)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No double bond found"));
+
+            assertThat(roundTripped.doubleBondStereoOf(restored)).isEqualTo(molecule.doubleBondStereoOf(doubleBond));
+        }
+
+        private String canonical(Molecule molecule)
+        {
+            return new SmilesWriter(molecule).setRanker(new CanonicalRanker()).write();
         }
     }
 }
