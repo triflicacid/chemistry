@@ -85,20 +85,20 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (JsonException malformed)
         {
-            TypedJsonSocketListener.error(context, "session.open", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            context.error("session.open", sequence, "INVALID_MESSAGE", malformed.getMessage());
             return;
         }
 
         if (request.moleculeId() == null)
         {
-            TypedJsonSocketListener.error(context, "session.open", sequence, "INVALID_MESSAGE", "molecule_id is required");
+            context.error("session.open", sequence, "INVALID_MESSAGE", "molecule_id is required");
             return;
         }
 
         StoredMolecule stored = molecules.find(request.moleculeId()).orElse(null);
         if (stored == null)
         {
-            TypedJsonSocketListener.error(context, "session.open", sequence, "UNKNOWN_MOLECULE",
+            context.error("session.open", sequence, "UNKNOWN_MOLECULE",
                     "No molecule is stored as '" + request.moleculeId() + "'");
             return;
         }
@@ -111,12 +111,12 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (IllegalArgumentException outOfRange)
         {
-            TypedJsonSocketListener.error(context, "session.open", sequence, "INVALID_MESSAGE", outOfRange.getMessage());
+            context.error("session.open", sequence, "INVALID_MESSAGE", outOfRange.getMessage());
             return;
         }
         catch (IllegalStateException unembeddable)
         {
-            TypedJsonSocketListener.error(context, "session.open", sequence, "UNSUPPORTED", unembeddable.getMessage());
+            context.error("session.open", sequence, "UNSUPPORTED", unembeddable.getMessage());
             return;
         }
 
@@ -142,7 +142,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (JsonException malformed)
         {
-            TypedJsonSocketListener.error(context, "session.resync", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            context.error("session.resync", sequence, "INVALID_MESSAGE", malformed.getMessage());
             return;
         }
 
@@ -151,7 +151,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                 : sessions.find(request.sessionId()).orElse(null);
         if (session == null)
         {
-            TypedJsonSocketListener.error(context, "session.resync", sequence, "NO_SESSION",
+            context.error("session.resync", sequence, "NO_SESSION",
                     "No session is open as '" + request.sessionId() + "'; open one on a molecule");
             return;
         }
@@ -179,13 +179,13 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (JsonException malformed)
         {
-            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            context.error("smiles.submit", sequence, "INVALID_MESSAGE", malformed.getMessage());
             return;
         }
 
         if (request.smiles() == null)
         {
-            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_MESSAGE",
+            context.error("smiles.submit", sequence, "INVALID_MESSAGE",
                     "session_id, base_version and smiles are required");
             return;
         }
@@ -198,7 +198,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         if (request.smiles().isBlank())
         {
-            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_SMILES", "The SMILES is empty");
+            context.error("smiles.submit", sequence, "INVALID_SMILES", "The SMILES is empty");
             return;
         }
 
@@ -209,7 +209,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (MoleculeException unreadable)
         {
-            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_SMILES", unreadable.getMessage());
+            context.error("smiles.submit", sequence, "INVALID_SMILES", unreadable.getMessage());
             return;
         }
 
@@ -220,7 +220,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (IllegalStateException | IllegalArgumentException unembeddable)
         {
-            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "UNSUPPORTED", unembeddable.getMessage());
+            context.error("smiles.submit", sequence, "UNSUPPORTED", unembeddable.getMessage());
             return;
         }
 
@@ -245,14 +245,14 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (JsonException malformed)
         {
-            TypedJsonSocketListener.error(context, "atom.patch", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            context.error("atom.patch", sequence, "INVALID_MESSAGE", malformed.getMessage());
             return;
         }
 
         if (request.atoms() == null || request.atoms().isEmpty()
                 || request.atoms().stream().anyMatch(atom -> atom == null || atom.id() == null || atom.position() == null))
         {
-            TypedJsonSocketListener.error(context, "atom.patch", sequence, "INVALID_MESSAGE",
+            context.error("atom.patch", sequence, "INVALID_MESSAGE",
                     "atoms are required, and each needs an id and a position");
             return;
         }
@@ -277,7 +277,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             }
             catch (StudioEditException refused)
             {
-                TypedJsonSocketListener.error(context, "atom.patch", sequence, refused.code(), refused.getMessage());
+                context.error("atom.patch", sequence, refused.code(), refused.getMessage());
                 return;
             }
 
@@ -316,13 +316,13 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (JsonException malformed)
         {
-            TypedJsonSocketListener.error(context, "atom.lock", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            context.error("atom.lock", sequence, "INVALID_MESSAGE", malformed.getMessage());
             return;
         }
 
         if (request.atoms() == null || request.atoms().isEmpty() || request.atoms().contains(null) || request.locked() == null)
         {
-            TypedJsonSocketListener.error(context, "atom.lock", sequence, "INVALID_MESSAGE",
+            context.error("atom.lock", sequence, "INVALID_MESSAGE",
                     "atoms are required, and locked says whether to lock or unlock them");
             return;
         }
@@ -343,7 +343,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             }
             catch (StudioEditException refused)
             {
-                TypedJsonSocketListener.error(context, "atom.lock", sequence, refused.code(), refused.getMessage());
+                context.error("atom.lock", sequence, refused.code(), refused.getMessage());
                 return;
             }
 
@@ -408,7 +408,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (JsonException malformed)
         {
-            TypedJsonSocketListener.error(context, type, sequence, "INVALID_MESSAGE", malformed.getMessage());
+            context.error(type, sequence, "INVALID_MESSAGE", malformed.getMessage());
             return;
         }
 
@@ -427,7 +427,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             }
             catch (StudioEditException refused)
             {
-                TypedJsonSocketListener.error(context, type, sequence, refused.code(), refused.getMessage());
+                context.error(type, sequence, refused.code(), refused.getMessage());
                 return;
             }
 
@@ -481,14 +481,14 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     {
         if (sessionId == null || baseVersion == null)
         {
-            TypedJsonSocketListener.error(context, type, sequence, "INVALID_MESSAGE", "session_id and base_version are required");
+            context.error(type, sequence, "INVALID_MESSAGE", "session_id and base_version are required");
             return null;
         }
 
         StudioSession session = sessions.find(sessionId).orElse(null);
         if (session == null)
         {
-            TypedJsonSocketListener.error(context, type, sequence, "NO_SESSION",
+            context.error(type, sequence, "NO_SESSION",
                     "No session is open as '" + sessionId + "'; open one on a molecule");
             return null;
         }
@@ -595,7 +595,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                             ? "is out of date: reload the page"
                             : "is newer than this server: restart the server")
                     : "did not name its protocol_version: reload the page";
-            TypedJsonSocketListener.error(context, type, sequence, "PROTOCOL_MISMATCH",
+            context.error(type, sequence, "PROTOCOL_MISMATCH",
                     "This server speaks protocol " + PROTOCOL_VERSION + ", and the client " + what);
             return false;
         }

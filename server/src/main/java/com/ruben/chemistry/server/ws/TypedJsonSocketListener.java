@@ -46,7 +46,7 @@ public abstract class TypedJsonSocketListener implements WebSocketListener
         Map<String, Object> body = message.asJson().orElse(null);
         if (body == null)
         {
-            error(context, null, null, "INVALID_JSON", "Every message must be a JSON object");
+            context.error(null, null, "INVALID_JSON", "Every message must be a JSON object");
             return;
         }
 
@@ -55,7 +55,7 @@ public abstract class TypedJsonSocketListener implements WebSocketListener
         String type = message.string("type").orElse("");
         if (type.isBlank())
         {
-            error(context, null, sequence, "MISSING_TYPE", "Every message needs a 'type'");
+            context.error(null, sequence, "MISSING_TYPE", "Every message needs a 'type'");
             return;
         }
 
@@ -74,7 +74,7 @@ public abstract class TypedJsonSocketListener implements WebSocketListener
         MessageHandler handler = handlers.get(type);
         if (handler == null)
         {
-            error(context, type, sequence, "UNKNOWN_TYPE", "This server does not handle '" + type + "'");
+            context.error(type, sequence, "UNKNOWN_TYPE", "This server does not handle '" + type + "'");
             return;
         }
 
@@ -94,39 +94,6 @@ public abstract class TypedJsonSocketListener implements WebSocketListener
     protected boolean accepts(WebSocketContext context, Map<String, Object> body, String type, Long sequence) throws IOException
     {
         return true;
-    }
-
-    /**
-     * Tells the client a message could not be handled, without closing the connection.
-     *
-     * @param context the connection to answer
-     * @param type the type that failed, if it was readable
-     * @param sequence the sequence number of the message that failed, if it had one
-     * @param code a short machine-readable reason
-     * @param message a human-readable explanation
-     * @throws IOException if the connection cannot be written
-     */
-    public static void error(WebSocketContext context, String type, Long sequence, String code, String message)
-            throws IOException
-    {
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("code", code);
-        details.put("message", message);
-
-        Map<String, Object> envelope = new LinkedHashMap<>();
-        envelope.put("type", "error");
-
-        if (type != null)
-        {
-            envelope.put("answering", type);
-        }
-        if (sequence != null)
-        {
-            envelope.put("sequence", sequence);
-        }
-
-        envelope.put("error", details);
-        context.sendJson(envelope);
     }
 
     /**

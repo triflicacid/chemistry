@@ -102,12 +102,13 @@ public interface WebSocketContext
      * Like {@link #error(String, String)}, but names the message being answered so a client
      * can match the error to what it sent.
      *
+     * @param type the type of the message the error answers, echoed as {@code answering}; {@code null} if it was unreadable
+     * @param sequence the sequence number of the message the error answers, echoed as {@code sequence}; {@code null} if it had none
      * @param code a short machine-readable reason
      * @param message a human-readable explanation
-     * @param answering the message the error answers, whose type and sequence are echoed
      * @throws IOException if the connection is closed or cannot be written
      */
-    void error(String code, String message, WebSocketMessage answering) throws IOException;
+    void error(String type, Long sequence, String code, String message) throws IOException;
 
     /**
      * Sends a ping, which a well-behaved peer answers with a pong. The connection pings on
