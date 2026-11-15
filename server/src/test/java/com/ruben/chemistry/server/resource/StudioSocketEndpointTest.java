@@ -1,0 +1,378 @@
+package com.ruben.chemistry.server.resource;
+
+import com.ruben.chemistry.server.molecule.MoleculeParser;
+import com.ruben.chemistry.server.molecule.MoleculeStore;
+import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.studio.StudioSessionStore;
+import com.ruben.chemistry.server.ws.SocketHarness;
+import com.ruben.chemistry.server.ws.SocketHarness.Collector;
+import com.ruben.chemistry.server.ws.WebSocketServer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import java.io.IOException;
+import java.net.http.WebSocket;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.function.BooleanSupplier;
+
+import static com.ruben.chemistry.server.ws.SocketHarness.connect;
+import static org.assertj.core.api.Assertions.assertThat;
+
+class StudioSocketEndpointTest
+{
+    @RegisterExtension
+    private final SocketHarness sockets = new SocketHarness();
+
+    private final MoleculeStore molecules = new MoleculeStore();
+    private final MoleculeParser parser = new MoleculeParser();
+
+    private StudioSocketEndpoint endpoint = new StudioSocketEndpoint(molecules);
+    private WebSocketServer server;
+
+    @Test
+    void should_greet_a_studio_session_and_answer_its_pings() throws Exception
+    {
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+
+        Map<String, Object> ready = collector.nextJson();
+        assertThat(ready).containsEntry("type", "session.ready");
+        assertThat(ready).containsEntry("protocol_version", 2L);
+        assertThat(ready.get("connection_id")).asString().startsWith("ws-");
+
+        socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
+
+        assertThat(collector.nextJson())
+                .containsEntry("type", "pong")
+                .containsEntry("sequence", 108L);
+    }
+
+    @Test
+    void should_answer_a_studio_message_it_cannot_handle_without_closing() throws Exception
+    {
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText("{\"type\": \"atom.patch\", \"sequence\": 7}", true).join();
+        Map<String, Object> unknown = collector.nextJson();
+        assertThat(unknown).containsEntry("type", "error").containsEntry("answering", "atom.patch");
+        assertThat(unknown).containsEntry("sequence", 7L);
+        assertThat(error(unknown)).containsEntry("code", "UNKNOWN_TYPE");
+
+        socket.sendText("not json at all", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_JSON");
+
+        socket.sendText("{\"sequence\": 9}", true).join();
+        Map<String, Object> missing = collector.nextJson();
+        assertThat(error(missing)).containsEntry("code", "MISSING_TYPE");
+        assertThat(missing).containsEntry("sequence", 9L);
+
+        // the session survived all three
+        socket.sendText("{\"type\": \"ping\"}", true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "pong");
+    }
+
+    @Test
+    void should_open_a_session_on_a_stored_molecule() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> state = collector.nextJson();
+
+        assertThat(state).containsEntry("type", "session.state");
+        assertThat(state).containsEntry("sequence", 1L);
+        assertThat(state).containsEntry("version", 1L);
+        assertThat(state).containsEntry("source_molecule_id", stored.id());
+        assertThat(state).containsEntry("smiles", "CCO");
+        assertThat(state.get("session_id")).asString().isNotBlank();
+        assertThat(state.get("saved_molecule_id")).isNull();
+        assertThat(state.get("strain")).isInstanceOf(Double.class);
+        assertThat(state.get("pinned")).isEqualTo(List.of());
+        assertThat(state.get("locked")).isEqualTo(List.of());
+
+        // ethanol's three written atoms and the six hydrogens it counted
+        List<Map<String, Object>> atoms = list(state, "atoms");
+        assertThat(atoms).hasSize(9);
+        assertThat(list(state, "bonds")).hasSize(8);
+        assertThat(atoms.stream().filter(atom -> Boolean.TRUE.equals(atom.get("was_implicit")))).hasSize(6);
+
+        Map<String, Object> first = atoms.getFirst();
+        assertThat(first).containsEntry("element", "C").containsEntry("charge", 0L).containsEntry("isotope", 0L);
+        assertThat(first.get("id")).asString().isNotBlank();
+        assertThat(first.get("colour")).asString().startsWith("#");
+        assertThat(position(first)).containsKeys("x", "y", "z");
+
+        Map<String, Object> bond = list(state, "bonds").getFirst();
+        assertThat(bond).containsEntry("order", "SINGLE").containsEntry("aromatic", false);
+        assertThat(bond.get("first")).isNotEqualTo(bond.get("second"));
+
+        List<Map<String, Object>> fragments = list(state, "fragments");
+        assertThat(fragments).hasSize(1);
+        assertThat(fragments.getFirst()).containsEntry("key", "f1").containsEntry("name", "Fragment 1");
+        assertThat(list(fragments.getFirst(), "atoms")).hasSize(9);
+    }
+
+    @Test
+    void should_mark_the_bonds_of_an_aromatic_ring_aromatic() throws Exception
+    {
+        StoredMolecule stored = store("c1ccccc1");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> state = collector.nextJson();
+
+        List<Map<String, Object>> bonds = list(state, "bonds");
+        assertThat(bonds.stream().filter(bond -> Boolean.TRUE.equals(bond.get("aromatic")))).hasSize(6);
+    }
+
+    @Test
+    void should_refuse_to_open_a_molecule_it_does_not_hold() throws Exception
+    {
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open("not-a-molecule", 1), true).join();
+        Map<String, Object> refusal = collector.nextJson();
+
+        assertThat(refusal).containsEntry("type", "error").containsEntry("answering", "session.open");
+        assertThat(error(refusal)).containsEntry("code", "UNKNOWN_MOLECULE");
+    }
+
+    @Test
+    void should_refuse_an_open_it_cannot_read() throws Exception
+    {
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText("{\"type\": \"session.open\", \"sequence\": 1}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText("{\"type\": \"session.open\", \"molecule_id\": \"x\", \"shape\": \"round\"}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText("{\"type\": \"session.open\", \"molecule_id\": \"" + store("CCO").id()
+                + "\", \"conformers\": 0}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+    }
+
+    @Test
+    void should_send_the_state_of_a_session_again_on_request() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText(resync(sessionId, 2), true).join();
+        Map<String, Object> again = collector.nextJson();
+
+        assertThat(again).containsEntry("type", "session.state");
+        assertThat(again).containsEntry("sequence", 2L);
+        assertThat(again).containsEntry("session_id", sessionId);
+        assertThat(again).containsEntry("version", 1L);
+    }
+
+    @Test
+    void should_hand_a_session_back_to_a_client_that_reconnects() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector dropped = new Collector();
+        WebSocket first = studio(dropped);
+        dropped.next();
+
+        first.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) dropped.nextJson().get("session_id");
+        first.sendClose(WebSocket.NORMAL_CLOSURE, "dropped").join();
+
+        Collector reconnected = new Collector();
+        WebSocket second = studio(reconnected);
+        reconnected.next();
+
+        second.sendText(resync(sessionId, 3), true).join();
+        assertThat(reconnected.nextJson()).containsEntry("session_id", sessionId);
+    }
+
+    @Test
+    void should_refuse_a_resync_for_a_session_whose_grace_window_closed() throws Exception
+    {
+        StudioSessionStore expiring = expiringAtOnce();
+        StoredMolecule stored = store("CCO");
+        Collector dropped = new Collector();
+        WebSocket first = studio(dropped);
+        dropped.next();
+
+        first.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) dropped.nextJson().get("session_id");
+
+        first.sendClose(WebSocket.NORMAL_CLOSURE, "dropped").join();
+        await(() -> expiring.find(sessionId).isEmpty());
+
+        Collector late = new Collector();
+        WebSocket second = studio(late);
+        late.next();
+
+        second.sendText(resync(sessionId, 2), true).join();
+        assertThat(error(late.nextJson())).containsEntry("code", "NO_SESSION");
+    }
+
+    @Test
+    void should_keep_a_session_its_connection_is_still_holding() throws Exception
+    {
+        // the window is closed the moment a session is let go of, so finding it again proves
+        // that holding a session keeps it however long the connection is quiet
+        expiringAtOnce();
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText(resync(sessionId, 2), true).join();
+        assertThat(collector.nextJson()).containsEntry("session_id", sessionId);
+    }
+
+    @Test
+    void should_keep_a_session_a_reconnected_client_took_over_when_the_old_connection_closes() throws Exception
+    {
+        StudioSessionStore expiring = expiringAtOnce();
+        StoredMolecule stored = store("CCO");
+        Collector dropped = new Collector();
+        WebSocket first = studio(dropped);
+        dropped.next();
+
+        first.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) dropped.nextJson().get("session_id");
+
+        Collector reconnected = new Collector();
+        WebSocket second = studio(reconnected);
+        reconnected.next();
+        second.sendText(resync(sessionId, 2), true).join();
+        assertThat(reconnected.nextJson()).containsEntry("session_id", sessionId);
+
+        // the dropped connection closes only now, after the new one has taken the session over;
+        // the server drops a connection from its own list once its listener has been told
+        first.sendClose(WebSocket.NORMAL_CLOSURE, "dropped").join();
+        await(() -> server.sessions().size() == 1);
+
+        assertThat(expiring.find(sessionId)).isPresent();
+        second.sendText(resync(sessionId, 3), true).join();
+        assertThat(reconnected.nextJson()).containsEntry("session_id", sessionId);
+    }
+
+    @Test
+    void should_refuse_a_resync_for_a_session_it_does_not_hold() throws Exception
+    {
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(resync("not-a-session", 1), true).join();
+        Map<String, Object> refusal = collector.nextJson();
+
+        assertThat(refusal).containsEntry("answering", "session.resync");
+        assertThat(error(refusal)).containsEntry("code", "NO_SESSION");
+    }
+
+    /**
+     * Serves this test's connections from a store that gives a session no grace at all, so
+     * that letting go of one retires it rather than the test waiting out a window.
+     *
+     * @return that store
+     */
+    private StudioSessionStore expiringAtOnce()
+    {
+        StudioSessionStore expiring = new StudioSessionStore(Duration.ZERO, Clock.systemUTC());
+        endpoint = new StudioSocketEndpoint(molecules, expiring);
+        return expiring;
+    }
+
+    /**
+     * Waits for the server to catch up with something a client has already been told of.
+     *
+     * @param settled what is true once it has
+     */
+    private static void await(BooleanSupplier settled) throws InterruptedException
+    {
+        for (int attempt = 0; attempt < 500 && !settled.getAsBoolean(); attempt++)
+        {
+            Thread.sleep(10);
+        }
+
+        assertThat(settled.getAsBoolean()).as("the server caught up").isTrue();
+    }
+
+    private WebSocket studio(Collector collector) throws IOException
+    {
+        if (server == null)
+        {
+            server = sockets.start(() -> endpoint);
+        }
+
+        return connect(server, "/ws/studio", collector);
+    }
+
+    /**
+     * @param smiles a molecule
+     * @return it, stored where a session can open it
+     */
+    private StoredMolecule store(String smiles)
+    {
+        return molecules.add(parser.parse(smiles));
+    }
+
+    /**
+     * @param moleculeId the molecule to open
+     * @param sequence the message's sequence number
+     * @return a {@code session.open} message
+     */
+    private static String open(String moleculeId, int sequence)
+    {
+        return "{\"type\": \"session.open\", \"sequence\": " + sequence + ", \"molecule_id\": \"" + moleculeId + "\"}";
+    }
+
+    /**
+     * @param sessionId the session to ask about
+     * @param sequence the message's sequence number
+     * @return a {@code session.resync} message
+     */
+    private static String resync(String sessionId, int sequence)
+    {
+        return "{\"type\": \"session.resync\", \"sequence\": " + sequence
+                + ", \"session_id\": \"" + sessionId + "\", \"since_version\": 1}";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> error(Map<String, Object> envelope)
+    {
+        return (Map<String, Object>) envelope.get("error");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> position(Map<String, Object> atom)
+    {
+        return (Map<String, Object>) atom.get("position");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> list(Map<String, Object> body, String name)
+    {
+        return (List<Map<String, Object>>) body.get(name);
+    }
+}

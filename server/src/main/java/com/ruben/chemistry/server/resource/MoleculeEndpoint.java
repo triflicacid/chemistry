@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public final class MoleculeEndpoint extends Endpoint
@@ -106,10 +107,23 @@ public final class MoleculeEndpoint extends Endpoint
 
     private static final String MOLECULE_ID_HEADER = "X-Molecule-Id";
 
-    private final MoleculeStore store = new MoleculeStore();
+    private final MoleculeStore store;
     private final MoleculeParser parser = new MoleculeParser();
     private final MoleculeMatcher matcher = new MoleculeMatcher();
     private final MoleculeRenderer2d renderer = new MoleculeRenderer2d();
+
+    public MoleculeEndpoint()
+    {
+        this(new MoleculeStore());
+    }
+
+    /**
+     * @param store where to keep the molecules this endpoint is given
+     */
+    public MoleculeEndpoint(MoleculeStore store)
+    {
+        this.store = Objects.requireNonNull(store, "store");
+    }
 
     @Override
     public void registerHandlers(EndpointRegistry registry)

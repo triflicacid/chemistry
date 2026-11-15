@@ -1,9 +1,9 @@
 package com.ruben.chemistry.server.ws;
 
-import com.ruben.chemistry.server.json.JsonParser;
-import com.ruben.chemistry.server.resource.StudioSocketEndpoint;
+import com.ruben.chemistry.server.ws.SocketHarness.Collector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,32 +11,31 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.Socket;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 import org.assertj.core.api.InstanceOfAssertFactories;
 
+import static com.ruben.chemistry.server.ws.SocketHarness.TIMEOUT_SECONDS;
+import static com.ruben.chemistry.server.ws.SocketHarness.connect;
+import static com.ruben.chemistry.server.ws.SocketHarness.endpoint;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class WebSocketServerTest
 {
-    private static final int TIMEOUT_SECONDS = 10;
+    @RegisterExtension
+    private final SocketHarness sockets = new SocketHarness();
 
     /** Answers whatever it is sent, and records the connection's lifecycle. */
     private static final class EchoSocket implements WebSocketListener
@@ -85,118 +84,10 @@ class WebSocketServerTest
         }
     }
 
-    /** Collects whole messages a server sends, joining the fragments the client is given. */
-    private static final class Collector implements WebSocket.Listener
-    {
-        final BlockingQueue<String> messages = new ArrayBlockingQueue<>(64);
-        final CountDownLatch closed = new CountDownLatch(1);
-        final AtomicReference<String> closeStatus = new AtomicReference<>();
-        private final StringBuilder partial = new StringBuilder();
-
-        @Override
-        public void onOpen(WebSocket webSocket)
-        {
-            webSocket.request(1);
-        }
-
-        @Override
-        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last)
-        {
-            partial.append(data);
-            if (last)
-            {
-                messages.add(partial.toString());
-                partial.setLength(0);
-            }
-            webSocket.request(1);
-            return null;
-        }
-
-        @Override
-        public CompletionStage<?> onBinary(WebSocket webSocket, ByteBuffer data, boolean last)
-        {
-            messages.add("binary:" + StandardCharsets.UTF_8.decode(data));
-            webSocket.request(1);
-            return null;
-        }
-
-        @Override
-        public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason)
-        {
-            closeStatus.set(statusCode + ":" + reason);
-            closed.countDown();
-            return null;
-        }
-
-        @Override
-        public void onError(WebSocket webSocket, Throwable error)
-        {
-            closed.countDown();
-        }
-
-        /**
-         * @return the next message the server sent
-         * @throws AssertionError if none arrives in time
-         */
-        String next() throws InterruptedException
-        {
-            String message = messages.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            assertThat(message).as("a message from the server").isNotNull();
-            return message;
-        }
-
-        /**
-         * @return the next message the server sent, parsed as JSON
-         * @throws AssertionError if none arrives in time
-         */
-        Map<String, Object> nextJson() throws InterruptedException
-        {
-            return JsonParser.parse(next());
-        }
-    }
-
-    private final List<WebSocketServer> started = new ArrayList<>();
-
     @AfterEach
     void shut_down()
     {
-        started.forEach(WebSocketServer::stop);
-        started.clear();
         EchoSocket.reset();
-    }
-
-    /**
-     * @param routes the routes the endpoint registers
-     * @return a factory for an endpoint registering them
-     */
-    private static SocketEndpointFactory endpoint(Consumer<SocketRegistry> routes)
-    {
-        return () -> new SocketEndpoint()
-        {
-            @Override
-            public void registerHandlers(SocketRegistry registry)
-            {
-                routes.accept(registry);
-            }
-        };
-    }
-
-    private WebSocketServer start(SocketEndpointFactory... endpoints) throws IOException
-    {
-        return start(WebSocketServer.DEFAULT_MAX_MESSAGE, endpoints);
-    }
-
-    private WebSocketServer start(long maxMessage, SocketEndpointFactory... endpoints) throws IOException
-    {
-        WebSocketServer server = new WebSocketServer(0, maxMessage, WebSocketServer.DEFAULT_IDLE_TIMEOUT);
-        for (SocketEndpointFactory endpoint : endpoints)
-        {
-            server.add(endpoint);
-        }
-
-        server.start();
-        started.add(server);
-        return server;
     }
 
     /**
@@ -204,19 +95,11 @@ class WebSocketServerTest
      */
     private WebSocketServer startEcho() throws IOException
     {
-        return start(endpoint(registry ->
+        return sockets.start(endpoint(registry ->
         {
             registry.register("/ws/echo", EchoSocket::new);
             registry.register("/ws/echo/:name", EchoSocket::new);
         }));
-    }
-
-    private static WebSocket connect(WebSocketServer server, String path, WebSocket.Listener listener)
-    {
-        return HttpClient.newHttpClient()
-                .newWebSocketBuilder()
-                .buildAsync(URI.create("ws://localhost:" + server.port() + path), listener)
-                .join();
     }
 
     @Test
@@ -352,7 +235,7 @@ class WebSocketServerTest
     @Test
     void should_close_a_message_over_the_limit() throws Exception
     {
-        WebSocketServer server = start(64, endpoint(registry -> registry.register("/ws/echo", EchoSocket::new)));
+        WebSocketServer server = sockets.start(64, endpoint(registry -> registry.register("/ws/echo", EchoSocket::new)));
         Collector collector = new Collector();
         WebSocket socket = connect(server, "/ws/echo", collector);
 
@@ -456,8 +339,14 @@ class WebSocketServerTest
         assertThatThrownBy(() -> server.add(factory)).isInstanceOf(IllegalArgumentException.class);
 
         server.start();
-        started.add(server);
-        assertThatThrownBy(() -> server.add(factory)).isInstanceOf(IllegalStateException.class);
+        try
+        {
+            assertThatThrownBy(() -> server.add(factory)).isInstanceOf(IllegalStateException.class);
+        }
+        finally
+        {
+            server.stop();
+        }
     }
 
     @Test
@@ -477,58 +366,6 @@ class WebSocketServerTest
     void should_not_report_a_port_before_starting()
     {
         assertThatThrownBy(() -> new WebSocketServer(0).port()).isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void should_greet_a_studio_session_and_answer_its_pings() throws Exception
-    {
-        WebSocketServer server = start(StudioSocketEndpoint::new);
-        Collector collector = new Collector();
-        WebSocket socket = connect(server, "/ws/studio", collector);
-
-        Map<String, Object> ready = collector.nextJson();
-        assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 1L);
-        assertThat(ready.get("session_id")).asString().startsWith("ws-");
-
-        socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
-
-        assertThat(collector.nextJson())
-                .containsEntry("type", "pong")
-                .containsEntry("sequence", 108L);
-    }
-
-    @Test
-    void should_answer_a_studio_message_it_cannot_handle_without_closing() throws Exception
-    {
-        WebSocketServer server = start(StudioSocketEndpoint::new);
-        Collector collector = new Collector();
-        WebSocket socket = connect(server, "/ws/studio", collector);
-        collector.next();
-
-        socket.sendText("{\"type\": \"atom.patch\", \"sequence\": 7}", true).join();
-        Map<String, Object> unknown = collector.nextJson();
-        assertThat(unknown).containsEntry("type", "error").containsEntry("answering", "atom.patch");
-        assertThat(unknown).containsEntry("sequence", 7L);
-        assertThat(error(unknown)).containsEntry("code", "UNKNOWN_TYPE");
-
-        socket.sendText("not json at all", true).join();
-        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_JSON");
-
-        socket.sendText("{\"sequence\": 9}", true).join();
-        Map<String, Object> missing = collector.nextJson();
-        assertThat(error(missing)).containsEntry("code", "MISSING_TYPE");
-        assertThat(missing).containsEntry("sequence", 9L);
-
-        // the session survived all three
-        socket.sendText("{\"type\": \"ping\"}", true).join();
-        assertThat(collector.nextJson()).containsEntry("type", "pong");
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> error(Map<String, Object> envelope)
-    {
-        return (Map<String, Object>) envelope.get("error");
     }
 
     /**

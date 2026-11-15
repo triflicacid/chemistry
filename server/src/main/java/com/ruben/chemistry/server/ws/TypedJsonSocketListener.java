@@ -86,7 +86,7 @@ public abstract class TypedJsonSocketListener implements WebSocketListener
      * @param message a human-readable explanation
      * @throws IOException if the connection cannot be written
      */
-    protected final void error(WebSocketContext context, String type, Long sequence, String code, String message)
+    public static void error(WebSocketContext context, String type, Long sequence, String code, String message)
             throws IOException
     {
         Map<String, Object> details = new LinkedHashMap<>();
