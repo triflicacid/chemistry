@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Workspace } from "./layout/Workspace";
+import { createModels } from "./selection/models";
+import { StateIndex } from "./selection/StateIndex";
 import { useSession } from "./session/useSession";
 import type { Panel } from "./store";
 import { StudioStore } from "./store";
@@ -11,6 +13,21 @@ export function App() {
   const store = useMemo(() => new StudioStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const { phase, state, activity, openSmiles } = useSession();
+
+  const shared = useMemo(createModels, []);
+  const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
+  const models = useMemo(() => ({ ...shared, index }), [shared, index]);
+
+  // identifiers change when the structure does, so what no longer exists must not stay selected or hovered
+  useEffect(() => {
+    if (index) {
+      shared.selection.prune(index);
+      shared.hover.prune(index);
+    } else {
+      shared.selection.clear();
+      shared.hover.hover(null);
+    }
+  }, [index, shared]);
 
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {
@@ -30,6 +47,7 @@ export function App() {
     <Workspace
       phase={phase}
       state={state}
+      models={models}
       activity={activity}
       layout={layout}
       onResize={resize}

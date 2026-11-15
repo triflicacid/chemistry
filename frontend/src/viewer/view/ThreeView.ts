@@ -16,6 +16,7 @@ import { AXIS_LENGTH, makeAxes } from "../../render/axes";
 import { aromaticCentres } from "../../render/aromatic";
 import { ballRadius, buildBond, LONE_ATOM_RADIUS, type Style } from "../../render/bonds";
 import { disposeMaterials } from "../../render/dispose";
+import { applyTints, HOVER_TINT, SELECTED_TINT } from "../../render/emphasis";
 import { BOND_HALO, fade, HALO_GROWTH, HALO_PADDING, haloMaterial } from "../../render/halo";
 import { angleArc, piCloud, piLabel, piOrbitals } from "../../render/overlays";
 import { type Part, PartRegistry, type Pick } from "../../render/parts";
@@ -49,9 +50,7 @@ interface Settings {
   debugThreshold: number;
 }
 
-const HOVER = new Color("#ffd33d");
 const END_COLOURS = [new Color("#ffd33d"), new Color("#79c0ff"), new Color("#ffa657")];
-const SELECTED = new Color("#58a6ff");
 /** The colours the findings list gives each severity, so a mark in the drawing matches the row it came from. */
 const FAULT_COLOURS: Record<FaultSeverity, Color> = {
   error: new Color("#cf222e"),
@@ -654,35 +653,22 @@ export class ThreeView implements MoleculeView {
     for (const part of this.registry.parts) {
       const selected = part.index >= 0 && (part.pick.kind === "atom" ? this.selection.atoms : this.selection.bonds).has(part.index);
       if (selected) {
-        tints.set(part.object, SELECTED);
+        tints.set(part.object, SELECTED_TINT);
       }
     }
     for (const end of this.highlights.ends) {
       for (const part of this.atomParts.values()) {
         if (part.index === end.atom) {
-          tints.set(part.object, END_COLOURS[end.colour] ?? HOVER);
+          tints.set(part.object, END_COLOURS[end.colour] ?? HOVER_TINT);
         }
       }
     }
     const hover = this.highlights.hover?.handle;
     if (hover instanceof Object3D) {
-      tints.set(hover, HOVER);
+      tints.set(hover, HOVER_TINT);
     }
 
-    for (const part of this.registry.parts) {
-      const tint = tints.get(part.object);
-      part.object.traverse((object) => {
-        if (object instanceof Mesh && object.material instanceof MeshStandardMaterial) {
-          if (tint) {
-            object.material.emissive.copy(tint);
-            object.material.emissiveIntensity = 0.55;
-          } else {
-            object.material.emissive.setScalar(0);
-            object.material.emissiveIntensity = 1;
-          }
-        }
-      });
-    }
+    applyTints(this.registry.parts, tints);
     this.stage.requestRender();
   }
 

@@ -13,6 +13,8 @@ import { UP } from "./primitives";
 /** The camera's vertical field of view, in degrees. */
 export const FIELD_OF_VIEW = 30;
 
+const suppress = (event: Event): void => event.preventDefault();
+
 /** Where a stage is drawn, and what to tell when the view moves. */
 export interface StageOptions {
   /** The canvas to draw on; the stage makes its own if there is none, which the caller adds to the page. */
@@ -53,6 +55,9 @@ export class Stage {
       options.onMove?.();
       this.requestRender();
     });
+
+    // right-drag pans, so the menu that a right-click would open must not
+    this.canvas.addEventListener("contextmenu", suppress);
 
     this.resizer = new ResizeObserver(() => this.resize());
     this.resizer.observe(options.sizedBy);
@@ -129,6 +134,7 @@ export class Stage {
     cancelAnimationFrame(this.pending);
     this.pending = 0;
     this.resizer.disconnect();
+    this.canvas.removeEventListener("contextmenu", suppress);
     this.controls.dispose();
     this.renderer.dispose();
   }

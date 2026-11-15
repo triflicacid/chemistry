@@ -1,9 +1,10 @@
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, Raycaster, type Sprite, Vector3 } from "three";
+import { Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, Raycaster, type Sprite, Vector3 } from "three";
 import type { Vec3 } from "../../api/types/structure";
 import { aromaticCentres } from "../../render/aromatic";
 import { makeAxes } from "../../render/axes";
 import { ballRadius, buildBond, type BondEnds, type Style } from "../../render/bonds";
 import { disposeMaterials } from "../../render/dispose";
+import { applyTints, HOVER_TINT, SELECTED_TINT } from "../../render/emphasis";
 import { type Part, PartRegistry } from "../../render/parts";
 import { Primitives } from "../../render/primitives";
 import { Stage } from "../../render/stage";
@@ -24,9 +25,27 @@ export interface ScreenPoint {
 export interface StudioViewListener {
   /** The pointer moved over `pick`, or over nothing if it is null. Not called while a button is held. */
   hover?(pick: StudioPick | null, at: ScreenPoint): void;
-  /** A left click that was not a camera drag. `additive` is whether shift was held. */
+  /** A left click that was not a camera drag. `additive` is whether shift, control or command was held. */
   click?(pick: StudioPick | null, additive: boolean): void;
 }
+
+/** Atoms and bonds, by identifier, to draw with emphasis. */
+export interface Emphasis {
+  atoms: ReadonlySet<string>;
+  bonds: ReadonlySet<string>;
+}
+
+/** What to tint, strongest last: what is selected, the active one among them, and what is hovered. */
+export interface Emphasised {
+  selected: Emphasis;
+  active: Emphasis;
+  hover: Emphasis;
+}
+
+const NO_EMPHASIS: Emphasis = { atoms: new Set(), bonds: new Set() };
+
+/** The tint of the active item: the selection's blue, brightened so that it stands out from the rest. */
+const ACTIVE_TINT = SELECTED_TINT.clone().lerp(new Color("#ffffff"), 0.45);
 
 /** A bond as the drawing holds it: which atoms it joins by position in the atom list, so the shared drawing code can take it. */
 interface Link extends BondEnds {
@@ -76,6 +95,7 @@ export class StudioView {
   /** The session the camera was last framed on, so a new session is framed and an edit to the same one is not. */
   private framedSession: string | null = null;
   private down: { x: number; y: number } | null = null;
+  private emphasis: Emphasised = { selected: NO_EMPHASIS, active: NO_EMPHASIS, hover: NO_EMPHASIS };
 
   /**
    * @param canvas the canvas to draw on; it is sized to its CSS box
@@ -155,7 +175,17 @@ export class StudioView {
       this.bonds.filter((bond) => bond.link.order === "AROMATIC").forEach((bond) => affected.add(bond));
     }
     affected.forEach((bond) => this.redraw(bond));
-    this.stage.requestRender();
+    this.refreshEmphasis();
+  }
+
+  /**
+   * Tints what is selected, active and hovered. Hover shows over active, and active over selected.
+   *
+   * @param emphasis what to tint; the tints are kept across redraws as atoms move
+   */
+  setEmphasis(emphasis: Emphasised): void {
+    this.emphasis = emphasis;
+    this.refreshEmphasis();
   }
 
   /** Points the camera at the whole scene. */
@@ -258,7 +288,7 @@ export class StudioView {
       }
       this.redraw(bond);
     }
-    this.stage.requestRender();
+    this.refreshEmphasis();
   }
 
   private drawAtom(atom: SessionAtom, index: number): AtomNode {
@@ -317,6 +347,24 @@ export class StudioView {
     this.neighbourMap = new Map();
   }
 
+  private refreshEmphasis(): void {
+    const { selected, active, hover } = this.emphasis;
+    const tints = new Map<Object3D, Color>();
+    for (const part of this.registry.parts) {
+      const id = part.pick.id;
+      if (id === undefined) {
+        continue;
+      }
+      const among = (set: Emphasis) => (part.pick.kind === "atom" ? set.atoms : set.bonds).has(id);
+      const tint = among(hover) ? HOVER_TINT : among(active) ? ACTIVE_TINT : among(selected) ? SELECTED_TINT : null;
+      if (tint) {
+        tints.set(part.object, tint);
+      }
+    }
+    applyTints(this.registry.parts, tints);
+    this.stage.requestRender();
+  }
+
   private pickAt(event: PointerEvent): StudioPick | null {
     const hit = this.registry.cast(this.raycaster, this.stage.camera, this.stage.pointer(event));
     const id = hit?.part.pick.id;
@@ -347,7 +395,7 @@ export class StudioView {
       return;
     }
     const pick = this.pickAt(event);
-    this.listeners.forEach((listener) => listener.click?.(pick, event.shiftKey));
+    this.listeners.forEach((listener) => listener.click?.(pick, event.shiftKey || event.ctrlKey || event.metaKey));
   };
 
   private readonly onCancel = (): void => {
