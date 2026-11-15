@@ -40,7 +40,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 3L);
+        assertThat(ready).containsEntry("protocol_version", 4L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -455,6 +455,86 @@ class StudioSocketEndpointTest
     }
 
     @Test
+    void should_lock_atoms_refuse_to_move_them_and_unlock_them() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String atom = (String) list(opened, "atoms").getFirst().get("id");
+
+        socket.sendText(lock(sessionId, 1, atom, true, 2), true).join();
+        Map<String, Object> ack = collector.nextJson();
+        assertThat(ack).containsEntry("type", "atom.lock.ack").containsEntry("sequence", 2L).containsEntry("version", 2L);
+        assertThat(ack).containsEntry("locked", List.of(atom));
+
+        socket.sendText(patch(sessionId, 2, true, atom, 1, 1, 1, 3), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "LOCKED");
+
+        socket.sendText(lock(sessionId, 2, atom, false, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("version", 3L).containsEntry("locked", List.of());
+
+        socket.sendText(patch(sessionId, 3, true, atom, 1, 1, 1, 5), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "atom.patch.ack");
+    }
+
+    @Test
+    void should_save_what_is_locked_with_the_molecule_and_open_it_locked() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String atom = (String) list(opened, "atoms").get(1).get("id");
+
+        socket.sendText(lock(sessionId, 1, atom, true, 2), true).join();
+        String saved = (String) collector.nextJson().get("saved_molecule_id");
+        assertThat(saved).isNotNull().isNotEqualTo(stored.id());
+        assertThat(stored.lockedSites()).isEmpty();
+
+        socket.sendText(open(saved, 3), true).join();
+        assertThat(collector.nextJson().get("locked")).isEqualTo(List.of(atom));
+
+        socket.sendText(lock(sessionId, 2, atom, false, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("saved_molecule_id", saved);
+        socket.sendText(open(saved, 5), true).join();
+        assertThat(collector.nextJson().get("locked")).isEqualTo(List.of());
+    }
+
+    @Test
+    void should_refuse_a_lock_it_cannot_make() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText(lock(sessionId, 1, "a999", true, 2), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "UNKNOWN_ID");
+
+        socket.sendText("{\"type\": \"atom.lock\", \"sequence\": 3, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1, \"atoms\": [\"a1\"]}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText(lock(sessionId, 9, "a1", true, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("type", "conflict");
+
+        socket.sendText(resync(sessionId, 5), true).join();
+        assertThat(collector.nextJson()).containsEntry("version", 1L).containsEntry("locked", List.of());
+    }
+
+    @Test
     void should_undo_and_redo_a_move_and_say_when_there_is_nothing_to_do() throws Exception
     {
         StoredMolecule stored = store("CCO");
@@ -646,6 +726,20 @@ class StudioSocketEndpointTest
         return "{\"type\": \"atom.patch\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
                 + "\", \"base_version\": " + baseVersion + ", \"commit\": " + commit + ", \"atoms\": [{\"id\": \"" + atom
                 + "\", \"position\": {\"x\": " + x + ", \"y\": " + y + ", \"z\": " + z + "}}]}";
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client says it was looking at
+     * @param atom the atom to lock or unlock
+     * @param locked whether to lock it
+     * @param sequence the message's sequence number
+     * @return an {@code atom.lock} message
+     */
+    private static String lock(String sessionId, long baseVersion, String atom, boolean locked, int sequence)
+    {
+        return "{\"type\": \"atom.lock\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"base_version\": " + baseVersion + ", \"atoms\": [\"" + atom + "\"], \"locked\": " + locked + "}";
     }
 
     /**

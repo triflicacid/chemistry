@@ -662,3 +662,9 @@ body.resizing {
 .activity .failed {
   color: var(--bad);
 }
+
+.lock-mark {
+  margin-left: 6px;
+  vertical-align: -1px;
+  opacity: 0.7;
+}

@@ -353,10 +353,101 @@ class StudioSessionTest
                 .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("NOTHING_TO_UNDO"));
     }
 
-    /**
-     * @param session a session
-     * @return what it calls each of its atoms, in the order it holds them
-     */
+    @Test
+    void locks_and_unlocks_atoms_one_version_on_each_time()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+
+        assertThat(session.lock(List.of(atom), true)).isEqualTo(2);
+        assertThat(session.locked()).containsExactly(atom);
+
+        assertThat(session.lock(List.of(atom), true)).isEqualTo(2);
+        assertThat(session.lock(List.of(atom), false)).isEqualTo(3);
+        assertThat(session.locked()).isEmpty();
+        assertThat(session.lock(List.of(atom), false)).isEqualTo(3);
+    }
+
+    @Test
+    void refuses_to_move_a_locked_atom_until_it_is_unlocked()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 before = session.positionOf(atom);
+        session.lock(List.of(atom), true);
+
+        assertThatThrownBy(() -> session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 2, 3))), true))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("LOCKED"));
+        assertThat(session.positionOf(atom)).isEqualTo(before);
+
+        session.lock(List.of(atom), false);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 2, 3))), true);
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 2, 3));
+    }
+
+    @Test
+    void reopens_with_the_atoms_it_had_locked_still_locked()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        session.lock(List.of(ids.get(1), ids.getLast()), true);
+        StoredMolecule stored = molecules.add(com.ruben.chemistry.server.molecule.ParsedMolecule.written(session.collapsed()));
+        stored.setLatestStructure3d(session.structure());
+        stored.setLockedSites(session.lockedSites());
+
+        StudioSession reopened = StudioSession.open("again", stored, 1);
+
+        assertThat(reopened.locked()).containsExactlyInAnyOrder(ids.get(1), ids.getLast());
+        assertThat(reopened.version()).isEqualTo(1);
+    }
+
+    @Test
+    void rebuilds_with_nothing_locked()
+    {
+        StudioSession session = open("CCO");
+        session.lock(List.of(ids(session).getFirst()), true);
+
+        assertThat(session.rebuilt(parser.parse("CC").molecule(), 1).locked()).isEmpty();
+    }
+
+    @Test
+    void locks_none_of_the_atoms_when_one_is_unknown()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+
+        assertThatThrownBy(() -> session.lock(List.of(atom, "nope"), true))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("UNKNOWN_ID"));
+
+        assertThat(session.locked()).isEmpty();
+        assertThat(session.version()).isEqualTo(1);
+    }
+
+    @Test
+    void refuses_an_undo_or_redo_that_would_move_a_locked_atom_and_keeps_the_edit()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 before = session.positionOf(atom);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 2, 3))), true);
+        session.lock(List.of(atom), true);
+
+        assertThatThrownBy(session::undo)
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("LOCKED"));
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 2, 3));
+
+        session.lock(List.of(atom), false);
+        session.undo();
+        assertThat(session.positionOf(atom)).isEqualTo(before);
+
+        session.lock(List.of(atom), true);
+        assertThatThrownBy(session::redo)
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("LOCKED"));
+        session.lock(List.of(atom), false);
+        session.redo();
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 2, 3));
+    }
+
     private static List<String> ids(StudioSession session)
     {
         return session.molecule().atoms().stream().map(session::atomId).toList();

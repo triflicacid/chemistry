@@ -54,6 +54,16 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it asked
+     * @param atoms the atoms to lock or unlock
+     * @param locked {@code true} to lock them, {@code false} to unlock them
+     */
+    public record LockRequest(String sessionId, Long baseVersion, List<String> atoms, Boolean locked)
+    {
+    }
+
+    /**
      * @param sessionId the session to undo or redo in
      * @param baseVersion the version the client was looking at, so that an undo over a changed session is refused
      */

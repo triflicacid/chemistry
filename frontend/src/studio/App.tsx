@@ -3,6 +3,7 @@ import type { Vec3 } from "../api/types/structure";
 import type { AtomMove } from "./session/messages";
 import { Workspace } from "./layout/Workspace";
 import { createModels } from "./selection/models";
+import { useObservable } from "./selection/observable";
 import { StateIndex } from "./selection/StateIndex";
 import { useSession } from "./session/useSession";
 import type { Panel } from "./store";
@@ -14,7 +15,7 @@ const SETTLE_MS = 200;
 export function App() {
   const store = useMemo(() => new StudioStore(), []);
   const [layout, setLayout] = useState(store.layout);
-  const { phase, state, activity, openSmiles, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, undo, redo } = useSession();
+  const { phase, state, activity, openSmiles, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, lockAtoms, undo, redo } = useSession();
 
   const shared = useMemo(createModels, []);
   const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
@@ -88,6 +89,30 @@ export function App() {
   const move = useCallback((id: string, position: Vec3) => void moveAtom(id, position), [moveAtom]);
   const drop = useCallback((moves: AtomMove[]) => void dropAtoms(moves), [dropAtoms]);
   const cancel = useCallback((moves: AtomMove[]) => void cancelDrag(moves), [cancelDrag]);
+  const lock = useCallback((ids: string[], locked: boolean) => void lockAtoms(ids, locked), [lockAtoms]);
+
+  // the toolbar button and the L key lock the selected atoms, or unlock them if all of them are locked already
+  const { items: selected } = useObservable(shared.selection);
+  const chosen = useMemo(() => selected.flatMap((item) => (item.kind === "atom" ? [item.id] : [])), [selected]);
+  const allLocked = chosen.length > 0 && chosen.every((id) => state?.locked.includes(id));
+  const toggleLock = useCallback(() => {
+    if (chosen.length > 0) {
+      lock(chosen, !allLocked);
+    }
+  }, [chosen, allLocked, lock]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.matches("input, textarea, select, [contenteditable]") ?? false;
+      if (event.key.toLowerCase() === "l" && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        toggleLock();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleLock]);
+
   const undoEdit = useCallback(() => void undo(), [undo]);
   const redoEdit = useCallback(() => void redo(), [redo]);
 
@@ -111,6 +136,10 @@ export function App() {
       onOpenSmiles={openSmiles}
       onSubmitSmiles={submit}
       onMoveAtom={move}
+      onLockAtoms={lock}
+      canLock={chosen.length > 0}
+      lockPressed={allLocked}
+      onToggleLock={toggleLock}
       onDragAtoms={dragAtoms}
       onDropAtoms={drop}
       onCancelDrag={cancel}

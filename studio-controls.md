@@ -96,6 +96,13 @@ A field you are typing in is yours: updates from the session do not overwrite it
 changes underneath you its border turns yellow, and leaving the field still applies what you typed.
 An atom that is locked cannot be edited.
 
+## Locking
+
+| Input | Action |
+|---|---|
+| **Lock** button, or L | Lock the selected atoms, or unlock them if every one of them is locked already |
+| Locked checkbox in the Inspector | Lock or unlock that atom |
+
 Tint colours: yellow is hovered, light blue is active, blue is selected.
 
 ## Undo and redo

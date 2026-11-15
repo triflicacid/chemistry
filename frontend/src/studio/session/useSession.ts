@@ -74,6 +74,8 @@ export interface Session {
   dropAtoms: (moves: AtomMove[]) => Promise<EditResult>;
   /** Abandons a drag, putting the atoms back at the positions they were picked up from. */
   cancelDrag: (moves: AtomMove[]) => Promise<EditResult>;
+  /** Locks or unlocks atoms, so that they refuse or accept edits. A lock is saved with the molecule but is not an edit, so it cannot be undone. */
+  lockAtoms: (ids: string[], locked: boolean) => Promise<EditResult>;
   /** Takes back the latest edit. */
   undo: () => Promise<EditResult>;
   /** Makes the latest undone edit again. */
@@ -375,6 +377,37 @@ export function useSession(client?: ChemistryApi): Session {
     [closeDrag, send],
   );
 
+  const lockAtoms = useCallback(
+    (ids: string[], locked: boolean): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
+
+        try {
+          const reply = await socket.lockAtoms(base.session_id, base.version, ids, locked);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note("The structure changed under your edit, so it was not applied", true);
+            return { kind: "conflict" };
+          }
+
+          // a resync that landed meanwhile is authoritative, and already says what is locked
+          if (held.current?.version === base.version) {
+            adopt({ ...base, version: reply.version, locked: reply.locked, saved_molecule_id: reply.saved_molecule_id });
+          }
+          note(`${locked ? "Locked" : "Unlocked"} ${ids.length === 1 ? ids[0] : `${ids.length} atoms`}`);
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
   const step = useCallback(
     (direction: "undo" | "redo"): Promise<EditResult> =>
       serially(async () => {
@@ -409,7 +442,7 @@ export function useSession(client?: ChemistryApi): Session {
   const undo = useCallback(() => step("undo"), [step]);
   const redo = useCallback(() => step("redo"), [step]);
 
-  return { phase, state, activity, openSmiles: submit, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, undo, redo };
+  return { phase, state, activity, openSmiles: submit, submitSmiles, moveAtom, dragAtoms, dropAtoms, cancelDrag, lockAtoms, undo, redo };
 }
 
 /** Whether two reports put the same atoms in the same places. */

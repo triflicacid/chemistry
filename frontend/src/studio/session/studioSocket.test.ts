@@ -102,7 +102,7 @@ describe("the Studio socket", () => {
     const ready = await socket.connect();
 
     expect(ready.type).toBe("session.ready");
-    expect(ready.protocol_version).toBe(3);
+    expect(ready.protocol_version).toBe(4);
     expect(ready.connection_id).toMatch(/^ws-/);
     expect(socket.isOpen).toBe(true);
   });
@@ -252,6 +252,27 @@ describe("the Studio socket", () => {
       code: "UNKNOWN_ID",
       answering: "atom.patch",
     });
+  });
+
+  it("locks an atom so that a patch of it is refused, and unlocks it again", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const first = opened.atoms[0]!;
+    const where = { x: 2, y: 2, z: 2 };
+
+    const locked = await socket.lockAtoms(opened.session_id, opened.version, [first.id], true);
+    expect(locked.type === "atom.lock.ack" && locked.locked).toEqual([first.id]);
+    if (locked.type !== "atom.lock.ack") {
+      return;
+    }
+
+    await expect(socket.patchAtoms(opened.session_id, locked.version, [{ id: first.id, position: where }])).rejects.toMatchObject({
+      code: "LOCKED",
+    });
+
+    const unlocked = await socket.lockAtoms(opened.session_id, locked.version, [first.id], false);
+    expect(unlocked.type === "atom.lock.ack" && unlocked.locked).toEqual([]);
   });
 
   it("refuses to send on a connection that is not open", () => {

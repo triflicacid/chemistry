@@ -128,6 +128,8 @@ export class StudioView {
   private atoms: AtomNode[] = [];
   private bonds: BondNode[] = [];
   private atomById = new Map<string, AtomNode>();
+  /** The padlock drawn on each locked atom. */
+  private lockBadges = new Map<string, Sprite>();
   private bondsOf = new Map<number, BondNode[]>();
   private ringCentres = new Map<Link, Vector3>();
   /** The atoms bonded to each atom, by position in the atom list, as the drawing code wants them. */
@@ -195,6 +197,7 @@ export class StudioView {
       // the atom in the user's hand is where the pointer has put it, and the session is only catching up
       const held = new Set(this.grab?.dragging ? this.grab.members.map((member) => member.node.atom.id) : []);
       this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
+      this.refreshLocks();
       return;
     }
 
@@ -202,10 +205,32 @@ export class StudioView {
     this.stage.controls.enabled = true;
     this.signature = signature;
     this.build(state);
+    this.refreshLocks();
     if (this.framedSession !== state.session_id) {
       this.framedSession = state.session_id;
       this.frameScene();
     }
+  }
+
+  /** Draws a padlock on each locked atom and takes it off the rest. */
+  private refreshLocks(): void {
+    for (const [id, badge] of this.lockBadges) {
+      if (!this.locked.has(id) || !this.atomById.has(id)) {
+        this.content.remove(badge);
+        badge.material.dispose();
+        this.lockBadges.delete(id);
+      }
+    }
+
+    for (const id of this.locked) {
+      const node = this.atomById.get(id);
+      if (node && !this.lockBadges.has(id)) {
+        const badge = this.kit.labels.lockBadge(this.content, node.at, ballRadius(node.atom.radius, STYLE, true));
+        this.content.add(badge);
+        this.lockBadges.set(id, badge);
+      }
+    }
+    this.refreshGuide();
   }
 
   /**
@@ -317,6 +342,7 @@ export class StudioView {
     this.moving = enabled;
     if (!enabled) {
       this.cancelDrag();
+      this.stage.canvas.style.cursor = "";
     }
     this.refreshGuide();
   }
@@ -403,6 +429,23 @@ export class StudioView {
     return active === undefined ? null : (this.atomById.get(active) ?? null);
   }
 
+  /** Whether a locked atom is among the selected ones, which keeps the selection from being moved. */
+  private selectionLocked(): boolean {
+    return [...this.emphasis.selected.atoms].some((id) => this.locked.has(id));
+  }
+
+  /**
+   * The atoms a press on an atom would pick up: the whole selection if the atom is one of several selected, and
+   * otherwise only the atom.
+   *
+   * @param id the atom pressed on
+   * @returns the identifiers of the atoms that would move
+   */
+  private groupOf(id: string): string[] {
+    const selected = this.emphasis.selected.atoms;
+    return selected.has(id) && selected.size > 1 ? [...selected] : [id];
+  }
+
   /** Draws the guide for the current constraint afresh, or removes it when there is nothing for it to show. */
   private refreshGuide(): void {
     if (this.guide) {
@@ -411,7 +454,7 @@ export class StudioView {
       this.guide = null;
     }
 
-    if (this.debug && this.moving && this.guideTarget()) {
+    if (this.debug && this.moving && this.guideTarget() && !this.selectionLocked()) {
       this.guide = makeGuide(this.constraint);
       this.stage.scene.add(this.guide.group);
       this.placeGuide();
@@ -519,6 +562,7 @@ export class StudioView {
     this.registry.clear();
     this.atoms = [];
     this.bonds = [];
+    this.lockBadges = new Map();
     this.atomById = new Map();
     this.bondsOf = new Map();
     this.ringCentres = new Map();
@@ -615,8 +659,7 @@ export class StudioView {
     }
 
     // an atom in a selection of several takes the rest with it; one outside the selection goes alone
-    const selected = this.emphasis.selected.atoms;
-    const group = selected.has(pick.id) && selected.size > 1 ? [...selected] : [pick.id];
+    const group = this.groupOf(pick.id);
     const nodes = [node, ...group.filter((id) => id !== pick.id).map((id) => this.atomById.get(id))];
     if (nodes.some((each) => !each || this.locked.has(each.atom.id))) {
       return;
@@ -677,8 +720,11 @@ export class StudioView {
       return;
     }
     const overTriad = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) !== null;
-    this.stage.canvas.style.cursor = overTriad ? "pointer" : "";
     const pick = this.pickAt(event);
+
+    // an atom the move tool would refuse to pick up, because it or one moving with it is locked, says so
+    const refused = this.moving && pick?.kind === "atom" && this.groupOf(pick.id).some((id) => this.locked.has(id));
+    this.stage.canvas.style.cursor = overTriad ? "pointer" : refused ? "not-allowed" : "";
     this.listeners.forEach((listener) => listener.hover?.(pick, { x: event.clientX, y: event.clientY }));
   };
 

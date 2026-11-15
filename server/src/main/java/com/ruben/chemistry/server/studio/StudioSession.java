@@ -13,6 +13,7 @@ import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
@@ -152,7 +153,7 @@ public final class StudioSession
             source.setLatestStructure3d(structure);
         }
 
-        return build(sessionId, source.id(), source.molecule(), structure);
+        return build(sessionId, source.id(), source.molecule(), structure, source.lockedSites());
     }
 
     /**
@@ -173,7 +174,7 @@ public final class StudioSession
         }
 
         Structure3D structure = Embedder.embed(molecule, Embedder.Options.DEFAULT.withConformers(conformers));
-        StudioSession next = build(sessionId, sourceMoleculeId, molecule, structure);
+        StudioSession next = build(sessionId, sourceMoleculeId, molecule, structure, Set.of());
         next.version = version + 1;
         return next;
     }
@@ -183,10 +184,11 @@ public final class StudioSession
      * @param sourceMoleculeId the stored molecule it is said to have come from
      * @param source the molecule to work on, whose hydrogens may still be counts
      * @param structure a shape of {@code source}
+     * @param lockedSites the sites of {@code structure} to start with locked, by position; any past its end are ignored
      * @return a session at version 1
      * @throws IllegalStateException if the structure holds no conformer, or does not describe the molecule's atoms one for one
      */
-    private static StudioSession build(String sessionId, String sourceMoleculeId, Molecule source, Structure3D structure)
+    private static StudioSession build(String sessionId, String sourceMoleculeId, Molecule source, Structure3D structure, Set<Integer> lockedSites)
     {
         Molecule working = Hydrogens.asAtoms(source);
         if (structure.conformers().isEmpty())
@@ -224,7 +226,11 @@ public final class StudioSession
             bondIds.put(endpoints(atomIds, bonds.get(bond)), "b" + (bond + 1));
         }
 
-        return new StudioSession(sessionId, sourceMoleculeId, working, atomIds, bondIds, geometry, wasImplicit, conformer.strain());
+        StudioSession session = new StudioSession(sessionId, sourceMoleculeId, working, atomIds, bondIds, geometry, wasImplicit, conformer.strain());
+
+        // a site's atom is named by its position, as every atom is above
+        lockedSites.stream().filter(site -> site >= 0 && site < atoms.size()).sorted().forEach(site -> session.locked.add("a" + (site + 1)));
+        return session;
     }
 
     /**
@@ -283,26 +289,80 @@ public final class StudioSession
     }
 
     /**
+     * Locks or unlocks atoms. A locked atom refuses every edit that would move it, including an undo or redo.
+     * Locks are not part of the edit history, so they are never undone.
+     *
+     * @param atomIds the atoms to lock or unlock; one already in the requested state is left as it is
+     * @param lock {@code true} to lock them, {@code false} to unlock them
+     * @return the version after the change, which is the one before it if no atom changed state
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, in which case
+     *     none of the atoms is changed
+     */
+    public synchronized long lock(Collection<String> atomIds, boolean lock)
+    {
+        for (String id : atomIds)
+        {
+            if (!geometry.containsKey(id))
+            {
+                throw new StudioEditException("UNKNOWN_ID", "This session holds no atom '" + id + "'");
+            }
+        }
+
+        boolean changed = false;
+        for (String id : atomIds)
+        {
+            changed |= lock ? locked.add(id) : locked.remove(id);
+        }
+
+        if (changed)
+        {
+            version++;
+        }
+
+        return version;
+    }
+
+    /**
+     * @param atomIds the atoms an edit would move
+     * @throws StudioEditException with {@code LOCKED} if any of them is locked
+     */
+    private void requireUnlocked(Collection<String> atomIds)
+    {
+        for (String id : atomIds)
+        {
+            if (locked.contains(id))
+            {
+                throw new StudioEditException("LOCKED", "Atom " + id + " is locked against edits");
+            }
+        }
+    }
+
+    /**
      * Takes back the latest committed edit. An edit still in progress is cancelled instead.
      *
      * @return the atoms it moved and the version after it
-     * @throws StudioEditException with {@code NOTHING_TO_UNDO} if there is nothing to take back
+     * @throws StudioEditException with {@code NOTHING_TO_UNDO} if there is nothing to take back, and
+     *     {@code LOCKED} if an atom it would move has been locked since, in which case the edit stays where it is
      */
     public synchronized Applied undo()
     {
         if (!uncommitted.isEmpty())
         {
+            requireUnlocked(uncommitted.keySet());
             Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
             geometry.putAll(restored);
             uncommitted.clear();
             return new Applied(++version, restored);
         }
 
-        Edit edit = done.pollLast();
+        Edit edit = done.peekLast();
         if (edit == null)
         {
             throw new StudioEditException("NOTHING_TO_UNDO", "There is nothing to undo");
         }
+        requireUnlocked(edit.before().keySet());
+
+        done.removeLast();
 
         geometry.putAll(edit.before());
         undone.addLast(edit);
@@ -313,15 +373,19 @@ public final class StudioSession
      * Makes again the edit most recently undone.
      *
      * @return the atoms it moved and the version after it
-     * @throws StudioEditException with {@code NOTHING_TO_REDO} if no undone edit is waiting
+     * @throws StudioEditException with {@code NOTHING_TO_REDO} if no undone edit is waiting, and
+     *     {@code LOCKED} if an atom it would move has been locked since, in which case the edit stays where it is
      */
     public synchronized Applied redo()
     {
-        Edit edit = undone.pollLast();
+        Edit edit = undone.peekLast();
         if (edit == null)
         {
             throw new StudioEditException("NOTHING_TO_REDO", "There is nothing to redo");
         }
+        requireUnlocked(edit.after().keySet());
+
+        undone.removeLast();
 
         geometry.putAll(edit.after());
         done.addLast(edit);
@@ -380,6 +444,27 @@ public final class StudioSession
         structureShape = Embedder.placed(counted, order.stream().map(geometry::get).toList(), strain);
         nodeAtoms = List.copyOf(order);
         collapsed = counted;
+    }
+
+    /**
+     * Says which atoms are locked in the terms a stored structure uses, which survive the session's own identifiers
+     * being issued afresh.
+     *
+     * @return the position in {@link #structure()} of each locked atom
+     */
+    public synchronized Set<Integer> lockedSites()
+    {
+        prepareStructure();
+        Set<Integer> sites = new LinkedHashSet<>();
+        for (String id : locked)
+        {
+            int site = nodeAtoms.indexOf(id);
+            if (site >= 0)
+            {
+                sites.add(site);
+            }
+        }
+        return sites;
     }
 
     /**
