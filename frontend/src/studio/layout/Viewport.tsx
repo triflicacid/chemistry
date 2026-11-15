@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from "react";
 import type {Item} from "../selection/items";
 import type {Models, PickMode} from "../selection/models";
-import type {Space} from "../selection/ToolModel";
+import type {RotateMode, Space} from "../selection/ToolModel";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
 import type {AtomMove, BondEdit, GeometryResult, Pose, SessionState} from "../session/messages";
@@ -56,6 +56,11 @@ const GRID_PLANES: Segment<GridPlaneChoice>[] = [
   { value: "all", label: "All", title: "All three planes at once, which reach less far" },
 ];
 
+const ROTATES: Segment<RotateMode>[] = [
+  { value: "molecule", label: "Molecule", title: "Click an atom to turn the whole molecule about it, with rings that turn it about the pivot" },
+  { value: "parts", label: "Bonds & angles", title: "Click a bond to turn one side of it about the bond (its torsion), or an atom to change an angle between two of its bonds" },
+];
+
 const SPACES: Segment<Space>[] = [
   { value: "world", label: "World", title: "Measure moves and handles along the scene's axes" },
   { value: "local", label: "Local", title: "Measure moves and handles along the molecule's own axes, which turn with it" },
@@ -96,7 +101,10 @@ export function Viewport({
   const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickMode>("element");
   const { selection, hover, tools, index } = models;
-  const { tool, constraint, space, pivot, point, strain, carryHydrogens, torsion, angle, hold } = useObservable(tools);
+  const { tool, constraint, space, rotate, pivot, point, strain, carryHydrogens, torsion, angle, hold } = useObservable(tools);
+  // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
+  const parts = tool === "rotate" && rotate === "parts";
+  const picking: PickMode = parts ? "element" : mode;
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -171,10 +179,16 @@ export function Viewport({
   const atomsSelected = selected.items.some((item) => item.kind === "atom");
   const gizmo = tool === "move"
       ? (moleculeSelected ? "translate" : atomsSelected ? "atoms" : null)
-      : (tool === "rotate" && moleculeSelected ? "rotate" : null);
+      : (tool === "rotate" && rotate === "molecule" && moleculeSelected ? "rotate" : null);
   useEffect(() => {
     view?.setGizmo(gizmo);
   }, [view, gizmo]);
+
+  // turning the whole molecule shows it by its handles, so only what is hovered is tinted, and nothing is labelled
+  const plain = tool === "rotate" && rotate === "molecule";
+  useEffect(() => {
+    view?.setPlain(plain);
+  }, [view, plain]);
 
   // a selected bond has a handle: an arrow along it with the move tool, which slides to change its length, and a ring about
   // it with the rotate tool, which turns to change its torsion. There is none where an atom it would move is locked
@@ -184,7 +198,7 @@ export function Viewport({
   const locked = state?.locked;
   useEffect(() => {
     // a selected atom has a ring about it with the rotate tool, which turns to change the angle between two of its bonds
-    if (view && index && atomId !== null && tool === "rotate") {
+    if (view && index && atomId !== null && parts) {
       const pair = angle?.centre === atomId ? angle : defaultPair(index, atomId);
       const moving = pair && angleMovers(index, atomId, pair, hold);
       view.setBondHandle(moving && ![...moving].some((id) => locked?.includes(id)) && pair ? { mode: "angle", centre: atomId, hold, from: pair.from, to: pair.to } : null);
@@ -192,12 +206,12 @@ export function Viewport({
     }
 
     const bond = bondId !== null && index ? index.bonds.get(bondId) : undefined;
-    if (!view || !index || !bond || (tool !== "move" && tool !== "rotate")) {
+    if (!view || !index || !bond || (tool !== "move" && !parts)) {
       view?.setBondHandle(null);
       return;
     }
 
-    const turning = tool === "rotate";
+    const turning = parts;
     const moving = movers(index, bond, hold, turning);
     if (!moving || [...moving].some((id) => locked?.includes(id))) {
       view.setBondHandle(null);
@@ -211,7 +225,7 @@ export function Viewport({
     // the Inspector says which atoms it measures from when it is showing this bond, and the heaviest neighbours are the default
     const measured = torsion?.bond === bond.id ? torsion : defaultReference(index, bond);
     view.setBondHandle(measured ? { mode: "turn", bond: bond.id, hold, from: measured.first, to: measured.second } : null);
-  }, [view, index, bondId, atomId, tool, hold, torsion, angle, locked]);
+  }, [view, index, bondId, atomId, tool, parts, hold, torsion, angle, locked]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
@@ -269,10 +283,11 @@ export function Viewport({
       return;
     }
     return view.listen({
-      hover: (pick) => hover.hover(pick ? resolve(pick, mode, index) : null),
+      hover: (pick) => hover.hover(pick ? resolve(pick, picking, index) : null),
       click: (pick, additive) => {
-        // with the rotate tool an atom stands for its molecule, turned about that atom
-        if (pick?.kind === "atom" && tools.get().tool === "rotate") {
+        // turning the whole molecule, an atom stands for its molecule, turned about that atom
+        const { tool: current, rotate: turning } = tools.get();
+        if (pick?.kind === "atom" && current === "rotate" && turning === "molecule") {
           const fragment = index.fragmentOf(pick);
           if (fragment !== null) {
             // clicking what is selected already would deselect it, and here it only moves the pivot
@@ -286,7 +301,7 @@ export function Viewport({
         }
 
         if (pick) {
-          selection.select(resolve(pick, mode, index), additive);
+          selection.select(resolve(pick, picking, index), additive);
         } else if (!additive) {
           selection.clear();
         }
@@ -306,7 +321,7 @@ export function Viewport({
       bondDrag: (edit, done) => (done ? onDropBond(edit) : onDragBond(edit)),
       bondDragCancel: onCancelBondDrag,
     });
-  }, [view, index, mode, selection, hover, tools, onDragAtoms, onDropAtoms, onCancelDrag, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag]);
+  }, [view, index, picking, selection, hover, tools, onDragAtoms, onDropAtoms, onCancelDrag, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag]);
 
   const frame = () => {
     if (!view || !index) {
@@ -373,7 +388,8 @@ export function Viewport({
           </div>
 
           <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
-            {(tool === "move" || (tool === "rotate" && moleculeSelected)) && (
+            {tool === "rotate" && <Segmented label="What to rotate" value={rotate} options={ROTATES} onChange={(next) => tools.rotating(next)} />}
+            {(tool === "move" || (tool === "rotate" && rotate === "molecule" && moleculeSelected)) && (
               <Segmented
                 label="Space"
                 value={space}
@@ -392,7 +408,8 @@ export function Viewport({
                 Carry H
               </button>
             )}
-            {tool === "rotate" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
+            {tool === "rotate" && rotate === "molecule" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
+            {parts && bondId === null && atomId === null && <span className="viewport-hint">Click a bond to turn about it, or an atom to change an angle</span>}
             {tool === "move" && !moleculeSelected && (
               <Segmented
                 label="Move constraint"
@@ -411,8 +428,9 @@ export function Viewport({
             <button
               type="button"
               className="tool"
-              aria-pressed={mode === "molecule"}
-              title="When on, clicking or hovering an atom or bond picks the whole molecule it belongs to"
+              aria-pressed={picking === "molecule"}
+              disabled={parts}
+              title={parts ? "Turning a bond or an angle picks single atoms and bonds" : "When on, clicking or hovering an atom or bond picks the whole molecule it belongs to"}
               onClick={() => setMode(mode === "molecule" ? "element" : "molecule")}
             >
               Pick whole molecule

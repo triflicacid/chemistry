@@ -12,7 +12,7 @@ const TOOLS: Segment<Tool>[] = [
     label: "Move",
     title: "Dragging an atom moves it, and with a molecule selected its handles move the whole molecule. Hold an atom to an axis or plane with X, Y and Z, or the buttons in the viewport",
   },
-  { value: "rotate", label: "Rotate", title: "With a molecule selected, drag a ring to turn the whole molecule about its pivot" },
+  { value: "rotate", label: "Rotate", title: "Turn the whole molecule about a pivot, or choose Bonds & angles to turn about a bond or change an angle" },
   {
     value: "pan",
     label: "Pan",

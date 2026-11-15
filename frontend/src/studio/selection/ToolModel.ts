@@ -9,6 +9,12 @@ import {Observable} from "./observable";
  */
 export type Tool = "select" | "move" | "rotate" | "pan";
 
+/**
+ * What the rotate tool turns: the whole molecule, about a pivot, or something inside it, which is a bond that is clicked,
+ * turned about to change its torsion, or an atom that is clicked, whose angle between two of its bonds is changed.
+ */
+export type RotateMode = "molecule" | "parts";
+
 /** Which axes a constraint, and the molecule's gizmo, is measured along: the scene's or the molecule's own. */
 export type Space = "world" | "local";
 
@@ -38,6 +44,8 @@ export interface ToolState {
   constraint: Constraint;
   space: Space;
   pivot: Pivot;
+  /** What the rotate tool turns. */
+  rotate: RotateMode;
   /** Where the pivot is when it is `point`, in the scene, in angstroms. */
   point: Vec3;
   /** Whether strain is shown: marked in the viewport, and detailed for what is selected. */
@@ -55,7 +63,7 @@ export interface ToolState {
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, hold: "first" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotate: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, hold: "first" });
   }
 
   /**
@@ -99,6 +107,17 @@ export class ToolModel extends Observable<ToolState> {
   pivotOn(pivot: Pivot): void {
     if (this.get().pivot !== pivot) {
       this.set({ ...this.get(), pivot });
+    }
+  }
+
+  /**
+   * Chooses what the rotate tool turns.
+   *
+   * @param rotate the whole molecule, or something inside it
+   */
+  rotating(rotate: RotateMode): void {
+    if (this.get().rotate !== rotate) {
+      this.set({ ...this.get(), rotate });
     }
   }
 

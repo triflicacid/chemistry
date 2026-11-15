@@ -66,7 +66,8 @@ coordinates, so every bond length and angle is as it was.
 | Input | Action |
 |---|---|
 | **Move** tool, drag an arrow or a square on the handles | Carry the molecule along that axis, or within that plane |
-| **Rotate** tool, click an atom | Select its molecule, anchor the view on that atom and make the anchor the pivot, so the rings turn the molecule about that atom. Clicking another atom moves the pivot there |
+| **Rotate** tool, **Molecule** (the choice that Rotate starts on), click an atom | Select its molecule, anchor the view on that atom and make the anchor the pivot, so the rings turn the molecule about that atom. Clicking another atom moves the pivot there |
+| **Rotate** tool, **Bonds & angles** | Turns something inside the molecule instead, and picks single atoms and bonds whatever **Pick whole molecule** says (the button is off while it is chosen). Click a bond to turn about it (its torsion), or an atom to change an angle at it; see *Inspector* below. The choice is a lozenge in the viewport's right-hand buttons, shown with Rotate. It is the only thing that decides what an atom click means, so it does not matter in what order you pick a tool and an atom |
 | **Rotate** tool, drag a ring | Turn the molecule about the pivot, around that axis. The outer ring turns it about the view direction |
 | Esc during a drag | Abandon it; the molecule goes back where it was picked up |
 | Release | Drop it. The whole drag is one undo step |
@@ -159,10 +160,10 @@ uses, so you can tell which atoms a length or a Hold choice refers to.
 | Type in a bond's **Length** field, then Enter or click away | Set the bond's length. The **Hold** atom (named by its label, such as `C1`) stays put and the other moves along the bond, taking everything beyond it along; **Neither** moves both half each. In a ring only the two atoms move. One edit, which can be undone. Refused if an atom that would move is locked |
 | Type in a bond's **Torsion** field, then Enter or click away | Turn one side of the bond about it until the angle between the two **From** atoms is the value typed. **Hold** says which side stays; **Neither** turns both half each. Ring bonds cannot be turned. One edit, which can be undone |
 | Type in an atom's **Angle** field, then Enter or click away | Swing one of two bonds at the atom, with everything beyond it, in the plane of the two, until the angle between the **Between** atoms is the value typed. It is a full turn: 0 puts the two on top of each other, 180 in a line, and past 180 the bond swings through the straight line to the other side, so 361 is 1 and -1 is 359. **Hold** says which side stays, and **Neither** swings both half each. The atom's other bonds stay put. One edit, which can be undone. Refused for a bond in a ring or if an atom that would move is locked |
-| Select one atom, with the Rotate tool, and drag the ring at it | Change the angle between the **Between** atoms. One edit, which Esc abandons. Not offered where a bond that would swing is in a ring |
+| Select one atom, with Rotate on **Bonds & angles**, and drag the ring at it | Change the angle between the **Between** atoms. One edit, which Esc abandons. Not offered where a bond that would swing is in a ring |
 | Esc in a field | Abandon what you typed |
 | Select one bond, with the Move tool, and drag the arrow along it | Change its length. The atom shown by **Hold** stays; the arrow is on the atom that moves. Slid past nothing, the length goes negative and the moving side passes through the held atom to the other side. One edit, which Esc abandons |
-| Select one bond, with the Rotate tool, and drag the ring about it | Change its torsion between the **From** atoms. One edit, which Esc abandons. Not offered for a ring bond |
+| Select one bond, with Rotate on **Bonds & angles**, and drag the ring about it | Change its torsion between the **From** atoms. One edit, which Esc abandons. Not offered for a ring bond |
 | Click a name under *Bonded to*, *Bonds* or *Joins* | Select that item (modifiers as above) |
 | Hover one | Highlight it in the viewport |
 

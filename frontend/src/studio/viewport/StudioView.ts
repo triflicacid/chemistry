@@ -302,6 +302,8 @@ export class StudioView {
   private debug = false;
   private guide: Guide | null = null;
   private emphasis: Emphasised = { selected: NO_EMPHASIS, active: NO_EMPHASIS, hover: NO_EMPHASIS };
+  /** Whether to leave what is selected undrawn, with no lengths or names for it or for what is hovered. Hover is still tinted. */
+  private plain = false;
 
   /**
    * @param canvas the canvas to draw on; it is sized to its CSS box
@@ -807,6 +809,19 @@ export class StudioView {
   }
 
   /**
+   * Chooses whether what is selected is drawn.
+   *
+   * @param plain true to draw no tint for the selection, and no lengths or names for it or the hover
+   */
+  setPlain(plain: boolean): void {
+    if (plain !== this.plain) {
+      this.plain = plain;
+      this.refreshEmphasis();
+      this.drawLengths();
+    }
+  }
+
+  /**
    * Marks where the geometry is strained.
    *
    * @param result what the session said of its geometry, or null to show nothing
@@ -850,7 +865,7 @@ export class StudioView {
       this.lengthMarks = null;
     }
 
-    const { selected, hover } = this.emphasis;
+    const { selected, hover } = this.plain ? { selected: NO_EMPHASIS, hover: NO_EMPHASIS } : this.emphasis;
     const few = selected.atoms.size <= LENGTH_LABEL_ATOMS;
     const measured = this.bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || (few && (selected.atoms.has(link.bond.first) || selected.atoms.has(link.bond.second))));
     const named = this.bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || hover.bonds.has(link.bond.id));
@@ -1477,7 +1492,7 @@ export class StudioView {
         continue;
       }
       const among = (set: Emphasis) => (part.pick.kind === "atom" ? set.atoms : set.bonds).has(id);
-      const tint = among(hover) ? HOVER_TINT : among(active) ? ACTIVE_TINT : among(selected) ? SELECTED_TINT : null;
+      const tint = among(hover) ? HOVER_TINT : this.plain ? null : among(active) ? ACTIVE_TINT : among(selected) ? SELECTED_TINT : null;
       if (tint) {
         tints.set(part.object, tint);
       }
