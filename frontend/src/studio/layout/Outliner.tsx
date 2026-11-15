@@ -1,79 +1,194 @@
-import {CSSProperties, useState} from "react";
+import { type CSSProperties, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type Item, keyOf } from "../selection/items";
+import type { Models } from "../selection/models";
+import { useObservable } from "../selection/observable";
 import type { SessionState } from "../session/messages";
 
 export interface OutlinerProps {
   state: SessionState | null;
+  models: Models;
 }
 
-/** Lists what the scene holds: its molecules, and their atoms and bonds when expanded. */
-export function Outliner({ state }: OutlinerProps) {
+/**
+ * Lists what the scene holds: its molecules, and their atoms and bonds when expanded.
+ *
+ * Molecules, atoms and bonds are selectable and hoverable. The "Atoms" and "Bonds" rows exist
+ * only to open and close their lists. Whatever becomes active elsewhere is opened and scrolled to.
+ */
+export function Outliner({ state, models }: OutlinerProps) {
+  const { selection, hover, index } = models;
+  const selected = useObservable(selection);
+  const hovered = useObservable(hover);
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
-  const toggle = (key: string) => setOpen((before) => ({ ...before, [key]: !before[key] }));
+  const rows = useRef(new Map<string, HTMLElement>());
+  const revealing = useRef<string | null>(null);
 
-  if (!state) {
+  const chosen = useMemo(() => new Set(selected.items.map(keyOf)), [selected.items]);
+  const active = selected.active;
+
+  // reveal what became active, opening the lists it is in
+  useEffect(() => {
+    if (!active || !index) {
+      return;
+    }
+    const fragment = index.fragmentOf(active);
+    if (fragment === null || active.kind === "molecule") {
+      revealing.current = keyOf(active);
+      return;
+    }
+    const lists = [fragment, `${fragment}:${active.kind}s`];
+    revealing.current = keyOf(active);
+    setOpen((before) => (lists.every((key) => before[key]) ? before : { ...before, ...Object.fromEntries(lists.map((key) => [key, true])) }));
+  }, [active, index]);
+
+  // the row may only exist once the lists above it have opened, so scrolling waits until it does
+  useEffect(() => {
+    const key = revealing.current;
+    const row = key ? rows.current.get(key) : undefined;
+    if (row) {
+      row.scrollIntoView({ block: "nearest" });
+      revealing.current = null;
+    }
+  }, [open, active]);
+
+  if (!state || !index) {
     return <p className="panel-empty">Nothing is open.</p>;
   }
 
-  const labels = atomLabels(state);
+  const toggle = (key: string) => setOpen((before) => ({ ...before, [key]: !before[key] }));
+
+  const row = (item: Item, label: string, depth: number) => {
+    const key = keyOf(item);
+    const classes = ["tree-row", "tree-label"];
+    if (item.kind !== "molecule") {
+      classes.push("tree-leaf");
+    }
+    if (chosen.has(key)) {
+      classes.push("selected");
+    }
+    if (active && keyOf(active) === key) {
+      classes.push("active");
+    }
+    if (hovered && keyOf(hovered) === key) {
+      classes.push("hovered");
+    }
+    return (
+      <button
+        type="button"
+        className={classes.join(" ")}
+        style={indent(depth)}
+        aria-pressed={chosen.has(key)}
+        ref={(element) => {
+          if (element) {
+            rows.current.set(key, element);
+          } else {
+            rows.current.delete(key);
+          }
+        }}
+        onClick={(event) => {
+          // a modified click on a molecule that has anything selected in it lets go of all of that, not just the molecule row
+          const inside = (each: Item) => index.fragmentOf(each) === item.id;
+          if (item.kind === "molecule" && additive(event) && selected.items.some(inside)) {
+            selection.remove(inside);
+          } else {
+            selection.select(item, additive(event));
+          }
+        }}
+        onPointerEnter={() => hover.hover(item)}
+        onPointerLeave={() => hover.hover(null)}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  // a click that lands on no row is a click on the background, which clears the selection as it does in the viewport
+  const background = (event: MouseEvent) => {
+    if (!(event.target as HTMLElement).closest("button")) {
+      selection.clear();
+    }
+  };
 
   return (
-    <ul className="tree" role="tree">
-      <li className="tree-row tree-root">Scene</li>
-      {state.fragments.map((fragment) => {
-        const bonds = state.bonds.filter((bond) => fragment.atoms.includes(bond.first));
-        return (
-          <li key={fragment.key}>
-            <Disclosure
-              label={`${fragment.name} - ${formula(state, fragment.atoms)}`}
-              depth={1}
-              expanded={open[fragment.key] ?? false}
-              onToggle={() => toggle(fragment.key)}
-            />
-            {(open[fragment.key] ?? false) && (
-              <ul role="group">
-                <li>
-                  <Disclosure
-                    label={`Atoms (${fragment.atoms.length})`}
-                    depth={2}
-                    expanded={open[`${fragment.key}:atoms`] ?? false}
-                    onToggle={() => toggle(`${fragment.key}:atoms`)}
-                  />
-                  {(open[`${fragment.key}:atoms`] ?? false) && (
-                    <ul role="group">
-                      {fragment.atoms.map((id) => (
-                        <li key={id} className="tree-row tree-leaf" style={indent(3)} role="treeitem">
-                          {labels.get(id)}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-                <li>
-                  <Disclosure
-                    label={`Bonds (${bonds.length})`}
-                    depth={2}
-                    expanded={open[`${fragment.key}:bonds`] ?? false}
-                    onToggle={() => toggle(`${fragment.key}:bonds`)}
-                  />
-                  {(open[`${fragment.key}:bonds`] ?? false) && (
-                    <ul role="group">
-                      {bonds.map((bond) => (
-                        <li key={bond.id} className="tree-row tree-leaf" style={indent(3)} role="treeitem">
-                          {labels.get(bond.first)}
-                          {dash(bond.order)}
-                          {labels.get(bond.second)}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              </ul>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <div className="tree-area" onClick={background}>
+      <ul className="tree">
+        <li className="tree-row tree-root">Scene</li>
+        {state.fragments.map((fragment) => {
+          const atoms = `${fragment.key}:atom`;
+          const bonds = `${fragment.key}:bond`;
+          const links = index.bondsInFragment(fragment.key);
+          return (
+            <li key={fragment.key}>
+              <div className="tree-line">
+                <Twisty depth={1} expanded={open[fragment.key] ?? false} onToggle={() => toggle(fragment.key)} />
+                {row({ kind: "molecule", id: fragment.key }, `${fragment.name} - ${index.formula(fragment.key)}`, 0)}
+              </div>
+              {(open[fragment.key] ?? false) && (
+                <ul>
+                  <li>
+                    <Disclosure
+                      label={`Atoms (${fragment.atoms.length})`}
+                      depth={2}
+                      expanded={open[atoms] ?? false}
+                      onToggle={() => toggle(atoms)}
+                    />
+                    {(open[atoms] ?? false) && (
+                      <ul>
+                        {fragment.atoms.map((id) => (
+                          <li key={id}>{row({ kind: "atom", id }, index.label(id), 3)}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                  <li>
+                    <Disclosure
+                      label={`Bonds (${links.length})`}
+                      depth={2}
+                      expanded={open[bonds] ?? false}
+                      onToggle={() => toggle(bonds)}
+                    />
+                    {(open[bonds] ?? false) && (
+                      <ul>
+                        {links.map((bond) => (
+                          <li key={bond.id}>{row({ kind: "bond", id: bond.id }, index.bondLabel(bond), 3)}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Whether a click adds to the selection rather than replacing it: the same keys as in the viewport. */
+function additive(event: MouseEvent): boolean {
+  return event.shiftKey || event.ctrlKey || event.metaKey;
+}
+
+interface TwistyProps {
+  depth: number;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+function Twisty({ depth, expanded, onToggle }: TwistyProps) {
+  return (
+    <button
+      type="button"
+      className="tree-toggle"
+      style={indent(depth)}
+      aria-expanded={expanded}
+      title={expanded ? "Collapse" : "Expand"}
+      onClick={onToggle}
+    >
+      {expanded ? "▾" : "▸"}
+    </button>
   );
 }
 
@@ -95,39 +210,4 @@ function Disclosure({ label, depth, expanded, onToggle }: DisclosureProps) {
 
 function indent(depth: number): CSSProperties {
   return { paddingLeft: `${depth * 0.85}rem` };
-}
-
-/** Names each atom by its element and its place in the molecule, as `O1`, `H2`, `H3`. */
-function atomLabels(state: SessionState): Map<string, string> {
-  return new Map(state.atoms.map((atom, index) => [atom.id, `${atom.element}${index + 1}`]));
-}
-
-function dash(order: SessionState["bonds"][number]["order"]): string {
-  switch (order) {
-    case "DOUBLE":
-      return "=";
-    case "TRIPLE":
-      return "#";
-    case "QUADRUPLE":
-      return "$";
-    case "AROMATIC":
-      return ":";
-    default:
-      return "-";
-  }
-}
-
-/** Counts the elements of some atoms, carbon and hydrogen first, as a molecular formula. */
-function formula(state: SessionState, atoms: string[]): string {
-  const held = new Set(atoms);
-  const counts = new Map<string, number>();
-  state.atoms
-    .filter((atom) => held.has(atom.id))
-    .forEach((atom) => counts.set(atom.element, (counts.get(atom.element) ?? 0) + 1));
-
-  const rest = [...counts.keys()].filter((element) => element !== "C" && element !== "H").sort();
-  return ["C", "H", ...rest]
-    .filter((element) => counts.has(element))
-    .map((element) => `${element}${counts.get(element) === 1 ? "" : counts.get(element)}`)
-    .join("");
 }

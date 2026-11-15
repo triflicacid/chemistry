@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Workspace } from "./layout/Workspace";
+import { createModels } from "./selection/models";
+import { StateIndex } from "./selection/StateIndex";
 import { useSession } from "./session/useSession";
 import type { Panel } from "./store";
 import { StudioStore } from "./store";
@@ -12,11 +14,39 @@ export function App() {
   const [layout, setLayout] = useState(store.layout);
   const { phase, state, activity, openSmiles } = useSession();
 
+  const shared = useMemo(createModels, []);
+  const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
+  const models = useMemo(() => ({ ...shared, index }), [shared, index]);
+
+  // identifiers change when the structure does, so what no longer exists must not stay selected or hovered
+  useEffect(() => {
+    if (index) {
+      shared.selection.prune(index);
+      shared.hover.prune(index);
+    } else {
+      shared.selection.clear();
+      shared.hover.hover(null);
+    }
+  }, [index, shared]);
+
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {
     const timer = setTimeout(() => store.rememberLayout(layout), SETTLE_MS);
     return () => clearTimeout(timer);
   }, [layout, store]);
+
+  // Escape clears the selection, unless it is being used to leave a text field
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.matches("input, textarea, select, [contenteditable]") ?? false;
+      if (event.key === "Escape" && !typing) {
+        shared.selection.clear();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shared]);
 
   const resize = useCallback((panel: Panel, size: number) => {
     setLayout((before) => (before[panel] === size ? before : { ...before, [panel]: size }));
@@ -30,6 +60,7 @@ export function App() {
     <Workspace
       phase={phase}
       state={state}
+      models={models}
       activity={activity}
       layout={layout}
       onResize={resize}

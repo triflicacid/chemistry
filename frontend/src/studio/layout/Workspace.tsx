@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Activity, SessionPhase } from "../session/useSession";
 import type { SessionState } from "../session/messages";
+import type { Models } from "../selection/models";
 import type { LayoutState, Panel } from "../store";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { Inspector } from "./Inspector";
@@ -12,16 +13,16 @@ import { Viewport } from "./Viewport";
 export interface WorkspaceProps {
   phase: SessionPhase;
   state: SessionState | null;
+  models: Models;
   activity: Activity[];
   layout: LayoutState;
   onResize: (panel: Panel, size: number) => void;
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   onOpenSmiles: (smiles: string) => void;
-  onCanvas?: (canvas: HTMLCanvasElement | null) => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, activity, layout, onResize, onCollapse, onOpenSmiles, onCanvas } = props;
+  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -44,7 +45,7 @@ export function Workspace(props: WorkspaceProps) {
       <Toolbar phase={phase} layout={layout} onCollapse={onCollapse} />
 
       <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse}>
-        <Outliner state={state} />
+        <Outliner state={state} models={models} />
       </Side>
 
       {!layout.outlinerCollapsed && (
@@ -54,7 +55,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <div className="viewport-cell">
-        <Viewport phase={phase} onOpenSmiles={onOpenSmiles} onCanvas={onCanvas} />
+        <Viewport phase={phase} state={state} models={models} onOpenSmiles={onOpenSmiles} />
       </div>
 
       {!layout.inspectorCollapsed && (
@@ -64,7 +65,7 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <Side panel="inspector" name="Inspector" collapsed={layout.inspectorCollapsed} onCollapse={onCollapse}>
-        <Inspector state={state} />
+        <Inspector state={state} models={models} />
       </Side>
 
       {!layout.analysisCollapsed && (

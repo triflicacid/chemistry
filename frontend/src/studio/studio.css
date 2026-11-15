@@ -12,6 +12,7 @@
   --ink: #1f2328;
   --ink-soft: #656d76;
   --accent: #0969da;
+  --hover: #d4a017;
   --bad: #b42318;
 }
 
@@ -24,6 +25,7 @@
     --ink: #e6edf3;
     --ink-soft: #9198a1;
     --accent: #58a6ff;
+    --hover: #ffd33d;
     --bad: #ff7b72;
   }
 }
@@ -297,6 +299,14 @@ body.resizing {
   height: 100%;
 }
 
+.viewport-tools {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.25rem;
+}
+
 .viewport-overlay {
   position: absolute;
   inset: 0;
@@ -417,7 +427,99 @@ body.resizing {
   color: var(--ink-soft);
 }
 
+.tree-area {
+  min-height: 100%;
+}
+
+.tree-line {
+  display: flex;
+  align-items: center;
+}
+
+.tree-toggle {
+  flex: none;
+  font: inherit;
+  font-size: 0.8rem;
+  padding-right: 0.2rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.tree-label {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tree-label.selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.tree-label.active {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.tree-label.hovered,
+.tree-label:hover {
+  background: color-mix(in srgb, var(--hover) 40%, transparent);
+}
+
 /* Inspector */
+
+.pane-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+}
+
+.pane-subtitle {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.panel-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link {
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  padding: 0.1rem 0.4rem;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.link:hover {
+  border-color: var(--hover);
+  background: color-mix(in srgb, var(--hover) 25%, transparent);
+}
 
 .properties {
   display: grid;
