@@ -45,6 +45,8 @@ Choose **Move** in the toolbar (**Select** goes back). Then:
 | Shift+X, Shift+Y or Shift+Z | Hold it to the plane across that axis (yz, xz, xy) |
 | The same key again | Let go of the constraint |
 | Constraint buttons in the viewport | The same, by mouse: Free, X, Y, Z, YZ, XZ, XY |
+| Taking hold of a handle (below) | Sets the constraint to match it: an arrow is X, Y or Z, a square is a plane, the middle is Free. The buttons follow, and the keys and a direct drag after it use it |
+| Drag an arrow or square on the handles | With atoms selected, handles sit on the active atom, or on the centre of the selected atoms, and carry all of them by the same offset along an axis or within a plane. They follow **World** / **Local** (below). Hidden while a locked atom is selected. Release, and Esc, are as for dragging an atom |
 
 Free movement is in the plane facing the camera. Axes are the scene's in **World** space and the molecule's own
 in **Local** space (see below); they differ once the molecule has been turned. The atom you drag is selected, so the Inspector shows its position

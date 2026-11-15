@@ -4,16 +4,30 @@ import type {Pose} from "../session/messages";
 import type {Stage} from "../../render/stage";
 import type {Space} from "../selection/ToolModel";
 
-/** What the gizmo does to the molecule. */
-export type GizmoMode = "translate" | "rotate";
+/**
+ * What the gizmo does: carry the whole molecule, turn it, or carry the selected atoms within it, which changes
+ * their coordinates and not the molecule's pose.
+ */
+export type GizmoMode = "translate" | "rotate" | "atoms";
 
 export interface GizmoHooks {
+  /** A handle has been taken hold of: `axis` is its name, such as `X`, `YZ` or `XYZ` for the middle of the translate handles. */
+  grab(axis: string): void;
   /** A handle has been taken hold of, with the molecule at `from`. */
   start(from: Pose): void;
   /** The handle has put the molecule at `pose`. `done` is true for the last report, when the handle is let go. */
   change(pose: Pose, done: boolean): void;
   /** The drag was abandoned and the molecule put back at `from`. */
   cancel(from: Pose): void;
+  /** A handle has been taken hold of in the atoms mode. */
+  shiftStart(): void;
+  /**
+   * The handle has carried the atoms `offset` from where they were picked up, in the molecule's own frame.
+   * `done` is true for the last report, when the handle is let go.
+   */
+  shift(offset: Vector3, done: boolean): void;
+  /** A drag in the atoms mode was abandoned. */
+  shiftCancel(): void;
 }
 
 /** The handles for moving or turning a whole molecule. */
@@ -46,22 +60,29 @@ export class MoleculeGizmo {
       stage.controls.enabled = !event.value;
     });
     this.controls.addEventListener("mouseDown", () => {
+      if (this.controls.axis !== null) {
+        this.hooks.grab(this.controls.axis);
+      }
       this.start = {
         position: this.molecule.position.clone(),
         rotation: this.molecule.quaternion.clone(),
         pivot: this.proxy.position.clone(),
       };
-      this.hooks.start(this.poseOf(this.start.position, this.start.rotation));
+      if (this.mode === "atoms") {
+        this.hooks.shiftStart();
+      } else {
+        this.hooks.start(this.poseOf(this.start.position, this.start.rotation));
+      }
     });
     this.controls.addEventListener("objectChange", () => {
       if (this.follow()) {
-        this.hooks.change(this.current(), false);
+        this.report(false);
       }
     });
     this.controls.addEventListener("mouseUp", () => {
       if (this.follow()) {
+        this.report(true);
         this.start = null;
-        this.hooks.change(this.current(), true);
       }
     });
   }
@@ -91,7 +112,7 @@ export class MoleculeGizmo {
     this.mode = mode;
     this.proxy.position.copy(pivot);
     this.proxy.quaternion.copy(this.molecule.quaternion);
-    this.controls.setMode(mode);
+    this.controls.setMode(mode === "atoms" ? "translate" : mode);
     this.controls.setSpace(space);
     this.controls.attach(this.proxy);
     this.stage.requestRender();
@@ -115,9 +136,11 @@ export class MoleculeGizmo {
     }
     this.start = null;
 
-    this.molecule.position.copy(start.position);
-    this.molecule.quaternion.copy(start.rotation);
-    this.molecule.updateMatrixWorld(true);
+    if (this.mode !== "atoms") {
+      this.molecule.position.copy(start.position);
+      this.molecule.quaternion.copy(start.rotation);
+      this.molecule.updateMatrixWorld(true);
+    }
     this.proxy.position.copy(start.pivot);
     this.proxy.quaternion.copy(start.rotation);
 
@@ -127,7 +150,11 @@ export class MoleculeGizmo {
       this.controls.attach(this.proxy);
     }
     this.stage.requestRender();
-    this.hooks.cancel(this.poseOf(start.position, start.rotation));
+    if (this.mode === "atoms") {
+      this.hooks.shiftCancel();
+    } else {
+      this.hooks.cancel(this.poseOf(start.position, start.rotation));
+    }
   }
 
   /** Releases the handles. */
@@ -137,7 +164,28 @@ export class MoleculeGizmo {
   }
 
   /**
-   * Puts the molecule where the proxy now says: turned as the proxy is, about the pivot the proxy began on.
+   * Tells the hooks where the handle has got to.
+   *
+   * @param done whether the handle has just been let go
+   */
+  private report(done: boolean): void {
+    const start = this.start;
+    if (!start) {
+      return;
+    }
+
+    if (this.mode === "atoms") {
+      // the proxy is in the scene, and the atoms are placed in the molecule's own frame
+      const offset = this.proxy.position.clone().sub(start.pivot).applyQuaternion(this.molecule.quaternion.clone().invert());
+      this.hooks.shift(offset, done);
+    } else {
+      this.hooks.change(this.current(), done);
+    }
+  }
+
+  /**
+   * Puts the molecule where the proxy now says: turned as the proxy is, about the pivot the proxy began on. In the
+   * atoms mode the molecule stays where it is.
    *
    * @returns whether a handle is held, which is when there is anything to follow
    */
@@ -145,6 +193,9 @@ export class MoleculeGizmo {
     const start = this.start;
     if (!start) {
       return false;
+    }
+    if (this.mode === "atoms") {
+      return true;
     }
 
     const turn = this.proxy.quaternion.clone().multiply(start.rotation.clone().invert());

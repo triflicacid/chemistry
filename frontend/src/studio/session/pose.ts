@@ -16,7 +16,7 @@ export function eulerOf(pose: Pose): Vec3 {
   const { x, y, z, w } = pose.rotation;
   const angles = new Euler().setFromQuaternion(new Quaternion(x, y, z, w), ORDER);
   // adding zero turns a negative zero into a plain one, which would otherwise show as -0
-  return { x: MathUtils.radToDeg(angles.x) + 0, y: MathUtils.radToDeg(angles.y) + 0, z: MathUtils.radToDeg(angles.z) + 0 };
+  return { x: MathUtils.radToDeg(angles.x), y: MathUtils.radToDeg(angles.y), z: MathUtils.radToDeg(angles.z) };
 }
 
 /**

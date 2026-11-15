@@ -106,7 +106,10 @@ export function Viewport({
 
   // the whole molecule is moved or turned with handles, which are there while a molecule is selected and a tool that uses them is
   const moleculeSelected = selected.items.some((item) => item.kind === "molecule");
-  const gizmo = moleculeSelected && tool === "move" ? "translate" : moleculeSelected && tool === "rotate" ? "rotate" : null;
+  const atomsSelected = selected.items.some((item) => item.kind === "atom");
+  const gizmo = tool === "move"
+      ? (moleculeSelected ? "translate" : atomsSelected ? "atoms" : null)
+      : (tool === "rotate" && moleculeSelected ? "rotate" : null);
   useEffect(() => {
     view?.setGizmo(gizmo);
   }, [view, gizmo]);
@@ -180,6 +183,7 @@ export function Viewport({
       },
       drag: (moves, done) => (done ? onDropAtoms(moves) : onDragAtoms(moves)),
       dragCancel: onCancelDrag,
+      constraint: (held) => tools.constrain(held),
       moleculeDrag: (pose, done) => (done ? onDropMolecule(pose) : onDragMolecule(pose)),
       moleculeDragCancel: onCancelMoleculeDrag,
     });

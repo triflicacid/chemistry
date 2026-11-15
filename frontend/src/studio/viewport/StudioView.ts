@@ -50,6 +50,8 @@ export interface StudioViewListener {
   drag?(moves: AtomMove[], done: boolean): void;
   /** A drag was abandoned, and the atoms put back at `moves`' positions, where they were picked up. */
   dragCancel?(moves: AtomMove[]): void;
+  /** A handle that translates has been taken hold of, so `constraint` is what the move is now held to. */
+  constraint?(constraint: Constraint): void;
   /** A handle of the molecule's gizmo has been taken hold of, with the molecule at `from`. */
   moleculeDragStart?(from: Pose): void;
   /** The gizmo has put the molecule at `pose`. `done` is true for the last report, when the handle is let go. */
@@ -183,6 +185,8 @@ export class StudioView {
   /** The pose last drawn, so that an unchanged one is not drawn again. */
   private drawnPose: Pose | null = null;
   private grab: Grab | null = null;
+  /** The atoms the gizmo is carrying, each with where it was picked up, or null while it is not carrying any. */
+  private shifting: { node: AtomNode; original: Vector3 }[] | null = null;
   /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
   private snapped: { axis: Vector3; sign: 1 | -1; orientation: Quaternion } | null = null;
   /** Whether to draw how a move would go. */
@@ -207,6 +211,13 @@ export class StudioView {
     this.axes.visible = false;
     this.stage.scene.add(this.content, this.axes, this.guideFrame);
     this.gizmo = new MoleculeGizmo(this.stage, this.content, {
+      grab: (axis) => {
+        // the handles that translate hold a move to an axis or plane just as the keys do, so the keys and buttons follow
+        const held = CONSTRAINT_OF_HANDLE[axis];
+        if (this.gizmoMode !== "rotate" && held) {
+          this.listeners.forEach((listener) => listener.constraint?.(held));
+        }
+      },
       start: (from) => this.listeners.forEach((listener) => listener.moleculeDragStart?.(from)),
       change: (pose, done) => {
         this.refreshGuide();
@@ -217,6 +228,9 @@ export class StudioView {
         this.refreshGuide();
         this.listeners.forEach((listener) => listener.moleculeDragCancel?.(from));
       },
+      shiftStart: () => this.startShift(),
+      shift: (offset, done) => this.shiftAtoms(offset, done),
+      shiftCancel: () => this.cancelShift(),
     });
     this.stage.addOverlay((renderer, camera) => this.triad.draw(renderer, camera));
 
@@ -249,7 +263,10 @@ export class StudioView {
     }
     if (signature === this.signature) {
       // the atom in the user's hand is where the pointer has put it, and the session is only catching up
-      const held = new Set(this.grab?.dragging ? this.grab.members.map((member) => member.node.atom.id) : []);
+      const held = new Set([
+        ...(this.grab?.dragging ? this.grab.members.map((member) => member.node.atom.id) : []),
+        ...(this.shifting?.map(({ node }) => node.atom.id) ?? []),
+      ]);
       this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
       this.refreshLocks();
       this.syncGizmo();
@@ -299,7 +316,8 @@ export class StudioView {
   /**
    * Shows what the molecule's gizmo does, or hides it.
    *
-   * @param mode translate to carry the molecule along an axis or plane, rotate to turn it about the pivot, or null for neither
+   * @param mode translate to carry the molecule along an axis or plane, rotate to turn it about the pivot, atoms to carry
+   *     the selected atoms within it, or null for none of them
    */
   setGizmo(mode: GizmoMode | null): void {
     this.gizmoMode = mode;
@@ -335,7 +353,72 @@ export class StudioView {
       this.gizmo.hide();
       return;
     }
+
+    if (this.gizmoMode === "atoms") {
+      // a selection with a locked atom in it cannot be moved, so there is nothing to put handles on
+      const nodes = this.selectedNodes();
+      if (nodes.length === 0 || this.selectionLocked()) {
+        this.gizmo.hide();
+        return;
+      }
+
+      const box = new Box3();
+      nodes.forEach((node) => box.expandByPoint(this.worldOf(node)));
+      this.gizmo.show("atoms", this.space, box.getCenter(new Vector3()));
+      return;
+    }
+
     this.gizmo.show(this.gizmoMode, this.space, this.pivotWorld());
+  }
+
+  /** The drawn atoms that are selected. */
+  private selectedNodes(): AtomNode[] {
+    return [...this.emphasis.selected.atoms].flatMap((id) => this.atomById.get(id) ?? []);
+  }
+
+  /** A handle of the gizmo has been taken hold of in the atoms mode: the selected atoms are picked up. */
+  private startShift(): void {
+    const nodes = this.selectedNodes();
+    if (nodes.length === 0) {
+      return;
+    }
+
+    this.shifting = nodes.map((node) => ({ node, original: node.at.clone() }));
+    const [active] = this.emphasis.active.atoms;
+    this.listeners.forEach((listener) => listener.dragStart?.(active ?? nodes[0]!.atom.id));
+  }
+
+  /**
+   * Carries the picked-up atoms.
+   *
+   * @param offset how far from where they were picked up, in the molecule's own frame
+   * @param done whether the handle has just been let go
+   */
+  private shiftAtoms(offset: Vector3, done: boolean): void {
+    const carried = this.shifting;
+    if (!carried) {
+      return;
+    }
+
+    const moves = carried.map(({ node, original }): AtomMove => ({ id: node.atom.id, position: toVec3(original.clone().add(offset)) }));
+    this.moveAtoms(moves.map((move) => [move.id, move.position]));
+    if (done) {
+      this.shifting = null;
+    }
+    this.listeners.forEach((listener) => listener.drag?.(moves, done));
+  }
+
+  /** Puts the picked-up atoms back where they were. */
+  private cancelShift(): void {
+    const carried = this.shifting;
+    this.shifting = null;
+    if (!carried) {
+      return;
+    }
+
+    const moves = carried.map(({ node, original }): AtomMove => ({ id: node.atom.id, position: toVec3(original) }));
+    this.moveAtoms(moves.map((move) => [move.id, move.position]));
+    this.listeners.forEach((listener) => listener.dragCancel?.(moves));
   }
 
   /** Where the pivot is in the scene. */
@@ -453,6 +536,10 @@ export class StudioView {
     affected.forEach((bond) => this.redraw(bond));
     this.refreshEmphasis();
     this.placeGuide();
+    // the handles sit on the selected atoms, so they follow when something else moves them
+    if (this.gizmoMode === "atoms") {
+      this.syncGizmo();
+    }
   }
 
   /**
@@ -464,6 +551,7 @@ export class StudioView {
     this.emphasis = emphasis;
     this.refreshEmphasis();
     this.refreshGuide();
+    this.syncGizmo();
   }
 
   /** Points the camera at the whole scene. */
@@ -1026,6 +1114,17 @@ export class StudioView {
     this.cancelDrag();
   };
 }
+
+/** The constraint a translate handle holds a move to, by the name three.js gives the handle. */
+const CONSTRAINT_OF_HANDLE: Record<string, Constraint | undefined> = {
+  X: "x",
+  Y: "y",
+  Z: "z",
+  XY: "xy",
+  YZ: "yz",
+  XZ: "xz",
+  XYZ: "free",
+};
 
 function toVec3(point: Vector3): Vec3 {
   return { x: point.x, y: point.y, z: point.z };
