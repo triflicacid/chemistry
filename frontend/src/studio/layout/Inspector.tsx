@@ -118,11 +118,7 @@ function ItemPane({ item, index, geometry, models, onMoveAtom, onSetBondLength, 
   }
 }
 
-/**
- * Where the camera is and how it looks, each of which can be edited. The camera orbits the point it looks at: its yaw,
- * pitch and distance say where it is round that point, and changing them moves the camera, while changing the point
- * turns the camera to look at it from where it is.
- */
+/** Where the camera is and how it looks, each of which can be edited. */
 function CameraPane({ models }: { models: Models }) {
   const { camera } = models;
   const now = useObservable(camera);
