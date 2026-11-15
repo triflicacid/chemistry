@@ -1,8 +1,11 @@
+import { useObservable } from "../selection/observable";
+import type { ToolModel } from "../selection/ToolModel";
 import type { LayoutState, Panel } from "../store";
 import type { SessionPhase } from "../session/useSession";
 
 export interface ToolbarProps {
   phase: SessionPhase;
+  tools: ToolModel;
   layout: LayoutState;
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   canUndo: boolean;
@@ -14,16 +17,30 @@ export interface ToolbarProps {
 
 const WAITING = "Not built yet";
 
-export function Toolbar({ phase, layout, onCollapse, canUndo, canRedo, saved, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ phase, tools, layout, onCollapse, canUndo, canRedo, saved, onUndo, onRedo }: ToolbarProps) {
+  const { tool } = useObservable(tools);
+
   return (
     <header className="toolbar">
       <span className="brand">Molecular Studio</span>
 
       <div className="tool-group" role="group" aria-label="Tools">
-        <button type="button" className="tool" disabled title={WAITING}>
+        <button
+          type="button"
+          className="tool"
+          aria-pressed={tool === "select"}
+          title="Dragging an atom orbits the camera, like dragging anywhere else"
+          onClick={() => tools.use("select")}
+        >
           Select
         </button>
-        <button type="button" className="tool" disabled title={WAITING}>
+        <button
+          type="button"
+          className="tool"
+          aria-pressed={tool === "move"}
+          title="Dragging an atom moves it. Hold it to an axis or plane with X, Y and Z, or the buttons in the viewport"
+          onClick={() => tools.use("move")}
+        >
           Move
         </button>
         <button type="button" className="tool" disabled title={WAITING}>

@@ -1,4 +1,4 @@
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, Raycaster, type Sprite, Vector3 } from "three";
+import { Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, type Ray, Raycaster, type Sprite, Vector3 } from "three";
 import type { Vec3 } from "../../api/types/structure";
 import { aromaticCentres } from "../../render/aromatic";
 import { makeAxes } from "../../render/axes";
@@ -8,6 +8,8 @@ import { applyTints, HOVER_TINT, SELECTED_TINT } from "../../render/emphasis";
 import { type Part, PartRegistry } from "../../render/parts";
 import { Primitives } from "../../render/primitives";
 import { Stage } from "../../render/stage";
+import { type Constraint, dragged, pointOnConstraint } from "./dragPlane";
+import { type Guide, makeGuide } from "./guides";
 import type { SessionAtom, SessionBond, SessionState } from "../session/messages";
 
 /** An atom or bond under the pointer, named by the identifier the session gave it. */
@@ -27,6 +29,12 @@ export interface StudioViewListener {
   hover?(pick: StudioPick | null, at: ScreenPoint): void;
   /** A left click that was not a camera drag. `additive` is whether shift, control or command was held. */
   click?(pick: StudioPick | null, additive: boolean): void;
+  /** An atom has been picked up by the move tool and has begun to move. */
+  dragStart?(id: string): void;
+  /** A dragged atom is at `position`. `done` is true for the last report, when the pointer is released. */
+  drag?(id: string, position: Vec3, done: boolean): void;
+  /** A drag was abandoned, and the atom put back at `from`, where it was picked up. */
+  dragCancel?(id: string, from: Vec3): void;
 }
 
 /** Atoms and bonds, by identifier, to draw with emphasis. */
@@ -73,6 +81,25 @@ const CLICK_SLOP = 4;
 
 const STYLE: Style = "ball_and_stick";
 
+/** An atom the pointer is pressed on while the move tool is in use, which becomes a drag once the pointer has moved. */
+interface Grab {
+  id: string;
+  node: AtomNode;
+  /** Where the atom was when it was pressed, which a cancelled drag puts it back to. */
+  original: Vector3;
+  /** Where the atom was when the current constraint began, which the drag is measured from. */
+  start: Vector3;
+  /** Where the pointer's ray met the constraint when it began. */
+  point: Vector3;
+  /** The way the camera looks, which does not change during a drag because the camera is not moved. */
+  viewDirection: Vector3;
+  /** Where the pointer was pressed, in pixels. */
+  from: ScreenPoint;
+  /** The pointer's latest ray, kept so that a change of constraint can start from where the pointer is. */
+  ray: Ray;
+  dragging: boolean;
+}
+
 /** Draws a Studio session on a canvas. */
 export class StudioView {
   private readonly stage: Stage;
@@ -95,20 +122,33 @@ export class StudioView {
   /** The session the camera was last framed on, so a new session is framed and an edit to the same one is not. */
   private framedSession: string | null = null;
   private down: { x: number; y: number } | null = null;
+  private locked: ReadonlySet<string> = new Set();
+  /** Whether pressing on an atom picks it up. */
+  private moving = false;
+  private constraint: Constraint = "free";
+  private grab: Grab | null = null;
+  /** Whether to draw how a move would go. */
+  private debug = false;
+  private guide: Guide | null = null;
   private emphasis: Emphasised = { selected: NO_EMPHASIS, active: NO_EMPHASIS, hover: NO_EMPHASIS };
 
   /**
    * @param canvas the canvas to draw on; it is sized to its CSS box
    */
   constructor(canvas: HTMLCanvasElement) {
-    this.stage = new Stage({ canvas, sizedBy: canvas });
+    this.stage = new Stage({ canvas, sizedBy: canvas, onMove: () => this.placeGuide() });
+    // off until the viewport says otherwise, so they do not flash on before it does
+    this.axes.visible = false;
     this.stage.scene.add(this.content, this.axes);
 
     canvas.addEventListener("pointermove", this.onMove);
     canvas.addEventListener("pointerleave", this.onLeave);
+    // captured, so that this hears the press before the orbit controls do and can keep them from turning the camera
+    canvas.addEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
     canvas.addEventListener("pointercancel", this.onCancel);
+    window.addEventListener("keydown", this.onKey, { capture: true });
 
     this.frameScene();
   }
@@ -120,11 +160,16 @@ export class StudioView {
    */
   setState(state: SessionState): void {
     const signature = signatureOf(state);
+    this.locked = new Set(state.locked);
     if (signature === this.signature) {
-      this.moveAtoms(state.atoms.map((atom) => [atom.id, atom.position]));
+      // the atom in the user's hand is where the pointer has put it, and the session is only catching up
+      const held = this.grab?.dragging ? this.grab.id : null;
+      this.moveAtoms(state.atoms.filter((atom) => atom.id !== held).map((atom) => [atom.id, atom.position]));
       return;
     }
 
+    this.grab = null;
+    this.stage.controls.enabled = true;
     this.signature = signature;
     this.build(state);
     if (this.framedSession !== state.session_id) {
@@ -176,6 +221,7 @@ export class StudioView {
     }
     affected.forEach((bond) => this.redraw(bond));
     this.refreshEmphasis();
+    this.placeGuide();
   }
 
   /**
@@ -186,6 +232,7 @@ export class StudioView {
   setEmphasis(emphasis: Emphasised): void {
     this.emphasis = emphasis;
     this.refreshEmphasis();
+    this.refreshGuide();
   }
 
   /** Points the camera at the whole scene. */
@@ -230,6 +277,60 @@ export class StudioView {
   }
 
   /**
+   * Turns picking atoms up on or off. While on, pressing on an atom that is not locked and dragging moves it, and
+   * the camera does not turn; pressing anywhere else still orbits.
+   *
+   * @param enabled whether pressing on an atom picks it up
+   */
+  setMoving(enabled: boolean): void {
+    this.moving = enabled;
+    if (!enabled) {
+      this.cancelDrag();
+    }
+    this.refreshGuide();
+  }
+
+  /**
+   * Turns the debugging overlays on or off. Today that is the guide for a move: arrows along the axis, or a faint
+   * plane, that the atom being moved is held to.
+   *
+   * @param enabled whether to draw them
+   */
+  setDebug(enabled: boolean): void {
+    this.debug = enabled;
+    this.refreshGuide();
+  }
+
+  /**
+   * Holds a drag to an axis or plane, or lets it go. A drag already begun carries on from where the atom is now.
+   *
+   * @param constraint what a dragged atom is held to
+   */
+  setConstraint(constraint: Constraint): void {
+    this.constraint = constraint;
+    this.refreshGuide();
+    const grab = this.grab;
+    if (grab?.dragging) {
+      grab.start = grab.node.at.clone();
+      grab.point = pointOnConstraint(grab.ray, grab.start, constraint, grab.viewDirection) ?? grab.point;
+    }
+  }
+
+  /** Abandons a drag in progress, putting the atom back where it was picked up. */
+  cancelDrag(): void {
+    const grab = this.grab;
+    if (!grab) {
+      return;
+    }
+    this.releaseGrab();
+
+    if (grab.dragging) {
+      this.moveAtoms([[grab.id, grab.original]]);
+      this.listeners.forEach((listener) => listener.dragCancel?.(grab.id, toVec3(grab.original)));
+    }
+  }
+
+  /**
    * Hears about the pointer.
    *
    * @param listener who to tell
@@ -245,14 +346,56 @@ export class StudioView {
     const canvas = this.stage.canvas;
     canvas.removeEventListener("pointermove", this.onMove);
     canvas.removeEventListener("pointerleave", this.onLeave);
+    canvas.removeEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.removeEventListener("pointerdown", this.onDown);
     canvas.removeEventListener("pointerup", this.onUp);
     canvas.removeEventListener("pointercancel", this.onCancel);
+    window.removeEventListener("keydown", this.onKey, { capture: true });
     this.clear();
+    this.guide?.dispose();
     disposeMaterials(this.axes);
     this.kit.dispose();
     this.stage.dispose();
     this.listeners.clear();
+  }
+
+  /** The atom the move guide is drawn on: the one in hand, or else the active one. */
+  private guideTarget(): AtomNode | null {
+    if (this.grab?.dragging) {
+      return this.grab.node;
+    }
+    const [active] = this.emphasis.active.atoms;
+    return active === undefined ? null : (this.atomById.get(active) ?? null);
+  }
+
+  /** Draws the guide for the current constraint afresh, or removes it when there is nothing for it to show. */
+  private refreshGuide(): void {
+    if (this.guide) {
+      this.stage.scene.remove(this.guide.group);
+      this.guide.dispose();
+      this.guide = null;
+    }
+
+    if (this.debug && this.moving && this.guideTarget()) {
+      this.guide = makeGuide(this.constraint);
+      this.stage.scene.add(this.guide.group);
+      this.placeGuide();
+    }
+    this.stage.requestRender();
+  }
+
+  /** Moves the guide onto its atom, and turns a camera-facing one to face the camera. */
+  private placeGuide(): void {
+    const target = this.guideTarget();
+    if (!this.guide || !target) {
+      return;
+    }
+
+    this.guide.group.position.copy(target.at);
+    if (this.guide.facesCamera) {
+      this.guide.group.quaternion.copy(this.stage.camera.quaternion);
+    }
+    this.stage.requestRender();
   }
 
   /** Where an atom is, by position in the atom list. A copy, since the drawing code moves the points it is given. */
@@ -371,7 +514,89 @@ export class StudioView {
     return hit && id !== undefined ? { kind: hit.part.pick.kind, id } : null;
   }
 
+  /** The pointer's ray into the scene. */
+  private rayOf(event: PointerEvent): Ray {
+    this.raycaster.setFromCamera(this.stage.pointer(event), this.stage.camera);
+    return this.raycaster.ray.clone();
+  }
+
+  /** Where a grabbed atom is, given where the pointer is, or null if the pointer's ray does not meet what it is held to. */
+  private targetOf(grab: Grab, ray: Ray): Vector3 | null {
+    const point = pointOnConstraint(ray, grab.start, this.constraint, grab.viewDirection);
+    return point ? dragged(grab.point, point, grab.start) : null;
+  }
+
+  /** Lets go of the atom in hand, giving the camera its controls back. */
+  private releaseGrab(): void {
+    this.grab = null;
+    this.stage.controls.enabled = true;
+    this.refreshGuide();
+  }
+
+  private readonly onGrab = (event: PointerEvent): void => {
+    if (!this.moving || event.button !== 0) {
+      return;
+    }
+
+    const pick = this.pickAt(event);
+    const node = pick?.kind === "atom" ? this.atomById.get(pick.id) : undefined;
+    if (!pick || !node || this.locked.has(pick.id)) {
+      return;
+    }
+
+    const ray = this.rayOf(event);
+    const viewDirection = this.stage.camera.getWorldDirection(new Vector3());
+    const point = pointOnConstraint(ray, node.at, this.constraint, viewDirection);
+    if (!point) {
+      return;
+    }
+
+    this.grab = {
+      id: pick.id,
+      node,
+      original: node.at.clone(),
+      start: node.at.clone(),
+      point,
+      viewDirection,
+      from: { x: event.clientX, y: event.clientY },
+      ray,
+      dragging: false,
+    };
+
+    // the camera must not turn while the atom does, and the pointer must keep reporting if it leaves the canvas
+    this.stage.controls.enabled = false;
+    this.stage.canvas.setPointerCapture(event.pointerId);
+  };
+
+  private readonly onKey = (event: KeyboardEvent): void => {
+    if (event.key === "Escape" && this.grab?.dragging) {
+      // the key abandons the drag and goes no further, so it does not also clear the selection
+      event.stopPropagation();
+      this.cancelDrag();
+    }
+  };
+
   private readonly onMove = (event: PointerEvent): void => {
+    const grab = this.grab;
+    if (grab && event.buttons !== 0) {
+      if (!grab.dragging) {
+        if (Math.hypot(event.clientX - grab.from.x, event.clientY - grab.from.y) <= CLICK_SLOP) {
+          return;
+        }
+        grab.dragging = true;
+        this.refreshGuide();
+        this.listeners.forEach((listener) => listener.dragStart?.(grab.id));
+      }
+
+      grab.ray = this.rayOf(event);
+      const target = this.targetOf(grab, grab.ray);
+      if (target) {
+        this.moveAtoms([[grab.id, target]]);
+        this.listeners.forEach((listener) => listener.drag?.(grab.id, toVec3(target), false));
+      }
+      return;
+    }
+
     if (event.buttons !== 0) {
       return;
     }
@@ -388,6 +613,18 @@ export class StudioView {
   };
 
   private readonly onUp = (event: PointerEvent): void => {
+    const grab = this.grab;
+    if (grab) {
+      this.releaseGrab();
+      if (grab.dragging) {
+        this.down = null;
+        const target = this.targetOf(grab, this.rayOf(event)) ?? grab.node.at;
+        this.moveAtoms([[grab.id, target]]);
+        this.listeners.forEach((listener) => listener.drag?.(grab.id, toVec3(target), true));
+        return;
+      }
+    }
+
     const down = this.down;
     this.down = null;
     // a left drag orbits the camera, and the release that ends one must not also select what is under it
@@ -400,7 +637,12 @@ export class StudioView {
 
   private readonly onCancel = (): void => {
     this.down = null;
+    this.cancelDrag();
   };
+}
+
+function toVec3(point: Vector3): Vec3 {
+  return { x: point.x, y: point.y, z: point.z };
 }
 
 /** Everything about a state that decides how it is drawn, other than the atoms' positions. */

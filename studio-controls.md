@@ -24,6 +24,25 @@ The browser's context menu is disabled over the viewport.
 A click that moves more than 4 px is a camera drag and selects nothing.
 The last item selected is the active one, which the Inspector shows.
 
+## Moving atoms
+
+Choose **Move** in the toolbar (**Select** goes back). Then:
+
+| Input | Action |
+|---|---|
+| Drag an atom | Move it. Dragging empty space still orbits, and a locked atom cannot be picked up |
+| Release | Drop it. The whole drag is one undo step |
+| Esc during a drag | Abandon it; the atom goes back where it was picked up |
+| X, Y or Z | Hold the move to that axis |
+| Shift+X, Shift+Y or Shift+Z | Hold it to the plane across that axis (yz, xz, xy) |
+| The same key again | Let go of the constraint |
+| Constraint buttons in the viewport | The same, by mouse: Free, X, Y, Z, YZ, XZ, XY |
+
+Free movement is in the plane facing the camera. Axes are the world's: with no molecule transform yet,
+there is no local space to choose. The atom you drag is selected, so the Inspector shows its position
+as it moves. While you drag, the viewport follows the pointer at once and the session is told about ten
+times a second.
+
 ## SMILES bar
 
 | Input | Action |
@@ -41,7 +60,8 @@ changed on the server while you were editing, the rebuild is refused and the cur
 |---|---|
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
-| Axes | Show or hide the scene axes, which sit at the origin |
+| Axes | Show or hide the scene axes, which sit at the origin. Off by default |
+| Debug | Draw guides for moving, on the selected atom or the one being dragged: arrows both ways along an axis, a faint coloured plane for a plane constraint, or a grey plane facing the camera for free movement. They show only with the Move tool, and are drawn through the molecule |
 
 ## Outliner
 

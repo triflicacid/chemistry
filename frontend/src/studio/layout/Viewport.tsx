@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import type { Vec3 } from "../../api/types/structure";
 import type { Item } from "../selection/items";
 import type { Models, PickMode } from "../selection/models";
 import { useObservable } from "../selection/observable";
 import type { StateIndex } from "../selection/StateIndex";
 import type { SessionState } from "../session/messages";
 import type { SessionPhase } from "../session/useSession";
+import { type Constraint, constraintForKey } from "../viewport/dragPlane";
 import { type StudioPick, StudioView } from "../viewport/StudioView";
 import { OpenMolecule } from "./OpenMolecule";
 
@@ -13,15 +15,33 @@ export interface ViewportProps {
   state: SessionState | null;
   models: Models;
   onOpenSmiles: (smiles: string) => void;
+  /** An atom has been dragged to a position, and the drag is not over. */
+  onDragAtom: (id: string, position: Vec3) => void;
+  /** An atom has been dropped at a position, which ends its drag. */
+  onDropAtom: (id: string, position: Vec3) => void;
+  /** A drag was abandoned, and the atom is back at `from`. */
+  onCancelDrag: (id: string, from: Vec3) => void;
 }
 
+const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
+  { value: "free", label: "Free", title: "Move in the plane facing the camera" },
+  { value: "x", label: "X", title: "Move along the x axis (X)" },
+  { value: "y", label: "Y", title: "Move along the y axis (Y)" },
+  { value: "z", label: "Z", title: "Move along the z axis (Z)" },
+  { value: "yz", label: "YZ", title: "Move in the yz plane (Shift+X)" },
+  { value: "xz", label: "XZ", title: "Move in the xz plane (Shift+Y)" },
+  { value: "xy", label: "XY", title: "Move in the xy plane (Shift+Z)" },
+];
+
 /** The canvas, which fills whatever space the workspace leaves it, and the molecule drawn on it. */
-export function Viewport({ phase, state, models, onOpenSmiles }: ViewportProps) {
+export function Viewport({ phase, state, models, onOpenSmiles, onDragAtom, onDropAtom, onCancelDrag }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
-  const [axes, setAxes] = useState(true);
+  const [axes, setAxes] = useState(false);
+  const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickMode>("element");
-  const { selection, hover, index } = models;
+  const { selection, hover, tools, index } = models;
+  const { tool, constraint } = useObservable(tools);
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -49,6 +69,37 @@ export function Viewport({ phase, state, models, onOpenSmiles }: ViewportProps) 
   }, [view, axes]);
 
   useEffect(() => {
+    view?.setDebug(debug);
+  }, [view, debug]);
+
+  useEffect(() => {
+    view?.setMoving(tool === "move");
+  }, [view, tool]);
+
+  useEffect(() => {
+    view?.setConstraint(constraint);
+  }, [view, constraint]);
+
+  // X, Y and Z hold a move to an axis, and shift with one holds it to the plane across that axis
+  useEffect(() => {
+    if (tool !== "move") {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable]") || event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      const asked = constraintForKey(tools.get().constraint, event.key, event.shiftKey);
+      if (asked) {
+        tools.constrain(asked);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tool, tools]);
+
+  useEffect(() => {
     if (!view || !index) {
       return;
     }
@@ -72,8 +123,17 @@ export function Viewport({ phase, state, models, onOpenSmiles }: ViewportProps) 
           selection.clear();
         }
       },
+      // picking an atom up selects it, so the Inspector shows where it is while it moves
+      dragStart: (id) => {
+        const item: Item = { kind: "atom", id };
+        if (!selection.get().items.some((each) => each.kind === "atom" && each.id === id)) {
+          selection.select(item);
+        }
+      },
+      drag: (id, position, done) => (done ? onDropAtom(id, position) : onDragAtom(id, position)),
+      dragCancel: onCancelDrag,
     });
-  }, [view, index, mode, selection, hover]);
+  }, [view, index, mode, selection, hover, onDragAtom, onDropAtom, onCancelDrag]);
 
   const frame = () => {
     if (!view || !index) {
@@ -92,6 +152,15 @@ export function Viewport({ phase, state, models, onOpenSmiles }: ViewportProps) 
       <canvas ref={canvasRef} className="viewport-canvas" />
       {state && (
         <div className="viewport-tools" role="group" aria-label="View">
+          {tool === "move" && (
+            <div className="tool-group" role="group" aria-label="Move constraint">
+              {CONSTRAINTS.map(({ value, label, title }) => (
+                <button key={value} type="button" className="tool" aria-pressed={constraint === value} title={title} onClick={() => tools.constrain(value)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <button type="button" className="tool" title="Centre the camera on the selection, or on everything if nothing is selected" onClick={frame}>
             Frame selection
           </button>
@@ -106,6 +175,15 @@ export function Viewport({ phase, state, models, onOpenSmiles }: ViewportProps) 
           </button>
           <button type="button" className="tool" aria-pressed={axes} title="Show or hide the x, y and z axes at the origin" onClick={() => setAxes(!axes)}>
             Axes
+          </button>
+          <button
+            type="button"
+            className="tool"
+            aria-pressed={debug}
+            title="Draw guides for moving: the axis or plane the selected atom is held to, as arrows or a faint plane"
+            onClick={() => setDebug(!debug)}
+          >
+            Debug
           </button>
         </div>
       )}

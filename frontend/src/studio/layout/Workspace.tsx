@@ -23,12 +23,15 @@ export interface WorkspaceProps {
   onOpenSmiles: (smiles: string) => void;
   onSubmitSmiles: (smiles: string) => Promise<SubmitResult>;
   onMoveAtom: (id: string, position: Vec3) => void;
+  onDragAtom: (id: string, position: Vec3) => void;
+  onDropAtom: (id: string, position: Vec3) => void;
+  onCancelDrag: (id: string, from: Vec3) => void;
   onUndo: () => void;
   onRedo: () => void;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onUndo, onRedo } = props;
+  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onDragAtom, onDropAtom, onCancelDrag, onUndo, onRedo } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -51,6 +54,7 @@ export function Workspace(props: WorkspaceProps) {
     <div className="workspace" style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}>
       <Toolbar
         phase={phase}
+        tools={models.tools}
         layout={layout}
         onCollapse={onCollapse}
         canUndo={state?.can_undo ?? false}
@@ -73,7 +77,15 @@ export function Workspace(props: WorkspaceProps) {
       )}
 
       <div className="viewport-cell">
-        <Viewport phase={phase} state={state} models={models} onOpenSmiles={onOpenSmiles} />
+        <Viewport
+          phase={phase}
+          state={state}
+          models={models}
+          onOpenSmiles={onOpenSmiles}
+          onDragAtom={onDragAtom}
+          onDropAtom={onDropAtom}
+          onCancelDrag={onCancelDrag}
+        />
       </div>
 
       {!layout.inspectorCollapsed && (
