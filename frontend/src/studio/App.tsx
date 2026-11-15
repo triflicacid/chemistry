@@ -12,7 +12,7 @@ const SETTLE_MS = 200;
 export function App() {
   const store = useMemo(() => new StudioStore(), []);
   const [layout, setLayout] = useState(store.layout);
-  const { phase, state, activity, openSmiles } = useSession();
+  const { phase, state, activity, openSmiles, submitSmiles } = useSession();
 
   const shared = useMemo(createModels, []);
   const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
@@ -48,6 +48,19 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [shared]);
 
+  // a rebuilt structure issues every identifier afresh, so none of the old ones still names what it did
+  const submit = useCallback(
+    async (smiles: string) => {
+      const result = await submitSmiles(smiles);
+      if (result.kind !== "refused") {
+        shared.selection.clear();
+        shared.hover.hover(null);
+      }
+      return result;
+    },
+    [shared, submitSmiles],
+  );
+
   const resize = useCallback((panel: Panel, size: number) => {
     setLayout((before) => (before[panel] === size ? before : { ...before, [panel]: size }));
   }, []);
@@ -66,6 +79,7 @@ export function App() {
       onResize={resize}
       onCollapse={collapse}
       onOpenSmiles={openSmiles}
+      onSubmitSmiles={submit}
     />
   );
 }

@@ -3,6 +3,9 @@ package com.ruben.chemistry.server.resource;
 import com.ruben.chemistry.server.json.JsonException;
 import com.ruben.chemistry.server.json.JsonNames;
 import com.ruben.chemistry.server.json.RecordConverter;
+import com.ruben.chemistry.server.molecule.MoleculeException;
+import com.ruben.chemistry.server.molecule.MoleculeParser;
+import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.studio.StudioSession;
@@ -43,6 +46,15 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     {
     }
 
+    /**
+     * @param sessionId the session to rebuild
+     * @param baseVersion the version the client was looking at when it wrote the SMILES, so that a rebuild over a changed session is refused
+     * @param smiles the molecule to rebuild the session on, read as written
+     */
+    public record SubmitRequest(String sessionId, Long baseVersion, String smiles)
+    {
+    }
+
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
     private static final int PROTOCOL_VERSION = 2;
 
@@ -51,6 +63,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
     private final MoleculeStore molecules;
     private final StudioSessionStore sessions;
+    private final MoleculeParser parser = new MoleculeParser();
 
     /**
      * @param molecules the molecules a session can be opened on
@@ -171,6 +184,85 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Rebuilds a session on a SMILES the user wrote.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void submitSmiles(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        SubmitRequest request;
+        try
+        {
+            request = payload(body, SubmitRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.sessionId() == null || request.baseVersion() == null || request.smiles() == null)
+        {
+            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_MESSAGE",
+                    "session_id, base_version and smiles are required");
+            return;
+        }
+
+        StudioSession session = sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        if (request.baseVersion() != session.version())
+        {
+            Map<String, Object> conflict = new LinkedHashMap<>();
+            conflict.put("type", "conflict");
+            conflict.put("sequence", sequence);
+            conflict.put("expected_version", session.version());
+            conflict.put("base_version", request.baseVersion());
+            conflict.put("state", StudioState.of(session, null));
+            return;
+        }
+
+        if (request.smiles().isBlank())
+        {
+            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_SMILES", "The SMILES is empty");
+            return;
+        }
+
+        ParsedMolecule parsed;
+        try
+        {
+            parsed = parser.parse(request.smiles());
+        }
+        catch (MoleculeException unreadable)
+        {
+            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "INVALID_SMILES", unreadable.getMessage());
+            return;
+        }
+
+        StudioSession rebuilt;
+        try
+        {
+            rebuilt = session.rebuilt(parsed.molecule(), StudioSession.DEFAULT_CONFORMERS);
+        }
+        catch (IllegalStateException | IllegalArgumentException unembeddable)
+        {
+            TypedJsonSocketListener.error(context, "smiles.submit", sequence, "UNSUPPORTED", unembeddable.getMessage());
+            return;
+        }
+
+        sessions.replace(rebuilt);
+        context.sendJson(StudioState.of(rebuilt, sequence));
+    }
+
+    /**
      * @param body the message
      * @param type the record its payload should fit
      * @param <T> the record type
@@ -227,7 +319,8 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         {
             super(Map.of(
                     "session.open", endpoint::open,
-                    "session.resync", endpoint::resync));
+                    "session.resync", endpoint::resync,
+                    "smiles.submit", endpoint::submitSmiles));
             this.endpoint = endpoint;
         }
 

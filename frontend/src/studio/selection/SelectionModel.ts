@@ -18,26 +18,24 @@ export class SelectionModel extends Observable<Selection> {
   }
 
   /**
-   * Selects an item.
+   * Selects an item, or deselects it if it is already selected.
    *
-   * @param item what to select
-   * @param additive false to select only this item; true to add it to the selection, or to take
-   *   it out if it is already in
+   * Clicking what is selected lets go of that item alone and keeps the rest. Clicking what is not
+   * selected replaces the selection with it, unless `additive`, which adds it instead.
+   *
+   * @param item the item that was clicked
+   * @param additive whether to add an unselected item to the selection rather than replace it
    */
   select(item: Item, additive = false): void {
     const { items, active } = this.get();
-    const held = items.some((each) => sameItem(each, item));
 
-    if (!additive) {
-      if (held && items.length === 1 && sameItem(active, item)) {
-        return;
-      }
-      this.set({ items: [item], active: item });
-    } else if (held) {
+    if (items.some((each) => sameItem(each, item))) {
       const rest = items.filter((each) => !sameItem(each, item));
       this.set({ items: rest, active: sameItem(active, item) ? (rest[rest.length - 1] ?? null) : active });
-    } else {
+    } else if (additive) {
       this.set({ items: [...items, item], active: item });
+    } else {
+      this.set({ items: [item], active: item });
     }
   }
 

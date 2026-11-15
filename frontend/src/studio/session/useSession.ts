@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChemistryApi } from "../../api/ChemistryApi";
 import { ApiError } from "../../api/http";
-import { describing, requested } from "./location";
+import { describing, describingSmiles, requested } from "./location";
 import type { SessionState } from "./messages";
 import { StudioError, StudioSocket } from "./studioSocket";
 
@@ -24,12 +24,20 @@ export interface Activity {
 /** How many lines of activity are kept. */
 const HISTORY = 200;
 
+/** How a submitted SMILES came out. */
+export type SubmitResult =
+  | { kind: "replaced" }
+  | { kind: "conflict" }
+  | { kind: "refused"; message: string };
+
 export interface Session {
   phase: SessionPhase;
   state: SessionState | null;
   activity: Activity[];
   /** Stores a molecule written as SMILES and opens a session on it. */
   openSmiles: (smiles: string) => void;
+  /** Rebuilds the open session's structure from SMILES text. */
+  submitSmiles: (smiles: string) => Promise<SubmitResult>;
 }
 
 /**
@@ -180,7 +188,35 @@ export function useSession(client?: ChemistryApi): Session {
     [openSmiles],
   );
 
-  return { phase, state, activity, openSmiles: submit };
+  const submitSmiles = useCallback(
+    async (smiles: string): Promise<SubmitResult> => {
+      const socket = socketRef.current;
+      const base = held.current;
+      if (!socket || !base) {
+        return { kind: "refused", message: "There is no open session to edit." };
+      }
+
+      try {
+        const reply = await socket.submitSmiles(base.session_id, base.version, smiles);
+        if (reply.type === "conflict") {
+          adopt(reply.state);
+          note("The structure changed since you started editing, so your SMILES was not used", true);
+          return { kind: "conflict" };
+        }
+
+        adopt(reply);
+        describingSmiles(reply.smiles);
+        note(`Structure replaced: ${reply.smiles}`);
+        return { kind: "replaced" };
+      } catch (cause) {
+        note(reason(cause), true);
+        return { kind: "refused", message: reason(cause) };
+      }
+    },
+    [adopt, note],
+  );
+
+  return { phase, state, activity, openSmiles: submit, submitSmiles };
 }
 
 /** Whether the failure was the molecule itself being unusable, rather than the server or network. */

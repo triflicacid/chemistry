@@ -25,3 +25,11 @@ export function describing(moleculeId: string, smiles: string): void {
   url.searchParams.set("smiles", smiles);
   window.history.replaceState(null, "", url);
 }
+
+/** Rewrites the query string to name only a SMILES, for a structure that no stored molecule describes. */
+export function describingSmiles(smiles: string): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("molecule");
+  url.searchParams.set("smiles", smiles);
+  window.history.replaceState(null, "", url);
+}

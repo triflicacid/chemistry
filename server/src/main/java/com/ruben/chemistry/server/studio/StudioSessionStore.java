@@ -70,6 +70,29 @@ public final class StudioSessionStore
     }
 
     /**
+     * Swaps a held session for a rebuilt one of the same ID.
+     *
+     * @param session the replacement
+     * @throws IllegalArgumentException if no session of that ID is held
+     */
+    public void replace(StudioSession session)
+    {
+        Objects.requireNonNull(session, "session");
+
+        synchronized (sessions)
+        {
+            sweep();
+            Entry entry = sessions.get(session.sessionId());
+            if (entry == null)
+            {
+                throw new IllegalArgumentException("No session is held as '" + session.sessionId() + "'");
+            }
+
+            entry.session = session;
+        }
+    }
+
+    /**
      * @param sessionId a session's ID
      * @return the session, if it is still held
      */
@@ -169,7 +192,7 @@ public final class StudioSessionStore
     /** A held session, the connection holding it, and when its grace window started if none is. */
     private static final class Entry
     {
-        private final StudioSession session;
+        private StudioSession session;
         private String holder;
         private Instant idleSince;
 

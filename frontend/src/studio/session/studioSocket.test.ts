@@ -167,6 +167,51 @@ describe("the Studio socket", () => {
     expect(socket.isOpen).toBe(true);
   });
 
+  it("rebuilds a session on a submitted SMILES", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+
+    const reply = await socket.submitSmiles(opened.session_id, opened.version, "CCN");
+
+    expect(reply.type).toBe("session.state");
+    const state = reply as SessionState;
+    expect(state.session_id).toBe(opened.session_id);
+    expect(state.version).toBe(opened.version + 1);
+    expect(state.smiles).toBe("CCN");
+    expect(state.atoms).toHaveLength(10);
+  });
+
+  it("answers a submit made on a stale version with a conflict carrying the current state", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    await socket.submitSmiles(opened.session_id, opened.version, "CCN");
+
+    const reply = await socket.submitSmiles(opened.session_id, opened.version, "CCC");
+
+    expect(reply.type).toBe("conflict");
+    if (reply.type === "conflict") {
+      expect(reply.expected_version).toBe(opened.version + 1);
+      expect(reply.state.smiles).toBe("CCN");
+    }
+  });
+
+  it("rejects a submitted SMILES it cannot read, leaving the session as it was", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+
+    await expect(socket.submitSmiles(opened.session_id, opened.version, "C(")).rejects.toMatchObject({
+      code: "INVALID_SMILES",
+      answering: "smiles.submit",
+    });
+
+    const again = await socket.resync(opened.session_id, opened.version);
+    expect(again.version).toBe(opened.version);
+    expect(again.smiles).toBe("CCO");
+  });
+
   it("refuses to send on a connection that is not open", () => {
     const socket = new StudioSocket({ url: STUDIO_URL });
 

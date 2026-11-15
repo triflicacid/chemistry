@@ -290,6 +290,96 @@ class StudioSocketEndpointTest
         assertThat(error(refusal)).containsEntry("code", "NO_SESSION");
     }
 
+    @Test
+    void should_rebuild_a_session_on_a_submitted_smiles() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+
+        socket.sendText(submit(sessionId, 1, "CCN", 2), true).join();
+        Map<String, Object> rebuilt = collector.nextJson();
+
+        assertThat(rebuilt).containsEntry("type", "session.state");
+        assertThat(rebuilt).containsEntry("sequence", 2L);
+        assertThat(rebuilt).containsEntry("session_id", sessionId);
+        assertThat(rebuilt).containsEntry("version", 2L);
+        assertThat(rebuilt).containsEntry("source_molecule_id", stored.id());
+        assertThat(rebuilt).containsEntry("smiles", "CCN");
+        assertThat(list(rebuilt, "atoms")).hasSize(10);
+
+        // the server now holds the rebuilt session, not the one it opened
+        socket.sendText(resync(sessionId, 3), true).join();
+        assertThat(collector.nextJson()).containsEntry("version", 2L).containsEntry("smiles", "CCN");
+    }
+
+    @Test
+    void should_answer_a_submit_made_on_a_stale_version_with_a_conflict() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+        socket.sendText(submit(sessionId, 1, "CCN", 2), true).join();
+        collector.next();
+
+        socket.sendText(submit(sessionId, 1, "CCC", 3), true).join();
+        Map<String, Object> conflict = collector.nextJson();
+
+        assertThat(conflict).containsEntry("type", "conflict");
+        assertThat(conflict).containsEntry("sequence", 3L);
+        assertThat(conflict).containsEntry("expected_version", 2L);
+        assertThat(conflict).containsEntry("base_version", 1L);
+        assertThat(conflict.get("state")).isInstanceOfSatisfying(Map.class, state ->
+                assertThat(state).containsEntry("version", 2L).containsEntry("smiles", "CCN"));
+    }
+
+    @Test
+    void should_leave_the_session_as_it_was_when_a_submitted_smiles_cannot_be_read() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText(submit(sessionId, 1, "C(", 2), true).join();
+        Map<String, Object> refusal = collector.nextJson();
+        assertThat(refusal).containsEntry("type", "error").containsEntry("answering", "smiles.submit");
+        assertThat(refusal).containsEntry("sequence", 2L);
+        assertThat(error(refusal)).containsEntry("code", "INVALID_SMILES");
+
+        socket.sendText(submit(sessionId, 1, "   ", 3), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_SMILES");
+
+        socket.sendText(resync(sessionId, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("version", 1L).containsEntry("smiles", "CCO");
+    }
+
+    @Test
+    void should_refuse_a_submit_it_cannot_read_or_place() throws Exception
+    {
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText("{\"type\": \"smiles.submit\", \"sequence\": 1}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText(submit("not-a-session", 1, "CCO", 2), true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "NO_SESSION");
+    }
+
     /**
      * Serves this test's connections from a store that gives a session no grace at all, so
      * that letting go of one retires it rather than the test waiting out a window.
@@ -356,6 +446,19 @@ class StudioSocketEndpointTest
     {
         return "{\"type\": \"session.resync\", \"sequence\": " + sequence
                 + ", \"session_id\": \"" + sessionId + "\", \"since_version\": 1}";
+    }
+
+    /**
+     * @param sessionId the session to rebuild
+     * @param baseVersion the version the client says it was looking at
+     * @param smiles the molecule to rebuild on
+     * @param sequence the message's sequence number
+     * @return a {@code smiles.submit} message
+     */
+    private static String submit(String sessionId, long baseVersion, String smiles, int sequence)
+    {
+        return "{\"type\": \"smiles.submit\", \"sequence\": " + sequence + ", \"session_id\": \"" + sessionId
+                + "\", \"base_version\": " + baseVersion + ", \"smiles\": \"" + smiles + "\"}";
     }
 
     @SuppressWarnings("unchecked")

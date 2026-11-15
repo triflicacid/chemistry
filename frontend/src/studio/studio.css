@@ -52,6 +52,7 @@ body.resizing {
   display: grid;
   grid-template-areas:
     "toolbar toolbar toolbar toolbar toolbar"
+    "smiles smiles smiles smiles smiles"
     "outliner split-left viewport split-right inspector"
     "split-bottom split-bottom split-bottom split-bottom split-bottom"
     "analysis analysis analysis analysis analysis";
@@ -61,6 +62,53 @@ body.resizing {
 
 .toolbar {
   grid-area: toolbar;
+}
+
+.smiles-bar {
+  grid-area: smiles;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--edge);
+  font-size: 0.8rem;
+}
+
+.smiles-bar label {
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.smiles-bar input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  padding: 0.2rem 0.4rem;
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+}
+
+.smiles-bar input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.smiles-note {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.smiles-note.failed {
+  color: var(--bad);
 }
 .panel-outliner,
 .rail-outliner {

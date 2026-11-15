@@ -151,6 +151,43 @@ class StudioSessionTest
         assertThatThrownBy(() -> session.positionOf("a99")).isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void rebuilds_on_a_new_molecule_as_the_same_session_one_version_on()
+    {
+        StudioSession session = open("CCO");
+
+        StudioSession rebuilt = session.rebuilt(parser.parse("CCN").molecule(), 1);
+
+        assertThat(rebuilt.sessionId()).isEqualTo(session.sessionId());
+        assertThat(rebuilt.sourceMoleculeId()).isEqualTo(session.sourceMoleculeId());
+        assertThat(rebuilt.version()).isEqualTo(session.version() + 1);
+        assertThat(rebuilt.smiles()).isEqualTo("CCN");
+        assertThat(rebuilt.molecule().atomCount()).isEqualTo(10);
+        assertThat(rebuilt.pinned()).isEmpty();
+        assertThat(rebuilt.locked()).isEmpty();
+    }
+
+    @Test
+    void rebuilds_without_touching_the_session_it_replaces()
+    {
+        StudioSession session = open("CCO");
+
+        session.rebuilt(parser.parse("CCN").molecule(), 1);
+
+        assertThat(session.version()).isEqualTo(1);
+        assertThat(session.smiles()).isEqualTo("CCO");
+        assertThat(session.molecule().atomCount()).isEqualTo(9);
+    }
+
+    @Test
+    void refuses_to_rebuild_with_a_conformer_count_it_will_not_embed()
+    {
+        StudioSession session = open("CCO");
+
+        assertThatThrownBy(() -> session.rebuilt(parser.parse("CCN").molecule(), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     /**
      * @param session a session
      * @return what it calls each of its atoms, in the order it holds them

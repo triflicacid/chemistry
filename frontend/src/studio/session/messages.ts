@@ -65,6 +65,19 @@ export interface SessionState extends ServerEnvelope {
   strain: number;
 }
 
+/**
+ * The answer to a mutation made on a version the session has moved on from. The client adopts
+ * the enclosed state and does not send the refused change again.
+ */
+export interface SessionConflict extends ServerEnvelope {
+  type: "conflict";
+  /** The version the session is at now. */
+  expected_version: number;
+  /** The version the refused message said it was based on. */
+  base_version: number;
+  state: SessionState;
+}
+
 /** A message the server could not handle, which leaves the connection open. */
 export interface SocketError extends ServerEnvelope {
   type: "error";
@@ -78,4 +91,4 @@ export interface Pong extends ServerEnvelope {
   type: "pong";
 }
 
-export type ServerMessage = SessionReady | SessionState | SocketError | Pong;
+export type ServerMessage = SessionReady | SessionState | SessionConflict | SocketError | Pong;

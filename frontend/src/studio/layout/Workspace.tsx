@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import type { Activity, SessionPhase } from "../session/useSession";
+import type { Activity, SessionPhase, SubmitResult } from "../session/useSession";
 import type { SessionState } from "../session/messages";
 import type { Models } from "../selection/models";
 import type { LayoutState, Panel } from "../store";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { Inspector } from "./Inspector";
 import { Outliner } from "./Outliner";
+import { SmilesBar } from "./SmilesBar";
 import { Splitter } from "./Splitter";
 import { Toolbar } from "./Toolbar";
 import { Viewport } from "./Viewport";
@@ -19,10 +20,11 @@ export interface WorkspaceProps {
   onResize: (panel: Panel, size: number) => void;
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   onOpenSmiles: (smiles: string) => void;
+  onSubmitSmiles: (smiles: string) => Promise<SubmitResult>;
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles } = props;
+  const { phase, state, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -35,6 +37,7 @@ export function Workspace(props: WorkspaceProps) {
 
   const rows = [
     "auto",
+    "auto",
     "minmax(0, 1fr)",
     layout.analysisCollapsed ? "0" : "var(--split)",
     layout.analysisCollapsed ? "var(--rail)" : `${layout.analysis}px`,
@@ -43,6 +46,8 @@ export function Workspace(props: WorkspaceProps) {
   return (
     <div className="workspace" style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}>
       <Toolbar phase={phase} layout={layout} onCollapse={onCollapse} />
+
+      <SmilesBar state={state} onSubmit={onSubmitSmiles} />
 
       <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse}>
         <Outliner state={state} models={models} />

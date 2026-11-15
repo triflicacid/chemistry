@@ -1,4 +1,4 @@
-import type { ServerEnvelope, SessionReady, SessionState } from "./messages";
+import type { ServerEnvelope, SessionConflict, SessionReady, SessionState } from "./messages";
 
 /** The error the server answered a message with. */
 export class StudioError extends Error {
@@ -30,7 +30,7 @@ export interface StudioSocketOptions {
 
 /** A message waiting for its reply. */
 interface Pending {
-  replyType: string;
+  replyTypes: readonly string[];
   resolve: (message: ServerEnvelope) => void;
   reject: (cause: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -135,8 +135,17 @@ export class StudioSocket {
     return sequence;
   }
 
-  /** Sends a message and resolves with the reply of `replyType`, or rejects with the server's error. */
-  request<T extends ServerEnvelope>(type: string, payload: Record<string, unknown>, replyType: string): Promise<T> {
+  /**
+   * Sends a message and resolves with its reply, or rejects with the server's error.
+   *
+   * @param replyTypes the type of reply that settles the request, or several if more than one
+   *   answer is a success, as with a mutation that may be answered with a conflict
+   */
+  request<T extends ServerEnvelope>(
+    type: string,
+    payload: Record<string, unknown>,
+    replyTypes: string | readonly string[],
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       let sequence: number;
       try {
@@ -152,7 +161,7 @@ export class StudioSocket {
       }, this.options.requestTimeoutMs);
 
       this.pending.set(sequence, {
-        replyType,
+        replyTypes: typeof replyTypes === "string" ? [replyTypes] : replyTypes,
         resolve: resolve as (message: ServerEnvelope) => void,
         reject,
         timer,
@@ -175,6 +184,22 @@ export class StudioSocket {
       "session.resync",
       { session_id: sessionId, since_version: sinceVersion },
       "session.state",
+    );
+  }
+
+  /**
+   * Replaces a session's structure with the molecule a SMILES describes.
+   *
+   * @param sessionId the session to rebuild
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param smiles the molecule to rebuild on
+   * @returns the new state, or a conflict carrying the state the session is actually in
+   */
+  submitSmiles(sessionId: string, baseVersion: number, smiles: string): Promise<SessionState | SessionConflict> {
+    return this.request<SessionState | SessionConflict>(
+      "smiles.submit",
+      { session_id: sessionId, base_version: baseVersion, smiles },
+      ["session.state", "conflict"],
     );
   }
 
@@ -205,7 +230,7 @@ export class StudioSocket {
     }
 
     const waiting = this.pending.get(message.sequence);
-    if (!waiting || (message.type !== waiting.replyType && message.type !== "error")) {
+    if (!waiting || (!waiting.replyTypes.includes(message.type) && message.type !== "error")) {
       return;
     }
 

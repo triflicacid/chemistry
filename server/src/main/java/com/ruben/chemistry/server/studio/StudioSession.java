@@ -89,7 +89,6 @@ public final class StudioSession
             throw new IllegalArgumentException("conformers must be 1 to " + MAX_CONFORMERS + ", but was " + conformers);
         }
 
-        Molecule working = Hydrogens.asAtoms(source.molecule());
         Structure3D structure = source.latestStructure3d().orElse(null);
         if (structure == null)
         {
@@ -98,13 +97,48 @@ public final class StudioSession
             source.setLatestStructure3d(structure);
         }
 
+        return build(sessionId, source.id(), source.molecule(), structure);
+    }
+
+    /**
+     * Makes a session of the same name on a different molecule.
+     *
+     * @param molecule the molecule to rebuild on, whose hydrogens may still be counts
+     * @param conformers how many conformers to embed
+     * @return the new session, one version on from this one, with this session's name, source and saved molecule
+     * @throws IllegalArgumentException if {@code conformers} is outside 1 to {@link #MAX_CONFORMERS}
+     * @throws IllegalStateException if no shape could be embedded, or the shape found does not describe the molecule's atoms one for one
+     */
+    public StudioSession rebuilt(Molecule molecule, int conformers)
+    {
+        if (conformers < 1 || conformers > MAX_CONFORMERS)
+        {
+            throw new IllegalArgumentException("conformers must be 1 to " + MAX_CONFORMERS + ", but was " + conformers);
+        }
+
+        Structure3D structure = Embedder.embed(molecule, Embedder.Options.DEFAULT.withConformers(conformers));
+        StudioSession next = build(sessionId, sourceMoleculeId, molecule, structure);
+        next.version = version + 1;
+        next.savedMoleculeId = savedMoleculeId;
+        return next;
+    }
+
+    /**
+     * @param sessionId what to call the session
+     * @param sourceMoleculeId the stored molecule it is said to have come from
+     * @param source the molecule to work on, whose hydrogens may still be counts
+     * @param structure a shape of {@code source}
+     * @return a session at version 1
+     * @throws IllegalStateException if the structure holds no conformer, or does not describe the molecule's atoms one for one
+     */
+    private static StudioSession build(String sessionId, String sourceMoleculeId, Molecule source, Structure3D structure)
+    {
+        Molecule working = Hydrogens.asAtoms(source);
         if (structure.conformers().isEmpty())
         {
             throw new IllegalStateException("The molecule's structure holds no conformer to open");
         }
 
-        // asAtoms appends its hydrogens in the order the embedding numbers its nodes, which lets
-        // a position be read off by index rather than matched up
         Structure3D.Conformer conformer = structure.conformers().getFirst();
         List<Atom> atoms = working.atoms();
         if (conformer.positions().size() != atoms.size())
@@ -112,7 +146,7 @@ public final class StudioSession
             throw new IllegalStateException("The structure describes " + conformer.positions().size() + " sites, but the molecule has " + atoms.size() + " atoms");
         }
 
-        int written = source.molecule().atomCount();
+        int written = source.atomCount();
         Map<Atom, String> atomIds = new IdentityHashMap<>();
         Map<String, Vec3> geometry = new LinkedHashMap<>();
         Set<String> wasImplicit = new LinkedHashSet<>();
@@ -135,8 +169,7 @@ public final class StudioSession
             bondIds.put(endpoints(atomIds, bonds.get(bond)), "b" + (bond + 1));
         }
 
-        return new StudioSession(sessionId, source.id(), working, atomIds, bondIds, geometry, wasImplicit,
-                conformer.strain());
+        return new StudioSession(sessionId, sourceMoleculeId, working, atomIds, bondIds, geometry, wasImplicit, conformer.strain());
     }
 
     /**

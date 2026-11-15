@@ -15,13 +15,25 @@ The browser's context menu is disabled over the viewport.
 
 | Input | Action |
 |---|---|
-| Click an atom or bond | Select it, replacing the selection |
-| Shift-, Ctrl- or Cmd-click | Add to the selection, or remove if already selected |
+| Click an unselected atom or bond | Select it, replacing the selection |
+| Shift-, Ctrl- or Cmd-click an unselected one | Add it to the selection |
+| Click (with or without a modifier) a selected one | Deselect that one only, keeping the rest |
 | Click empty space, or press Esc | Clear the selection |
 | Hover | Highlight, without selecting |
 
 A click that moves more than 4 px is a camera drag and selects nothing.
 The last item selected is the active one, which the Inspector shows.
+
+## SMILES bar
+
+| Input | Action |
+|---|---|
+| Edit the field | Draft a new structure; nothing changes until you rebuild |
+| Enter, or **Rebuild structure** | Replace the whole structure with the SMILES. Atom and bond identifiers change and the selection is cleared |
+| Esc, or **Reset** | Discard the draft and show the current SMILES again |
+
+An unreadable SMILES is refused with a message and leaves the structure as it was. If the structure
+changed on the server while you were editing, the rebuild is refused and the current structure is shown.
 
 ## Viewport buttons
 
