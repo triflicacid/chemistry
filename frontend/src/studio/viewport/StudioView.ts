@@ -55,6 +55,8 @@ import {torsion} from "../selection/torsion";
 import {angleAt, planeNormal} from "../selection/angle";
 import {type CameraEdit, type CameraState, edited, orbitOf} from "../selection/CameraModel";
 import type {ItemSet, PartItem} from "../selection/items";
+import {type Binding, dispatchKey} from "../keys/binding";
+import {KEYS} from "../keys/keymap";
 
 /** Where the pointer is, in pixels. */
 export interface ScreenPoint {
@@ -1829,19 +1831,27 @@ export class StudioView {
     this.stage.canvas.setPointerCapture(event.pointerId);
   };
 
-  private readonly onKey = (event: KeyboardEvent): void => {
-    if (event.key === "Escape" && this.moleculeHandles.dragging) {
-      event.stopPropagation();
-      this.moleculeHandles.cancel();
-    } else if (event.key === "Escape" && this.measurementHandles.dragging) {
-      event.stopPropagation();
-      this.measurementHandles.cancel();
-    } else if (event.key === "Escape" && this.grab?.dragging) {
-      // the key abandons the drag and goes no further, so it does not also clear the selection
-      event.stopPropagation();
-      this.cancelDrag();
-    }
-  };
+  /** Shortcuts heard in the capture phase; see {@link KEYS} for why Escape is among them. */
+  private readonly bindings: Binding[] = [
+    {
+      ...KEYS.cancelDrag,
+      run: (event) => {
+        if (this.moleculeHandles.dragging) {
+          event.stopPropagation();
+          this.moleculeHandles.cancel();
+        } else if (this.measurementHandles.dragging) {
+          event.stopPropagation();
+          this.measurementHandles.cancel();
+        } else if (this.grab?.dragging) {
+          // the key abandons the drag and goes no further, so it does not also clear the selection
+          event.stopPropagation();
+          this.cancelDrag();
+        }
+      },
+    },
+  ];
+
+  private readonly onKey = (event: KeyboardEvent): void => dispatchKey(this.bindings, event, true);
 
   private readonly onMove = (event: PointerEvent): void => {
     const sphereDrag = this.hudDrag;

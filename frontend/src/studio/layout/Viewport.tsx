@@ -4,11 +4,14 @@ import type {Models, PickScope} from "../selection/models";
 import type {RotateTarget, Space} from "../selection/ToolModel";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
-import type {AtomMove, BondEdit, GeometryResult, Pose, SessionCamera, SessionState} from "../session/messages";
+import type {GeometryResult, SessionState} from "../session/messages";
 import {movers} from "../selection/bondLength";
 import {defaultReference} from "../selection/torsion";
 import {angleMovers, defaultPair} from "../selection/angle";
 import type {SessionPhase} from "../session/useSession";
+import {useSessionContext} from "../session/SessionContext";
+import {KEYS} from "../keys/keymap";
+import {useHotkeys} from "../keys/useHotkeys";
 import {type Constraint, constraintForKey} from "../viewport/handles/dragPlane";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
@@ -22,27 +25,6 @@ export interface ViewportProps {
   /** What the server last said about the geometry. */
   geometry: GeometryResult | null;
   models: Models;
-  onOpenSmiles: (smiles: string) => void;
-  /** The user has moved the camera, which is now as given. A camera the viewer placed itself, as on opening a session, is not reported. */
-  onSaveCamera: (camera: SessionCamera) => void;
-  /** Atoms have been dragged to positions, and the drag is not over. */
-  onDragAtoms: (moves: AtomMove[]) => void;
-  /** Atoms have been dropped at positions, which ends their drag. */
-  onDropAtoms: (moves: AtomMove[]) => void;
-  /** A drag was abandoned, and the atoms are back at `moves`' positions. */
-  onCancelDrag: (moves: AtomMove[]) => void;
-  /** The molecule has been dragged to a pose, and the drag is not over. */
-  onDragMolecule: (pose: Pose) => void;
-  /** The molecule has been dropped at a pose, which ends its drag. */
-  onDropMolecule: (pose: Pose) => void;
-  /** A drag of the molecule was abandoned, and it is back at `from`. */
-  onCancelMoleculeDrag: (from: Pose) => void;
-  /** A bond's handle has been dragged to a length or torsion, and the drag is not over. */
-  onDragBond: (edit: BondEdit) => void;
-  /** A bond's handle has been dropped at a length or torsion, which ends its drag. */
-  onDropBond: (edit: BondEdit) => void;
-  /** A drag of a bond's handle was abandoned. */
-  onCancelBondDrag: () => void;
 }
 
 const GRIDS: Segment<GridKind | "off">[] = [
@@ -79,23 +61,20 @@ const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
 ];
 
 /** The canvas, which fills whatever space the workspace leaves it, and the molecule drawn on it. */
-export function Viewport({
-  phase,
-  onSaveCamera,
-  state,
-  geometry,
-  models,
-  onOpenSmiles,
-  onDragAtoms,
-  onDropAtoms,
-  onCancelDrag,
-  onDragMolecule,
-  onDropMolecule,
-  onCancelMoleculeDrag,
-  onDragBond,
-  onDropBond,
-  onCancelBondDrag,
-}: ViewportProps) {
+export function Viewport({ phase, state, geometry, models }: ViewportProps) {
+  const {
+    openSmiles,
+    saveCamera,
+    dragAtoms,
+    dropAtoms,
+    cancelDrag,
+    dragMolecule,
+    dropMolecule,
+    cancelMoleculeDrag,
+    dragBond,
+    dropBond,
+    cancelBondDrag,
+  } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
   const [axes, setAxes] = useState(false);
@@ -106,8 +85,8 @@ export function Viewport({
   const { selection, hover, tools, index } = models;
   const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, torsion, angle, hold } = useObservable(tools);
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
-  const internal = tool === "rotate" &&   rotateTarget === "internal";
-    const picking: PickScope = internal ? "item" : mode;
+  const internal = tool === "rotate" && rotateTarget === "internal";
+  const picking: PickScope = internal ? "item" : mode;
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -167,7 +146,7 @@ export function Viewport({
       camera: (now, byUser) => {
         camera.report(now);
         if (byUser) {
-          onSaveCamera({ position: now.position, target: now.target, fov: now.fov, roll: now.roll });
+          saveCamera({ position: now.position, target: now.target, fov: now.fov, roll: now.roll });
         }
       },
     });
@@ -176,7 +155,7 @@ export function Viewport({
       stopListening();
       stopHandling();
     };
-  }, [view, camera, onSaveCamera]);
+  }, [view, camera, saveCamera]);
 
   useEffect(() => {
     view?.setConstraint(constraint);
@@ -258,42 +237,25 @@ export function Viewport({
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
 
-  // X, Y and Z hold a move to an axis, and shift with one holds it to the plane across that axis
-  useEffect(() => {
-    if (tool !== "move" || blocked) {
-      return;
-    }
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable]") || event.ctrlKey || event.metaKey || event.altKey) {
-        return;
-      }
-      const asked = constraintForKey(tools.get().constraint, event.key, event.shiftKey);
-      if (asked) {
-        tools.constrain(asked);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [tool, tools, blocked]);
-
-  // H turns carrying hydrogens on and off. Locks do not stop it, since it is the move that a lock refuses
-  useEffect(() => {
-    if (tool !== "move") {
-      return;
-    }
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable]") || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
-        return;
-      }
-      if (event.key.toLowerCase() === "h") {
-        tools.carry(!tools.get().carryHydrogens);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [tool, tools]);
+  // X, Y and Z hold a move to an axis, and shift with one holds it to the plane across that axis.
+  // H turns carrying hydrogens on and off, which locks do not stop, since it is the move that a lock refuses
+  const moving = tool === "move";
+  useHotkeys([
+    ...(moving && !blocked
+      ? [
+          {
+            ...KEYS.constrain,
+            run: (event: KeyboardEvent) => {
+              const asked = constraintForKey(tools.get().constraint, event.key, event.shiftKey);
+              if (asked) {
+                tools.constrain(asked);
+              }
+            },
+          },
+        ]
+      : []),
+    ...(moving ? [{ ...KEYS.toggleCarry, run: () => tools.carry(!tools.get().carryHydrogens) }] : []),
+  ]);
 
   useEffect(() => {
     if (!view || !index) {
@@ -346,15 +308,15 @@ export function Viewport({
           selection.select(item);
         }
       },
-      drag: (moves, done) => (done ? onDropAtoms(moves) : onDragAtoms(moves)),
-      dragCancel: onCancelDrag,
+      drag: (moves, done) => (done ? void dropAtoms(moves) : dragAtoms(moves)),
+      dragCancel: (moves) => void cancelDrag(moves),
       constraint: (held) => tools.constrain(held),
-      moleculeDrag: (pose, done) => (done ? onDropMolecule(pose) : onDragMolecule(pose)),
-      moleculeDragCancel: onCancelMoleculeDrag,
-      bondDrag: (edit, done) => (done ? onDropBond(edit) : onDragBond(edit)),
-      bondDragCancel: onCancelBondDrag,
+      moleculeDrag: (pose, done) => (done ? void dropMolecule(pose) : dragMolecule(pose)),
+      moleculeDragCancel: (from) => void cancelMoleculeDrag(from),
+      bondDrag: (edit, done) => (done ? void dropBond(edit) : dragBond(edit)),
+      bondDragCancel: () => void cancelBondDrag(),
     });
-  }, [view, index, picking, selection, hover, tools, onDragAtoms, onDropAtoms, onCancelDrag, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag]);
+  }, [view, index, picking, selection, hover, tools, dragAtoms, dropAtoms, cancelDrag, dragMolecule, dropMolecule, cancelMoleculeDrag, dragBond, dropBond, cancelBondDrag]);
 
   const frame = () => {
     if (!view || !index) {
@@ -489,7 +451,7 @@ export function Viewport({
       )}
       {phase.kind === "wanted" ? (
         <div className="viewport-overlay">
-          <OpenMolecule message={phase.message} onOpen={onOpenSmiles} />
+          <OpenMolecule message={phase.message} onOpen={openSmiles} />
         </div>
       ) : (
         phase.kind !== "open" && (

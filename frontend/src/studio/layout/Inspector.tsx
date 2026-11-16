@@ -3,10 +3,11 @@ import {type Item, keyOf} from "../selection/items";
 import type {Models} from "../selection/models";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
+import type {GeometryResult, SessionAtom, SessionBond, SessionState} from "../session/messages";
 import type {Vec3} from "../../api/types/structure";
-import type {GeometryResult, Pose, SessionAtom, SessionBond, SessionState} from "../session/messages";
-import {eulerOf, withEuler} from "../session/pose";
 import type {EditResult} from "../session/useSession";
+import {eulerOf, withEuler} from "../session/pose";
+import {useSessionContext} from "../session/SessionContext";
 import type {Pivot} from "../selection/ToolModel";
 import {describeFinding, isCurrent} from "./findings";
 import {NumberField} from "./NumberField";
@@ -20,18 +21,6 @@ export interface InspectorProps {
   /** What the server last said about the geometry, which is detailed for the selected atom or bond while strain is shown. */
   geometry: GeometryResult | null;
   models: Models;
-  /** Puts an atom at a position. */
-  onMoveAtom: (id: string, position: Vec3) => void;
-  /** Asks the session to give a bond a length, holding an atom of it or neither. */
-  onSetBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
-  /** Asks the session to give a bond a torsion between two atoms, holding an atom of it or neither. */
-  onSetBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
-  /** Asks the session to give an atom's two bonds an angle, holding the atom at the end of one of them or neither. */
-  onSetAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
-  /** Puts the whole molecule at a pose. */
-  onMoveMolecule: (pose: Pose) => void;
-  /** Locks or unlocks atoms. */
-  onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
 /**
@@ -40,7 +29,7 @@ export interface InspectorProps {
  * The active item decides what is shown. With nothing selected it shows the session; with a
  * mixture of kinds it says what the mixture is and does not guess at a pane.
  */
-export function Inspector({ state, geometry, models, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onMoveMolecule, onLockAtoms }: InspectorProps) {
+export function Inspector({ state, geometry, models }: InspectorProps) {
   const { selection, index } = models;
   const { items, active } = useObservable(selection);
   const { tool } = useObservable(models.tools);
@@ -74,18 +63,7 @@ export function Inspector({ state, geometry, models, onMoveAtom, onSetBondLength
           {items.length} {active.kind}s selected. Showing {describe(active, index)}.
         </p>
       )}
-      <ItemPane
-        item={active}
-        index={index}
-        geometry={geometry}
-        models={models}
-        onMoveAtom={onMoveAtom}
-        onSetBondLength={onSetBondLength}
-        onSetBondTorsion={onSetBondTorsion}
-        onSetAngle={onSetAngle}
-        onMoveMolecule={onMoveMolecule}
-        onLockAtoms={onLockAtoms}
-      />
+      <ItemPane item={active} index={index} geometry={geometry} models={models} />
     </>
   );
 }
@@ -95,26 +73,20 @@ interface ItemPaneProps {
   index: StateIndex;
   geometry: GeometryResult | null;
   models: Models;
-  onMoveAtom: (id: string, position: Vec3) => void;
-  onSetBondLength: InspectorProps["onSetBondLength"];
-  onSetBondTorsion: InspectorProps["onSetBondTorsion"];
-  onSetAngle: InspectorProps["onSetAngle"];
-  onMoveMolecule: (pose: Pose) => void;
-  onLockAtoms: (ids: string[], locked: boolean) => void;
 }
 
-function ItemPane({ item, index, geometry, models, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onMoveMolecule, onLockAtoms }: ItemPaneProps) {
+function ItemPane({ item, index, geometry, models }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
       const atom = index.atoms.get(item.id);
-      return atom ? <AtomPane key={atom.id} atom={atom} index={index} geometry={geometry} models={models} onMove={onMoveAtom} onLock={onLockAtoms} onSetAngle={onSetAngle} /> : null;
+      return atom ? <AtomPane key={atom.id} atom={atom} index={index} geometry={geometry} models={models} /> : null;
     }
     case "bond": {
       const bond = index.bonds.get(item.id);
-      return bond ? <BondPane key={bond.id} bond={bond} index={index} geometry={geometry} models={models} onSetLength={onSetBondLength} onSetTorsion={onSetBondTorsion} /> : null;
+      return bond ? <BondPane key={bond.id} bond={bond} index={index} geometry={geometry} models={models} /> : null;
     }
     default:
-      return <MoleculePane id={item.id} index={index} models={models} onMove={onMoveMolecule} />;
+      return <MoleculePane id={item.id} index={index} models={models} />;
   }
 }
 
@@ -221,7 +193,6 @@ interface MoleculePaneProps {
   id: string;
   index: StateIndex;
   models: Models;
-  onMove: (pose: Pose) => void;
 }
 
 const PIVOTS: { value: Pivot; label: string }[] = [
@@ -231,7 +202,8 @@ const PIVOTS: { value: Pivot; label: string }[] = [
   { value: "point", label: "A point" },
 ];
 
-function MoleculePane({ id, index, models, onMove }: MoleculePaneProps) {
+function MoleculePane({ id, index, models }: MoleculePaneProps) {
+  const { moveMolecule } = useSessionContext();
   const { tools } = models;
   const { pivot, point } = useObservable(tools);
   const fragment = index.fragments.get(id);
@@ -257,7 +229,7 @@ function MoleculePane({ id, index, models, onMove }: MoleculePaneProps) {
               key={axis}
               label={`${axis.toUpperCase()} position of the molecule's origin, in ångströms`}
               value={pose.position[axis]}
-              onCommit={(value) => onMove({ ...pose, position: { ...pose.position, [axis]: value } })}
+              onCommit={(value) => void moveMolecule({ ...pose, position: { ...pose.position, [axis]: value } })}
             />
           ))}
           <span className="unit">Å</span>
@@ -270,7 +242,7 @@ function MoleculePane({ id, index, models, onMove }: MoleculePaneProps) {
               label={`Rotation of the molecule about ${axis}, in degrees`}
               value={angles[axis]}
               digits={2}
-              onCommit={(value) => onMove(withEuler(pose, { ...angles, [axis]: value }))}
+              onCommit={(value) => void moveMolecule(withEuler(pose, { ...angles, [axis]: value }))}
             />
           ))}
           <span className="unit">°</span>
@@ -317,12 +289,10 @@ interface AtomPaneProps {
   index: StateIndex;
   geometry: GeometryResult | null;
   models: Models;
-  onMove: (id: string, position: Vec3) => void;
-  onLock: (ids: string[], locked: boolean) => void;
-  onSetAngle: InspectorProps["onSetAngle"];
 }
 
-function AtomPane({ atom, index, geometry, models, onMove, onLock, onSetAngle }: AtomPaneProps) {
+function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
+  const { moveAtom, lockAtoms } = useSessionContext();
   const { position } = atom;
   const fragment = index.fragmentOf({ kind: "atom", id: atom.id });
   const state = index.state;
@@ -344,7 +314,7 @@ function AtomPane({ atom, index, geometry, models, onMove, onLock, onSetAngle }:
               label={`${axis.toUpperCase()} position of ${index.label(atom.id)}, in ångströms`}
               value={position[axis]}
               disabled={locked}
-              onCommit={(value) => onMove(atom.id, { ...position, [axis]: value })}
+              onCommit={(value) => void moveAtom(atom.id, { ...position, [axis]: value })}
             />
           ))}
           <span className="unit">Å</span>
@@ -357,11 +327,11 @@ function AtomPane({ atom, index, geometry, models, onMove, onLock, onSetAngle }:
             checked={locked}
             aria-label={`Lock ${index.label(atom.id)} against edits`}
             title="A locked atom cannot be moved, by dragging or by typing a position"
-            onChange={(event) => onLock([atom.id], event.target.checked)}
+            onChange={(event) => void lockAtoms([atom.id], event.target.checked)}
           />
         </dd>
         {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
-        <AngleRows centre={atom.id} index={index} models={models} onSetAngle={onSetAngle} />
+        <AngleRows centre={atom.id} index={index} models={models} />
       </dl>
 
       <h4 className="pane-subtitle">Bonded to</h4>
@@ -382,14 +352,14 @@ interface AngleRowsProps {
   centre: string;
   index: StateIndex;
   models: Models;
-  onSetAngle: InspectorProps["onSetAngle"];
 }
 
 /**
  * The rows that give an atom's two bonds an angle: the angle, which atoms it is measured between, and which of them stays
  * where it is. Nothing is shown for an atom with fewer than two neighbours.
  */
-function AngleRows({ centre, index, models, onSetAngle }: AngleRowsProps) {
+function AngleRows({ centre, index, models }: AngleRowsProps) {
+  const { setAngle } = useSessionContext();
   const { tools } = models;
   const { hold } = useObservable(tools);
   const [chosen, setChosen] = useState<{ from?: string; to?: string }>({});
@@ -437,7 +407,7 @@ function AngleRows({ centre, index, models, onSetAngle }: AngleRowsProps) {
           label={`Angle at ${index.label(centre)} between ${index.label(pair.from)} and ${index.label(pair.to)}, in degrees`}
           value={angleAt(a.position, b.position, c.position)}
           digits={1}
-          onCommit={(value) => void onSetAngle(centre, pair.from, pair.to, value, heldAtom).then((result) => setRefusal(result.kind === "refused" ? result.message : null))}
+          onCommit={(value) => void setAngle(centre, pair.from, pair.to, value, heldAtom).then((result) => setRefusal(result.kind === "refused" ? result.message : null))}
         />
         <span className="unit">°</span>
       </dd>
@@ -468,11 +438,10 @@ interface BondPaneProps {
   index: StateIndex;
   geometry: GeometryResult | null;
   models: Models;
-  onSetLength: InspectorProps["onSetBondLength"];
-  onSetTorsion: InspectorProps["onSetBondTorsion"];
 }
 
-function BondPane({ bond, index, geometry, models, onSetLength, onSetTorsion }: BondPaneProps) {
+function BondPane({ bond, index, geometry, models }: BondPaneProps) {
+  const { setBondLength, setBondTorsion } = useSessionContext();
   const { tools } = models;
   // which atom stays is shared with the viewport's handle on the bond
   const { hold } = useObservable(tools);
@@ -527,7 +496,7 @@ function BondPane({ bond, index, geometry, models, onSetLength, onSetTorsion }: 
               <NumberField
                 label={`Length of ${index.bondLabel(bond)}, in ångströms`}
                 value={length}
-                onCommit={(value) => void onSetLength(bond.id, value, heldAtom).then(told)}
+                onCommit={(value) => void setBondLength(bond.id, value, heldAtom).then(told)}
               />
               <span className="unit">Å</span>
             </dd>
@@ -544,7 +513,7 @@ function BondPane({ bond, index, geometry, models, onSetLength, onSetTorsion }: 
                     value={angle}
                     digits={1}
                     disabled={inRing}
-                    onCommit={(value) => void onSetTorsion(bond.id, reference.first, reference.second, value, heldAtom).then(told)}
+                    onCommit={(value) => void setBondTorsion(bond.id, reference.first, reference.second, value, heldAtom).then(told)}
                   />
                   <span className="unit">°</span>
                 </dd>

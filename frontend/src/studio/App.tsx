@@ -1,11 +1,12 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
-import type {Vec3} from "../api/types/structure";
-import type {AtomMove, BondEdit, Pose} from "./session/messages";
 import {Workspace} from "./layout/Workspace";
 import {createModels} from "./selection/models";
 import {useObservable} from "./selection/observable";
 import {StateIndex} from "./selection/StateIndex";
 import {useSession} from "./session/useSession";
+import {SessionProvider} from "./session/SessionContext";
+import {KEYS} from "./keys/keymap";
+import {useHotkeys} from "./keys/useHotkeys";
 import type {Panel} from "./layoutStore";
 import {LayoutStore} from "./layoutStore";
 
@@ -15,39 +16,8 @@ const SETTLE_MS = 200;
 export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
-  const {
-    phase,
-    state,
-    geometry,
-    activity,
-    openSmiles,
-    submitSmiles,
-    moveAtom,
-    setBondLength,
-    setBondTorsion,
-    setAngle,
-    dragBond,
-    dropBond,
-    cancelBondDrag,
-    dragAtoms,
-    dropAtoms,
-    cancelDrag,
-    moveMolecule,
-    dragMolecule,
-    dropMolecule,
-    cancelMoleculeDrag,
-    lockAtoms,
-    saveCamera,
-    optimising,
-    outcome,
-    optimise,
-    cancelOptimise,
-    undo,
-    redo,
-    history,
-    goTo,
-    clearHistory,
-  } = useSession();
+  const session = useSession();
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo } = session;
 
   const shared = useMemo(createModels, []);
   const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
@@ -70,40 +40,6 @@ export function App() {
     return () => clearTimeout(timer);
   }, [layout, store]);
 
-  // Escape clears the selection, unless it is being used to leave a text field
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = target?.matches("input, textarea, select, [contenteditable]") ?? false;
-      if (event.key === "Escape" && !typing) {
-        shared.selection.clear();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [shared]);
-
-  // inside a text field the keys belong to the field, which has an undo of its own
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable]") || !(event.ctrlKey || event.metaKey)) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        void undo();
-      } else if ((key === "z" && event.shiftKey) || key === "y") {
-        event.preventDefault();
-        void redo();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
-
   // a rebuilt structure issues every identifier afresh, so none of the old ones still names what it did
   const submit = useCallback(
     async (smiles: string) => {
@@ -117,17 +53,6 @@ export function App() {
     [shared, submitSmiles],
   );
 
-  // stable, because the viewport listens afresh whenever one of these changes, and the session redraws this at every patch of a drag
-  const move = useCallback((id: string, position: Vec3) => void moveAtom(id, position), [moveAtom]);
-  const drop = useCallback((moves: AtomMove[]) => void dropAtoms(moves), [dropAtoms]);
-  const cancel = useCallback((moves: AtomMove[]) => void cancelDrag(moves), [cancelDrag]);
-  const lock = useCallback((ids: string[], locked: boolean) => void lockAtoms(ids, locked), [lockAtoms]);
-  const moveWhole = useCallback((pose: Pose) => void moveMolecule(pose), [moveMolecule]);
-  const dropWhole = useCallback((pose: Pose) => void dropMolecule(pose), [dropMolecule]);
-  const cancelWhole = useCallback((from: Pose) => void cancelMoleculeDrag(from), [cancelMoleculeDrag]);
-  const dropBondHandle = useCallback((edit: BondEdit) => void dropBond(edit), [dropBond]);
-  const cancelBondHandle = useCallback(() => void cancelBondDrag(), [cancelBondDrag]);
-
   // the toolbar button and the L key lock the selected atoms, or unlock them if all of them are locked already.
   // A selected molecule stands for every atom in it
   const { items: selected } = useObservable(shared.selection);
@@ -135,21 +60,35 @@ export function App() {
   const allLocked = chosen.length > 0 && chosen.every((id) => state?.locked.includes(id));
   const toggleLock = useCallback(() => {
     if (chosen.length > 0) {
-      lock(chosen, !allLocked);
+      void lockAtoms(chosen, !allLocked);
     }
-  }, [chosen, allLocked, lock]);
+  }, [chosen, allLocked, lockAtoms]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = target?.matches("input, textarea, select, [contenteditable]") ?? false;
-      if (event.key.toLowerCase() === "l" && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        toggleLock();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [toggleLock]);
+  useHotkeys([
+    { ...KEYS.clearSelection, run: () => shared.selection.clear() },
+    {
+      ...KEYS.undo,
+      run: (event) => {
+        event.preventDefault();
+        void undo();
+      },
+    },
+    {
+      ...KEYS.redo,
+      run: (event) => {
+        event.preventDefault();
+        void redo();
+      },
+    },
+    {
+      ...KEYS.redoAlternative,
+      run: (event) => {
+        event.preventDefault();
+        void redo();
+      },
+    },
+    { ...KEYS.toggleLock, run: toggleLock },
+  ]);
 
   // a result describes the version it was made at, so it is out of date once the session has moved on from that
   const strain = useMemo(() => {
@@ -162,13 +101,6 @@ export function App() {
     return `strain ${geometry.strain.toFixed(1)}${geometry.version === state?.version ? "" : "…"}`;
   }, [geometry, state?.version]);
 
-  const startOptimise = useCallback(() => void optimise(), [optimise]);
-  const stopOptimise = useCallback(() => void cancelOptimise(), [cancelOptimise]);
-  const undoEdit = useCallback(() => void undo(), [undo]);
-  const redoEdit = useCallback(() => void redo(), [redo]);
-  const goToEdit = useCallback((position: number, discard: boolean) => void goTo(position, discard), [goTo]);
-  const clearEdits = useCallback(() => void clearHistory(), [clearHistory]);
-
   const resize = useCallback((panel: Panel, size: number) => {
     setLayout((before) => (before[panel] === size ? before : { ...before, [panel]: size }));
   }, []);
@@ -178,46 +110,22 @@ export function App() {
   }, []);
 
   return (
-    <Workspace
-      phase={phase}
-      state={state}
-      geometry={geometry}
-      strain={strain}
-      models={models}
-      activity={activity}
-      layout={layout}
-      onResize={resize}
-      onCollapse={collapse}
-      onOpenSmiles={openSmiles}
-      onSubmitSmiles={submit}
-      onMoveAtom={move}
-      onSetBondLength={setBondLength}
-      onSetBondTorsion={setBondTorsion}
-      onSetAngle={setAngle}
-      onLockAtoms={lock}
-      onSaveCamera={saveCamera}
-      canLock={chosen.length > 0}
-      lockPressed={allLocked}
-      onToggleLock={toggleLock}
-      onDragAtoms={dragAtoms}
-      onDropAtoms={drop}
-      onCancelDrag={cancel}
-      onMoveMolecule={moveWhole}
-      onDragMolecule={dragMolecule}
-      onDropMolecule={dropWhole}
-      onCancelMoleculeDrag={cancelWhole}
-      onDragBond={dragBond}
-      onDropBond={dropBondHandle}
-      onCancelBondDrag={cancelBondHandle}
-      onUndo={undoEdit}
-      onRedo={redoEdit}
-      onLoadHistory={history}
-      onGoTo={goToEdit}
-      onClearHistory={clearEdits}
-      optimising={optimising}
-      outcome={outcome}
-      onOptimise={startOptimise}
-      onCancelOptimise={stopOptimise}
-    />
+    <SessionProvider value={session}>
+      <Workspace
+        phase={phase}
+        state={state}
+        geometry={geometry}
+        strain={strain}
+        models={models}
+        activity={activity}
+        layout={layout}
+        onResize={resize}
+        onCollapse={collapse}
+        onSubmitSmiles={submit}
+        canLock={chosen.length > 0}
+        lockPressed={allLocked}
+        onToggleLock={toggleLock}
+      />
+    </SessionProvider>
   );
 }

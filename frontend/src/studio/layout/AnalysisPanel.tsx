@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from "react";
 import type {Models} from "../selection/models";
 import type {GeometryResult, SessionState} from "../session/messages";
 import type {Activity, OptimisationOutcome} from "../session/useSession";
+import {useSessionContext} from "../session/SessionContext";
 import {describeFinding, isCurrent} from "./findings";
 import {describeOutcome} from "./optimisation";
 import {type Segment, Segmented} from "./Segmented";
@@ -11,8 +12,6 @@ export interface AnalysisPanelProps {
   state: SessionState | null;
   /** What the server last said about the geometry. */
   geometry: GeometryResult | null;
-  /** How the latest optimisation ended, or null if there has been none. */
-  outcome: OptimisationOutcome | null;
   models: Models;
 }
 
@@ -24,7 +23,8 @@ const TABS: Segment<Tab>[] = [
 ];
 
 /** How strained the geometry is and what is wrong with it, and what the session has done. */
-export function AnalysisPanel({ activity, state, geometry, outcome, models }: AnalysisPanelProps) {
+export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPanelProps) {
+  const { outcome } = useSessionContext();
   const [tab, setTab] = useState<Tab>("geometry");
 
   return (

@@ -1,9 +1,10 @@
 import {useObservable} from "../selection/observable";
 import type {Tool, ToolModel} from "../selection/ToolModel";
 import type {LayoutState, Panel} from "../layoutStore";
-import type {Optimising, SessionPhase} from "../session/useSession";
+import type {SessionPhase} from "../session/useSession";
+import {useSessionContext} from "../session/SessionContext";
 import {type Segment, Segmented} from "./Segmented";
-import {HistoryMenu, type HistoryMenuProps} from "./HistoryMenu";
+import {HistoryMenu} from "./HistoryMenu";
 
 /** What a left-drag does, one at a time. */
 const TOOLS: Segment<Tool>[] = [
@@ -23,12 +24,8 @@ const TOOLS: Segment<Tool>[] = [
 
 export interface ToolbarProps {
   phase: SessionPhase;
-  /** The optimisation under way, or null if there is none. */
-  optimising: Optimising | null;
   /** Whether there is a structure to optimise. */
   canOptimise: boolean;
-  onOptimise: () => void;
-  onCancelOptimise: () => void;
   tools: ToolModel;
   /** Whether any atom is selected, which is what a lock applies to. */
   canLock: boolean;
@@ -42,14 +39,10 @@ export interface ToolbarProps {
   saved: boolean;
   /** How strained the geometry is, ready to show, or null if it has not been worked out. */
   strain: string | null;
-  onUndo: () => void;
-  onRedo: () => void;
-  onLoadHistory: HistoryMenuProps["onLoad"];
-  onGoTo: HistoryMenuProps["onGoTo"];
-  onClearHistory: HistoryMenuProps["onClear"];
 }
 
-export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo, onLoadHistory, onGoTo, onClearHistory }: ToolbarProps) {
+export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain }: ToolbarProps) {
+  const { optimising, optimise, cancelOptimise, undo, redo, history, goTo, clearHistory } = useSessionContext();
   const { tool } = useObservable(tools);
 
   return (
@@ -71,13 +64,13 @@ export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOp
       </div>
 
       <div className="tool-group" role="group" aria-label="Edits">
-        <button type="button" className="tool" disabled={!canUndo} title="Undo (Ctrl+Z)" onClick={onUndo}>
+        <button type="button" className="tool" disabled={!canUndo} title="Undo (Ctrl+Z)" onClick={() => void undo()}>
           Undo
         </button>
-        <button type="button" className="tool" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" onClick={onRedo}>
+        <button type="button" className="tool" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" onClick={() => void redo()}>
           Redo
         </button>
-        <HistoryMenu enabled={canUndo || canRedo} onLoad={onLoadHistory} onGoTo={onGoTo} onClear={onClearHistory} />
+        <HistoryMenu enabled={canUndo || canRedo} onLoad={history} onGoTo={(position, discard) => void goTo(position, discard)} onClear={() => void clearHistory()} />
         <button
           type="button"
           className="tool"
@@ -88,7 +81,7 @@ export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOp
               ? "Stop optimising. The structure is left as it was"
               : "Relax the geometry to lower its strain, keeping its stereochemistry and holding locked atoms where they are. One undo takes it back"
           }
-          onClick={optimising ? onCancelOptimise : onOptimise}
+          onClick={() => void (optimising ? cancelOptimise() : optimise())}
         >
           {optimising ? "Stop" : "Optimise"}
         </button>
