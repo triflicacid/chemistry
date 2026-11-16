@@ -62,15 +62,31 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
   const d = reference && index.atoms.get(reference.second);
   const angle = first && second && a && d ? torsion(a.position, first.position, second.position, d.position) : null;
   const length = first && second ? Math.hypot(first.position.x - second.position.x, first.position.y - second.position.y, first.position.z - second.position.z) : null;
+  const holdRow = (
+    <>
+      <dt>Hold</dt>
+      <dd>
+        <Segmented label="Which atom of the bond stays where it is" value={hold} options={holds} onChange={setHold} />
+      </dd>
+    </>
+  );
   return (
     <>
       <h3 className="pane-title">Bond {index.bondLabel(bond)}</h3>
       <dl className="properties">
         <Property name="ID" value={bond.id} mono />
+      </dl>
+
+      <h4 className="pane-subtitle">Chemistry</h4>
+      <dl className="properties">
         <Property name="Order" value={bond.order.toLowerCase()} />
         <Property name="Aromatic" value={bond.aromatic ? "yes" : "no"} />
-        {length !== null && (
-          <>
+      </dl>
+
+      {length !== null && (
+        <>
+          <h4 className="pane-subtitle">Geometry</h4>
+          <dl className="properties">
             <dt>Length</dt>
             <dd className="position">
               <NumberField
@@ -80,12 +96,13 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
               />
               <span className="unit">Å</span>
             </dd>
-            <dt>Hold</dt>
-            <dd>
-              <Segmented label="Which atom of the bond stays where it is" value={hold} options={holds} onChange={setHold} />
-            </dd>
-            {reference && angle !== null && (
-              <>
+            {!reference && holdRow}
+          </dl>
+
+          {reference && angle !== null && (
+            <>
+              <h4 className="pane-subtitle">Torsion</h4>
+              <dl className="properties">
                 <dt>Torsion</dt>
                 <dd className="position">
                   <NumberField
@@ -123,13 +140,13 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
                     ))}
                   </select>
                 </dd>
-              </>
-            )}
-          </>
-        )}
-      </dl>
+                {holdRow}
+              </dl>
+            </>
+          )}
+        </>
+      )}
       {refusal !== null && <p className="panel-note">{refusal}</p>}
-      <p className="panel-note">{lengthNote(index, bond.id)}</p>
 
       <h4 className="pane-subtitle">Joins</h4>
       <Links
@@ -142,17 +159,3 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
   );
 }
 
-/**
- * Says what changing a bond's length would do to the rest of the molecule.
- *
- * @param index the session's atoms and bonds
- * @param id the bond
- * @returns a sentence for the user
- */
-function lengthNote(index: StateIndex, id: string): string {
-  const bond = index.bonds.get(id);
-  if (bond && sideOf(index, bond, bond.first) === null) {
-    return "This bond is in a ring, so only its two atoms move and the rest of the ring is left behind. Optimise afterwards to relax it. It cannot be turned, so its torsion is read-only.";
-  }
-  return "Everything beyond the atom that moves goes with it, so no other length or angle changes. A negative length passes it through the held atom to the other side. The torsion turns that side about the bond.";
-}

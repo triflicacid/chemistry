@@ -31,10 +31,20 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
       <h3 className="pane-title">Atom {index.label(atom.id)}</h3>
       <dl className="properties">
         <Property name="ID" value={atom.id} mono />
+      </dl>
+
+      <h4 className="pane-subtitle">Chemistry</h4>
+      <dl className="properties">
         <Property name="Element" value={atom.element} />
         {atom.isotope > 0 && <Property name="Isotope" value={String(atom.isotope)} />}
         <Property name="Charge" value={signed(atom.charge)} />
         <Property name="Aromatic" value={atom.aromatic ? "yes" : "no"} />
+        {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
+        {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
+      </dl>
+
+      <h4 className="pane-subtitle">Geometry</h4>
+      <dl className="properties">
         <dt>Position</dt>
         <dd className="position">
           {(["x", "y", "z"] as const).map((axis) => (
@@ -48,7 +58,6 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
           ))}
           <span className="unit">Å</span>
         </dd>
-        {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
         <dt>Locked</dt>
         <dd>
           <input
@@ -59,9 +68,9 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
             onChange={(event) => void lockAtoms([atom.id], event.target.checked)}
           />
         </dd>
-        {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
-        <AngleRows centre={atom.id} index={index} models={models} />
       </dl>
+
+      <AngleRows centre={atom.id} index={index} models={models} />
 
       <h4 className="pane-subtitle">Bonded to</h4>
       <Links
@@ -127,6 +136,8 @@ function AngleRows({ centre, index, models }: AngleRowsProps) {
 
   return (
     <>
+      <h4 className="pane-subtitle">Angle</h4>
+      <dl className="properties">
       <dt>Angle</dt>
       <dd className="position">
         <NumberField
@@ -143,18 +154,16 @@ function AngleRows({ centre, index, models }: AngleRowsProps) {
         <span className="unit">and</span>
         {select(pair.to, `The other atom the angle at ${index.label(centre)} is measured to`, (id) => setChosen({ ...chosen, to: id }))}
       </dd>
+      <dt>In ring</dt>
+      <dd title="An angle inside a ring cannot swing both sides without tearing it, so hold one atom">{inRing ? "yes" : "no"}</dd>
       <dt>Hold</dt>
       <dd>
         <Segmented label="Which atom of the angle stays where it is" value={hold} options={holds} onChange={(next) => tools.holding(next)} />
       </dd>
       <dd className="note-row">
         {refusal !== null && <p className="panel-note">{refusal}</p>}
-        <p className="panel-note">
-          {inRing
-            ? "A bond at this atom is in a ring, so the side beyond it cannot swing without tearing the ring. Hold the other atom to swing the one that is free."
-            : "Swings everything beyond the atom that moves about this atom, in the plane of the two bonds, so no length changes. The other bonds on the atom stay where they are. Past 180° the bond swings through the straight line to the other side, and 361° is 1°."}
-        </p>
       </dd>
+      </dl>
     </>
   );
 }
