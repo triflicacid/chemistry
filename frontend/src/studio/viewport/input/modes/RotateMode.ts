@@ -19,12 +19,14 @@ export class RotateMode extends SelectMode {
     this.host.molecule.setMode(null);
     this.host.bonds.set(null);
     this.host.setPlain(false);
+    this.host.setMeasured(true);
   }
 
   override configure(options: ModeOptions): void {
     const { molecule, bonds, scene } = this.host;
     const turning = options.rotateTarget === "molecule";
 
+    this.host.setMeasured(false);
     // turning the whole molecule shows it by its handles, so only what is hovered is tinted, and nothing is labelled
     this.host.setPlain(turning);
 

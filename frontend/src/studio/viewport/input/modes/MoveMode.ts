@@ -81,10 +81,12 @@ export class MoveMode extends SelectMode {
     this.handleMode = null;
     this.host.molecule.setMode(null);
     this.host.bonds.set(null);
+    this.host.setMeasured(true);
   }
 
   override configure(options: ModeOptions): void {
     const { reference, molecule, bonds, scene } = this.host;
+    this.host.setMeasured(false);
 
     if (options.constraint !== this.constraint) {
       this.constraint = options.constraint;

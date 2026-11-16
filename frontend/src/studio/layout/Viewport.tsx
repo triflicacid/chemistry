@@ -117,13 +117,14 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     };
   }, [view, camera, saveCamera]);
 
+  // the move tool only tints the atoms; angles and torsions are marked for the tools that measure or turn them
   useEffect(() => {
-    view?.setTorsion(torsion);
-  }, [view, torsion]);
+    view?.setTorsion(tool === "move" ? null : torsion);
+  }, [view, torsion, tool]);
 
   useEffect(() => {
-    view?.setAngle(angle);
-  }, [view, angle]);
+    view?.setAngle(tool === "move" ? null : angle);
+  }, [view, angle, tool]);
 
   // the pi systems marked in the viewport: the label of the ring the Inspector shows, and every cloud turned on
   const { chemistry } = models.chemistry;

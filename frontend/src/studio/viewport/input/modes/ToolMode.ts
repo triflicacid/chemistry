@@ -58,6 +58,8 @@ export interface ModeHost {
   moveAtoms(moves: Iterable<readonly [string, Vec3]>): void;
   /** Draws, or stops drawing, the selection and hover as plain tints without lengths or names. */
   setPlain(plain: boolean): void;
+  /** Labels, or stops labelling, the lengths and names of what is selected or hovered. The tints are unchanged. */
+  setMeasured(measured: boolean): void;
   /** Tells every listener something. */
   emit(tell: (listener: StudioViewListener) => void): void;
 }

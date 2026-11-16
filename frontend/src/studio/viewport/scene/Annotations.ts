@@ -153,7 +153,7 @@ export class Annotations {
       this.lengthMarks = null;
     }
 
-    const { selected, hover } = this.scene.plain ? { selected: NO_ITEMS, hover: NO_ITEMS } : this.scene.emphasis;
+    const { selected, hover } = this.scene.plain || !this.scene.measured ? { selected: NO_ITEMS, hover: NO_ITEMS } : this.scene.emphasis;
     const few = selected.atoms.size <= LENGTH_LABEL_ATOMS;
     const measured = bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || (few && (selected.atoms.has(link.bond.first) || selected.atoms.has(link.bond.second))));
     const named = bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || hover.bonds.has(link.bond.id));

@@ -52,6 +52,8 @@ export class MoleculeScene {
   emphasis: Emphasis = { selected: NO_ITEMS, active: NO_ITEMS, hover: NO_ITEMS };
   /** Whether to leave what is selected undrawn, with no lengths or names for it or for what is hovered. Hover is still tinted. */
   plain = false;
+  /** Whether to label the lengths of what is selected, and name the atoms of what is selected or hovered. */
+  measured = true;
   locked: ReadonlySet<string> = new Set();
   /** A fingerprint of everything about the structure except where its atoms are. */
   structureKey = "";

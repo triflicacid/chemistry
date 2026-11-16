@@ -136,6 +136,7 @@ export class StudioView {
       space: () => this.space,
       moveAtoms: (moves) => this.moveAtoms(moves),
       setPlain: (plain) => this.setPlain(plain),
+      setMeasured: (measured) => this.setMeasured(measured),
       emit,
     };
     this.modes = { select: new SelectMode(host), move: new MoveMode(host), rotate: new RotateMode(host), pan: new PanMode(host) };
@@ -301,6 +302,18 @@ export class StudioView {
     if (plain !== this.scene.plain) {
       this.scene.plain = plain;
       this.scene.refreshEmphasis();
+      this.annotations.drawLengths();
+    }
+  }
+
+  /**
+   * Chooses whether bond lengths and atom names are labelled for what is selected or hovered.
+   *
+   * @param measured true to label them
+   */
+  private setMeasured(measured: boolean): void {
+    if (measured !== this.scene.measured) {
+      this.scene.measured = measured;
       this.annotations.drawLengths();
     }
   }
