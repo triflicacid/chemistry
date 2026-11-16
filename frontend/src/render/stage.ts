@@ -45,6 +45,12 @@ export class Stage {
   private readonly resizer: ResizeObserver;
   private readonly overlays = new Set<(renderer: WebGLRenderer, camera: PerspectiveCamera, capturing: boolean) => void>();
   private pending = 0;
+  /** Where the camera stood when a look-around drag began, while one is under way. */
+  private eye: Vector3 | null = null;
+  private pressed = -1;
+
+  /** Whether a drag that would orbit the camera turns it where it stands instead, which the left button does. */
+  lookAround = false;
 
   constructor(private readonly options: StageOptions) {
     this.renderer = new WebGLRenderer({ canvas: options.canvas, antialias: true, alpha: true });
@@ -58,7 +64,19 @@ export class Stage {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = false;
+    // before the controls hear it, so that their start finds which button it was
+    this.canvas.addEventListener("pointerdown", (event) => (this.pressed = event.button), { capture: true });
+    this.controls.addEventListener("start", () => {
+      this.eye = this.lookAround && this.pressed === 0 ? this.camera.position.clone() : null;
+    });
+    this.controls.addEventListener("end", () => (this.eye = null));
     this.controls.addEventListener("change", () => {
+      if (this.eye) {
+        // the controls orbited the camera about the target; the same turn about the camera is the camera looking round
+        const forward = this.controls.target.clone().sub(this.camera.position);
+        this.camera.position.copy(this.eye);
+        this.controls.target.copy(this.eye).add(forward);
+      }
       options.onMove?.();
       this.requestRender();
     });

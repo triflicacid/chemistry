@@ -487,6 +487,19 @@ export class StudioView {
    *
    * @param enabled whether to draw them
    */
+  /**
+   * Turns the camera where it stands, rather than orbiting, when the left button is dragged.
+   *
+   * @param enabled whether to look around
+   */
+  setLookAround(enabled: boolean): void {
+    this.stage.lookAround = enabled;
+    // the Camera tool takes the left button for panning, unless looking around has it
+    if (this.mode.tool === "pan") {
+      this.mode.enter();
+    }
+  }
+
   setDebug(enabled: boolean): void {
     this.annotations.debug = enabled;
     this.panGuide.show(enabled && this.mode.tool === "pan");
