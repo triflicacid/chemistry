@@ -62,6 +62,39 @@ function Mount({element}: { element: HTMLElement }) {
   return <span ref={host}/>;
 }
 
+/** A tiny button that puts text on the clipboard. */
+function CopyButton({text, label}: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(true);
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setCopied(false), 1200);
+      },
+      (error) => console.warn("Could not copy", error),
+    );
+  };
+
+  return (
+    <button type="button" className="copy-button" title={copied ? "Copied" : label} aria-label={label} onClick={copy}>
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        {copied ? (
+          <path d="M3 8.5l3.5 3.5L13 4.5" strokeLinecap="round" strokeLinejoin="round"/>
+        ) : (
+          <>
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>
+            <path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3v5.5A1.5 1.5 0 0 0 3.5 10H4" strokeLinecap="round"/>
+          </>
+        )}
+      </svg>
+    </button>
+  );
+}
+
 interface MoleculeDetailsProps {
   state: SessionState;
   models: Models;
@@ -220,9 +253,9 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
   return (
     <dl className="properties">
       <dt>SMILES</dt>
-      <dd className="wrap mono"><Mount element={smiles.element}/></dd>
+      <dd className="wrap mono"><Mount element={smiles.element}/><CopyButton text={metadata.smiles} label="Copy SMILES"/></dd>
       <dt>Canonical</dt>
-      <dd className="wrap mono"><Mount element={canonical.element}/></dd>
+      <dd className="wrap mono"><Mount element={canonical.element}/><CopyButton text={metadata.canonical_smiles} label="Copy canonical SMILES"/></dd>
       <dt>Formula</dt>
       <dd className="wrap"><Mount element={formula.element}/></dd>
     </dl>
