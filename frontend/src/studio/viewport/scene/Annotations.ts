@@ -30,6 +30,9 @@ const STRAIN_SATURATED = 6;
 /** The colour of the bonds that make a strained angle. */
 const ANGLE_COLOUR = "#ff9a1f";
 
+/** The colour of the halo and label on the atom a turn holds still. */
+const HELD_COLOUR = "#5b6b7e";
+
 export class Annotations {
   debug = false;
 
@@ -186,12 +189,41 @@ export class Annotations {
 
     this.markTorsion(marks);
     this.markAngle(marks);
+    this.markAnchor(marks);
 
     if (marks.children.length > 0) {
       content.add(marks);
       this.lengthMarks = marks;
     }
     this.stage.requestRender();
+  }
+
+  /**
+   * Adds the mark of the atom a turn holds still: a halo round it and a label above it.
+   *
+   * @param marks the group to add it to
+   */
+  private markAnchor(marks: Group): void {
+    const id = this.scene.emphasis.anchor;
+    const node = id === undefined ? undefined : this.scene.atomById.get(id);
+    if (!node) {
+      return;
+    }
+
+    const radius = ballRadius(node.atom.radius, STYLE, true);
+    const halo = new Mesh(
+      this.kit.sphereGeometry,
+      new MeshBasicMaterial({ color: HELD_COLOUR, transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    halo.position.copy(node.at);
+    halo.scale.setScalar(radius * 1.45);
+    halo.renderOrder = 5;
+    marks.add(halo);
+
+    const note = this.kit.labels.label("held", HELD_COLOUR, 0.24);
+    note.position.copy(node.at);
+    note.position.y -= radius + 0.25;
+    marks.add(note);
   }
 
   /**

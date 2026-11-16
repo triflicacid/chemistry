@@ -4,6 +4,8 @@ import type {Item, PartItem} from "../models/items";
 import type {Models, PickScope} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {StateIndex} from "../geometry/StateIndex";
+import {heldSide} from "../geometry/bondLength";
+import {defaultPair, heldArm} from "../geometry/angle";
 import type {GeometryResult, SessionState} from "../session/messages";
 import type {SessionPhase} from "../session/types";
 import {useSessionContext} from "../session/SessionContext";
@@ -117,9 +119,9 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     };
   }, [view, camera, saveCamera]);
 
-  // the move tool only tints the atoms; angles and torsions are marked for the tools that measure or turn them
+  // the move tool only tints the atoms, and the rotate tool shows no torsion; the select tool marks them all
   useEffect(() => {
-    view?.setTorsion(tool === "move" ? null : torsion);
+    view?.setTorsion(tool === "move" || tool === "rotate" ? null : torsion);
   }, [view, torsion, tool]);
 
   useEffect(() => {
@@ -194,13 +196,20 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     }
     // the ends of a hovered bond are tinted as the SMILES marks them, but only while nothing is selected, as the Inspector does
     const bond = hovered?.kind === "bond" && selected.items.length === 0 ? index.bonds.get(hovered.id) : undefined;
+    // turning in a molecule leaves one side where it is, which is shown so that the Hold choice can be seen
+    const turned = tool === "rotate" && rotateTarget === "internal" && selected.items.length === 1 ? selected.items[0] : undefined;
+    const turnedBond = turned?.kind === "bond" ? index.bonds.get(turned.id) : undefined;
+    const pair = turned?.kind === "atom" ? (angle?.centre === turned.id ? angle : defaultPair(index, turned.id)) : null;
+    const held = turnedBond ? heldSide(index, turnedBond, hold) : turned && pair ? heldArm(index, turned.id, pair, hold) : null;
     view.setEmphasis({
+      held: held ?? undefined,
+      anchor: held?.anchor,
       selected: index.members(selected.items),
       active: index.members(selected.active ? [selected.active] : []),
       hover: index.members(hovered ? [hovered] : []),
       ends: bond ? [{ id: bond.first, colour: 1 }, { id: bond.second, colour: 2 }] : [],
     });
-  }, [view, index, selected, hovered]);
+  }, [view, index, selected, hovered, tool, rotateTarget, hold]);
 
   useEffect(() => {
     if (!view || !index) {

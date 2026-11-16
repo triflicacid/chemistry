@@ -35,6 +35,10 @@ export interface Emphasis {
   hover: ItemSet;
   /** Atoms to tint in a colour of their own, as the ends of a hovered bond are; the colour indexes END_COLOURS. */
   ends?: readonly { id: string; colour: number }[];
+  /** The side of a bond that a turn leaves where it is. */
+  held?: ItemSet;
+  /** The atom the held side stays fixed at, which is marked. */
+  anchor?: string;
 }
 
 /**

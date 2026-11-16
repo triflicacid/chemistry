@@ -77,6 +77,32 @@ export function planeNormal(from: Vec3, to: Vec3): Vec3 {
 }
 
 /**
+ * Finds the side of an angle that changing it leaves where it is.
+ *
+ * @param index the session's atoms and bonds
+ * @param centre the atom the angle is at
+ * @param pair the two atoms the angle is measured between
+ * @param hold which atom stays where it is: `first` is the pair's `from`, `second` its `to`
+ * @returns the atoms and bonds of the held arm's side and the arm's atom, or null if neither is held or the arm is in a ring
+ */
+export function heldArm(index: StateIndex, centre: string, pair: AnglePair, hold: Hold): { atoms: Set<string>; bonds: Set<string>; anchor: string } | null {
+  if (hold === "both") {
+    return null;
+  }
+  const anchor = hold === "first" ? pair.from : pair.to;
+  const bond = index.bondsOf(centre).find((each) => each.first === anchor || each.second === anchor);
+  const atoms = bond && sideOf(index, bond, anchor);
+  if (!atoms) {
+    return null;
+  }
+  const bonds = new Set<string>();
+  for (const id of atoms) {
+    index.bondsOf(id).forEach((next) => atoms.has(next.first) && atoms.has(next.second) && bonds.add(next.id));
+  }
+  return { atoms, bonds, anchor };
+}
+
+/**
  * Finds the atoms that changing an angle would move, so that a handle is not offered when one of them is locked.
  *
  * @param index the session's atoms and bonds

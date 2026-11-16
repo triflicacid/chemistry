@@ -31,6 +31,34 @@ export function movers(index: StateIndex, bond: { id: string; first: string; sec
 }
 
 /**
+ * Finds the side of a bond that turning it leaves where it is.
+ *
+ * @param index the session's atoms and bonds
+ * @param bond the bond
+ * @param hold which atom stays where it is
+ * @returns the atoms and bonds of the held side and the atom it is held at, or null if neither/impossible
+ */
+export function heldSide(
+  index: StateIndex,
+  bond: { id: string; first: string; second: string },
+  hold: Hold,
+): { atoms: Set<string>; bonds: Set<string>; anchor: string } | null {
+  if (hold === "both") {
+    return null;
+  }
+  const anchor = hold === "first" ? bond.first : bond.second;
+  const atoms = sideOf(index, bond, anchor);
+  if (!atoms) {
+    return null;
+  }
+  const bonds = new Set<string>();
+  for (const id of atoms) {
+    index.bondsOf(id).forEach((next) => atoms.has(next.first) && atoms.has(next.second) && bonds.add(next.id));
+  }
+  return { atoms, bonds, anchor };
+}
+
+/**
  * Finds the atoms on one side of a bond: those that can be reached from an end without crossing the bond.
  * <p>
  * This is for showing what an edit will do. The session works out for itself what an edit moves, and is the authority.

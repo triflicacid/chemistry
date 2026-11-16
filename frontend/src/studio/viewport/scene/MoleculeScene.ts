@@ -3,7 +3,7 @@ import type {Vec3} from "../../../api/types/structure";
 import {aromaticCentres} from "../../../render/aromatic";
 import {ballRadius, type BondEnds, buildBond, type Style} from "../../../render/bonds";
 import {disposeMaterials} from "../../../render/dispose";
-import {ACTIVE_TINT, applyTints, END_TINTS, HOVER_TINT, SELECTED_TINT} from "../../../render/emphasis";
+import {ACTIVE_TINT, applyTints, END_TINTS, HELD_TINT, HOVER_TINT, SELECTED_TINT} from "../../../render/emphasis";
 import {type Part, PartRegistry} from "../../../render/parts";
 import type {Primitives} from "../../../render/primitives";
 import type {Stage} from "../../../render/stage";
@@ -226,6 +226,7 @@ export class MoleculeScene {
   refreshEmphasis(): void {
     const { selected, active, hover } = this.emphasis;
     const ends = new Map((this.emphasis.ends ?? []).map((end) => [end.id, END_TINTS[end.colour - 1]]));
+    const held = this.emphasis.held ?? NO_ITEMS;
     const tints = new Map<Object3D, Color>();
     for (const part of this.registry.parts) {
       const id = part.ref.id;
@@ -234,7 +235,7 @@ export class MoleculeScene {
       }
       const among = (set: ItemSet) => (part.ref.kind === "atom" ? set.atoms : set.bonds).has(id);
       const end = part.ref.kind === "atom" ? ends.get(id) : undefined;
-      const tint = among(hover) ? HOVER_TINT : end ? end : this.plain ? null : among(active) ? ACTIVE_TINT : among(selected) ? SELECTED_TINT : null;
+      const tint = among(hover) ? HOVER_TINT : end ? end : among(held) ? HELD_TINT : this.plain ? null : among(active) ? ACTIVE_TINT : among(selected) ? SELECTED_TINT : null;
       if (tint) {
         tints.set(part.object, tint);
       }
