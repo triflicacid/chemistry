@@ -2,7 +2,7 @@ import {Box3, Vector3} from "three";
 import type {Vec3} from "../../../api/types/structure";
 import type {Stage} from "../../../render/stage";
 import type {AtomMove, Pose} from "../../session/messages";
-import type {Pivot, Space} from "../../selection/ToolModel";
+import type {Pivot, Space} from "../../models/ToolModel";
 import type {Constraint} from "./dragPlane";
 import type {CameraRig} from "../camera/CameraRig";
 import type {CameraLock} from "../camera/CameraLock";

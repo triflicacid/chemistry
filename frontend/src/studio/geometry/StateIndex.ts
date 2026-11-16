@@ -1,5 +1,5 @@
 import type { SessionAtom, SessionBond, SessionFragment, SessionState } from "../session/messages";
-import type { Item, ItemSet } from "./items";
+import type { Item, ItemSet } from "../models/items";
 
 /**
  * Looks things up in a session state: which molecule an atom is in, what an atom is bonded to,

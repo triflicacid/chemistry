@@ -1,7 +1,7 @@
-import type {RotateTarget, Space} from "../selection/ToolModel";
+import type {RotateTarget, Space} from "../models/ToolModel";
 import type {Constraint} from "../viewport/handles/dragPlane";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
-import type {Segment} from "./Segmented";
+import type {Segment} from "../controls/Segmented";
 
 export const GRIDS: Segment<GridKind | "off">[] = [
   { value: "off", label: "Off", title: "Show no grid" },

@@ -8,8 +8,8 @@ import {type Part, PartRegistry} from "../../../render/parts";
 import type {Primitives} from "../../../render/primitives";
 import type {Stage} from "../../../render/stage";
 import type {SessionAtom, SessionBond, SessionState} from "../../session/messages";
-import type {ItemSet, PartItem} from "../../selection/items";
-import {type Emphasis, NO_ITEMS} from "../../selection/items";
+import type {ItemSet, PartItem} from "../../models/items";
+import {type Emphasis, NO_ITEMS} from "../../models/items";
 
 
 /** How the molecule is drawn. */

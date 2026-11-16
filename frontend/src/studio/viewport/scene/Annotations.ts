@@ -4,11 +4,11 @@ import {disposeMaterials} from "../../../render/dispose";
 import type {Primitives} from "../../../render/primitives";
 import type {Stage} from "../../../render/stage";
 import type {GeometryResult} from "../../session/messages";
-import type {AngleView, TorsionView} from "../../selection/ToolModel";
-import {torsion} from "../../selection/torsion";
-import {angleAt, planeNormal} from "../../selection/angle";
+import type {AngleView, TorsionView} from "../../models/ToolModel";
+import {torsion} from "../../geometry/torsion";
+import {angleAt, planeNormal} from "../../geometry/angle";
 import {type AtomNode, type MoleculeScene, STYLE} from "./MoleculeScene";
-import {NO_ITEMS} from "../../selection/items";
+import {NO_ITEMS} from "../../models/items";
 
 /** How many selected atoms there can be for the bonds on them to be labelled with their lengths. */
 const LENGTH_LABEL_ATOMS = 4;

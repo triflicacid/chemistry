@@ -1,15 +1,15 @@
 import {useEffect, useRef, useState} from "react";
-import type {Item, PartItem} from "../selection/items";
-import type {Models, PickScope} from "../selection/models";
-import {useObservable} from "../selection/observable";
-import type {StateIndex} from "../selection/StateIndex";
+import type {Item, PartItem} from "../models/items";
+import type {Models, PickScope} from "../models/models";
+import {useObservable} from "../models/observable";
+import type {StateIndex} from "../geometry/StateIndex";
 import type {GeometryResult, SessionState} from "../session/messages";
 import type {SessionPhase} from "../session/types";
 import {useSessionContext} from "../session/SessionContext";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import {isCurrent} from "./findings";
-import {OpenMolecule} from "./OpenMolecule";
+import {OpenMolecule} from "../controls/OpenMolecule";
 import {ActionTools, DisplayTools} from "./ViewportOverlay";
 
 export interface ViewportProps {

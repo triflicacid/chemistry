@@ -1,20 +1,20 @@
 import {type MouseEvent, type ReactNode, useEffect, useState} from "react";
-import {type Item, keyOf} from "../selection/items";
-import type {Models} from "../selection/models";
-import {useObservable} from "../selection/observable";
-import type {StateIndex} from "../selection/StateIndex";
+import {type Item, keyOf} from "../models/items";
+import type {Models} from "../models/models";
+import {useObservable} from "../models/observable";
+import type {StateIndex} from "../geometry/StateIndex";
 import type {GeometryResult, SessionAtom, SessionBond, SessionState} from "../session/messages";
 import type {Vec3} from "../../api/types/structure";
 import type {EditResult} from "../session/useSession";
 import {eulerOf, withEuler} from "../session/pose";
 import {useSessionContext} from "../session/SessionContext";
-import type {Pivot} from "../selection/ToolModel";
-import {describeFinding, isCurrent} from "./findings";
-import {NumberField} from "./NumberField";
-import {type Segment, Segmented} from "./Segmented";
-import {type Hold, sideOf} from "../selection/bondLength";
-import {defaultReference, heaviestFirst, referencesAt, torsion} from "../selection/torsion";
-import {angleAt, angleMovers, choosePair} from "../selection/angle";
+import type {Pivot} from "../models/ToolModel";
+import {describeFinding, isCurrent} from "../layout/findings";
+import {NumberField} from "../controls/NumberField";
+import {type Segment, Segmented} from "../controls/Segmented";
+import {type Hold, sideOf} from "../geometry/bondLength";
+import {defaultReference, heaviestFirst, referencesAt, torsion} from "../geometry/torsion";
+import {angleAt, angleMovers, choosePair} from "../geometry/angle";
 
 export interface InspectorProps {
   state: SessionState | null;

@@ -1,5 +1,5 @@
 import type {Vec3} from "../../api/types/structure";
-import type {Hold} from "./bondLength";
+import type {Hold} from "../geometry/bondLength";
 import type {Constraint} from "../viewport/handles/dragPlane";
 import {Observable} from "./observable";
 

@@ -23,12 +23,12 @@ import {RollRingInteraction} from "./input/RollRingInteraction";
 import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
-import type {Emphasis} from "../selection/items";
+import type {Emphasis} from "../models/items";
 import {ReferenceLayer} from "./scene/ReferenceLayer";
 import type {StudioViewListener} from "./StudioViewListener";
 import type {GeometryResult, SessionState} from "../session/messages";
-import type {AngleView, Pivot, Space, Tool, TorsionView} from "../selection/ToolModel";
-import type {CameraEdit, CameraState} from "../selection/CameraModel";
+import type {AngleView, Pivot, Space, Tool, TorsionView} from "../models/ToolModel";
+import type {CameraEdit, CameraState} from "../models/CameraModel";
 import {type Binding, dispatchKey} from "../keys/binding";
 import {KEYS} from "../keys/keymap";
 

@@ -1,6 +1,6 @@
 import {CircleGeometry, Mesh, MeshBasicMaterial, type PerspectiveCamera, PlaneGeometry, RingGeometry} from "three";
 
-import {MAX_FOV, MIN_FOV} from "../../selection/CameraModel";
+import {MAX_FOV, MIN_FOV} from "../../models/CameraModel";
 import {HudDial, type HudHandle, type HudPoint, type Look, RESTING} from "./dial";
 
 /** Where the camera dot is, from the centre, with the cone opening upwards from it. */

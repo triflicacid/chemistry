@@ -1,7 +1,7 @@
-import {angleMovers, defaultPair} from "../../../selection/angle";
-import {movers} from "../../../selection/bondLength";
-import type {Item} from "../../../selection/items";
-import {defaultReference} from "../../../selection/torsion";
+import {angleMovers, defaultPair} from "../../../geometry/angle";
+import {movers} from "../../../geometry/bondLength";
+import type {Item} from "../../../models/items";
+import {defaultReference} from "../../../geometry/torsion";
 import type {MeasurementTarget} from "../../handles/BondHandleController";
 import type {ModeOptions} from "./ToolMode";
 

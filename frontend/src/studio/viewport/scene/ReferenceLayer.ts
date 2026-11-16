@@ -2,7 +2,7 @@ import {type LineBasicMaterial, type LineSegments, Group, Quaternion, type Vecto
 import {makeAxes} from "../../../render/axes";
 import {disposeMaterials} from "../../../render/dispose";
 import type {Stage} from "../../../render/stage";
-import type {Space} from "../../selection/ToolModel";
+import type {Space} from "../../models/ToolModel";
 import {type Constraint} from "../handles/dragPlane";
 import {type Guide, makeGuide} from "../handles/moveGuides";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "../grid";

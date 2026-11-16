@@ -1,6 +1,6 @@
 import {CameraModel} from "./CameraModel";
 import {HoverModel} from "./HoverModel";
-import type {StateIndex} from "./StateIndex";
+import type {StateIndex} from "../geometry/StateIndex";
 import {SelectionModel} from "./SelectionModel";
 import {ToolModel} from "./ToolModel";
 

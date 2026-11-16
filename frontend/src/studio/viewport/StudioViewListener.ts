@@ -1,6 +1,6 @@
 import type {AtomMove, BondEdit, Pose} from "../session/messages";
-import type {CameraState} from "../selection/CameraModel";
-import type {PartItem} from "../selection/items";
+import type {CameraState} from "../models/CameraModel";
+import type {PartItem} from "../models/items";
 import type {Constraint} from "./handles/dragPlane";
 
 /** Where the pointer is, in pixels. */

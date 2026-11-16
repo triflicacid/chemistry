@@ -1,7 +1,7 @@
 import type {Vector3} from "three";
-import type {Tool} from "../../../selection/ToolModel";
+import type {Tool} from "../../../models/ToolModel";
 import type {Binding} from "../../../keys/binding";
-import type {PartItem} from "../../../selection/items";
+import type {PartItem} from "../../../models/items";
 import type {ScreenPoint} from "../../StudioViewListener";
 import {CLICK_SLOP, DOUBLE_CLICK_MS} from "../constants";
 import type {ModeHost, ModeOptions, ToolMode} from "./ToolMode";

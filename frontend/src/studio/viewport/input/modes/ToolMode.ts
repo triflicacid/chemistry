@@ -1,10 +1,10 @@
 import type {Vec3} from "../../../../api/types/structure";
 import type {Stage} from "../../../../render/stage";
 import type {Binding} from "../../../keys/binding";
-import type {Hold} from "../../../selection/bondLength";
-import type {Item} from "../../../selection/items";
-import type {StateIndex} from "../../../selection/StateIndex";
-import type {AngleView, RotateTarget, Space, TorsionView, Tool} from "../../../selection/ToolModel";
+import type {Hold} from "../../../geometry/bondLength";
+import type {Item} from "../../../models/items";
+import type {StateIndex} from "../../../geometry/StateIndex";
+import type {AngleView, RotateTarget, Space, TorsionView, Tool} from "../../../models/ToolModel";
 import type {CameraRig} from "../../camera/CameraRig";
 import type {CameraLock} from "../../camera/CameraLock";
 import type {Constraint} from "../../handles/dragPlane";

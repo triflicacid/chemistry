@@ -1,9 +1,9 @@
 import {Vector3} from "three";
 import type {Stage} from "../../../render/stage";
 import type {BondEdit} from "../../session/messages";
-import type {Hold} from "../../selection/bondLength";
-import {angleAt, planeNormal} from "../../selection/angle";
-import {torsion} from "../../selection/torsion";
+import type {Hold} from "../../geometry/bondLength";
+import {angleAt, planeNormal} from "../../geometry/angle";
+import {torsion} from "../../geometry/torsion";
 import type {MoleculeScene} from "../scene/MoleculeScene";
 import type {CameraLock} from "../camera/CameraLock";
 import type {StudioViewListener} from "../StudioViewListener";

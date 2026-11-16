@@ -1,10 +1,10 @@
-import {useObservable} from "../selection/observable";
-import type {Tool, ToolModel} from "../selection/ToolModel";
+import {useObservable} from "../models/observable";
+import type {Tool, ToolModel} from "../models/ToolModel";
 import type {LayoutState, Panel} from "../layoutStore";
 import type {SessionPhase} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
-import {type Segment, Segmented} from "./Segmented";
-import {HistoryMenu} from "./HistoryMenu";
+import {type Segment, Segmented} from "../controls/Segmented";
+import {HistoryMenu} from "../panels/HistoryMenu";
 
 /** What a left-drag does, one at a time. */
 const TOOLS: Segment<Tool>[] = [

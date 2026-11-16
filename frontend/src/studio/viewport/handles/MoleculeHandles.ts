@@ -3,7 +3,7 @@ import {TransformControls} from "three/examples/jsm/controls/TransformControls.j
 import type {Pose} from "../../session/messages";
 import type {Stage} from "../../../render/stage";
 import type {CameraLock} from "../camera/CameraLock";
-import type {Space} from "../../selection/ToolModel";
+import type {Space} from "../../models/ToolModel";
 
 /**
  * What the handles do: carry the whole molecule, turn it, or carry the selected atoms within it, which changes

@@ -1,11 +1,11 @@
 import {useEffect, useRef, useState} from "react";
-import type {Models} from "../selection/models";
+import type {Models} from "../models/models";
 import type {GeometryResult, SessionState} from "../session/messages";
 import type {Activity, OptimisationOutcome} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
-import {describeFinding, isCurrent} from "./findings";
+import {describeFinding, isCurrent} from "../layout/findings";
 import {describeOutcome} from "./optimisation";
-import {type Segment, Segmented} from "./Segmented";
+import {type Segment, Segmented} from "../controls/Segmented";
 
 export interface AnalysisPanelProps {
   activity: Activity[];

@@ -1,7 +1,7 @@
 import { type CSSProperties, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { type Item, keyOf } from "../selection/items";
-import type { Models } from "../selection/models";
-import { useObservable } from "../selection/observable";
+import { type Item, keyOf } from "../models/items";
+import type { Models } from "../models/models";
+import { useObservable } from "../models/observable";
 import type { SessionState } from "../session/messages";
 
 export interface OutlinerProps {

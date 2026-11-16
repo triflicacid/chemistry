@@ -2,7 +2,7 @@ import {Box3, type Quaternion, Vector3} from "three";
 import type {Vec3} from "../../../api/types/structure";
 import {ballRadius} from "../../../render/bonds";
 import {FIELD_OF_VIEW, type Stage} from "../../../render/stage";
-import {type CameraEdit, type CameraState, edited, orbitOf} from "../../selection/CameraModel";
+import {type CameraEdit, type CameraState, edited, orbitOf} from "../../models/CameraModel";
 import {type MoleculeScene, STYLE} from "../scene/MoleculeScene";
 
 /** How far, in radians, the camera may have turned since a triad click and still count as not having moved. */

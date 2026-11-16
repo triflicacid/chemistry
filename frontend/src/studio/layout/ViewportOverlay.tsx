@@ -1,8 +1,8 @@
-import type {PickScope} from "../selection/models";
-import type {ToolModel, ToolState} from "../selection/ToolModel";
+import type {PickScope} from "../models/models";
+import type {ToolModel, ToolState} from "../models/ToolModel";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {CONSTRAINTS, GRID_PLANES, GRIDS, ROTATE_TARGETS, SPACES} from "./viewportOptions";
-import {Segmented} from "./Segmented";
+import {Segmented} from "../controls/Segmented";
 
 export interface DisplayToolsProps {
   axes: boolean;

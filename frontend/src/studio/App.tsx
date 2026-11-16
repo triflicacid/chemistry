@@ -1,8 +1,8 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {Workspace} from "./layout/Workspace";
-import {createModels} from "./selection/models";
-import {useObservable} from "./selection/observable";
-import {StateIndex} from "./selection/StateIndex";
+import {createModels} from "./models/models";
+import {useObservable} from "./models/observable";
+import {StateIndex} from "./geometry/StateIndex";
 import {useSession} from "./session/useSession";
 import {SessionProvider} from "./session/SessionContext";
 import {KEYS} from "./keys/keymap";
