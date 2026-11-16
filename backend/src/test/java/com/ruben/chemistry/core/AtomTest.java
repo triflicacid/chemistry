@@ -17,6 +17,23 @@ class AtomTest
     }
 
     @Test
+    void element_outside_the_organic_subset_renders_in_brackets()
+    {
+        assertThat(Atom.organic("He").toString()).isEqualTo("[He]");
+        assertThat(Atom.organic("Fe").toString()).isEqualTo("[Fe]");
+        assertThat(Atom.organic("H").toString()).isEqualTo("[H]");
+        assertThat(Atom.organic("Si").toString(List.of("1"), null)).isEqualTo("[Si]1");
+    }
+
+    @Test
+    void aromatic_atom_outside_the_aromatic_organic_subset_renders_in_brackets()
+    {
+        assertThat(Atom.aromatic("Se").toString()).isEqualTo("[se]");
+        assertThat(Atom.aromatic("As").toString()).isEqualTo("[as]");
+        assertThat(Atom.aromatic("B").toString()).isEqualTo("b");
+    }
+
+    @Test
     void aromatic_atom_renders_in_lower_case()
     {
         Atom atom = Atom.aromatic("C");

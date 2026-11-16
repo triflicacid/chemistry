@@ -1,5 +1,7 @@
 package com.ruben.chemistry.core;
 
+import com.ruben.chemistry.notation.NotationSymbols;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -131,7 +133,7 @@ public record Atom(
         String symbol = element.equals("*") ? element : aromatic ? element.toLowerCase() : element;
 
         StringBuilder text = new StringBuilder();
-        if (charge == 0 && isotope.isEmpty() && hydrogenCount.isEmpty() && atomClass.isEmpty() && chirality == null)
+        if (charge == 0 && isotope.isEmpty() && hydrogenCount.isEmpty() && atomClass.isEmpty() && chirality == null && NotationSymbols.isOrganicSubset(element, aromatic))
         {
             text.append(symbol);
         }
