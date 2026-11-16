@@ -21,6 +21,11 @@ export const ROTATE_TARGETS: Segment<RotateTarget>[] = [
   { value: "internal", label: "Bonds & angles", title: "Click a bond to turn one side of it about the bond (its torsion), or an atom to change an angle between two of its bonds" },
 ];
 
+export const DRAGS: Segment<"pan" | "look">[] = [
+  { value: "pan", label: "Pan", title: "Dragging the left button pans the view" },
+  { value: "look", label: "Look", title: "Dragging the left button turns the camera to look around from where it stands, in every tool" },
+];
+
 export const SPACES: Segment<Space>[] = [
   { value: "world", label: "World", title: "Measure moves and handles along the scene's axes" },
   { value: "local", label: "Local", title: "Measure moves and handles along the molecule's own axes, which turn with it" },

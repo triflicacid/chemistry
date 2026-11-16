@@ -58,8 +58,10 @@ export class PanMode extends SelectMode {
     super.cancel();
   }
 
-  private remap(panning: boolean): void {
-    const controls = this.host.stage.controls;
+  private remap(wanted: boolean): void {
+    const { controls, lookAround } = this.host.stage;
+    // looking around is the left button turning the camera, as it does in the other tools, so the buttons are theirs
+    const panning = wanted && !lookAround;
     controls.mouseButtons.LEFT = panning ? MOUSE.PAN : MOUSE.ROTATE;
     controls.mouseButtons.RIGHT = panning ? MOUSE.ROTATE : MOUSE.PAN;
     controls.touches.ONE = panning ? TOUCH.PAN : TOUCH.ROTATE;

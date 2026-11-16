@@ -9,6 +9,7 @@ import {Triad} from "./hud/triad";
 import {BondHandleController} from "./handles/BondHandleController";
 import {MoleculeHandleController} from "./handles/MoleculeHandleController";
 import {CameraRig} from "./camera/CameraRig";
+import {CameraFly} from "./camera/CameraFly";
 import {CameraLock} from "./camera/CameraLock";
 import {CameraHudInteraction} from "./input/CameraHudInteraction";
 import {TransformHandleInteraction} from "./input/TransformHandleInteraction";
@@ -57,6 +58,8 @@ export class StudioView {
   private readonly reference: ReferenceLayer;
   /** What debugging shows while the view is panned. */
   private readonly panGuide: PanGuide;
+  /** Flies the camera, with the keys or the stick on the camera HUD. */
+  private readonly fly: CameraFly;
   /** The handles on the molecule as a whole. */
   private readonly molecule: MoleculeHandleController;
   /** The handle on a bond or an angle. */
@@ -97,6 +100,7 @@ export class StudioView {
       this.reference.placeReferences();
       this.molecule.sync();
     });
+    this.fly = new CameraFly(this.stage, this.rig);
     this.reference = new ReferenceLayer(this.stage, this.scene, {
       space: () => this.space,
       constraint: () => this.modes.move.constraint,
@@ -163,7 +167,7 @@ export class StudioView {
     const resting = () => this.mode.resting();
     // in order of precedence: the first to take a press keeps the rest from having it
     this.router = new PointerRouter(canvas, [
-      new CameraHudInteraction(this.stage, this.cameraHud, this.rig, this.lock, resting),
+      new CameraHudInteraction(this.stage, this.cameraHud, this.rig, this.fly, this.lock, resting),
       new TriadInteraction(this.stage, this.triad, this.rig),
       new RollRingInteraction(this.stage, this.ring, this.lock, resting),
       new TransformHandleInteraction(this.lock, () => this.molecule.hovered || this.bonds.hovered),
@@ -185,6 +189,7 @@ export class StudioView {
     this.active.switchTo(this.modes[tool]);
     this.active.mode.configure(options);
     this.panGuide.show(this.annotations.debug && tool === "pan");
+    this.fly.enabled = tool === "pan";
   }
 
   /** The mode in use. */
@@ -482,6 +487,19 @@ export class StudioView {
    *
    * @param enabled whether to draw them
    */
+  /**
+   * Turns the camera where it stands, rather than orbiting, when the left button is dragged.
+   *
+   * @param enabled whether to look around
+   */
+  setLookAround(enabled: boolean): void {
+    this.stage.lookAround = enabled;
+    // the Camera tool takes the left button for panning, unless looking around has it
+    if (this.mode.tool === "pan") {
+      this.mode.enter();
+    }
+  }
+
   setDebug(enabled: boolean): void {
     this.annotations.debug = enabled;
     this.panGuide.show(enabled && this.mode.tool === "pan");
@@ -512,6 +530,7 @@ export class StudioView {
     this.ring.dispose();
     this.cameraHud.dispose();
     this.panGuide.dispose();
+    this.fly.dispose();
     this.reference.dispose();
     this.kit.dispose();
     this.stage.dispose();

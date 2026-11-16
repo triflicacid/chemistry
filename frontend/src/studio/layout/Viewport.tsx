@@ -44,6 +44,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [grid, setGrid] = useState<GridKind | "off">("off");
   const [gridPlane, setGridPlane] = useState<GridPlaneChoice>("xz");
   const [debug, setDebug] = useState(false);
+  const [look, setLook] = useState(false);
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
@@ -76,6 +77,10 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.setAxes(axes);
   }, [view, axes]);
+
+  useEffect(() => {
+    view?.setLookAround(look);
+  }, [view, look]);
 
   useEffect(() => {
     view?.setDebug(debug);
@@ -326,6 +331,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
             gridShown={grid !== "off"}
             moleculeSelected={moleculeSelected}
             blocked={blocked}
+            look={look}
+            onLook={setLook}
             picking={picking}
             onPickScope={() => setMode(mode === "molecule" ? "item" : "molecule")}
             onFrame={frame}

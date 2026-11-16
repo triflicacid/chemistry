@@ -1,7 +1,7 @@
 import type {PickScope} from "../models/models";
 import type {ToolModel, ToolState} from "../models/ToolModel";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
-import {CONSTRAINTS, GRID_PLANES, GRIDS, ROTATE_TARGETS, SPACES} from "./viewportOptions";
+import {CONSTRAINTS, DRAGS, GRID_PLANES, GRIDS, ROTATE_TARGETS, SPACES} from "./viewportOptions";
 import {Segmented} from "../controls/Segmented";
 
 export interface DisplayToolsProps {
@@ -68,6 +68,9 @@ export interface ActionToolsProps {
   moleculeSelected: boolean;
   /** Whether the selection has a locked atom in it. */
   blocked: boolean;
+  /** Whether dragging the left button looks around from where the camera is, rather than orbiting or panning. */
+  look: boolean;
+  onLook: (on: boolean) => void;
   picking: PickScope;
   onPickScope: () => void;
   onFrame: () => void;
@@ -76,11 +79,18 @@ export interface ActionToolsProps {
 }
 
 /** The buttons at the top right of the viewport. */
-export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked, picking, onPickScope, onFrame, onCentre, onReset }: ActionToolsProps) {
+export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked, look, onLook, picking, onPickScope, onFrame, onCentre, onReset }: ActionToolsProps) {
   const { tool, constraint, space, rotateTarget, carryHydrogens, snap } = state;
   return (
     <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
-      {tool === "rotate" && <Segmented label="What to rotate" value={rotateTarget} options={ROTATE_TARGETS} onChange={(next) => tools.rotateTarget(next)} />}
+      {tool === "pan" && (
+        <Segmented
+          label="Left drag"
+          value={look ? "look" : "pan"}
+          options={DRAGS}
+          onChange={(next) => onLook(next === "look")}
+        />
+      )}      {tool === "rotate" && <Segmented label="What to rotate" value={rotateTarget} options={ROTATE_TARGETS} onChange={(next) => tools.rotateTarget(next)} />}
       {(tool === "move" || (tool === "rotate" && rotateTarget === "molecule" && moleculeSelected)) && (
         <Segmented label="Space" value={space} options={SPACES} onChange={(next) => tools.useSpace(next)} />
       )}
