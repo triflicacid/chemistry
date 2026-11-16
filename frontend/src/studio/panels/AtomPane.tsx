@@ -40,6 +40,7 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
         {atom.isotope > 0 && <Property name="Isotope" value={String(atom.isotope)} />}
         <Property name="Charge" value={signed(atom.charge)} />
         <Property name="Aromatic" value={atom.aromatic ? "yes" : "no"} />
+        <Property name="Radius" value={atom.radius.toFixed(3) + " Å"} />
         {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
         {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
       </dl>
