@@ -14,6 +14,7 @@ import {CameraLock} from "./camera/CameraLock";
 import {CameraHudInteraction} from "./input/CameraHudInteraction";
 import {TransformHandleInteraction} from "./input/TransformHandleInteraction";
 import {ActiveMode} from "./input/modes/ActiveMode";
+import {EditMode} from "./input/modes/EditMode";
 import {MoveMode} from "./input/modes/MoveMode";
 import {PanMode} from "./input/modes/PanMode";
 import {RotateMode} from "./input/modes/RotateMode";
@@ -65,7 +66,7 @@ export class StudioView {
   /** The handle on a bond or an angle. */
   private readonly bonds: BondHandleController;
   /** What a press on the viewport does, one for each tool. */
-  private readonly modes: { select: SelectMode; move: MoveMode; rotate: RotateMode; pan: PanMode };
+  private readonly modes: { select: SelectMode; move: MoveMode; rotate: RotateMode; edit: EditMode; pan: PanMode };
   /** Holds the mode in use, which is the one for the tool chosen, and gives the router it, whichever it is. */
   private readonly active: ActiveMode;
   private readonly listeners = new Set<StudioViewListener>();
@@ -103,10 +104,10 @@ export class StudioView {
     this.fly = new CameraFly(this.stage, this.rig);
     this.reference = new ReferenceLayer(this.stage, this.scene, {
       space: () => this.space,
-      constraint: () => this.modes.move.constraint,
+      constraint: () => this.mover.constraint,
       anchor: () => this.rig.anchor,
-      guideTarget: () => this.modes.move.guideTarget(),
-      guideWanted: () => this.annotations.debug && this.modes.move.guideWanted(),
+      guideTarget: () => this.mover.guideTarget(),
+      guideWanted: () => this.mover.guideWanted(),
     });
     // scrolling goes towards what the pointer is over, which also moves the view, so a molecule can be brought closer
     // without a pan. It moves the point the view orbits, but not the anchor the molecule's handles sit on
@@ -149,7 +150,7 @@ export class StudioView {
       setMeasured: (measured) => this.setMeasured(measured),
       emit,
     };
-    this.modes = { select: new SelectMode(host), move: new MoveMode(host), rotate: new RotateMode(host), pan: new PanMode(host) };
+    this.modes = { select: new SelectMode(host), move: new MoveMode(host), rotate: new RotateMode(host), edit: new EditMode(host), pan: new PanMode(host) };
     this.active = new ActiveMode(this.modes.select);
 
     this.stage.addOverlay((renderer, camera, capturing) => {
@@ -190,6 +191,11 @@ export class StudioView {
     this.active.mode.configure(options);
     this.panGuide.show(this.annotations.debug && tool === "pan");
     this.fly.enabled = tool === "pan";
+  }
+
+  /** The mode that moves atoms, which is the edit tool's while it is in use and the move tool's otherwise. */
+  private get mover(): MoveMode {
+    return this.mode.tool === "edit" ? this.modes.edit : this.modes.move;
   }
 
   /** The mode in use. */

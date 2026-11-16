@@ -4,7 +4,7 @@ import type {Binding} from "../../../keys/binding";
 import type {Hold} from "../../../geometry/bondLength";
 import type {Item} from "../../../models/items";
 import type {StateIndex} from "../../../geometry/StateIndex";
-import type {AngleView, RotateTarget, Space, TorsionView, Tool} from "../../../models/ToolModel";
+import type {AngleView, EditClick, RotateTarget, Space, Tool, TorsionView} from "../../../models/ToolModel";
 import type {CameraRig} from "../../camera/CameraRig";
 import type {CameraLock} from "../../camera/CameraLock";
 import type {Constraint} from "../../handles/dragPlane";
@@ -27,6 +27,8 @@ export interface ModeOptions {
   snap: boolean;
   /** Whether the rotate tool turns the whole molecule, or what is inside it. */
   rotateTarget: RotateTarget;
+  /** What a click does with the edit tool. */
+  editClick: EditClick;
   /** What is selected. */
   selection: readonly Item[];
   /** What the session's structure holds, or null before it is known. */

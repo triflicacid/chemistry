@@ -1,4 +1,4 @@
-import type { Trigger } from "./binding";
+import type {Trigger} from "./binding";
 
 /** Keybinds */
 export const KEYS = {
@@ -13,6 +13,10 @@ export const KEYS = {
   toggleLock: { key: "l", mod: false, alt: false },
   /** Holds a move to an axis, and with shift to the plane across it. Shift is the move's own business, so it is not looked at. */
   constrain: { key: ["x", "y", "z"], mod: false, alt: false },
+  /** Bonds the two selected atoms, with the edit tool. */
+  addBond: { key: "b", mod: false, alt: false, shift: false },
+  /** Deletes the selected atoms or bonds, with the edit tool. */
+  deleteSelection: { key: ["Delete", "Backspace"], mod: false, alt: false },
   /** Turns carrying hydrogens on and off. */
   toggleCarry: { key: "h", mod: false, alt: false, shift: false },
 } satisfies Record<string, Trigger>;

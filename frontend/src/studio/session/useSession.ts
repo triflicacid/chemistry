@@ -4,7 +4,9 @@ import type {Vec3} from "../../api/types/structure";
 import type {
     AtomChange,
     AtomMove,
+    AtomPlacement,
     BondEdit,
+    BondOrder,
     GeometryResult,
     HistoryEntry,
     Pose,
@@ -44,6 +46,16 @@ export interface Session {
    * away. The server applies it as asked and never refuses it for being chemically odd.
    */
   setAtom: (id: string, change: AtomChange) => Promise<EditResult>;
+  /** Adds an atom, bonded to an atom (which the server places it for, a bond length away) or free at a position, as one edit that can be undone. */
+  addAtom: (element: string, placement: AtomPlacement, order: BondOrder) => Promise<EditResult>;
+  /** Bonds two atoms where they stand, as one edit that can be undone. */
+  addBond: (first: string, second: string, order: BondOrder) => Promise<EditResult>;
+  /** Gives a bond an order, as one edit that can be undone. */
+  setBondOrder: (bond: string, order: BondOrder) => Promise<EditResult>;
+  /** Deletes atoms and their bonds, with the hydrogens bonded only to them if asked, as one edit that can be undone. */
+  deleteAtoms: (ids: string[], hydrogens: boolean) => Promise<EditResult>;
+  /** Deletes bonds and leaves their atoms, as one edit that can be undone. */
+  deleteBonds: (ids: string[]) => Promise<EditResult>;
   /**
    * Gives a bond a length, as one edit that can be undone. The server works out which atoms move: the far side comes
    * along unless the bond is in a ring.
@@ -128,7 +140,7 @@ export function useSession(client?: ChemistryApi): Session {
   const saveCamera = useCameraSave(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
-  const { moveAtom, setAtom, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory, submitSmiles } = edits;
+  const { moveAtom, setAtom, addAtom, addBond, setBondOrder, deleteAtoms, deleteBonds, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory, submitSmiles } = edits;
 
   return {
     phase,
@@ -141,6 +153,11 @@ export function useSession(client?: ChemistryApi): Session {
     submitSmiles,
     moveAtom,
     setAtom,
+    addAtom,
+    addBond,
+    setBondOrder,
+    deleteAtoms,
+    deleteBonds,
     setBondLength,
     setBondTorsion,
     setAngle,

@@ -35,6 +35,11 @@ export class SelectMode implements ToolMode {
     return true;
   }
 
+  /** Whether two quick clicks centre the view on what is under the pointer, which a mode that clicks to do something does not want. */
+  protected get centresOnDoubleClick(): boolean {
+    return true;
+  }
+
   enter(): void {}
 
   exit(): void {}
@@ -106,7 +111,7 @@ export class SelectMode implements ToolMode {
     // the second click of a double-click centres the view and is not also a single click
     const now = performance.now();
     const last = this.lastClick;
-    if (last && now - last.at < DOUBLE_CLICK_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= CLICK_SLOP) {
+    if (this.centresOnDoubleClick && last && now - last.at < DOUBLE_CLICK_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) <= CLICK_SLOP) {
       this.lastClick = null;
       this.centreOn(event);
       return;
@@ -114,9 +119,18 @@ export class SelectMode implements ToolMode {
     this.lastClick = { x: event.clientX, y: event.clientY, at: now };
 
     if (this.picks) {
-      const pick = this.host.scene.pickAt(event);
-      this.host.emit((listener) => listener.click?.(pick, event.shiftKey || event.ctrlKey || event.metaKey));
+      this.clicked(event, this.host.scene.pickAt(event));
     }
+  }
+
+  /**
+   * Answers a left click that was not a camera drag, which by default selects what was clicked.
+   *
+   * @param event the click
+   * @param pick what is under the pointer, or null for nothing
+   */
+  protected clicked(event: PointerEvent, pick: PartItem | null): void {
+    this.host.emit((listener) => listener.click?.(pick, event.shiftKey || event.ctrlKey || event.metaKey));
   }
 
   private rightClick(event: PointerEvent): void {

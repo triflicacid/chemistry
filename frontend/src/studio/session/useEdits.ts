@@ -4,8 +4,11 @@ import {describingSmiles} from "./location";
 import type {
     AtomChange,
     AtomMove,
+    AtomPlacement,
     BondEdit,
     BondEditAck,
+    BondOrder,
+    GraphEditAck,
     HistoryEntry,
     Pose,
     SessionConflict,
@@ -27,6 +30,11 @@ export interface Edits {
   submitSmiles: (smiles: string) => Promise<SubmitResult>;
   moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
   setAtom: (id: string, change: AtomChange) => Promise<EditResult>;
+  addAtom: (element: string, placement: AtomPlacement, order: BondOrder) => Promise<EditResult>;
+  addBond: (first: string, second: string, order: BondOrder) => Promise<EditResult>;
+  setBondOrder: (bond: string, order: BondOrder) => Promise<EditResult>;
+  deleteAtoms: (ids: string[], hydrogens: boolean) => Promise<EditResult>;
+  deleteBonds: (ids: string[]) => Promise<EditResult>;
   setBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
   setBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   setAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
@@ -130,13 +138,13 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
   const moveAtom = useCallback((id: string, position: Vec3) => send([{ id, position }], true), [send]);
 
   /**
-   * Changes an atom's element, charge or isotope. The session applies it as asked and answers with the whole state.
+   * Makes an edit of the graph, which the session answers with the whole state.
    *
-   * @param id the atom to change
-   * @param change the fields to change; zero takes a charge or an isotope away
+   * @param ask makes the request, given the socket and the state it is made on
+   * @param message what to say in the log when it is done, given what the reply says changed
    */
-  const setAtom = useCallback(
-    (id: string, change: AtomChange): Promise<EditResult> =>
+  const graph = useCallback(
+    (ask: (socket: StudioSocket, base: SessionState) => Promise<GraphEditAck | SessionConflict>, message: string): Promise<EditResult> =>
       serially(async () => {
         const socket = socketRef.current;
         const base = held.current;
@@ -145,19 +153,19 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
         }
 
         try {
-          const reply = await socket.setAtom(base.session_id, base.version, id, change);
+          const reply = await ask(socket, base);
           if (reply.type === "conflict") {
             adopt(reply.state);
             note("The structure changed under your edit, so it was not applied", true);
             return { kind: "conflict" };
           }
 
-          // a resync that landed meanwhile is authoritative, and already says what the atom is
+          // a resync that landed meanwhile is authoritative, and already says what the structure is
           if (held.current?.version === base.version) {
             adopt(reply.state);
           }
           if (reply.version !== base.version) {
-            note(`Changed ${describeChange(change)} of ${id}`);
+            note(message);
           }
           return { kind: "applied" };
         } catch (cause) {
@@ -166,6 +174,39 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
         }
       }),
     [adopt, held, note, serially, socketRef],
+  );
+
+  const setAtom = useCallback(
+    (id: string, change: AtomChange) => graph((socket, base) => socket.setAtom(base.session_id, base.version, id, change), `Changed ${describeChange(change)} of ${id}`),
+    [graph],
+  );
+
+  const addAtom = useCallback(
+    (element: string, placement: AtomPlacement, order: BondOrder) =>
+      graph((socket, base) => socket.addAtom(base.session_id, base.version, element, placement, order), `Added ${element}${"attach" in placement ? ` bonded to ${placement.attach}` : ""}`),
+    [graph],
+  );
+
+  const addBond = useCallback(
+    (first: string, second: string, order: BondOrder) =>
+      graph((socket, base) => socket.addBond(base.session_id, base.version, first, second, order), `Bonded ${first} to ${second}`),
+    [graph],
+  );
+
+  const setBondOrder = useCallback(
+    (bond: string, order: BondOrder) => graph((socket, base) => socket.setBondOrder(base.session_id, base.version, bond, order), `Made ${bond} ${order.toLowerCase()}`),
+    [graph],
+  );
+
+  const deleteAtoms = useCallback(
+    (ids: string[], hydrogens: boolean) =>
+      graph((socket, base) => socket.deleteAtoms(base.session_id, base.version, ids, hydrogens), `Deleted ${ids.length === 1 ? ids[0] : `${ids.length} atoms`}${hydrogens ? " and their hydrogens" : ""}`),
+    [graph],
+  );
+
+  const deleteBonds = useCallback(
+    (ids: string[]) => graph((socket, base) => socket.deleteBonds(base.session_id, base.version, ids), `Deleted ${ids.length === 1 ? ids[0] : `${ids.length} bonds`}`),
+    [graph],
   );
 
   /**
@@ -445,5 +486,5 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
     [adopt, held, note, serially, socketRef],
   );
 
-  return { serially, send, sendBond, sendPose, submitSmiles, moveAtom, setAtom, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory };
+  return { serially, send, sendBond, sendPose, submitSmiles, moveAtom, setAtom, addAtom, addBond, setBondOrder, deleteAtoms, deleteBonds, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory };
 }

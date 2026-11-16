@@ -16,6 +16,11 @@ const TOOLS: Segment<Tool>[] = [
   },
   { value: "rotate", label: "Rotate", title: "Turn the whole molecule about a pivot, or choose Bonds & angles to turn about a bond or change an angle" },
   {
+    value: "edit",
+    label: "Edit",
+    title: "Add atoms and bonds, move atoms, or delete them. With Click set to Add, clicking an atom adds the chosen element bonded to it, empty space adds one on its own, and dragging an atom moves it (hold it to an axis or plane with X, Y and Z). Set Click to Select to choose atoms and bonds to bond them (B) or delete them (Delete)",
+  },
+  {
     value: "pan",
     label: "Camera",
     title: "Dragging pans the view and right-dragging orbits it. Scrolling zooms towards the pointer. W, A, S, D fly the camera forward, left, back and right, and E and Q up and down (hold Shift to go faster), as does the fly stick in the corner. Double-click an atom to centre the view on it",

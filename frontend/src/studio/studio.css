@@ -730,7 +730,8 @@ body.resizing {
 }
 
 /* a choice from a list looks like the buttons beside it */
-.properties select {
+.properties select,
+.viewport-tools select {
   font: inherit;
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
@@ -742,24 +743,29 @@ body.resizing {
   cursor: pointer;
 }
 
-.properties select:hover:not(:disabled) {
+.properties select:hover:not(:disabled),
+.viewport-tools select:hover:not(:disabled) {
   border-color: var(--hover);
   background-color: color-mix(in srgb, var(--hover) 25%, transparent);
 }
 
-.properties select:focus-visible {
+.properties select:focus-visible,
+.viewport-tools select:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 
-.properties select:disabled {
+.properties select:disabled,
+.viewport-tools select:disabled {
   color: var(--ink-soft);
   cursor: default;
 }
 
 /* the open list is drawn by the browser, so it needs a solid background that follows the theme */
 .properties select option,
-.properties select optgroup {
+.properties select optgroup,
+.viewport-tools select option,
+.viewport-tools select optgroup {
   color: var(--ink);
   background-color: var(--panel);
 }

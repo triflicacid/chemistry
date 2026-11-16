@@ -1,4 +1,4 @@
-import type {AtomMove, BondEdit, Pose} from "../session/messages";
+import type {AtomMove, AtomPlacement, BondEdit, Pose} from "../session/messages";
 import type {CameraState} from "../models/CameraModel";
 import type {PartItem} from "../models/items";
 import type {Constraint} from "./handles/dragPlane";
@@ -14,6 +14,8 @@ export interface StudioViewListener {
   hover?(pick: PartItem | null, at: ScreenPoint): void;
   /** A left click that was not a camera drag. `additive` is whether shift, control or command was held. */
   click?(pick: PartItem | null, additive: boolean): void;
+  /** The edit tool wants an atom added, bonded to the atom clicked or free where the empty space clicked is. */
+  place?(placement: AtomPlacement): void;
   /** An atom has been picked up by the move tool and has begun to move, along with the rest of the selection if it is in it. */
   dragStart?(id: string): void;
   /** The dragged atoms are at `moves`' positions. `done` is true for the last report, when the pointer is released. */

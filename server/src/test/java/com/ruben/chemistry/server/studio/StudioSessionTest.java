@@ -2,6 +2,7 @@ package com.ruben.chemistry.server.studio;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
@@ -989,6 +990,276 @@ class StudioSessionTest
         session.move(List.of(new StudioSession.Move(ids.get(0), new Vec3(at.x() + 1, at.y(), at.z()))), false);
 
         assertThat(code(() -> session.setAtom(ids.get(2), "N", null, null))).isEqualTo("BUSY");
+    }
+
+    @Test
+    void should_add_a_free_atom_where_it_is_put_and_undo_and_redo_it_with_the_same_name()
+    {
+        StudioSession session = open("CCO");
+        Vec3 where = new Vec3(5, 5, 5);
+
+        StudioSession.Created created = session.addAtom("N", null, null, where);
+        String added = created.atoms().getFirst();
+
+        assertThat(created.bonds()).isEmpty();
+        assertThat(created.applied().graph()).isTrue();
+        assertThat(session.molecule().atomCount()).isEqualTo(10);
+        assertThat(session.molecule().bondCount()).isEqualTo(8);
+        assertThat(session.positionOf(added)).isEqualTo(where);
+        assertThat(session.smiles()).contains(".");
+        assertThat(session.molecule().totalHydrogenCount(session.molecule().atoms().getLast())).isZero();
+
+        session.undo();
+        assertThat(session.molecule().atomCount()).isEqualTo(9);
+        assertThat(session.smiles()).isEqualTo("CCO");
+
+        session.redo();
+        assertThat(ids(session)).contains(added);
+        assertThat(session.positionOf(added)).isEqualTo(where);
+    }
+
+    @Test
+    void should_attach_a_new_atom_a_bond_length_away_by_the_order_asked_and_leave_every_hydrogen()
+    {
+        StudioSession session = open("CCO");
+        String oxygen = ids(session).get(2);
+        long hydrogens = session.molecule().atoms().stream().filter(atom -> atom.element().equals("H")).count();
+
+        StudioSession.Created created = session.addAtom("C", oxygen, BondOrder.DOUBLE, null);
+        String added = created.atoms().getFirst();
+
+        assertThat(created.bonds()).hasSize(1);
+        assertThat(session.molecule().atoms().stream().filter(atom -> atom.element().equals("H")).count()).isEqualTo(hydrogens);
+        Bond bond = session.molecule().bonds().getLast();
+        assertThat(session.bondId(bond)).isEqualTo(created.bonds().getFirst());
+        assertThat(bond.order()).isEqualTo(BondOrder.DOUBLE);
+        assertThat(session.positionOf(oxygen).distanceTo(session.positionOf(added))).isBetween(1.2, 1.7);
+    }
+
+    @Test
+    void should_leave_a_new_atom_clear_of_its_neighbours_wherever_it_is_attached()
+    {
+        // methane's carbon, a carbon with one neighbour, and one with two, each fully crowded or not
+        for (String smiles : List.of("C", "CC", "C=O", "CCO", "C(C)(C)(C)C", "c1ccccc1"))
+        {
+            StudioSession session = open(smiles);
+            String target = ids(session).get(0);
+            List<String> neighbours = session.molecule().neighboursOf(session.molecule().atoms().getFirst()).stream().map(session::atomId).toList();
+
+            String added = session.addAtom("N", target, null, null).atoms().getFirst();
+
+            for (String neighbour : neighbours)
+            {
+                assertThat(session.positionOf(added).distanceTo(session.positionOf(neighbour)))
+                        .as("%s: distance from %s", smiles, neighbour).isGreaterThan(1.2);
+            }
+        }
+    }
+
+    @Test
+    void should_never_use_a_name_twice_even_after_an_undo()
+    {
+        StudioSession session = open("CCO");
+
+        String first = session.addAtom("N", null, null, new Vec3(5, 0, 0)).atoms().getFirst();
+        session.undo();
+        String second = session.addAtom("N", null, null, new Vec3(5, 0, 0)).atoms().getFirst();
+
+        assertThat(second).isNotEqualTo(first);
+    }
+
+    @Test
+    void should_bond_two_atoms_where_they_stand_and_refuse_a_second_bond_between_them()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        Vec3 first = session.positionOf(ids.get(0));
+
+        StudioSession.Created created = session.addBond(ids.get(0), ids.get(2), BondOrder.SINGLE);
+
+        assertThat(created.bonds()).hasSize(1);
+        assertThat(session.molecule().bondCount()).isEqualTo(9);
+        assertThat(session.positionOf(ids.get(0))).isEqualTo(first);
+
+        assertThat(code(() -> session.addBond(ids.get(0), ids.get(2), null))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.addBond(ids.get(0), ids.get(0), null))).isEqualTo("INVALID_EDIT");
+
+        session.undo();
+        assertThat(session.molecule().bondCount()).isEqualTo(8);
+    }
+
+    @Test
+    void should_change_a_bond_order_keeping_the_bond_and_its_name()
+    {
+        StudioSession session = open("CCO");
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+
+        StudioSession.Applied applied = session.setBondOrder(bond, BondOrder.DOUBLE);
+
+        assertThat(applied.graph()).isTrue();
+        assertThat(session.molecule().bonds().getFirst().order()).isEqualTo(BondOrder.DOUBLE);
+        assertThat(session.bondId(session.molecule().bonds().getFirst())).isEqualTo(bond);
+
+        long version = session.version();
+        assertThat(session.setBondOrder(bond, BondOrder.DOUBLE).version()).isEqualTo(version);
+
+        session.undo();
+        assertThat(session.molecule().bonds().getFirst().order()).isEqualTo(BondOrder.SINGLE);
+    }
+
+    @Test
+    void should_delete_an_atom_and_its_bonds_but_leave_its_hydrogens_unless_asked()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        Vec3 where = session.positionOf(ids.get(1));
+
+        session.deleteAtoms(List.of(ids.get(1)), false);
+
+        // the middle carbon's two hydrogens stay, now bonded to nothing
+        assertThat(session.molecule().atomCount()).isEqualTo(8);
+        assertThat(session.molecule().bondCount()).isEqualTo(8 - 4);
+        assertThat(ids(session)).doesNotContain(ids.get(1)).contains(ids.get(6), ids.get(7));
+
+        session.undo();
+        assertThat(ids(session)).isEqualTo(ids);
+        assertThat(session.positionOf(ids.get(1))).isEqualTo(where);
+        assertThat(session.molecule().bondCount()).isEqualTo(8);
+
+        session.deleteAtoms(List.of(ids.get(1)), true);
+        assertThat(session.molecule().atomCount()).isEqualTo(6);
+        assertThat(ids(session)).doesNotContain(ids.get(1), ids.get(6), ids.get(7));
+    }
+
+    @Test
+    void should_delete_bonds_and_leave_their_atoms()
+    {
+        StudioSession session = open("CCO");
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+
+        session.deleteBonds(List.of(bond));
+
+        assertThat(session.molecule().atomCount()).isEqualTo(9);
+        assertThat(session.molecule().bondCount()).isEqualTo(7);
+        assertThat(session.molecule().isConnected()).isFalse();
+
+        session.undo();
+        assertThat(session.molecule().bondCount()).isEqualTo(8);
+        assertThat(session.bondId(session.molecule().bonds().getFirst())).isEqualTo(bond);
+    }
+
+    @Test
+    void should_still_write_and_store_a_structure_that_is_chemically_nonsense()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+
+        // a carbon with a fifth bond, a hydrogen bonded to two atoms, and a bond between two hydrogens
+        session.addAtom("N", ids.get(0), BondOrder.TRIPLE, null);
+        session.addBond(ids.get(3), ids.get(2), BondOrder.SINGLE);
+        session.addBond(ids.get(3), ids.get(7), BondOrder.DOUBLE);
+        session.addAtom("H", null, null, new Vec3(9, 9, 9));
+
+        assertThat(session.smiles()).isNotBlank();
+        assertThat(session.collapsed().atomCount()).isPositive();
+        assertThat(session.structure().conformers()).hasSize(1);
+        assertThat(session.structure().conformers().getFirst().positions()).hasSize(session.structure().sites().size());
+    }
+
+    @Test
+    void should_drop_stereo_around_an_edit_and_keep_it_elsewhere()
+    {
+        String alanine = "N[C@@H](C)C(=O)O";
+        StudioSession untouched = open(alanine);
+        StudioSession far = open(alanine);
+        StudioSession disturbed = open(alanine);
+
+        // a bond to a new atom far from the stereocentre
+        String carboxylOxygen = ids(far).get(4);
+        far.addAtom("C", carboxylOxygen, null, null);
+        // and one at the stereocentre itself, which leaves its chirality with nothing to be relative to
+        disturbed.addAtom("C", ids(disturbed).get(1), null, null);
+
+        assertThat(untouched.smiles()).contains("@");
+        assertThat(far.smiles()).contains("@");
+        assertThat(disturbed.smiles()).doesNotContain("@");
+        assertThat(disturbed.collapsed().atomCount()).isPositive();
+    }
+
+    @Test
+    void should_refuse_a_graph_edit_that_touches_a_locked_atom_or_names_what_is_not_there()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        String bond = session.bondId(session.molecule().bonds().getFirst());
+        session.lock(List.of(ids.get(0)), true);
+        long version = session.version();
+
+        assertThat(code(() -> session.addAtom("N", ids.get(0), null, null))).isEqualTo("LOCKED");
+        assertThat(code(() -> session.addBond(ids.get(0), ids.get(2), null))).isEqualTo("LOCKED");
+        assertThat(code(() -> session.setBondOrder(bond, BondOrder.DOUBLE))).isEqualTo("LOCKED");
+        assertThat(code(() -> session.deleteAtoms(List.of(ids.get(0)), false))).isEqualTo("LOCKED");
+        assertThat(code(() -> session.deleteBonds(List.of(bond)))).isEqualTo("LOCKED");
+        // a hydrogen carried with an atom is refused too, when it is the one that is locked
+        session.lock(List.of(ids.get(0)), false);
+        session.lock(List.of(ids.get(6)), true);
+        assertThat(code(() -> session.deleteAtoms(List.of(ids.get(1)), true))).isEqualTo("LOCKED");
+
+        assertThat(code(() -> session.addAtom("Zz", null, null, new Vec3(0, 0, 0)))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.addAtom("N", "nope", null, null))).isEqualTo("UNKNOWN_ID");
+        assertThat(code(() -> session.addAtom("N", null, null, null))).isEqualTo("INVALID_MESSAGE");
+        assertThat(code(() -> session.deleteBonds(List.of("nope")))).isEqualTo("UNKNOWN_ID");
+        assertThat(code(() -> session.deleteAtoms(List.of(), false))).isEqualTo("INVALID_EDIT");
+        assertThat(session.version()).isEqualTo(version + 2);
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_refuse_to_undo_a_graph_edit_of_an_atom_locked_since()
+    {
+        StudioSession session = open("CCO");
+        String added = session.addAtom("N", null, null, new Vec3(5, 0, 0)).atoms().getFirst();
+        session.lock(List.of(added), true);
+
+        assertThat(code(session::undo)).isEqualTo("LOCKED");
+        assertThat(ids(session)).contains(added);
+    }
+
+    @Test
+    void should_refuse_a_graph_edit_while_a_drag_is_in_progress()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        Vec3 at = session.positionOf(ids.get(0));
+        session.move(List.of(new StudioSession.Move(ids.get(0), new Vec3(at.x() + 1, at.y(), at.z()))), false);
+
+        assertThat(code(() -> session.addAtom("N", null, null, new Vec3(5, 0, 0)))).isEqualTo("BUSY");
+        assertThat(code(() -> session.deleteAtoms(List.of(ids.get(1)), false))).isEqualTo("BUSY");
+    }
+
+    @Test
+    void should_keep_moves_either_side_of_a_graph_edit_undoable_in_order()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        Vec3 start = session.positionOf(ids.get(0));
+        Vec3 moved = new Vec3(start.x() + 1, start.y(), start.z());
+
+        session.move(List.of(new StudioSession.Move(ids.get(0), moved)), true);
+        String added = session.addAtom("N", ids.get(2), null, null).atoms().getFirst();
+        session.move(List.of(new StudioSession.Move(added, new Vec3(7, 7, 7))), true);
+
+        session.undo();
+        assertThat(session.positionOf(added)).isNotEqualTo(new Vec3(7, 7, 7));
+        session.undo();
+        assertThat(ids(session)).doesNotContain(added);
+        assertThat(session.positionOf(ids.get(0))).isEqualTo(moved);
+        session.undo();
+        assertThat(session.positionOf(ids.get(0))).isEqualTo(start);
+
+        session.rewind(3, false);
+        assertThat(session.positionOf(added)).isEqualTo(new Vec3(7, 7, 7));
+        assertThat(session.positionOf(ids.get(0))).isEqualTo(moved);
     }
 
     @Test

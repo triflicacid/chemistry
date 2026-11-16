@@ -1,5 +1,6 @@
 package com.ruben.chemistry.server.studio;
 
+import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Quaternion;
@@ -171,6 +172,58 @@ public final class StudioRequests
      * @param isotope its new mass number, where 0 is natural abundance (optional; unchanged if absent)
      */
     public record AtomSetRequest(String sessionId, Long baseVersion, String atom, String element, Integer charge, Integer isotope)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param element the new atom's element symbol
+     * @param attach the atom to bond it to (optional; with it the server places the new atom, and without it {@code position} is required)
+     * @param order the order of the bond to {@code attach} (optional, default single)
+     * @param position where to put a free atom, in angstroms in the molecule's own frame (optional; unused when attaching)
+     */
+    public record AtomAddRequest(String sessionId, Long baseVersion, String element, String attach, BondOrder order, Vec3 position)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param atoms the atoms to delete
+     * @param hydrogens whether to delete too each hydrogen bonded only to a deleted atom (optional, default false)
+     */
+    public record AtomDeleteRequest(String sessionId, Long baseVersion, List<String> atoms, Boolean hydrogens)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param first one atom to bond
+     * @param second the other
+     * @param order the bond's order (optional, default single)
+     */
+    public record BondAddRequest(String sessionId, Long baseVersion, String first, String second, BondOrder order)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param bonds the bonds to delete
+     */
+    public record BondDeleteRequest(String sessionId, Long baseVersion, List<String> bonds)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param bond the bond to change
+     * @param order its new order
+     */
+    public record BondOrderRequest(String sessionId, Long baseVersion, String bond, BondOrder order)
     {
     }
 

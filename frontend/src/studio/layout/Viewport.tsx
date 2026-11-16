@@ -13,6 +13,7 @@ import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
+import {useStructureActions} from "./useStructureActions";
 import {ActionTools, DisplayTools} from "./ViewportOverlay";
 
 export interface ViewportProps {
@@ -37,6 +38,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     dragBond,
     dropBond,
     cancelBondDrag,
+    addAtom,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -48,10 +50,11 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
-  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold, axis } = toolState;
+  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold, axis, editClick } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
   const internal = tool === "rotate" && rotateTarget === "internal";
-  const picking: PickScope = internal ? "item" : mode;
+  const picking: PickScope = internal || tool === "edit" ? "item" : mode;
+  const structure = useStructureActions(models);
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -197,8 +200,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   // what the viewport does with the pointer and the keyboard, and the handles it offers, follows the tool and the selection.
   // It comes after the state is shown, so that it finds the atoms it is to put handles on
   useEffect(() => {
-    view?.setMode(tool, { constraint, carryHydrogens, snap, rotateTarget, selection: selected.items, index, hold, torsion, angle });
-  }, [view, state, locked, tool, constraint, carryHydrogens, snap, rotateTarget, selected, index, hold, torsion, angle]);
+    view?.setMode(tool, { constraint, carryHydrogens, snap, rotateTarget, editClick, selection: selected.items, index, hold, torsion, angle });
+  }, [view, state, locked, tool, constraint, carryHydrogens, snap, rotateTarget, editClick, selected, index, hold, torsion, angle]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
@@ -259,6 +262,10 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
           selection.clear();
         }
       },
+      place: (placement) => {
+        const { element, bondOrder } = tools.get();
+        void addAtom(element, placement, bondOrder);
+      },
       // picking an atom up selects it, so the Inspector shows where it is while it moves
       dragStart: (id) => {
         const item: Item = { kind: "atom", id };
@@ -275,7 +282,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       bondDrag: (edit, done) => (done ? void dropBond(edit) : dragBond(edit)),
       bondDragCancel: () => void cancelBondDrag(),
     });
-  }, [view, index, picking, selection, hover, tools, dragAtoms, dropAtoms, cancelDrag, dragMolecule, dropMolecule, cancelMoleculeDrag, dragBond, dropBond, cancelBondDrag]);
+  }, [view, index, picking, selection, hover, tools, addAtom, dragAtoms, dropAtoms, cancelDrag, dragMolecule, dropMolecule, cancelMoleculeDrag, dragBond, dropBond, cancelBondDrag]);
 
   useEffect(() => {
     if (!view) {
@@ -335,6 +342,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
             onLook={setLook}
             picking={picking}
             onPickScope={() => setMode(mode === "molecule" ? "item" : "molecule")}
+            structure={structure}
             onFrame={frame}
             onCentre={() => view?.centreCamera()}
             onReset={() => view?.resetCamera()}

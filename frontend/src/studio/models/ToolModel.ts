@@ -1,19 +1,23 @@
 import type {Vec3} from "../../api/types/structure";
 import type {Hold} from "../geometry/bondLength";
+import type {BondOrder} from "../session/messages";
 import type {Constraint} from "../viewport/handles/dragPlane";
 import {Observable} from "./observable";
 
 /**
  * What a left-drag does: select, move atoms or the whole molecule, rotate the whole molecule, or pan the view, in which
- * case a right-drag orbits it instead.
+ * case a right-drag orbits it instead. Editing changes the structure, and a click, not a drag, is what does it.
  */
-export type Tool = "select" | "move" | "rotate" | "pan";
+export type Tool = "select" | "move" | "rotate" | "edit" | "pan";
 
 /**
  * What the rotate tool turns: the whole molecule, about a pivot, or something inside it, which is a bond that is clicked,
  * turned about to change its torsion, or an atom that is clicked, whose angle between two of its bonds is changed.
  */
 export type RotateTarget = "molecule" | "internal";
+
+/** What a click does with the edit tool: adds an atom, or selects what is clicked as the select tool does. */
+export type EditClick = "add" | "select";
 
 /** Which axes a constraint, and the molecule's handles, are measured along: the scene's or the molecule's own. */
 export type Space = "world" | "local";
@@ -64,12 +68,18 @@ export interface ToolState {
   system: { label: string | null; clouds: readonly string[] };
   /** Which atom of a bond stays where it is when the bond is lengthened or turned, by the Inspector or by dragging a handle. */
   hold: Hold;
+  /** What a click does with the edit tool. */
+  editClick: EditClick;
+  /** The element the edit tool adds. */
+  element: string;
+  /** The order of the bond the edit tool makes, whether adding an atom or bonding two. */
+  bondOrder: BondOrder;
 }
 
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, axis: null, strain: false, carryHydrogens: false, snap: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, axis: null, strain: false, carryHydrogens: false, snap: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first", editClick: "add", element: "C", bondOrder: "SINGLE" });
   }
 
   /**
@@ -179,6 +189,39 @@ export class ToolModel extends Observable<ToolState> {
   holding(hold: Hold): void {
     if (this.get().hold !== hold) {
       this.set({ ...this.get(), hold });
+    }
+  }
+
+  /**
+   * Chooses whether a click with the edit tool adds an atom or selects.
+   *
+   * @param editClick what a click does
+   */
+  clickTo(editClick: EditClick): void {
+    if (this.get().editClick !== editClick) {
+      this.set({ ...this.get(), editClick });
+    }
+  }
+
+  /**
+   * Chooses the element the edit tool adds.
+   *
+   * @param element the element's symbol
+   */
+  addElement(element: string): void {
+    if (this.get().element !== element) {
+      this.set({ ...this.get(), element });
+    }
+  }
+
+  /**
+   * Chooses the order of the bonds the edit tool makes.
+   *
+   * @param bondOrder the order
+   */
+  bondWith(bondOrder: BondOrder): void {
+    if (this.get().bondOrder !== bondOrder) {
+      this.set({ ...this.get(), bondOrder });
     }
   }
 

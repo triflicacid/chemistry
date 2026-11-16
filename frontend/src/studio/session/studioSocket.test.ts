@@ -1,12 +1,12 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {StudioError, StudioSocket} from "./studioSocket";
 import {
-    type GeometryResult,
-    type OptimiseProgress,
-    type OptimiseResult,
-    PROTOCOL_VERSION,
-    type SessionAtom,
-    type SessionState,
+  type GeometryResult,
+  type OptimiseProgress,
+  type OptimiseResult,
+  PROTOCOL_VERSION,
+  type SessionAtom,
+  type SessionState,
 } from "./messages";
 import {IDENTITY_POSE} from "./pose";
 
@@ -369,6 +369,73 @@ describe("the Studio socket", () => {
 
     const stale = await socket.setAtom(opened.session_id, opened.version, oxygen.id, { charge: 2 });
     expect(stale.type).toBe("conflict");
+  });
+
+  it("builds a molecule from a free atom, attaches to it, bonds, changes an order and deletes, each undone by one step", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const oxygen = opened.atoms[2]!;
+
+    const free = await socket.addAtom(opened.session_id, opened.version, "N", { position: { x: 6, y: 0, z: 0 } }, "SINGLE");
+    expect(free.type).toBe("atom.add.ack");
+    if (free.type !== "atom.add.ack") {
+      return;
+    }
+    const [lone] = free.added_atoms as [string];
+    expect(free.added_bonds).toEqual([]);
+    expect(free.state.atoms.find((atom) => atom.id === lone)).toMatchObject({ element: "N", position: { x: 6, y: 0, z: 0 } });
+    expect(free.state.smiles).toContain(".");
+
+    const attached = await socket.addAtom(opened.session_id, free.version, "C", { attach: lone }, "DOUBLE");
+    expect(attached.type).toBe("atom.add.ack");
+    if (attached.type !== "atom.add.ack") {
+      return;
+    }
+    const [bondId] = attached.added_bonds as [string];
+    expect(attached.state.bonds.find((bond) => bond.id === bondId)).toMatchObject({ first: lone, order: "DOUBLE" });
+
+    const bonded = await socket.addBond(opened.session_id, attached.version, oxygen.id, lone, "SINGLE");
+    expect(bonded.type).toBe("bond.add.ack");
+    if (bonded.type !== "bond.add.ack") {
+      return;
+    }
+    await expect(socket.addBond(opened.session_id, bonded.version, oxygen.id, lone, "SINGLE")).rejects.toMatchObject({ code: "INVALID_EDIT" });
+
+    const reordered = await socket.setBondOrder(opened.session_id, bonded.version, bondId, "TRIPLE");
+    expect(reordered.type === "bond.order.ack" && reordered.state.bonds.find((bond) => bond.id === bondId)?.order).toBe("TRIPLE");
+    if (reordered.type !== "bond.order.ack") {
+      return;
+    }
+
+    const deleted = await socket.deleteAtoms(opened.session_id, reordered.version, [lone], false);
+    expect(deleted.type).toBe("atom.delete.ack");
+    if (deleted.type !== "atom.delete.ack") {
+      return;
+    }
+    expect(deleted.state.atoms.map((atom) => atom.id)).not.toContain(lone);
+
+    const unbonded = await socket.deleteBonds(opened.session_id, deleted.version, [deleted.state.bonds[0]!.id]);
+    expect(unbonded.type).toBe("bond.delete.ack");
+    if (unbonded.type !== "bond.delete.ack") {
+      return;
+    }
+    expect(unbonded.state.bonds.length).toBe(deleted.state.bonds.length - 1);
+
+    // an undo brings the deleted bond back, with the state, and the one before it brings back the atom
+    const undone = await socket.step("undo", opened.session_id, unbonded.version);
+    expect(undone.type === "edit.applied" && undone.state?.bonds.length).toBe(deleted.state.bonds.length);
+    if (undone.type !== "edit.applied") {
+      return;
+    }
+    const again = await socket.step("undo", opened.session_id, undone.version);
+    expect(again.type === "edit.applied" && again.state?.atoms.map((atom) => atom.id)).toContain(lone);
+    if (again.type !== "edit.applied") {
+      return;
+    }
+
+    await expect(socket.addAtom(opened.session_id, again.version, "Zz", { position: { x: 0, y: 0, z: 0 } }, "SINGLE")).rejects.toMatchObject({ code: "INVALID_EDIT" });
+    await expect(socket.deleteAtoms(opened.session_id, again.version, ["a999"], false)).rejects.toMatchObject({ code: "UNKNOWN_ID" });
   });
 
   it("answers a patch made on a stale version with a conflict, and refuses an unknown atom", async () => {

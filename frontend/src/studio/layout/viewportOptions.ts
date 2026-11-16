@@ -1,4 +1,5 @@
-import type {RotateTarget, Space} from "../models/ToolModel";
+import type {BondOrder} from "../session/messages";
+import type {EditClick, RotateTarget, Space} from "../models/ToolModel";
 import type {Constraint} from "../viewport/handles/dragPlane";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import type {Segment} from "../controls/Segmented";
@@ -39,4 +40,16 @@ export const CONSTRAINTS: { value: Constraint; label: string; title: string }[] 
   { value: "yz", label: "YZ", title: "Move in the yz plane (Shift+X)" },
   { value: "xz", label: "XZ", title: "Move in the xz plane (Shift+Y)" },
   { value: "xy", label: "XY", title: "Move in the xy plane (Shift+Z)" },
+];
+
+export const BOND_ORDERS: Segment<BondOrder>[] = [
+  { value: "SINGLE", label: "Single", title: "Make single bonds" },
+  { value: "DOUBLE", label: "Double", title: "Make double bonds" },
+  { value: "TRIPLE", label: "Triple", title: "Make triple bonds" },
+  { value: "AROMATIC", label: "Aromatic", title: "Make aromatic bonds" },
+];
+
+export const EDIT_CLICKS: Segment<EditClick>[] = [
+  { value: "add", label: "Add", title: "Clicking an atom adds an atom bonded to it, clicking empty space adds one on its own, and dragging an atom moves it. Shift-click, or a click on a bond, still selects" },
+  { value: "select", label: "Select", title: "Clicking selects atoms and bonds, and dragging turns the camera, as with the select tool, so they can be bonded or deleted" },
 ];

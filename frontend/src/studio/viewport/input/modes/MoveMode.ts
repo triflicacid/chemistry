@@ -2,7 +2,15 @@ import {Ray, Raycaster, Vector3} from "three";
 import type {Binding} from "../../../keys/binding";
 import {KEYS} from "../../../keys/keymap";
 import type {AtomMove} from "../../../session/messages";
-import {type Basis, type Constraint, constraintForKey, dragged, pointOnConstraint, STANDARD_BASIS} from "../../handles/dragPlane";
+import type {Tool} from "../../../models/ToolModel";
+import {
+  type Basis,
+  type Constraint,
+  constraintForKey,
+  dragged,
+  pointOnConstraint,
+  STANDARD_BASIS
+} from "../../handles/dragPlane";
 import {withTerminalHydrogens} from "../../hydrogens";
 import type {AtomNode} from "../../scene/MoleculeScene";
 import type {ScreenPoint} from "../../StudioViewListener";
@@ -59,9 +67,10 @@ export class MoveMode extends SelectMode {
 
   /**
    * @param host the view the mode is for
+   * @param tool the tool the mode is for, which a mode built on this one names as its own
    */
-  constructor(host: ModeHost) {
-    super(host, "move");
+  constructor(host: ModeHost, tool: Tool = "move") {
+    super(host, tool);
   }
 
   override get dragging(): boolean {
@@ -85,20 +94,10 @@ export class MoveMode extends SelectMode {
   }
 
   override configure(options: ModeOptions): void {
-    const { reference, molecule, bonds, scene } = this.host;
+    const { reference, molecule } = this.host;
     this.host.setMeasured(false);
 
-    if (options.constraint !== this.constraint) {
-      this.constraint = options.constraint;
-      reference.refreshGuide();
-      // a drag already begun carries on from where the atom is now
-      const grab = this.grab;
-      if (grab?.dragging) {
-        grab.members.forEach((member) => (member.start = member.node.at.clone()));
-        grab.point = pointOnConstraint(grab.ray, grab.members[0]!.start, this.constraint, grab.viewDirection, this.dragBasis()) ?? grab.point;
-      }
-    }
-
+    this.adoptConstraint(options.constraint);
     this.snap = options.snap;
 
     if (options.carryHydrogens !== this.carryHydrogens) {
@@ -106,6 +105,48 @@ export class MoveMode extends SelectMode {
       reference.refreshGuide();
       molecule.sync();
     }
+
+    this.arrange(options);
+  }
+
+  /**
+   * @param wanted the constraint the tool is set to
+   */
+  protected adoptConstraint(wanted: Constraint): void {
+    if (wanted !== this.constraint) {
+      this.constrainTo(wanted);
+    }
+  }
+
+  /**
+   * @param constraint what to hold them to
+   */
+  protected constrainTo(constraint: Constraint): void {
+    this.constraint = constraint;
+    this.host.reference.refreshGuide();
+    const grab = this.grab;
+    if (grab?.dragging) {
+      grab.members.forEach((member) => (member.start = member.node.at.clone()));
+      grab.point = pointOnConstraint(grab.ray, grab.members[0]!.start, this.constraint, grab.viewDirection, this.dragBasis()) ?? grab.point;
+    }
+  }
+
+  /**
+   * Asks for moves to be held to a constraint, as a key press does.
+   *
+   * @param asked what the key asks for
+   */
+  protected holdTo(asked: Constraint): void {
+    this.host.emit((listener) => listener.constraint?.(asked));
+  }
+
+  /**
+   * Shows the handles the selection calls for: the molecule's, or those of the selected atoms, and a bond's length handle.
+   *
+   * @param options the tool's settings and the selection
+   */
+  protected arrange(options: ModeOptions): void {
+    const { molecule, bonds, scene } = this.host;
 
     // the whole molecule is moved with handles while one is selected, and selected atoms with handles of their own
     const moleculeSelected = options.selection.some((item) => item.kind === "molecule");
@@ -139,7 +180,7 @@ export class MoveMode extends SelectMode {
           }
           const asked = constraintForKey(this.constraint, event.key, event.shiftKey);
           if (asked) {
-            this.host.emit((listener) => listener.constraint?.(asked));
+            this.holdTo(asked);
           }
         },
       },
@@ -268,7 +309,7 @@ export class MoveMode extends SelectMode {
    * @param id the atom pressed on
    * @returns the identifiers of the atoms that would move
    */
-  private groupOf(id: string): string[] {
+  protected groupOf(id: string): string[] {
     const selected = this.host.scene.emphasis.selected.atoms;
     return this.withCarried(selected.has(id) && selected.size > 1 ? selected : [id]);
   }
@@ -291,7 +332,7 @@ export class MoveMode extends SelectMode {
   }
 
   /** The pointer's ray in the molecule's own frame, which is the one atoms are dragged in. */
-  private localRayOf(event: PointerEvent): Ray {
+  protected localRayOf(event: PointerEvent): Ray {
     const { stage, scene } = this.host;
     this.raycaster.setFromCamera(stage.pointer(event), stage.camera);
     return scene.localRay(this.raycaster.ray.clone());
@@ -333,9 +374,14 @@ export class MoveMode extends SelectMode {
     this.host.reference.refreshGuide();
   }
 
+  /** Whether a press on an atom takes hold of it, which becomes a drag once the pointer has moved. */
+  protected get grabs(): boolean {
+    return true;
+  }
+
   /** Takes hold of an atom pressed on, which becomes a drag once the pointer has moved. */
   private startGrab(event: PointerEvent): void {
-    if (event.button !== 0) {
+    if (event.button !== 0 || !this.grabs) {
       return;
     }
 
