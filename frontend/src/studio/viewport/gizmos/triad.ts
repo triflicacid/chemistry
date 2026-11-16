@@ -1,5 +1,5 @@
 import { ArrowHelper, type LineBasicMaterial, type Material, type Mesh, PerspectiveCamera, Scene, Vector2, Vector3, type WebGLRenderer } from "three";
-import type { LabelFactory } from "./labels";
+import type { LabelFactory } from "../../../render/labels";
 
 /** The axes' colours, as the scene's own axes draw them. */
 const COLOURS = ["#e41a1c", "#2ca02c", "#1f4fd8"];
