@@ -13,14 +13,6 @@
 | Middle-drag | Zoom |
 | Touch: one finger / two fingers | Orbit (pan with the **Pan** tool) / zoom and pan |
 
-The browser's context menu is disabled over the viewport.
-
-The small triad in the lower left, inside the roll ring, is always shown and turns with the camera. Click one of its letters to look at
-the molecule from along that axis (X is the view from the right, Y from above, Z from the front). Click
-the same letter again, without having turned the camera since, to look from the other side; once the
-camera has been turned, the next click starts from the positive side again. The click does not orbit,
-select or pick up an atom behind it.
-
 ## Selecting
 
 | Input | Action |
@@ -59,10 +51,6 @@ times a second.
 
 ## Moving and turning the whole molecule
 
-Select a molecule (**Pick whole molecule**, or a molecule row in the Outliner), then choose **Move** or **Rotate**.
-Handles appear at the pivot. Moving or turning the molecule changes where it sits in the scene and no atom's
-coordinates, so every bond length and angle is as it was.
-
 | Input | Action |
 |---|---|
 | **Move** tool, drag an arrow or a square on the handles | Carry the molecule along that axis, or within that plane |
@@ -75,12 +63,6 @@ coordinates, so every bond length and angle is as it was.
 | Molecule's **Position** and **Rotation** in the Inspector | Type where its origin goes, and its turn as angles about x, y and z in degrees. These always act about the molecule's own origin |
 | **Pivot** in the Inspector | What the handles turn the molecule about and sit on: the orbit anchor (the default: right-click an atom to put the handles on it, or right-click empty space to go back to the middle of the molecule), the centre of its atoms, the molecule's own origin, or a point typed in the scene's coordinates |
 
-The molecule's atoms are still dragged with the Move tool when no molecule is selected, or by pressing on an atom
-away from a handle. A locked atom does not stop the molecule moving, because a lock holds an atom in place within
-the molecule. A session holds one molecule, so selecting one fragment of it and moving it moves them all.
-
-The Inspector's atom positions are in the molecule's own frame, not the scene's.
-
 ## SMILES bar
 
 | Input | Action |
@@ -89,20 +71,9 @@ The Inspector's atom positions are in the molecule's own frame, not the scene's.
 | Enter, or **Rebuild structure** | Replace the whole structure with the SMILES. Atom and bond identifiers change and the selection is cleared |
 | Esc, or **Reset** | Discard the draft and show the current SMILES again |
 
-An unreadable SMILES is refused with a message and leaves the structure as it was. If the structure
-changed on the server while you were editing, the rebuild is refused and the current structure is shown.
-
 ## Viewport buttons
 
-The buttons over the viewport are in two groups. The **left** group sets what is shown: the axes, a grid, strain marks,
-move guides, and a screenshot. The **right** group acts on the molecule or the view, some of it only with certain tools:
-**World** / **Local** and the move constraint buttons (see above), **Carry H**, and the two below. The right group wraps
-rather than running under the left one when the viewport is narrow.
-
-A choice of one thing from several, such as the tool, **World** / **Local**, the move constraint, the **Grid** and **Plane**, and the Geometry and
-Activity tabs, is drawn as one lozenge divided by faint lines into sections, which are hovered and pressed one at a time. It behaves as
-radio buttons do: one section is always selected, and choosing another replaces it. While a section has focus the arrow keys
-move the choice, and Tab passes the lozenge as one stop.
+The buttons over the viewport are in two groups. The **left** group sets what is shown, while the **right** group acts on the molecule or the view which may change based on mode.
 
 **Left**
 
@@ -121,21 +92,6 @@ move the choice, and Tab passes the lozenge as one stop.
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
 | Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
 
-## Strain
-
-The toolbar shows `strain N`: how far the geometry is from ideal bond lengths, angles and contacts, in units of
-tolerance, where 0 means nothing is wrong and about 3 is as bad as one bond, angle or contact three tolerances out.
-The halos on atoms get larger, brighter and redder as an atom's share rises, and are solid red from about 6. It is worked out on the server about a quarter of a second after you stop changing anything, and
-shows `…` after the number while it is catching up. It is not comparable between molecules of different sizes.
-
-The **Geometry** tab of the Activity panel lists the worst things wrong, worst first, as bonds, angles and clashes
-with how many tolerances each is out by. Click one to select the atoms it is between. The **Activity** tab is the
-log of what the session has done. Torsions are not counted or listed.
-
-With the **Strain** viewport button on, the Inspector adds a Strain section to a selected atom (its share of the
-strain, and every bond, angle and clash beyond tolerance that involves it) and to a selected bond (the findings that
-involve both its atoms). It says "Working it out…" while the figure is catching up after an edit.
-
 ## Outliner
 
 | Input | Action |
@@ -147,10 +103,6 @@ involve both its atoms). It says "Working it out…" while the figure is catchin
 | Arrow beside a molecule, or the Atoms / Bonds rows | Expand or collapse |
 
 Selecting something in the viewport opens the Outliner to it and scrolls it into view.
-
-Selecting a bond, or up to four atoms, labels the length of each bond selected or on those atoms (up to twelve) in the viewport, in blue,
-and the labels follow as atoms move. Hovering or selecting a bond also names its two atoms (such as `C1` and `C3`), the same names the Inspector
-uses, so you can tell which atoms a length or a Hold choice refers to.
 
 ## Inspector
 
@@ -167,10 +119,6 @@ uses, so you can tell which atoms a length or a Hold choice refers to.
 | Click a name under *Bonded to*, *Bonds* or *Joins* | Select that item (modifiers as above) |
 | Hover one | Highlight it in the viewport |
 
-A field you are typing in is yours: updates from the session do not overwrite it. If the value
-changes underneath you its border turns yellow, and leaving the field still applies what you typed.
-An atom that is locked cannot be edited.
-
 ## Locking
 
 | Input | Action |
@@ -186,14 +134,8 @@ Tint colours: yellow is hovered, light blue is active, blue is selected.
 |---|---|
 | **Undo** button, or Ctrl/Cmd+Z | Take back the latest edit |
 | **Redo** button, or Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y | Make the latest undone edit again |
+| **History** button | Open the list of every edit, newest first, each with the time it was made, ending in **Start**. The current state is marked "current"; states after it (undone edits) are dimmed. The button is off until there is something to list. Esc, or a click outside the list, closes it |
+| **Go to** on an entry | Move to that state, keeping the edits after it so they can still be redone |
+| **Rewind** on an entry (earlier states only) | Move to that state and permanently discard the later edits, so they cannot be redone. Its tooltip says how many go |
+| **Clear history** in the list | Permanently forget every edit, keeping the structure as it is |
 
-Inside a text field the keys are the field's own. Rebuilding from SMILES clears the history,
-because every atom and bond identifier it refers to is retired.
-
-## Saving
-
-There is no Save button: every committed edit, and every undo and redo, is saved as it happens. The
-first one stores a new molecule and the status in the toolbar reads "edits saved". The molecule you
-opened is never overwritten. The page's URL is rewritten to name the saved molecule, so reloading
-opens your edits. Molecules are held in the server's memory, so a restart loses them; the URL's
-SMILES then reopens the structure as it was first built, without your edits.

@@ -1,7 +1,7 @@
 import type { Camera, Object3D, Raycaster, Vector2, Vector3 } from "three";
 
 /** An atom or bond under the pointer. `index` is null for parts the drawing added, such as inferred bonds. */
-export interface Pick {
+export interface PartRef {
   kind: "atom" | "bond";
   index: number | null;
   /** What the drawing recorded about the part, such as `element` or `order` for ones it added. */
@@ -14,7 +14,7 @@ export interface Pick {
 
 /** An atom or bond that can be picked, and the object that draws it. */
 export interface Part {
-  pick: Pick;
+  ref: PartRef;
   object: Object3D;
   /** The molecule atom or bond index, or -1 if the drawing added it. */
   index: number;
@@ -40,7 +40,7 @@ export class PartRegistry {
    * @returns the new part
    */
   add(kind: "atom" | "bond", index: number | null, data: Record<string, string>, object: Object3D, id?: string): Part {
-    const part: Part = { pick: { kind, index, data, handle: object, id }, object, index: index ?? -1 };
+    const part: Part = { ref: { kind, index, data, handle: object, id }, object, index: index ?? -1 };
     object.userData.part = part;
     this.entries.push(part);
     return part;
