@@ -1,5 +1,6 @@
 import type { SessionAtom, SessionBond, SessionFragment, SessionState } from "../session/messages";
 import type { Item, ItemSet } from "../models/items";
+import type { StudioRing } from "../chemistry/Chemistry";
 
 /**
  * Looks things up in a session state: which molecule an atom is in, what an atom is bonded to,
@@ -9,12 +10,18 @@ export class StateIndex {
   readonly atoms = new Map<string, SessionAtom>();
   readonly bonds = new Map<string, SessionBond>();
   readonly fragments = new Map<string, SessionFragment>();
+  readonly rings = new Map<string, StudioRing>();
   private readonly labels = new Map<string, string>();
   private readonly fragmentOfAtom = new Map<string, string>();
   private readonly bondsAt = new Map<string, SessionBond[]>();
   private readonly bondsIn = new Map<string, SessionBond[]>();
 
-  constructor(readonly state: SessionState) {
+  /**
+   * @param state the session's state
+   * @param rings the molecule's rings, which are known only once the server has read its chemistry
+   */
+  constructor(readonly state: SessionState, rings: readonly StudioRing[] = []) {
+    rings.forEach((ring) => this.rings.set(ring.id, ring));
     state.atoms.forEach((atom, index) => {
       this.atoms.set(atom.id, atom);
       this.labels.set(atom.id, `${atom.element}${index + 1}`);
@@ -99,6 +106,10 @@ export class StateIndex {
         const bond = this.bonds.get(item.id);
         return bond ? (this.fragmentOfAtom.get(bond.first) ?? null) : null;
       }
+      case "ring": {
+        const [first] = this.rings.get(item.id)?.atoms ?? [];
+        return first === undefined ? null : (this.fragmentOfAtom.get(first) ?? null);
+      }
       default:
         return this.fragments.has(item.id) ? item.id : null;
     }
@@ -116,6 +127,8 @@ export class StateIndex {
         return this.atoms.has(item.id);
       case "bond":
         return this.bonds.has(item.id);
+      case "ring":
+        return this.rings.has(item.id);
       default:
         return this.fragments.has(item.id);
     }
@@ -134,6 +147,10 @@ export class StateIndex {
         covered.atoms.add(item.id);
       } else if (item.kind === "bond") {
         covered.bonds.add(item.id);
+      } else if (item.kind === "ring") {
+        const ring = this.rings.get(item.id);
+        ring?.atoms.forEach((id) => covered.atoms.add(id));
+        ring?.bonds.forEach((id) => covered.bonds.add(id));
       } else {
         this.fragments.get(item.id)?.atoms.forEach((id) => covered.atoms.add(id));
         this.bondsInFragment(item.id).forEach((bond) => covered.bonds.add(bond.id));

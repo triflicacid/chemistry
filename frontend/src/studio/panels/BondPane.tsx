@@ -10,6 +10,7 @@ import {type Segment, Segmented} from "../controls/Segmented";
 import {type Hold, sideOf} from "../geometry/bondLength";
 import {defaultReference, referencesAt, torsion} from "../geometry/torsion";
 import {Links, Property} from "./paneParts";
+import {RingMemberships} from "./RingMemberships";
 import {StrainDetails} from "./StrainDetails";
 
 interface BondPaneProps {
@@ -147,6 +148,8 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
         </>
       )}
       {refusal !== null && <p className="panel-note">{refusal}</p>}
+
+      <RingMemberships kind="bond" id={bond.id} atoms={[bond.first, bond.second]} models={models} />
 
       <h4 className="pane-subtitle">Joins</h4>
       <Links

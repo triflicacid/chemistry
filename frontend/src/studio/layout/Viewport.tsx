@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from "react";
+import type {SystemView} from "../geometry/conjugation";
 import type {Item, PartItem} from "../models/items";
 import type {Models, PickScope} from "../models/models";
 import {useObservable} from "../models/observable";
@@ -44,7 +45,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
-  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, torsion, angle, hold } = toolState;
+  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, torsion, angle, system, hold } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
   const internal = tool === "rotate" && rotateTarget === "internal";
   const picking: PickScope = internal ? "item" : mode;
@@ -123,6 +124,44 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.setAngle(angle);
   }, [view, angle]);
+
+  // the pi systems marked in the viewport: the label of the ring the Inspector shows, and every cloud turned on
+  const { chemistry } = models.chemistry;
+  useEffect(() => {
+    if (!view || !index || !chemistry) {
+      view?.setSystems([]);
+      return;
+    }
+    const wanted = new Map<number, SystemView>();
+    const want = (id: string, part: "cloud" | "label") => {
+      const ring = chemistry.ring(id);
+      if (!ring?.system) {
+        return;
+      }
+      const known = wanted.get(ring.system.index);
+      if (known) {
+        known[part] = true;
+        return;
+      }
+      const bonds = ring.systemBonds.flatMap((bondId) => {
+        const bond = index.bonds.get(bondId);
+        return bond ? [[bond.first, bond.second] as const] : [];
+      });
+      wanted.set(ring.system.index, {
+        atoms: ring.systemAtoms,
+        bonds,
+        cloud: part === "cloud",
+        label: part === "label",
+        piElectrons: ring.system.pi_electrons,
+        aromaticity: ring.system.aromaticity.toUpperCase() as SystemView["aromaticity"],
+      });
+    };
+    system.clouds.forEach((id) => want(id, "cloud"));
+    if (system.label !== null) {
+      want(system.label, "label");
+    }
+    view.setSystems([...wanted.values()]);
+  }, [view, index, chemistry, system]);
 
   useEffect(() => {
     view?.setSpace(space);

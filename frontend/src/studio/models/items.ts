@@ -1,10 +1,13 @@
-/** What kind of thing an item is. A molecule is one disconnected part of the session's graph. */
-export type ItemKind = "atom" | "bond" | "molecule";
+/**
+ * What kind of thing an item is. A molecule is one disconnected part of the session's graph. A ring is a set of its atoms
+ * and bonds that the molecule's chemistry names, which is not drawn as a part of its own.
+ */
+export type ItemKind = "atom" | "bond" | "molecule" | "ring";
 
 /** Something that can be selected or hovered, named by the identifier the session gave it. */
 export interface Item {
   readonly kind: ItemKind;
-  /** An atom or bond identifier, or the key of a fragment for a molecule. */
+  /** An atom or bond identifier, the key of a fragment for a molecule, or a ring identifier. */
   readonly id: string;
 }
 

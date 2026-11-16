@@ -7,6 +7,8 @@ import type {GeometryResult} from "../../session/messages";
 import type {AngleView, TorsionView} from "../../models/ToolModel";
 import {torsion} from "../../geometry/torsion";
 import {angleAt, planeNormal} from "../../geometry/angle";
+import {conjugationOf, type SystemView} from "../../geometry/conjugation";
+import {piCloud, piLabel} from "../../../render/overlays";
 import {type AtomNode, type MoleculeScene, STYLE} from "./MoleculeScene";
 import {NO_ITEMS} from "../../models/items";
 
@@ -38,6 +40,9 @@ export class Annotations {
   private lengthMarks: Group | null = null;
   private torsionShown: TorsionView | null = null;
   private angleShown: AngleView | null = null;
+  private systemsShown: readonly SystemView[] = [];
+  /** The pi system's cloud, or null while there is none. */
+  private systemMarks: Group | null = null;
 
   constructor(
     private readonly stage: Stage,
@@ -49,6 +54,60 @@ export class Annotations {
   forget(): void {
     this.strainMarks = null;
     this.lengthMarks = null;
+    this.systemMarks = null;
+  }
+
+  /**
+   * Shows pi systems the way the viewer does: the cloud over each one's bonds where asked, and what it amounts to written in the middle where asked.
+   *
+   * @param systems the systems to show
+   */
+  setSystems(systems: readonly SystemView[]): void {
+    this.systemsShown = systems;
+    this.drawSystem();
+  }
+
+  /** Draws the pi systems being shown, those whose atoms are all drawn, where their atoms are now. */
+  drawSystem(): void {
+    const { content, atomById, atoms } = this.scene;
+    if (this.systemMarks) {
+      content.remove(this.systemMarks);
+      disposeMaterials(this.systemMarks);
+      this.systemMarks = null;
+    }
+
+    const marks = new Group();
+    const everywhere = atoms.map(() => true);
+    const point = (i: number) => atoms[i]!.at.clone();
+    for (const shown of this.systemsShown) {
+      const nodes = shown.atoms.map((id) => atomById.get(id));
+      if (!nodes.every((node) => node !== undefined)) {
+        continue;
+      }
+      const index = (id: string) => atomById.get(id)?.index;
+      const bonds = shown.bonds.flatMap(([first, second]) => {
+        const a = index(first);
+        const b = index(second);
+        return a === undefined || b === undefined ? [] : [[a, b] as const];
+      });
+      const system = conjugationOf(
+        { atoms: nodes.map((node) => node.index), bonds, piElectrons: shown.piElectrons, aromaticity: shown.aromaticity },
+        point,
+        (i) => atoms[i]!.neighbours,
+      );
+      if (shown.cloud) {
+        marks.add(...piCloud(this.kit, system, point, everywhere));
+      }
+      const note = shown.label ? piLabel(this.kit, system, point, everywhere) : null;
+      if (note) {
+        marks.add(note);
+      }
+    }
+    if (marks.children.length > 0) {
+      content.add(marks);
+      this.systemMarks = marks;
+    }
+    this.stage.requestRender();
   }
 
   /**

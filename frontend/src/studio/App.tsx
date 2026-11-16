@@ -3,6 +3,7 @@ import {Workspace} from "./layout/Workspace";
 import {createModels} from "./models/models";
 import {useObservable} from "./models/observable";
 import {StateIndex} from "./geometry/StateIndex";
+import {useChemistry} from "./chemistry/useChemistry";
 import {useSession} from "./session/useSession";
 import {SessionProvider} from "./session/SessionContext";
 import {KEYS} from "./keys/keymap";
@@ -20,8 +21,9 @@ export function App() {
   const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo } = session;
 
   const shared = useMemo(createModels, []);
-  const index = useMemo(() => (state ? new StateIndex(state) : null), [state]);
-  const models = useMemo(() => ({ ...shared, index }), [shared, index]);
+  const chemistry = useChemistry(state);
+  const index = useMemo(() => (state ? new StateIndex(state, chemistry.chemistry?.rings) : null), [state, chemistry]);
+  const models = useMemo(() => ({ ...shared, index, chemistry }), [shared, index, chemistry]);
 
   // identifiers change when the structure does, so what no longer exists must not stay selected or hovered
   useEffect(() => {

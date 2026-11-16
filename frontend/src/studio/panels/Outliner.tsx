@@ -1,8 +1,11 @@
-import { type CSSProperties, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type Item, keyOf } from "../models/items";
 import type { Models } from "../models/models";
 import { useObservable } from "../models/observable";
 import type { SessionState } from "../session/messages";
+
+/** The key under which the Rings list is open or closed. */
+const RINGS = "rings";
 
 export interface OutlinerProps {
   state: SessionState | null;
@@ -10,10 +13,11 @@ export interface OutlinerProps {
 }
 
 /**
- * Lists what the scene holds: its molecules, and their atoms and bonds when expanded.
+ * Lists what the scene holds: its molecules, and their atoms and bonds when expanded, then its rings.
  *
- * Molecules, atoms and bonds are selectable and hoverable. The "Atoms" and "Bonds" rows exist
- * only to open and close their lists. Whatever becomes active elsewhere is opened and scrolled to.
+ * Molecules, atoms, bonds and rings are selectable and hoverable. The "Atoms", "Bonds" and "Rings" rows exist
+ * only to open and close their lists. Whatever becomes active elsewhere is opened and scrolled to, and a ring
+ * the Inspector points at is opened to and marked without being selected.
  */
 export function Outliner({ state, models }: OutlinerProps) {
   const { selection, hover, index } = models;
@@ -23,13 +27,35 @@ export function Outliner({ state, models }: OutlinerProps) {
 
   const rows = useRef(new Map<string, HTMLElement>());
   const revealing = useRef<string | null>(null);
+  // an item the Inspector pointed at without selecting it, marked until the selection changes
+  const [revealed, setRevealed] = useState<string | null>(null);
 
   const chosen = useMemo(() => new Set(selected.items.map(keyOf)), [selected.items]);
   const active = selected.active;
 
+  useEffect(() => setRevealed(null), [selected.items]);
+
+  useEffect(
+    () =>
+      models.reveal.subscribe((item) => {
+        if (item.kind !== "ring") {
+          return;
+        }
+        revealing.current = keyOf(item);
+        setRevealed(keyOf(item));
+        setOpen((before) => (before[RINGS] ? { ...before } : { ...before, [RINGS]: true }));
+      }),
+    [models.reveal],
+  );
+
   // reveal what became active, opening the lists it is in
   useEffect(() => {
     if (!active || !index) {
+      return;
+    }
+    if (active.kind === "ring") {
+      revealing.current = keyOf(active);
+      setOpen((before) => (before[RINGS] ? before : { ...before, [RINGS]: true }));
       return;
     }
     const fragment = index.fragmentOf(active);
@@ -57,8 +83,9 @@ export function Outliner({ state, models }: OutlinerProps) {
   }
 
   const toggle = (key: string) => setOpen((before) => ({ ...before, [key]: !before[key] }));
+  const rings = models.chemistry.chemistry?.rings ?? [];
 
-  const row = (item: Item, label: string, depth: number) => {
+  const row = (item: Item, label: ReactNode, depth: number, title?: string) => {
     const key = keyOf(item);
     const classes = ["tree-row", "tree-label"];
     if (item.kind !== "molecule") {
@@ -66,6 +93,9 @@ export function Outliner({ state, models }: OutlinerProps) {
     }
     if (chosen.has(key)) {
       classes.push("selected");
+    }
+    if (revealed === key) {
+      classes.push("revealed");
     }
     if (active && keyOf(active) === key) {
       classes.push("active");
@@ -78,6 +108,7 @@ export function Outliner({ state, models }: OutlinerProps) {
         type="button"
         className={classes.join(" ")}
         style={indent(depth)}
+        title={title}
         aria-pressed={chosen.has(key)}
         ref={(element) => {
           if (element) {
@@ -162,6 +193,20 @@ export function Outliner({ state, models }: OutlinerProps) {
             </li>
           );
         })}
+        {rings.length > 0 && (
+          <li className="tree-divided">
+            <Disclosure label={`Rings (${rings.length})`} depth={1} expanded={open[RINGS] ?? false} onToggle={() => toggle(RINGS)} />
+            {(open[RINGS] ?? false) && (
+              <ul>
+                {rings.map((ring) => (
+                  <li key={ring.id}>
+                    {row({ kind: "ring", id: ring.id }, ring.info.smiles, 2, `Ring ${ring.id.slice(1)}: ${ring.info.formula}, ${ring.info.size} atoms`)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        )}
       </ul>
     </div>
   );
