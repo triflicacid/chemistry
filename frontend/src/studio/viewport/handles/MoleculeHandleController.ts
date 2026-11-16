@@ -5,6 +5,7 @@ import type {AtomMove, Pose} from "../../session/messages";
 import type {Pivot, Space} from "../../selection/ToolModel";
 import type {Constraint} from "./dragPlane";
 import type {CameraRig} from "../camera/CameraRig";
+import type {CameraLock} from "../camera/CameraLock";
 import type {ReferenceLayer} from "../scene/ReferenceLayer";
 import type {AtomNode, MoleculeScene} from "../scene/MoleculeScene";
 import type {StudioViewListener} from "../StudioViewListener";
@@ -26,6 +27,8 @@ export interface MoleculeHandleHost {
   stage: Stage;
   scene: MoleculeScene;
   rig: CameraRig;
+  /** Keeps the camera's own controls off while a handle is held. */
+  lock: CameraLock;
   reference: ReferenceLayer;
   /** Whether constraints, and the handles, follow the scene's axes or the molecule's. */
   space(): Space;
@@ -55,7 +58,7 @@ export class MoleculeHandleController {
    * @param host the view around the handles
    */
   constructor(private readonly host: MoleculeHandleHost) {
-    this.handles = new MoleculeHandles(host.stage, host.scene.content, {
+    this.handles = new MoleculeHandles(host.stage, host.scene.content, host.lock, {
       grab: (axis) => {
         // the handles that translate hold a move to an axis or plane just as the keys do, so the keys and buttons follow
         const held = CONSTRAINT_OF_HANDLE[axis];

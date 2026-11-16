@@ -2,6 +2,7 @@ import {type Group, Object3D, Quaternion, Vector3} from "three";
 import {TransformControls} from "three/examples/jsm/controls/TransformControls.js";
 import type {Pose} from "../../session/messages";
 import type {Stage} from "../../../render/stage";
+import type {CameraLock} from "../camera/CameraLock";
 import type {Space} from "../../selection/ToolModel";
 
 /**
@@ -43,11 +44,13 @@ export class MoleculeHandles {
   /**
    * @param stage what the handles are drawn in and what they stop turning the camera of
    * @param molecule the group the molecule is drawn in, which this moves
+   * @param lock keeps the camera's own controls off while a handle is held
    * @param hooks who to tell what happens
    */
   constructor(
     private readonly stage: Stage,
     private readonly molecule: Group,
+    private readonly lock: CameraLock,
     private readonly hooks: MoleculeHandleHooks,
   ) {
     this.controls = new TransformControls(stage.camera, stage.canvas);
@@ -57,7 +60,11 @@ export class MoleculeHandles {
 
     this.controls.addEventListener("change", () => stage.requestRender());
     this.controls.addEventListener("dragging-changed", (event) => {
-      stage.controls.enabled = !event.value;
+      if (event.value) {
+        lock.hold("moleculeHandles");
+      } else {
+        lock.release("moleculeHandles");
+      }
     });
     this.controls.addEventListener("mouseDown", () => {
       if (this.controls.axis !== null) {
@@ -159,6 +166,7 @@ export class MoleculeHandles {
 
   /** Releases the handles. */
   dispose(): void {
+    this.lock.release("moleculeHandles");
     this.stage.scene.remove(this.proxy, this.controls.getHelper());
     this.controls.dispose();
   }

@@ -1,5 +1,6 @@
 import {FIELD_OF_VIEW, type Stage} from "../../../render/stage";
 import type {CameraRig} from "../camera/CameraRig";
+import type {CameraLock} from "../camera/CameraLock";
 import type {CameraHud} from "../hud/CameraHud";
 import type {HudHandle} from "../hud/dial";
 import {BALL_TRAVEL} from "../hud/panDial";
@@ -30,12 +31,14 @@ export class CameraHudHandler implements InteractionHandler {
    * @param stage the stage the spheres are drawn on
    * @param hud the spheres
    * @param rig the camera they move
+   * @param lock keeps the camera's own controls off while a sphere is held
    * @param resting the cursor to go back to when a sphere is let go
    */
   constructor(
     private readonly stage: Stage,
     private readonly hud: CameraHud,
     private readonly rig: CameraRig,
+    private readonly lock: CameraLock,
     private readonly resting: () => string,
   ) {}
 
@@ -49,7 +52,7 @@ export class CameraHudHandler implements InteractionHandler {
       return false;
     }
 
-    this.stage.controls.enabled = false;
+    this.lock.hold("cameraHud");
     this.stage.canvas.setPointerCapture(event.pointerId);
     this.drag = { handle, x: event.clientX, y: event.clientY };
     this.hud.active = handle;
@@ -144,7 +147,7 @@ export class CameraHudHandler implements InteractionHandler {
     this.drag = null;
     this.hud.active = null;
     this.hud.ball = { x: 0, y: 0 };
-    this.stage.controls.enabled = true;
+    this.lock.release("cameraHud");
     this.stage.canvas.style.cursor = this.resting();
     this.stage.requestRender();
   }

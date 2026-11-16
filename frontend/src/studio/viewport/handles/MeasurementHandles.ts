@@ -1,6 +1,7 @@
 import {MathUtils, Object3D, Quaternion, Vector3} from "three";
 import {TransformControls} from "three/examples/jsm/controls/TransformControls.js";
 import type {Stage} from "../../../render/stage";
+import type {CameraLock} from "../camera/CameraLock";
 
 /**
  * What the handle does: slide along a bond to change its length, turn about it to change its torsion, or turn about an
@@ -88,10 +89,12 @@ export class MeasurementHandles {
 
   /**
    * @param stage what the handle is drawn in and what it stops turning the camera of
+   * @param lock keeps the camera's own controls off while the handle is held
    * @param hooks who to tell what happens
    */
   constructor(
     private readonly stage: Stage,
+    private readonly lock: CameraLock,
     private readonly hooks: MeasurementHooks,
   ) {
     this.controls = new TransformControls(stage.camera, stage.canvas);
@@ -105,7 +108,11 @@ export class MeasurementHandles {
 
     this.controls.addEventListener("change", () => stage.requestRender());
     this.controls.addEventListener("dragging-changed", (event) => {
-      stage.controls.enabled = !event.value;
+      if (event.value) {
+        lock.hold("bondHandles");
+      } else {
+        lock.release("bondHandles");
+      }
     });
     this.controls.addEventListener("mouseDown", () => {
       this.start = { position: this.proxy.position.clone(), rotation: this.proxy.quaternion.clone(), value: this.value };
@@ -186,6 +193,7 @@ export class MeasurementHandles {
 
   /** Releases the handle. */
   dispose(): void {
+    this.lock.release("bondHandles");
     this.stage.scene.remove(this.proxy, this.controls.getHelper());
     this.controls.dispose();
   }

@@ -9,6 +9,7 @@ import {Triad} from "./hud/triad";
 import {BondHandleController} from "./handles/BondHandleController";
 import {MoleculeHandleController} from "./handles/MoleculeHandleController";
 import {CameraRig} from "./camera/CameraRig";
+import {CameraLock} from "./camera/CameraLock";
 import {CameraHudHandler} from "./input/CameraHudHandler";
 import {TransformHandleInteraction} from "./input/TransformHandleInteraction";
 import {ActiveMode} from "./input/modes/ActiveMode";
@@ -41,6 +42,8 @@ export class StudioView {
   /** The dial round the triad that rolls the view. */
   private readonly ring = new RollRing(HUD_CENTRE);
   private readonly cameraHud = new CameraHud();
+  /** Keeps the camera's own controls off while a handle, sphere, ring or atom is held, whoever holds it. */
+  private readonly lock: CameraLock;
   /** The molecule as drawn: its atoms and bonds, tints, locks and picking. */
   private readonly scene: MoleculeScene;
   /** What is marked on the molecule: strain, lengths, torsions and angles. */
@@ -81,6 +84,7 @@ export class StudioView {
       },
     });
     this.scene = new MoleculeScene(this.stage, this.kit);
+    this.lock = new CameraLock(this.stage);
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
@@ -102,11 +106,12 @@ export class StudioView {
     this.stage.scene.add(this.scene.content, this.reference.axes, this.reference.guideFrame);
 
     const emit = (tell: (listener: StudioViewListener) => void): void => this.listeners.forEach(tell);
-    this.bonds = new BondHandleController(this.stage, this.scene, emit);
+    this.bonds = new BondHandleController(this.stage, this.scene, this.lock, emit);
     this.molecule = new MoleculeHandleController({
       stage: this.stage,
       scene: this.scene,
       rig: this.rig,
+      lock: this.lock,
       reference: this.reference,
       space: () => this.space,
       carry: (ids) => this.modes.move.withCarried(ids),
@@ -119,6 +124,7 @@ export class StudioView {
       stage: this.stage,
       scene: this.scene,
       rig: this.rig,
+      lock: this.lock,
       reference: this.reference,
       annotations: this.annotations,
       cameraHud: this.cameraHud,
@@ -147,10 +153,10 @@ export class StudioView {
     const resting = () => this.mode.resting();
     // in order of precedence: the first to take a press keeps the rest from having it
     this.router = new PointerRouter(canvas, [
-      new CameraHudHandler(this.stage, this.cameraHud, this.rig, resting),
+      new CameraHudHandler(this.stage, this.cameraHud, this.rig, this.lock, resting),
       new TriadHandler(this.stage, this.triad, this.rig),
-      new RollRingHandler(this.stage, this.ring, resting),
-      new TransformHandleInteraction(this.stage, () => this.molecule.hovered || this.bonds.hovered),
+      new RollRingHandler(this.stage, this.ring, this.lock, resting),
+      new TransformHandleInteraction(this.lock, () => this.molecule.hovered || this.bonds.hovered),
       this.active,
     ]);
     window.addEventListener("keydown", this.onCaptureKey, { capture: true });
@@ -200,7 +206,6 @@ export class StudioView {
     }
 
     this.mode.reset();
-    this.stage.controls.enabled = true;
     this.scene.structureKey = structureKey;
     this.scene.clear();
     this.annotations.forget();

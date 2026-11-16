@@ -6,6 +6,7 @@ import type {Item} from "../../../selection/items";
 import type {StateIndex} from "../../../selection/StateIndex";
 import type {AngleView, RotateTarget, Space, TorsionView, Tool} from "../../../selection/ToolModel";
 import type {CameraRig} from "../../camera/CameraRig";
+import type {CameraLock} from "../../camera/CameraLock";
 import type {Constraint} from "../../handles/dragPlane";
 import type {BondHandleController} from "../../handles/BondHandleController";
 import type {MoleculeHandleController} from "../../handles/MoleculeHandleController";
@@ -40,6 +41,8 @@ export interface ModeHost {
   readonly stage: Stage;
   readonly scene: MoleculeScene;
   readonly rig: CameraRig;
+  /** Keeps the camera's own controls off while something is held. */
+  readonly lock: CameraLock;
   readonly reference: ReferenceLayer;
   readonly annotations: Annotations;
   readonly cameraHud: CameraHud;

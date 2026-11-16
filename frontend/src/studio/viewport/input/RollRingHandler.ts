@@ -1,6 +1,7 @@
 import type {Stage} from "../../../render/stage";
 import {sweep} from "../../../render/roll";
 import type {RollRing} from "../hud/rollRing";
+import type {CameraLock} from "../camera/CameraLock";
 import {DOUBLE_CLICK_MS} from "./constants";
 import type {InteractionHandler} from "./PointerRouter";
 
@@ -15,11 +16,13 @@ export class RollRingHandler implements InteractionHandler {
   /**
    * @param stage the stage whose camera is rolled
    * @param ring the ring
+   * @param lock keeps the camera's own controls off while the ring is held
    * @param resting the cursor to go back to when the ring is let go
    */
   constructor(
     private readonly stage: Stage,
     private readonly ring: RollRing,
+    private readonly lock: CameraLock,
     private readonly resting: () => string,
   ) {}
 
@@ -41,7 +44,7 @@ export class RollRingHandler implements InteractionHandler {
     }
     this.lastPress = now;
 
-    this.stage.controls.enabled = false;
+    this.lock.hold("rollRing");
     this.stage.canvas.setPointerCapture(event.pointerId);
     this.stage.canvas.style.cursor = "grabbing";
     this.rolling = { last: this.ring.angleAt(box, event.clientX, event.clientY) };
@@ -93,7 +96,7 @@ export class RollRingHandler implements InteractionHandler {
     }
     this.rolling = null;
     this.ring.active = false;
-    this.stage.controls.enabled = true;
+    this.lock.release("rollRing");
     this.stage.canvas.style.cursor = this.resting();
     this.stage.requestRender();
   }

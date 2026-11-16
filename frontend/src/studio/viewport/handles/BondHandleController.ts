@@ -5,6 +5,7 @@ import type {Hold} from "../../selection/bondLength";
 import {angleAt, planeNormal} from "../../selection/angle";
 import {torsion} from "../../selection/torsion";
 import type {MoleculeScene} from "../scene/MoleculeScene";
+import type {CameraLock} from "../camera/CameraLock";
 import type {StudioViewListener} from "../StudioViewListener";
 import {minus} from "../vec";
 import {MeasurementHandles} from "./MeasurementHandles";
@@ -43,14 +44,16 @@ export class BondHandleController {
   /**
    * @param stage the stage the handle is drawn on
    * @param scene the molecule the handle measures
+   * @param lock keeps the camera's own controls off while the handle is held
    * @param emit tells every listener something
    */
   constructor(
     stage: Stage,
     private readonly scene: MoleculeScene,
+    lock: CameraLock,
     private readonly emit: (tell: (listener: StudioViewListener) => void) => void,
   ) {
-    this.handles = new MeasurementHandles(stage, {
+    this.handles = new MeasurementHandles(stage, lock, {
       change: (value, done) => this.changed(value, done),
       cancel: () => {
         this.place();

@@ -110,6 +110,7 @@ export class MoveMode extends SelectMode {
 
   override reset(): void {
     this.grab = null;
+    this.host.lock.release("atomDrag");
   }
 
   override held(): string[] {
@@ -305,7 +306,7 @@ export class MoveMode extends SelectMode {
   /** Lets go of the atom in hand, giving the camera its controls back. */
   private releaseGrab(): void {
     this.grab = null;
-    this.host.stage.controls.enabled = true;
+    this.host.lock.release("atomDrag");
     this.host.reference.refreshGuide();
   }
 
@@ -347,7 +348,7 @@ export class MoveMode extends SelectMode {
     };
 
     // the camera must not turn while the atom does, and the pointer must keep reporting if it leaves the canvas
-    stage.controls.enabled = false;
+    this.host.lock.hold("atomDrag");
     stage.canvas.setPointerCapture(event.pointerId);
   }
 }

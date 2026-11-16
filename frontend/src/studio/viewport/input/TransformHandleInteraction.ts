@@ -1,4 +1,4 @@
-import type {Stage} from "../../../render/stage";
+import type {CameraLock} from "../camera/CameraLock";
 import type {InteractionHandler} from "./PointerRouter";
 
 /**
@@ -9,11 +9,11 @@ export class TransformHandleInteraction implements InteractionHandler {
   readonly swallows = false;
 
   /**
-   * @param stage the stage whose camera must stay put
+   * @param lock keeps the camera's own controls off, which must be done before they hear the press
    * @param hovered whether the pointer is over one of the handles
    */
   constructor(
-    private readonly stage: Stage,
+    private readonly lock: CameraLock,
     private readonly hovered: () => boolean,
   ) {}
 
@@ -27,7 +27,16 @@ export class TransformHandleInteraction implements InteractionHandler {
     }
 
     // a handle is under the pointer, which takes hold of it, and the camera must stay put
-    this.stage.controls.enabled = false;
+    this.lock.hold("transformHandle");
     return true;
+  }
+
+  // the handles hold the camera themselves once they have hold of the press, so this hold is only to be first to do so
+  release(): void {
+    this.lock.release("transformHandle");
+  }
+
+  cancel(): void {
+    this.lock.release("transformHandle");
   }
 }
