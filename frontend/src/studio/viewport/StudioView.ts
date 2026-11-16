@@ -28,12 +28,15 @@ import {type Part, PartRegistry} from "../../render/parts";
 import {Primitives} from "../../render/primitives";
 import {sweep} from "../../render/roll";
 import {FIELD_OF_VIEW, Stage} from "../../render/stage";
-import {Triad} from "../../render/triad";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
 import {withTerminalHydrogens} from "./carry";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
-import {RollRing} from "./rollRing";
-import {BALL_TRAVEL, CameraSpheres, type SphereHandle} from "./cameraSpheres";
+import {CameraGizmos} from "./gizmos/cameraGizmos";
+import {GIZMO_CENTRE, GIZMO_MARGIN, GIZMO_SIZE} from "./gizmos/constants";
+import {BALL_TRAVEL} from "./gizmos/panGizmo";
+import {RollRing} from "./gizmos/rollRing";
+import {Triad} from "./gizmos/triad";
+import type {GizmoHandle} from "./gizmos/widget";
 import {BondGizmo} from "./bondGizmo";
 import {type GizmoMode, MoleculeGizmo} from "./gizmo";
 import {type Guide, makeGuide} from "./guides";
@@ -188,12 +191,8 @@ const DOUBLE_CLICK_MS = 350;
 /** How far, in degrees, the view turns for each pixel a sphere is dragged, which is about what dragging the view itself does. */
 const ORBIT_DEGREES_PER_PIXEL = 0.4;
 
-/** The side of the square the axes triad is drawn in, and how far it is from the canvas's lower left corner, in CSS pixels. */
-const TRIAD_SIZE = 110;
-const TRIAD_MARGIN = 24;
-
-/** How far the middle of the triad, which the roll ring goes round, is from the canvas's left and bottom edges. */
-const TRIAD_CENTRE = TRIAD_MARGIN + TRIAD_SIZE / 2;
+/** The longest gap between two presses of the field-of-view slider that count as a double press, in milliseconds. */
+const FOV_RESET_MS = 350;
 
 const STYLE: Style = "ball_and_stick";
 
@@ -230,10 +229,10 @@ interface Grab {
 export class StudioView {
   private readonly stage: Stage;
   private readonly kit = new Primitives();
-  private readonly triad = new Triad(this.kit.labels, TRIAD_SIZE, TRIAD_MARGIN);
+  private readonly triad = new Triad(this.kit.labels, GIZMO_SIZE, GIZMO_MARGIN);
   /** The dial round the triad that rolls the view. */
-  private readonly ring = new RollRing(TRIAD_CENTRE);
-  private readonly spheres = new CameraSpheres(TRIAD_SIZE, TRIAD_MARGIN);
+  private readonly ring = new RollRing(GIZMO_CENTRE);
+  private readonly spheres = new CameraGizmos();
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
   /** Holds everything drawn of the molecule, positioned in the scene by its pose. Atoms are placed in this group's own frame. */
@@ -271,7 +270,10 @@ export class StudioView {
   /** The roll ring being turned, with the angle the pointer was last at round it, or null while it is not. */
   private rolling: { last: number } | null = null;
   /** The camera sphere being dragged, and where the pointer was at the last step. */
-  private sphereDrag: { handle: SphereHandle; x: number; y: number } | null = null;
+  private sphereDrag: { handle: GizmoHandle; x: number; y: number } | null = null;
+
+  /** When the field-of-view slider was last pressed, from performance.now, or 0 if a press has just been used as a double press. */
+  private lastFovPress = 0;
   /** When the ring was last pressed, so that a second press soon after can level the view. */
   private lastRingPress = 0;
   /** Whether moving an atom carries the hydrogens bonded to it. */
@@ -1738,11 +1740,31 @@ export class StudioView {
     this.sphereDrag = { handle, x: event.clientX, y: event.clientY };
     this.spheres.active = handle;
     this.stage.canvas.style.cursor = "grabbing";
+
+    if (handle === "fov" || handle === "cone") {
+      // pressing the slider or cone twice quickly puts the field of view back to the default
+      const now = performance.now();
+      const again = now - this.lastFovPress < FOV_RESET_MS;
+      this.lastFovPress = again ? 0 : now;
+      this.setCamera({ fov: again ? FIELD_OF_VIEW : this.fovFromPointer(handle, event) });
+    }
     this.stage.requestRender();
   };
 
+  /** The field of view a pointer asks for on the slider, or by where it is about the cone. */
+  private fovFromPointer(handle: GizmoHandle, event: PointerEvent): number {
+    const canvas = this.stage.canvas.getBoundingClientRect();
+    return handle === "cone" ? this.spheres.fovOfCone(canvas, event.clientX, event.clientY) : this.spheres.fovAt(canvas, event.clientX);
+  }
+
   /** Moves the view by a step of a drag on a camera sphere. */
-  private dragSpheres(event: PointerEvent, drag: { handle: SphereHandle; x: number; y: number }): void {
+  private dragSpheres(event: PointerEvent, drag: { handle: GizmoHandle; x: number; y: number }): void {
+    if (drag.handle === "fov" || drag.handle === "cone") {
+      this.setCamera({ fov: this.fovFromPointer(drag.handle, event) });
+      this.stage.requestRender();
+      return;
+    }
+
     const across = drag.handle === "pitch" || drag.handle === "pan-y" ? 0 : event.clientX - drag.x;
     const down = drag.handle === "yaw" || drag.handle === "pan-x" ? 0 : event.clientY - drag.y;
     drag.x = event.clientX;
@@ -2017,13 +2039,15 @@ export class StudioView {
 }
 
 /** The cursor over each camera sphere handle: across or up and down for one that holds a drag to that way. */
-const SPHERE_CURSOR: Record<SphereHandle, string> = {
+const SPHERE_CURSOR: Record<GizmoHandle, string> = {
   orbit: "grab",
   yaw: "ew-resize",
   pitch: "ns-resize",
   pan: "grab",
   "pan-x": "ew-resize",
   "pan-y": "ns-resize",
+  fov: "ew-resize",
+  cone: "grab",
 };
 
 /** The constraint a translate handle holds a move to, by the name three.js gives the handle. */
