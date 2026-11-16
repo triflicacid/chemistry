@@ -1,5 +1,6 @@
 package com.ruben.chemistry.server.resource;
 
+import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
@@ -25,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StudioSocketEndpointTest
 {
     /** The start of every message, naming the protocol the client is written for. */
-    private static final String PROTOCOL = "\"protocol_version\": 11, ";
+    private static final String PROTOCOL = "\"protocol_version\": 12, ";
 
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
@@ -45,7 +46,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 11L);
+        assertThat(ready).containsEntry("protocol_version", 12L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -96,7 +97,7 @@ class StudioSocketEndpointTest
         assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
         assertThat((String) error(stale).get("message")).contains("out of date");
 
-        socket.sendText("{\"protocol_version\": 12, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        socket.sendText("{\"protocol_version\": 13, \"type\": \"session.open\", \"sequence\": 2}", true).join();
         assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
 
         // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
@@ -660,6 +661,62 @@ class StudioSocketEndpointTest
 
         socket.sendText(patch(sessionId, 3, true, atom, 1, 1, 1, 5), true).join();
         assertThat(collector.nextJson()).containsEntry("type", "atom.patch.ack");
+    }
+
+    @Test
+    void should_change_an_atom_answer_with_the_state_and_store_the_changed_graph_under_one_id() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String oxygen = (String) list(opened, "atoms").get(2).get("id");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.set\", \"sequence\": 2, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1, \"atom\": \"" + oxygen + "\", \"element\": \"N\", \"charge\": 1}", true).join();
+        Map<String, Object> ack = collector.nextJson();
+        assertThat(ack).containsEntry("type", "atom.set.ack").containsEntry("sequence", 2L).containsEntry("version", 2L);
+        Map<String, Object> state = map(ack, "state");
+        assertThat(list(state, "atoms").get(2)).containsEntry("id", oxygen).containsEntry("element", "N").containsEntry("charge", 1L);
+        assertThat((String) state.get("smiles")).contains("N");
+        assertThat(state).containsEntry("can_undo", true);
+
+        String savedId = (String) state.get("saved_molecule_id");
+        assertThat(savedId).isNotNull();
+        assertThat(molecules.find(savedId).orElseThrow().molecule().atoms().stream().map(Atom::element)).contains("N");
+
+        socket.sendText(history("edit.undo", sessionId, 2, 3), true).join();
+        Map<String, Object> undone = collector.nextJson();
+        assertThat(undone).containsEntry("type", "edit.applied").containsEntry("saved_molecule_id", savedId);
+        assertThat(list(map(undone, "state"), "atoms").get(2)).containsEntry("element", "O").containsEntry("charge", 0L);
+        assertThat(molecules.find(savedId).orElseThrow().molecule().atoms().stream().map(Atom::element)).doesNotContain("N");
+    }
+
+    @Test
+    void should_refuse_an_atom_change_it_cannot_make_and_leave_the_session_as_it_was() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.set\", \"sequence\": 2, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1, \"atom\": \"a1\", \"element\": \"Zz\"}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_EDIT");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.set\", \"sequence\": 3, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1, \"element\": \"N\"}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+
+        socket.sendText(resync(sessionId, 4), true).join();
+        assertThat(collector.nextJson()).containsEntry("version", 1L);
     }
 
     @Test
@@ -1367,6 +1424,12 @@ class StudioSocketEndpointTest
     private static Map<String, Object> position(Map<String, Object> atom)
     {
         return (Map<String, Object>) atom.get("position");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> map(Map<String, Object> body, String name)
+    {
+        return (Map<String, Object>) body.get(name);
     }
 
     @SuppressWarnings("unchecked")

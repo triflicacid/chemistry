@@ -2,7 +2,8 @@ import type {Vec3} from "../../api/types/structure";
 import type {BondEditAck, EditApplied, OptimiseResult, PatchAck, Pose, SessionState} from "./messages";
 
 /**
- * The state after the session accepted a change, without waiting for it to send the whole state again.
+ * The state after the session accepted a change, without waiting for it to send the whole state again. A step that
+ * changed the graph comes with the whole state, which is adopted as it is.
  *
  * @param base the state the change was made on
  * @param moves the atoms that moved and where each went
@@ -10,6 +11,10 @@ import type {BondEditAck, EditApplied, OptimiseResult, PatchAck, Pose, SessionSt
  * @param transform where the molecule now sits, if the change moved it as a whole
  */
 export function applyAck(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | BondEditAck | EditApplied | OptimiseResult, transform: Pose | null = null): SessionState {
+  if ("state" in ack && ack.state) {
+    return ack.state;
+  }
+
   const to = new Map(moves.map((move) => [move.id, move.position]));
   return {
     ...base,

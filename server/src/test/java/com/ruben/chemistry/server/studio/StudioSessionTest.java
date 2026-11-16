@@ -840,6 +840,158 @@ class StudioSessionTest
     }
 
     @Test
+    void should_change_an_atoms_element_keeping_its_id_its_bonds_and_every_hydrogen()
+    {
+        StudioSession session = open("CCO");
+        String oxygen = ids(session).get(2);
+        List<String> bonds = session.molecule().bonds().stream().map(session::bondId).toList();
+        Vec3 where = session.positionOf(oxygen);
+
+        StudioSession.Applied applied = session.setAtom(oxygen, "N", null, null);
+
+        assertThat(applied.graph()).isTrue();
+        assertThat(applied.version()).isEqualTo(2);
+        assertThat(session.molecule().atoms().get(2).element()).isEqualTo("N");
+        assertThat(ids(session).get(2)).isEqualTo(oxygen);
+        assertThat(session.molecule().bonds().stream().map(session::bondId).toList()).isEqualTo(bonds);
+        assertThat(session.molecule().atomCount()).isEqualTo(9);
+        assertThat(session.positionOf(oxygen)).isEqualTo(where);
+        assertThat(session.smiles()).isNotEqualTo("CCO");
+    }
+
+    @Test
+    void should_add_change_and_remove_a_charge_and_an_isotope()
+    {
+        StudioSession session = open("CCO");
+        String carbon = ids(session).get(0);
+
+        session.setAtom(carbon, null, 1, 13);
+        assertThat(session.molecule().atoms().getFirst().charge()).isEqualTo(1);
+        assertThat(session.molecule().atoms().getFirst().isotope()).hasValue(13);
+
+        session.setAtom(carbon, null, -2, 14);
+        assertThat(session.molecule().atoms().getFirst().charge()).isEqualTo(-2);
+        assertThat(session.molecule().atoms().getFirst().isotope()).hasValue(14);
+
+        // zero is how a charge or an isotope is taken away
+        session.setAtom(carbon, null, 0, 0);
+        assertThat(session.molecule().atoms().getFirst().charge()).isZero();
+        assertThat(session.molecule().atoms().getFirst().isotope()).isEmpty();
+        assertThat(session.molecule().atoms().getFirst().element()).isEqualTo("C");
+    }
+
+    @Test
+    void should_accept_an_atom_that_is_chemically_odd()
+    {
+        StudioSession session = open("CCO");
+        String hydrogen = ids(session).get(3);
+
+        session.setAtom(hydrogen, null, 3, 999);
+
+        assertThat(session.molecule().atoms().get(3).charge()).isEqualTo(3);
+        assertThat(session.smiles()).isNotBlank();
+        assertThat(session.collapsed().atoms()).isNotEmpty();
+    }
+
+    @Test
+    void should_undo_and_redo_an_attribute_edit_as_one_step_that_keeps_the_atoms_id()
+    {
+        StudioSession session = open("CCO");
+        String oxygen = ids(session).get(2);
+        String before = session.smiles();
+
+        session.setAtom(oxygen, "S", null, null);
+        String edited = session.smiles();
+
+        StudioSession.Applied undone = session.undo();
+        assertThat(undone.graph()).isTrue();
+        assertThat(session.molecule().atoms().get(2).element()).isEqualTo("O");
+        assertThat(ids(session).get(2)).isEqualTo(oxygen);
+        assertThat(session.smiles()).isEqualTo(before);
+        assertThat(session.collapsed().atoms().stream().map(Atom::element)).doesNotContain("S");
+        assertThat(session.canUndo()).isFalse();
+
+        StudioSession.Applied redone = session.redo();
+        assertThat(redone.graph()).isTrue();
+        assertThat(session.molecule().atoms().get(2).element()).isEqualTo("S");
+        assertThat(session.smiles()).isEqualTo(edited);
+        assertThat(session.collapsed().atoms().stream().map(Atom::element)).contains("S");
+    }
+
+    @Test
+    void should_keep_position_edits_either_side_of_an_attribute_edit_undoable_in_order()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        Vec3 start = session.positionOf(ids.get(0));
+        Vec3 moved = new Vec3(start.x() + 1, start.y(), start.z());
+
+        session.move(List.of(new StudioSession.Move(ids.get(0), moved)), true);
+        session.setAtom(ids.get(2), "N", null, null);
+        session.rewind(0, false);
+
+        assertThat(session.positionOf(ids.get(0))).isEqualTo(start);
+        assertThat(session.molecule().atoms().get(2).element()).isEqualTo("O");
+
+        StudioSession.Applied forward = session.rewind(2, false);
+        assertThat(forward.graph()).isTrue();
+        assertThat(session.positionOf(ids.get(0))).isEqualTo(moved);
+        assertThat(session.molecule().atoms().get(2).element()).isEqualTo("N");
+    }
+
+    @Test
+    void should_leave_the_version_alone_when_an_attribute_edit_changes_nothing()
+    {
+        StudioSession session = open("CCO");
+
+        StudioSession.Applied applied = session.setAtom(ids(session).get(2), "O", 0, 0);
+
+        assertThat(applied.version()).isEqualTo(1);
+        assertThat(applied.graph()).isFalse();
+        assertThat(session.canUndo()).isFalse();
+    }
+
+    @Test
+    void should_refuse_an_attribute_edit_it_cannot_represent_or_that_touches_a_locked_atom()
+    {
+        StudioSession session = open("CCO");
+        String oxygen = ids(session).get(2);
+
+        assertThat(code(() -> session.setAtom("nope", "N", null, null))).isEqualTo("UNKNOWN_ID");
+        assertThat(code(() -> session.setAtom(oxygen, "Zz", null, null))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.setAtom(oxygen, null, null, -1))).isEqualTo("INVALID_EDIT");
+        assertThat(code(() -> session.setAtom(oxygen, null, null, null))).isEqualTo("INVALID_EDIT");
+
+        session.lock(List.of(oxygen), true);
+        long locked = session.version();
+        assertThat(code(() -> session.setAtom(oxygen, "N", null, null))).isEqualTo("LOCKED");
+        assertThat(session.version()).isEqualTo(locked);
+    }
+
+    @Test
+    void should_refuse_to_undo_an_attribute_edit_of_an_atom_that_has_been_locked_since()
+    {
+        StudioSession session = open("CCO");
+        String oxygen = ids(session).get(2);
+        session.setAtom(oxygen, "N", null, null);
+        session.lock(List.of(oxygen), true);
+
+        assertThat(code(session::undo)).isEqualTo("LOCKED");
+        assertThat(session.molecule().atoms().get(2).element()).isEqualTo("N");
+    }
+
+    @Test
+    void should_refuse_an_attribute_edit_while_a_drag_is_in_progress()
+    {
+        StudioSession session = open("CCO");
+        List<String> ids = ids(session);
+        Vec3 at = session.positionOf(ids.get(0));
+        session.move(List.of(new StudioSession.Move(ids.get(0), new Vec3(at.x() + 1, at.y(), at.z()))), false);
+
+        assertThat(code(() -> session.setAtom(ids.get(2), "N", null, null))).isEqualTo("BUSY");
+    }
+
+    @Test
     void should_refuse_a_bond_edit_that_names_something_it_does_not_hold_or_is_not_allowed()
     {
         StudioSession session = open("CCO");

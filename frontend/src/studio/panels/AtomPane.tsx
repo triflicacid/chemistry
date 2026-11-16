@@ -2,14 +2,15 @@ import {useEffect, useState} from "react";
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {StateIndex} from "../geometry/StateIndex";
-import type {GeometryResult, SessionAtom} from "../session/messages";
+import type {AtomChange, GeometryResult, SessionAtom} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
+import {ElementPicker} from "../controls/ElementPicker";
 import {NumberField} from "../controls/NumberField";
 import {type Segment, Segmented} from "../controls/Segmented";
 import type {Hold} from "../geometry/bondLength";
 import {heaviestFirst} from "../geometry/torsion";
 import {angleAt, angleMovers, choosePair} from "../geometry/angle";
-import {Links, Property, signed} from "./paneParts";
+import {Links, Property} from "./paneParts";
 import {RingMemberships} from "./RingMemberships";
 import {StrainDetails} from "./StrainDetails";
 
@@ -35,10 +36,8 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
       </dl>
 
       <h4 className="pane-subtitle">Chemistry</h4>
+      <AttributeRows atom={atom} label={index.label(atom.id)} locked={locked} />
       <dl className="properties">
-        <Property name="Element" value={atom.element} />
-        {atom.isotope > 0 && <Property name="Isotope" value={String(atom.isotope)} />}
-        <Property name="Charge" value={signed(atom.charge)} />
         <Property name="Aromatic" value={atom.aromatic ? "yes" : "no"} />
         <Property name="Radius" value={atom.radius.toFixed(3) + " Å"} />
         {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
@@ -87,6 +86,95 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
 
       <StrainDetails atoms={[atom.id]} index={index} geometry={geometry} models={models} />
     </>
+  );
+}
+
+interface AttributeRowsProps {
+  atom: SessionAtom;
+  /** What the atom is called on screen. */
+  label: string;
+  locked: boolean;
+}
+
+function AttributeRows({ atom, label, locked }: AttributeRowsProps) {
+  const { setAtom } = useSessionContext();
+  const [refusal, setRefusal] = useState<string | null>(null);
+  // an isotope has no sensible starting value, so adding one waits for a number to be typed
+  const [addingIsotope, setAddingIsotope] = useState(false);
+
+  const change = (what: AtomChange) =>
+    void setAtom(atom.id, what).then((result) => {
+      setRefusal(result.kind === "refused" ? result.message : null);
+      if (result.kind === "applied") {
+        setAddingIsotope(false);
+      }
+    });
+
+  // zero is "no charge", which swaps this control for "Add charge", so stepping skips over it and Remove is the way to get there
+  const stepped = (delta: number) => (atom.charge + delta === 0 ? atom.charge + 2 * delta : atom.charge + delta);
+
+  const stepper = (delta: number, name: string) => (
+    <button type="button" className="link" aria-label={`${name} the charge of ${label}`} title={`${name} the charge by one`} disabled={locked} onClick={() => change({ charge: stepped(delta) })}>
+      {delta > 0 ? "+" : "−"}
+    </button>
+  );
+
+  return (
+    <dl className="properties">
+      <dt>Element</dt>
+      <dd>
+        <ElementPicker label={`Element of ${label}`} value={atom.element} disabled={locked} onPick={(element) => change({ element })} />
+      </dd>
+      <dt>Charge</dt>
+      <dd className="position">
+        {atom.charge === 0 ? (
+          <>
+            <span className="unit">none</span>
+            <button type="button" className="link" disabled={locked} onClick={() => change({ charge: 1 })}>
+              Add charge
+            </button>
+          </>
+        ) : (
+          <>
+            {stepper(-1, "Lower")}
+            <NumberField label={`Charge of ${label}`} value={atom.charge} digits={0} disabled={locked} onCommit={(value) => change({ charge: Math.round(value) })} />
+            {stepper(1, "Raise")}
+            <button type="button" className="link" disabled={locked} onClick={() => change({ charge: 0 })}>
+              Remove
+            </button>
+          </>
+        )}
+      </dd>
+      <dt>Isotope</dt>
+      <dd className="position">
+        {atom.isotope === 0 && !addingIsotope ? (
+          <>
+            <span className="unit">none</span>
+            <button type="button" className="link" disabled={locked} onClick={() => setAddingIsotope(true)}>
+              Add isotope
+            </button>
+          </>
+        ) : (
+          <>
+            <NumberField
+              label={`Mass number of ${label}`}
+              value={atom.isotope}
+              digits={0}
+              disabled={locked}
+              onCommit={(value) => (Math.round(value) === 0 ? setAddingIsotope(false) : change({ isotope: Math.round(value) }))}
+            />
+            <button type="button" className="link" disabled={locked} onClick={() => (atom.isotope === 0 ? setAddingIsotope(false) : change({ isotope: 0 }))}>
+              {atom.isotope === 0 ? "Cancel" : "Remove"}
+            </button>
+          </>
+        )}
+      </dd>
+      {refusal !== null && (
+        <dd className="note-row">
+          <p className="panel-note">{refusal}</p>
+        </dd>
+      )}
+    </dl>
   );
 }
 

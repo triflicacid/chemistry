@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -179,6 +179,21 @@ export interface BondEditAck extends ServerEnvelope {
   atoms: { id: string; position: Vec3 }[];
 }
 
+/** What to change about an atom. */
+export interface AtomChange {
+  element?: string;
+  charge?: number;
+  isotope?: number;
+}
+
+export interface AtomSetAck extends ServerEnvelope {
+  type: "atom.set.ack";
+  /** The version the session is at after the change, which is the one before it if nothing needed to change. */
+  version: number;
+  status: "applied";
+  state: SessionState;
+}
+
 /** The answer to a move of the molecule as a whole that the session applied. */
 export interface TransformAck extends ServerEnvelope {
   type: "molecule.transform.ack";
@@ -252,6 +267,8 @@ export interface EditApplied extends ServerEnvelope {
   atoms: { id: string; position: Vec3 }[];
   /** Where the molecule now sits, or null if the step did not move it as a whole. */
   transform: Pose | null;
+  /** The whole state, if the step changed the graph and so left the atoms' attributes and the SMILES out of date; otherwise null. */
+  state: SessionState | null;
 }
 
 /** The answer to a request to optimise, saying only that the optimisation has begun; progress and a result follow. */
@@ -381,6 +398,7 @@ export type ServerMessage =
   | PatchAck
   | TransformAck
   | BondEditAck
+  | AtomSetAck
   | LockAck
   | CameraAck
   | EditApplied

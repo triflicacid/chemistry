@@ -41,7 +41,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 11;
+    private static final int PROTOCOL_VERSION = 12;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -819,6 +819,69 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Changes an atom's non-geometric peoperties.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void setAtom(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.AtomSetRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.AtomSetRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("atom.set", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.atom() == null)
+        {
+            context.error("atom.set", sequence, "INVALID_MESSAGE", "atom is required");
+            return;
+        }
+
+        StudioSession session = current(context, "atom.set", sequence, request.sessionId(), request.baseVersion());
+        if (session == null)
+        {
+            return;
+        }
+
+        synchronized (session)
+        {
+            long before = session.version();
+            StudioSession.Applied applied;
+            try
+            {
+                applied = session.setAtom(request.atom(), request.element(), request.charge(), request.isotope());
+            }
+            catch (StudioEditException refused)
+            {
+                context.error("atom.set", sequence, refused.code(), refused.getMessage());
+                return;
+            }
+
+            if (applied.version() != before)
+            {
+                save(session);
+                recalculate(session);
+            }
+
+            Map<String, Object> reply = new LinkedHashMap<>();
+            reply.put("type", "atom.set.ack");
+            reply.put("sequence", sequence);
+            reply.put("version", applied.version());
+            reply.put("status", "applied");
+            reply.put("state", StudioState.of(session, null));
+            context.sendJson(reply);
+        }
+    }
+
+    /**
      * Makes an edit the session works out the atoms' new positions for, and answers with where they went.
      *
      * @param context the connection that asked
@@ -1006,6 +1069,8 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             reply.put("atoms", applied.moved().entrySet().stream()
                     .map(moved -> Map.of("id", moved.getKey(), "position", moved.getValue()))
                     .toList());
+            // a step that changed the graph leaves the client's attributes and SMILES out of date, so it gets it all
+            reply.put("state", applied.graph() ? StudioState.of(session, null) : null);
             context.sendJson(reply);
         }
     }
@@ -1059,6 +1124,11 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         {
             stored = molecules.add(ParsedMolecule.written(session.collapsed()));
             session.saved(stored.id());
+        }
+        else if (stored.molecule() != session.collapsed())
+        {
+            // the session's graph has changed since this was stored, so what is stored must change with it
+            stored = molecules.replace(stored.id(), ParsedMolecule.written(session.collapsed())).orElse(stored);
         }
 
         stored.setStudio(new StudioSnapshot(
@@ -1197,6 +1267,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("bond.length", endpoint::bondLength),
                     Map.entry("bond.torsion", endpoint::bondTorsion),
                     Map.entry("atom.angle", endpoint::angle),
+                    Map.entry("atom.set", endpoint::setAtom),
                     Map.entry("optimise.start", endpoint::optimise),
                     Map.entry("optimise.cancel", endpoint::cancelOptimise),
                     Map.entry("edit.undo", endpoint::undo),

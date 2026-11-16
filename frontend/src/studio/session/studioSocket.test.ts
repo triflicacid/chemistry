@@ -1,12 +1,12 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {StudioError, StudioSocket} from "./studioSocket";
 import {
-  type GeometryResult,
-  type OptimiseProgress,
-  type OptimiseResult,
-  PROTOCOL_VERSION,
-  type SessionAtom,
-  type SessionState,
+    type GeometryResult,
+    type OptimiseProgress,
+    type OptimiseResult,
+    PROTOCOL_VERSION,
+    type SessionAtom,
+    type SessionState,
 } from "./messages";
 import {IDENTITY_POSE} from "./pose";
 
@@ -337,6 +337,38 @@ describe("the Studio socket", () => {
 
     const undone = await socket.step("undo", opened.session_id, dropped.version);
     expect(undone.type === "edit.applied" && undone.can_undo).toBe(false);
+  });
+
+  it("changes an atom's element, charge and isotope, answers with the state, and undoes it with the state too", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const oxygen = opened.atoms[2]!;
+
+    const changed = await socket.setAtom(opened.session_id, opened.version, oxygen.id, { element: "N", charge: 1, isotope: 15 });
+    expect(changed.type).toBe("atom.set.ack");
+    if (changed.type !== "atom.set.ack") {
+      return;
+    }
+    const atom = changed.state.atoms.find((candidate) => candidate.id === oxygen.id)!;
+    expect(atom).toMatchObject({ element: "N", charge: 1, isotope: 15 });
+    expect(changed.state.smiles).not.toBe(opened.smiles);
+    expect(changed.state.can_undo).toBe(true);
+    expect(changed.state.saved_molecule_id).not.toBeNull();
+
+    // zero takes a charge and an isotope away, and an unlisted element is refused for what it is
+    const cleared = await socket.setAtom(opened.session_id, changed.version, oxygen.id, { charge: 0, isotope: 0 });
+    expect(cleared.type === "atom.set.ack" && cleared.state.atoms[2]).toMatchObject({ element: "N", charge: 0, isotope: 0 });
+    await expect(socket.setAtom(opened.session_id, changed.version + 1, oxygen.id, { element: "Zz" })).rejects.toMatchObject({ code: "INVALID_EDIT" });
+
+    const undone = await socket.step("undo", opened.session_id, changed.version + 1);
+    expect(undone.type).toBe("edit.applied");
+    if (undone.type === "edit.applied") {
+      expect(undone.state?.atoms[2]).toMatchObject({ element: "N", charge: 1, isotope: 15 });
+    }
+
+    const stale = await socket.setAtom(opened.session_id, opened.version, oxygen.id, { charge: 2 });
+    expect(stale.type).toBe("conflict");
   });
 
   it("answers a patch made on a stale version with a conflict, and refuses an unknown atom", async () => {

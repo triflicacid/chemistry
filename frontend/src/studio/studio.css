@@ -729,6 +729,41 @@ body.resizing {
   background: color-mix(in srgb, var(--hover) 25%, transparent);
 }
 
+/* a choice from a list looks like the buttons beside it */
+.properties select {
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  padding: 0.1rem 0.3rem;
+  color: var(--ink);
+  background-color: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.properties select:hover:not(:disabled) {
+  border-color: var(--hover);
+  background-color: color-mix(in srgb, var(--hover) 25%, transparent);
+}
+
+.properties select:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.properties select:disabled {
+  color: var(--ink-soft);
+  cursor: default;
+}
+
+/* the open list is drawn by the browser, so it needs a solid background that follows the theme */
+.properties select option,
+.properties select optgroup {
+  color: var(--ink);
+  background-color: var(--panel);
+}
+
 .properties {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

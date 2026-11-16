@@ -1,7 +1,16 @@
 import {useMemo, useRef} from "react";
 import {ChemistryApi} from "../../api/ChemistryApi";
 import type {Vec3} from "../../api/types/structure";
-import type {AtomMove, BondEdit, GeometryResult, HistoryEntry, Pose, SessionCamera, SessionState} from "./messages";
+import type {
+    AtomChange,
+    AtomMove,
+    BondEdit,
+    GeometryResult,
+    HistoryEntry,
+    Pose,
+    SessionCamera,
+    SessionState
+} from "./messages";
 import {useCameraSave} from "./camera";
 import type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
 import {useDrags} from "./useDrags";
@@ -30,6 +39,11 @@ export interface Session {
   submitSmiles: (smiles: string) => Promise<SubmitResult>;
   /** Puts an atom at a position, as one edit that can be undone. */
   moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
+  /**
+   * Changes an atom's element, charge or isotope, as one edit that can be undone. Zero takes a charge or an isotope
+   * away. The server applies it as asked and never refuses it for being chemically odd.
+   */
+  setAtom: (id: string, change: AtomChange) => Promise<EditResult>;
   /**
    * Gives a bond a length, as one edit that can be undone. The server works out which atoms move: the far side comes
    * along unless the bond is in a ring.
@@ -114,7 +128,7 @@ export function useSession(client?: ChemistryApi): Session {
   const saveCamera = useCameraSave(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
-  const { moveAtom, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory, submitSmiles } = edits;
+  const { moveAtom, setAtom, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory, submitSmiles } = edits;
 
   return {
     phase,
@@ -126,6 +140,7 @@ export function useSession(client?: ChemistryApi): Session {
     openSmiles,
     submitSmiles,
     moveAtom,
+    setAtom,
     setBondLength,
     setBondTorsion,
     setAngle,

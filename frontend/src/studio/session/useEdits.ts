@@ -1,7 +1,16 @@
 import {useCallback, useRef} from "react";
 import type {Vec3} from "../../api/types/structure";
 import {describingSmiles} from "./location";
-import type {AtomMove, BondEdit, BondEditAck, HistoryEntry, Pose, SessionConflict, SessionState} from "./messages";
+import type {
+    AtomChange,
+    AtomMove,
+    BondEdit,
+    BondEditAck,
+    HistoryEntry,
+    Pose,
+    SessionConflict,
+    SessionState
+} from "./messages";
 import {applyAck} from "./acks";
 import {reason} from "./errors";
 import type {StudioSocket} from "./studioSocket";
@@ -17,6 +26,7 @@ export interface Edits {
   sendPose: (pose: Pose, commit: boolean) => Promise<EditResult>;
   submitSmiles: (smiles: string) => Promise<SubmitResult>;
   moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
+  setAtom: (id: string, change: AtomChange) => Promise<EditResult>;
   setBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
   setBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   setAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
@@ -27,6 +37,15 @@ export interface Edits {
   history: () => Promise<{ entries: HistoryEntry[]; position: number } | null>;
   goTo: (position: number, discard: boolean) => Promise<EditResult>;
   clearHistory: () => Promise<EditResult>;
+}
+
+/**
+ * @param change what was changed about an atom
+ * @returns the fields it changed, in words, for the activity log
+ */
+function describeChange(change: AtomChange): string {
+  const fields = [change.element !== undefined && "the element", change.charge !== undefined && "the charge", change.isotope !== undefined && "the isotope"];
+  return fields.filter(Boolean).join(" and ");
 }
 
 /** Sends the edits that change the structure, and the history of them, to the session. */
@@ -109,6 +128,45 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
   );
 
   const moveAtom = useCallback((id: string, position: Vec3) => send([{ id, position }], true), [send]);
+
+  /**
+   * Changes an atom's element, charge or isotope. The session applies it as asked and answers with the whole state.
+   *
+   * @param id the atom to change
+   * @param change the fields to change; zero takes a charge or an isotope away
+   */
+  const setAtom = useCallback(
+    (id: string, change: AtomChange): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
+
+        try {
+          const reply = await socket.setAtom(base.session_id, base.version, id, change);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note("The structure changed under your edit, so it was not applied", true);
+            return { kind: "conflict" };
+          }
+
+          // a resync that landed meanwhile is authoritative, and already says what the atom is
+          if (held.current?.version === base.version) {
+            adopt(reply.state);
+          }
+          if (reply.version !== base.version) {
+            note(`Changed ${describeChange(change)} of ${id}`);
+          }
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, held, note, serially, socketRef],
+  );
 
   /**
    * Asks the server to reshape a bond.
@@ -387,5 +445,5 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
     [adopt, held, note, serially, socketRef],
   );
 
-  return { serially, send, sendBond, sendPose, submitSmiles, moveAtom, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory };
+  return { serially, send, sendBond, sendPose, submitSmiles, moveAtom, setAtom, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory };
 }

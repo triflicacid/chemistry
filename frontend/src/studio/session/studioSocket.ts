@@ -1,5 +1,7 @@
 import type {Vec3} from "../../api/types/structure";
 import {
+  type AtomChange,
+  type AtomSetAck,
   type BondEditAck,
   type CameraAck,
   type EditApplied,
@@ -314,6 +316,23 @@ export class StudioSocket {
       "atom.angle",
       { session_id: sessionId, base_version: baseVersion, centre, from, to, angle, hold, commit },
       ["atom.angle.ack", "conflict"],
+    );
+  }
+
+  /**
+   * Changes an atom's element, charge or isotope. The server applies it as asked, without checking the chemistry.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
+   * @param atom the atom to change
+   * @param change the fields to change; the others stay as they are
+   * @returns the acknowledgement with the new state, or a conflict carrying the state the session is actually in
+   */
+  setAtom(sessionId: string, baseVersion: number, atom: string, change: AtomChange): Promise<AtomSetAck | SessionConflict> {
+    return this.request<AtomSetAck | SessionConflict>(
+      "atom.set",
+      { session_id: sessionId, base_version: baseVersion, atom, ...change },
+      ["atom.set.ack", "conflict"],
     );
   }
 

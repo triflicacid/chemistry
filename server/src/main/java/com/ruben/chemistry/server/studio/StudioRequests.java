@@ -163,6 +163,18 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param atom the atom to change
+     * @param element its new element symbol (optional; unchanged if absent)
+     * @param charge its new formal charge, where 0 is none (optional; unchanged if absent)
+     * @param isotope its new mass number, where 0 is natural abundance (optional; unchanged if absent)
+     */
+    public record AtomSetRequest(String sessionId, Long baseVersion, String atom, String element, Integer charge, Integer isotope)
+    {
+    }
+
+    /**
      * @param sessionId the session to undo or redo in
      * @param baseVersion the version the client was looking at, so that an undo over a changed session is refused
      */

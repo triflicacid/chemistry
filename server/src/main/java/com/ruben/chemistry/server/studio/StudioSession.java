@@ -2,6 +2,7 @@ package com.ruben.chemistry.server.studio;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.server.molecule.Camera;
@@ -26,6 +27,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -65,8 +67,29 @@ public final class StudioSession
      * @param version the version after it
      * @param moved where each atom it touched is now
      * @param pose where the molecule now sits, or {@code null} if the step did not move it as a whole
+     * @param graph whether the step changed the graph
      */
-    public record Applied(long version, Map<String, Vec3> moved, Pose pose)
+    public record Applied(long version, Map<String, Vec3> moved, Pose pose, boolean graph)
+    {
+        /**
+         * @param version the version after the step
+         * @param moved where each atom it touched is now
+         * @param pose where the molecule now sits, or {@code null} if the step did not move it as a whole
+         */
+        public Applied(long version, Map<String, Vec3> moved, Pose pose)
+        {
+            this(version, moved, pose, false);
+        }
+    }
+
+    /**
+     * The graph at one moment: what an edit of the graph must be able to put back.
+     *
+     * @param molecule the working graph
+     * @param atomIds what each of its atoms is called
+     * @param bondIds what each of its bonds is called, by the pair of its atoms' names
+     */
+    private record Graph(Molecule molecule, Map<Atom, String> atomIds, Map<Set<String>, String> bondIds)
     {
     }
 
@@ -99,11 +122,33 @@ public final class StudioSession
      * @param after where each of them is after it
      * @param poseBefore where the molecule sat before the edit, or {@code null} if the edit did not move it as a whole
      * @param poseAfter where it sat after the edit, or {@code null} under the same condition
+     * @param graphBefore the graph before the edit, or {@code null} if the edit did not change it
+     * @param graphAfter the graph after the edit, or {@code null} under the same condition
+     * @param graphAtoms the atoms whose attributes the edit changed, which refuse it being undone or redone if locked
      * @param label what the edit did, in a few words
      * @param at when the edit was made
      */
-    private record Edit(Map<String, Vec3> before, Map<String, Vec3> after, Pose poseBefore, Pose poseAfter, String label, long at)
+    private record Edit(
+            Map<String, Vec3> before,
+            Map<String, Vec3> after,
+            Pose poseBefore,
+            Pose poseAfter,
+            Graph graphBefore,
+            Graph graphAfter,
+            Set<String> graphAtoms,
+            String label,
+            long at)
     {
+        /**
+         * @param undoing whether the edit is being taken back rather than made again
+         * @return every atom the step would change, by position or attributes
+         */
+        Set<String> touched(boolean undoing)
+        {
+            Set<String> atoms = new LinkedHashSet<>(undoing ? before.keySet() : after.keySet());
+            atoms.addAll(graphAtoms);
+            return atoms;
+        }
     }
 
     /**
@@ -128,9 +173,10 @@ public final class StudioSession
 
     private final String sessionId;
     private final String sourceMoleculeId;
-    private final Molecule molecule;
-    private final Map<Atom, String> atomIds;
-    private final Map<Set<String>, String> bondIds;
+    /** The working graph, replaced whole by an edit of the graph; read through {@link #molecule()}. */
+    private volatile Molecule molecule;
+    private volatile Map<Atom, String> atomIds;
+    private volatile Map<Set<String>, String> bondIds;
     private final Map<String, Vec3> geometry;
     private final Set<String> wasImplicit;
     private final double strain;
@@ -572,6 +618,95 @@ public final class StudioSession
     }
 
     /**
+     * Changes an atom's non-geometric properties as one edit that can be undone.
+     *
+     * @param atomId the atom to change
+     * @param element its new element symbol, or {@code null} to leave it as it is
+     * @param charge its new formal charge, where 0 is no charge, or {@code null} to leave it as it is
+     * @param isotope its new mass number, where 0 is natural abundance, or {@code null} to leave it as it is
+     * @return what changed and the version after it
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, {@code LOCKED} if it
+     *     is locked, {@code BUSY} if an edit is in progress, and {@code INVALID_EDIT} if the element is not one, the
+     *     isotope is negative, or nothing was asked for
+     */
+    public synchronized Applied setAtom(String atomId, String element, Integer charge, Integer isotope)
+    {
+        Atom atom = atomNamed(atomId);
+        if (element == null && charge == null && isotope == null)
+        {
+            throw new StudioEditException("INVALID_EDIT", "Nothing was asked to change: give an element, a charge or an isotope");
+        }
+        if (element != null && !Elements.isSymbol(element))
+        {
+            throw new StudioEditException("INVALID_EDIT", "'" + element + "' is not an element symbol");
+        }
+        if (isotope != null && isotope < 0)
+        {
+            throw new StudioEditException("INVALID_EDIT", "An isotope's mass number cannot be negative, but was " + isotope);
+        }
+        requireUnlocked(List.of(atomId));
+        if (!uncommitted.isEmpty() || uncommittedPose != null)
+        {
+            throw new StudioEditException("BUSY", "An edit is still in progress, so the atom cannot be changed yet");
+        }
+
+        Atom.Builder builder = Atom.builder(element != null ? element : atom.element())
+                .aromatic(atom.aromatic())
+                .charge(charge != null ? charge : atom.charge())
+                .isotope(isotope != null ? (isotope == 0 ? OptionalInt.empty() : OptionalInt.of(isotope)) : atom.isotope())
+                .hydrogenCount(atom.hydrogenCount())
+                .hydrogenIsotopes(atom.hydrogenIsotopes())
+                .atomClass(atom.atomClass());
+        Atom replacement = builder.build();
+        if (replacement.equals(atom))
+        {
+            return new Applied(version, Map.of(), null);
+        }
+
+        Graph before = graph();
+        Molecule rebuilt = replacing(atom, replacement);
+        Map<Atom, String> renamed = new IdentityHashMap<>(atomIds);
+        renamed.put(replacement, renamed.remove(atom));
+        restore(new Graph(rebuilt, renamed, bondIds));
+
+        file(new Edit(Map.of(), Map.of(), null, null, before, graph(), Set.of(atomId), "Change atom " + atomId, System.currentTimeMillis()));
+        return new Applied(++version, Map.of(), null, true);
+    }
+
+    /**
+     * Rebuilds the working graph with one atom swapped for another, keeping every atom's and bond's place in the order
+     * they were in, so that declared stereochemistry reads the same.
+     *
+     * @param original an atom of the working graph
+     * @param replacement the atom to put in its place
+     * @return the new graph
+     */
+    private Molecule replacing(Atom original, Atom replacement)
+    {
+        Map<Atom, Atom> swapped = new IdentityHashMap<>();
+        Molecule.Builder builder = new Molecule.Builder();
+        for (Atom atom : molecule.atoms())
+        {
+            Atom now = atom == original ? replacement : atom;
+            swapped.put(atom, now);
+            builder.addAtom(now);
+        }
+        for (Bond bond : molecule.bonds())
+        {
+            builder.addBond(swapped.get(bond.first()), swapped.get(bond.second()), bond.order());
+        }
+        for (Atom atom : molecule.atoms())
+        {
+            molecule.chiralityOf(atom).ifPresent(chirality -> builder.setChirality(swapped.get(atom), chirality));
+        }
+        for (Bond bond : molecule.bonds())
+        {
+            molecule.doubleBondStereoOf(bond).ifPresent(stereo -> builder.setDoubleBondStereo(swapped.get(bond.first()), swapped.get(bond.second()), stereo));
+        }
+        return builder.build();
+    }
+
+    /**
      * Makes the moves a bond edit works out.
      * <p>
      * An edit is worked out from where the atoms were before the edit in progress began, not from where its earlier
@@ -728,7 +863,7 @@ public final class StudioSession
         {
             throw new StudioEditException("NOTHING_TO_UNDO", "There is nothing to undo");
         }
-        requireUnlocked(edit.before().keySet());
+        requireUnlocked(edit.touched(true));
 
         done.removeLast();
 
@@ -737,8 +872,12 @@ public final class StudioSession
         {
             pose = edit.poseBefore();
         }
+        if (edit.graphBefore() != null)
+        {
+            restore(edit.graphBefore());
+        }
         undone.addLast(edit);
-        return new Applied(++version, edit.before(), edit.poseBefore());
+        return new Applied(++version, edit.before(), edit.poseBefore(), edit.graphBefore() != null);
     }
 
     /**
@@ -755,7 +894,7 @@ public final class StudioSession
         {
             throw new StudioEditException("NOTHING_TO_REDO", "There is nothing to redo");
         }
-        requireUnlocked(edit.after().keySet());
+        requireUnlocked(edit.touched(false));
 
         undone.removeLast();
 
@@ -764,8 +903,12 @@ public final class StudioSession
         {
             pose = edit.poseAfter();
         }
+        if (edit.graphAfter() != null)
+        {
+            restore(edit.graphAfter());
+        }
         done.addLast(edit);
-        return new Applied(++version, edit.after(), edit.poseAfter());
+        return new Applied(++version, edit.after(), edit.poseAfter(), edit.graphAfter() != null);
     }
 
     /**
@@ -819,11 +962,12 @@ public final class StudioSession
         List<Edit> crossed = position < from ? all.subList(position, from) : all.subList(from, position);
         for (Edit edit : crossed)
         {
-            requireUnlocked(position < from ? edit.before().keySet() : edit.after().keySet());
+            requireUnlocked(edit.touched(position < from));
         }
 
         Map<String, Vec3> moved = new LinkedHashMap<>();
         Pose posed = null;
+        boolean regraphed = false;
         if (!uncommitted.isEmpty() || uncommittedPose != null)
         {
             Applied cancelled = undo();
@@ -836,12 +980,14 @@ public final class StudioSession
             Applied step = undo();
             moved.putAll(step.moved());
             posed = step.pose() != null ? step.pose() : posed;
+            regraphed |= step.graph();
         }
         while (done.size() < position)
         {
             Applied step = redo();
             moved.putAll(step.moved());
             posed = step.pose() != null ? step.pose() : posed;
+            regraphed |= step.graph();
         }
 
         if (discard)
@@ -850,7 +996,7 @@ public final class StudioSession
         }
 
         moved.replaceAll((id, ignored) -> geometry.get(id));
-        return new Applied(version, moved, posed == null ? null : pose);
+        return new Applied(version, moved, posed == null ? null : pose, regraphed);
     }
 
     /**
@@ -989,12 +1135,45 @@ public final class StudioSession
             label = then.isEmpty() ? "Move molecule" : then.size() == 1 ? "Move atom" : "Move atoms";
         }
 
-        done.addLast(new Edit(then, now, posed ? poseThen : null, posed ? pose : null, label, System.currentTimeMillis()));
+        file(new Edit(then, now, posed ? poseThen : null, posed ? pose : null, null, null, Set.of(), label, System.currentTimeMillis()));
+    }
+
+    /**
+     * Adds a committed edit to the history, discarding what could have been redone and the edits too old to keep.
+     *
+     * @param edit the edit
+     */
+    private void file(Edit edit)
+    {
+        done.addLast(edit);
         undone.clear();
         while (done.size() > MAX_UNDO)
         {
             done.pollFirst();
         }
+    }
+
+    /**
+     * @return the graph as it is now
+     */
+    private Graph graph()
+    {
+        return new Graph(molecule, new IdentityHashMap<>(atomIds), new LinkedHashMap<>(bondIds));
+    }
+
+    /**
+     * Makes a graph the working one, and forgets what was worked out from the one it replaces.
+     *
+     * @param graph the graph to restore
+     */
+    private void restore(Graph graph)
+    {
+        molecule = graph.molecule();
+        atomIds = new IdentityHashMap<>(graph.atomIds());
+        bondIds = new LinkedHashMap<>(graph.bondIds());
+        collapsed = null;
+        structureShape = null;
+        nodeAtoms = null;
     }
 
     /**
