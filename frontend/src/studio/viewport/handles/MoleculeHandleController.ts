@@ -3,7 +3,6 @@ import type {Vec3} from "../../../api/types/structure";
 import type {Stage} from "../../../render/stage";
 import type {AtomMove, Pose} from "../../session/messages";
 import type {Pivot, Space} from "../../models/ToolModel";
-import type {Constraint} from "./dragPlane";
 import type {CameraRig} from "../camera/CameraRig";
 import type {CameraLock} from "../camera/CameraLock";
 import type {ReferenceLayer} from "../scene/ReferenceLayer";
@@ -11,17 +10,6 @@ import type {AtomNode, MoleculeScene} from "../scene/MoleculeScene";
 import type {StudioViewListener} from "../StudioViewListener";
 import {toVec3} from "../vec";
 import {type MoleculeHandleMode, MoleculeHandles} from "./MoleculeHandles";
-
-/** The constraint a translate handle holds a move to, by the name three.js gives the handle. */
-const CONSTRAINT_OF_HANDLE: Record<string, Constraint | undefined> = {
-  X: "x",
-  Y: "y",
-  Z: "z",
-  XY: "xy",
-  YZ: "yz",
-  XZ: "xz",
-  XYZ: "free",
-};
 
 export interface MoleculeHandleHost {
   stage: Stage;
@@ -36,6 +24,8 @@ export interface MoleculeHandleHost {
   carry(ids: Iterable<string>): string[];
   /** Whether the selection cannot be moved (e.g., locking.) */
   blocked(): boolean;
+  /** Whether snapping to the grid is switched on. */
+  snapOn(): boolean;
   /** Moves atoms in the scene. */
   moveAtoms(moves: Iterable<readonly [string, Vec3]>): void;
   /** Tells every listener something. */
@@ -59,9 +49,8 @@ export class MoleculeHandleController {
    */
   constructor(private readonly host: MoleculeHandleHost) {
     this.handles = new MoleculeHandles(host.stage, host.scene.content, host.lock, {
-      grab: (axis) => {
+      grab: (held) => {
         // the handles that translate hold a move to an axis or plane just as the keys do, so the keys and buttons follow
-        const held = CONSTRAINT_OF_HANDLE[axis];
         if (this.mode !== "rotate" && held) {
           host.emit((listener) => listener.constraint?.(held));
         }
@@ -79,6 +68,16 @@ export class MoleculeHandleController {
       shiftStart: () => this.startShift(),
       shift: (offset, done) => this.shiftAtoms(offset, done),
       shiftCancel: () => this.cancelShift(),
+      snap: (pivot, held, inverted) => {
+        if (host.snapOn() === inverted) {
+          host.reference.showSnap(null);
+          return null;
+        }
+        const snapped = host.reference.snapWorld(pivot, held);
+        host.reference.showSnap(snapped);
+        return snapped;
+      },
+      snapEnd: () => host.reference.showSnap(null),
     });
   }
 

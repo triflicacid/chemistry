@@ -22,6 +22,8 @@ export interface ModeOptions {
   constraint: Constraint;
   /** Whether moving an atom carries the hydrogens bonded to it. */
   carryHydrogens: boolean;
+  /** Whether a dragged atom snaps to the grid, while one is shown. */
+  snap: boolean;
   /** Whether the rotate tool turns the whole molecule, or what is inside it. */
   rotateTarget: RotateTarget;
   /** What is selected. */

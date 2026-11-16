@@ -218,6 +218,46 @@ function meridian(radius: number, longitude: number, polar: number): Point {
   return [radius * Math.sin(polar) * Math.cos(longitude), radius * Math.cos(polar), radius * Math.sin(polar) * Math.sin(longitude)];
 }
 
+/**
+ * Moves a point to the nearest point of a grid.
+ *
+ * @param kind square or polar
+ * @param choice the plane of a square grid, or all three; a polar grid ignores it
+ * @param point the point, relative to the centre of the grid and in its axes
+ * @param held what the point is held to: "free", an axis such as "x", or a plane such as "xz"
+ * @returns the nearest grid point
+ */
+export function snapToGrid(kind: GridKind, choice: GridPlaneChoice, point: Point, held: string = "free"): Point {
+  const free = held === "free";
+
+  if (kind === "polar") {
+    return free ? snapPolar(point) : point;
+  }
+
+  const axes: readonly string[] = free ? (choice === "all" ? ["x", "y", "z"] : axesOf(choice)) : [...held];
+  const snapped: Point = [...point];
+  (["x", "y", "z"] as const).forEach((axis, i) => {
+    if (axes.includes(axis)) {
+      snapped[i] = Math.round(point[i]! / GRID_SPACING) * GRID_SPACING;
+    }
+  });
+  return snapped;
+}
+
+function snapPolar([x, y, z]: Point): Point {
+  const radius = Math.hypot(x, y, z);
+  const snappedRadius = Math.round(radius / GRID_SPACING) * GRID_SPACING;
+  if (radius < 1e-9 || snappedRadius === 0) {
+    return [0, 0, 0];
+  }
+
+  const step = (GRID_ANGLE_DEGREES * Math.PI) / 180;
+  const elevation = Math.round(Math.asin(Math.max(-1, Math.min(1, y / radius))) / step) * step;
+  const azimuth = Math.round(Math.atan2(z, x) / step) * step;
+  const around = snappedRadius * Math.cos(elevation);
+  return [around * Math.cos(azimuth), snappedRadius * Math.sin(elevation), around * Math.sin(azimuth)];
+}
+
 /** A piece of a line of a given strength, faded by how far each end is from the centre. */
 function piece(from: Point, to: Point, strength: number, colour: number, extent: number): GridSegment {
   return {

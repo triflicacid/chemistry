@@ -1,11 +1,11 @@
-import {type LineBasicMaterial, type LineSegments, Group, Quaternion, type Vector3} from "three";
+import {type LineBasicMaterial, type LineSegments, Group, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector3} from "three";
 import {makeAxes} from "../../../render/axes";
 import {disposeMaterials} from "../../../render/dispose";
 import type {Stage} from "../../../render/stage";
 import type {Space} from "../../models/ToolModel";
 import {type Constraint} from "../handles/dragPlane";
 import {type Guide, makeGuide} from "../handles/moveGuides";
-import {buildGrid, type GridKind, type GridPlaneChoice} from "../grid";
+import {buildGrid, type GridKind, type GridPlaneChoice, snapToGrid} from "../grid";
 import type {AtomNode, MoleculeScene} from "./MoleculeScene";
 
 export interface ReferenceHost {
@@ -28,7 +28,11 @@ export class ReferenceLayer {
 
   /** The grid being shown, or null while there is none. */
   private grid: LineSegments | null = null;
+  private gridKind: GridKind = "cartesian";
+  private gridPlane: GridPlaneChoice = "xz";
   private guide: Guide | null = null;
+  /** Marks the grid point an atom being dragged would snap to, or null before it is first wanted. */
+  private marker: Mesh | null = null;
 
   constructor(
     private readonly stage: Stage,
@@ -60,10 +64,76 @@ export class ReferenceLayer {
     }
 
     if (kind) {
+      this.gridKind = kind;
+      this.gridPlane = plane;
       this.grid = buildGrid(kind, plane);
       this.stage.scene.add(this.grid);
       this.placeGrid();
+    } else {
+      this.showSnap(null);
     }
+    this.stage.requestRender();
+  }
+
+  /** Whether a grid is shown, which is what there is to snap to. */
+  get gridShown(): boolean {
+    return this.grid !== null;
+  }
+
+  /**
+   * Finds the point of the grid nearest a point.
+   *
+   * @param point the point, in the molecule's own frame
+   * @param held what the point is held to: "free", an axis such as "x", or a plane such as "xz"
+   * @returns the grid point, in the molecule's own frame, or null while no grid is shown
+   */
+  snap(point: Vector3, held: string): Vector3 | null {
+    const { content } = this.scene;
+    content.updateMatrixWorld(true);
+    const snapped = this.snapWorld(content.localToWorld(point.clone()), held);
+    return snapped && content.worldToLocal(snapped);
+  }
+
+  /**
+   * Finds the point of the grid nearest a point in the scene.
+   *
+   * @param point the point, in the scene
+   * @param held what the point is held to: "free", an axis such as "x", or a plane such as "xz"
+   * @returns the grid point, in the scene, or null while no grid is shown
+   */
+  snapWorld(point: Vector3, held: string): Vector3 | null {
+    const grid = this.grid;
+    if (!grid) {
+      return null;
+    }
+
+    grid.updateMatrixWorld(true);
+    const inGrid = grid.worldToLocal(point.clone());
+    const [x, y, z] = snapToGrid(this.gridKind, this.gridPlane, [inGrid.x, inGrid.y, inGrid.z], held);
+    return grid.localToWorld(new Vector3(x, y, z));
+  }
+
+  /**
+   * Marks a point to snap to, or stops marking.
+   *
+   * @param point the point, in the scene, or null for none
+   */
+  showSnap(point: Vector3 | null): void {
+    if (!point) {
+      if (this.marker?.visible) {
+        this.marker.visible = false;
+        this.stage.requestRender();
+      }
+      return;
+    }
+
+    if (!this.marker) {
+      this.marker = new Mesh(new SphereGeometry(0.1, 16, 12), new MeshBasicMaterial({ color: 0xffb000, transparent: true, opacity: 0.85, depthTest: false }));
+      this.marker.renderOrder = 10;
+      this.stage.scene.add(this.marker);
+    }
+    this.marker.position.copy(point);
+    this.marker.visible = true;
     this.stage.requestRender();
   }
 
@@ -139,6 +209,12 @@ export class ReferenceLayer {
   /** Releases the guide, the axes and the grid. */
   dispose(): void {
     this.guide?.dispose();
+    if (this.marker) {
+      this.stage.scene.remove(this.marker);
+      this.marker.geometry.dispose();
+      (this.marker.material as MeshBasicMaterial).dispose();
+      this.marker = null;
+    }
     disposeMaterials(this.axes);
     this.setGrid(null, "xz");
   }

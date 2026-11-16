@@ -4,6 +4,7 @@ import type {Pose} from "../../session/messages";
 import type {Stage} from "../../../render/stage";
 import type {CameraLock} from "../camera/CameraLock";
 import type {Space} from "../../models/ToolModel";
+import {type Constraint, constraintOfHandle} from "./dragPlane";
 
 /**
  * What the handles do: carry the whole molecule, turn it, or carry the selected atoms within it, which changes
@@ -12,8 +13,8 @@ import type {Space} from "../../models/ToolModel";
 export type MoleculeHandleMode = "translate" | "rotate" | "atoms";
 
 export interface MoleculeHandleHooks {
-  /** A handle has been taken hold of: `axis` is its name, such as `X`, `YZ` or `XYZ` for the middle of the translate handles. */
-  grab(axis: string): void;
+  /** A handle has been taken hold of: `held` is what it holds a move to, or null if it does not translate, as a rotate handle does not. */
+  grab(held: Constraint | null): void;
   /** A handle has been taken hold of, with the molecule at `from`. */
   start(from: Pose): void;
   /** The handle has put the molecule at `pose`. `done` is true for the last report, when the handle is let go. */
@@ -29,6 +30,10 @@ export interface MoleculeHandleHooks {
   shift(offset: Vector3, done: boolean): void;
   /** A drag in the atoms mode was abandoned. */
   shiftCancel(): void;
+  /** Lets the owner adjust where a translate handle puts the pivot.  */
+  snap(pivot: Vector3, held: Constraint, inverted: boolean): Vector3 | null;
+  /** A drag of a handle has ended, by being let go or abandoned, so anything shown for the snap can be taken away. */
+  snapEnd(): void;
 }
 
 /** The handles for moving or turning a whole molecule. */
@@ -40,6 +45,11 @@ export class MoleculeHandles {
 
   /** Where the molecule was, and where the pivot was, when the handle was taken hold of. */
   private start: { position: Vector3; rotation: Quaternion; pivot: Vector3 } | null = null;
+  /** Whether Ctrl or Cmd was held at the pointer's last move. */
+  private inverted = false;
+  private readonly onPointer = (event: PointerEvent): void => {
+    this.inverted = event.ctrlKey || event.metaKey;
+  };
 
   /**
    * @param stage what the handles are drawn in and what they stop turning the camera of
@@ -68,7 +78,7 @@ export class MoleculeHandles {
     });
     this.controls.addEventListener("mouseDown", () => {
       if (this.controls.axis !== null) {
-        this.hooks.grab(this.controls.axis);
+        this.hooks.grab(constraintOfHandle(this.controls.axis));
       }
       this.start = {
         position: this.molecule.position.clone(),
@@ -82,16 +92,22 @@ export class MoleculeHandles {
       }
     });
     this.controls.addEventListener("objectChange", () => {
+      this.snap();
       if (this.follow()) {
         this.report(false);
       }
     });
     this.controls.addEventListener("mouseUp", () => {
+      this.hooks.snapEnd();
       if (this.follow()) {
         this.report(true);
         this.start = null;
       }
     });
+    // in the capture phase, so the state is current before the controls act on the same event
+    window.addEventListener("pointerdown", this.onPointer, true);
+    window.addEventListener("pointermove", this.onPointer, true);
+    window.addEventListener("pointerup", this.onPointer, true);
   }
 
   /** Whether the pointer is over a handle, so that pressing would take hold of it. */
@@ -142,6 +158,7 @@ export class MoleculeHandles {
       return;
     }
     this.start = null;
+    this.hooks.snapEnd();
 
     if (this.mode !== "atoms") {
       this.molecule.position.copy(start.position);
@@ -166,9 +183,26 @@ export class MoleculeHandles {
 
   /** Releases the handles. */
   dispose(): void {
+    window.removeEventListener("pointerdown", this.onPointer, true);
+    window.removeEventListener("pointermove", this.onPointer, true);
+    window.removeEventListener("pointerup", this.onPointer, true);
     this.lock.release("moleculeHandles");
     this.stage.scene.remove(this.proxy, this.controls.getHelper());
     this.controls.dispose();
+  }
+
+  /** Moves the proxy to the nearest grid point, if the hooks say that is wanted, which the translate handles are held to. */
+  private snap(): void {
+    const held = constraintOfHandle(this.controls.axis);
+    if (!this.start || this.mode === "rotate" || held === null) {
+      return;
+    }
+
+    const snapped = this.hooks.snap(this.proxy.position, held, this.inverted);
+    if (snapped) {
+      this.proxy.position.copy(snapped);
+      this.stage.requestRender();
+    }
   }
 
   /**

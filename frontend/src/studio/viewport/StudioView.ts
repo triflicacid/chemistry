@@ -118,6 +118,7 @@ export class StudioView {
       space: () => this.space,
       carry: (ids) => this.modes.move.withCarried(ids),
       blocked: () => this.modes.move.selectionLocked(),
+      snapOn: () => this.modes.move.snapOn,
       moveAtoms: (moves) => this.moveAtoms(moves),
       emit,
     });
