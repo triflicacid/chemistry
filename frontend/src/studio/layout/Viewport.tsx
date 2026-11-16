@@ -5,14 +5,9 @@ import type {RotateTarget, Space} from "../selection/ToolModel";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
 import type {GeometryResult, SessionState} from "../session/messages";
-import {movers} from "../selection/bondLength";
-import {defaultReference} from "../selection/torsion";
-import {angleMovers, defaultPair} from "../selection/angle";
 import type {SessionPhase} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
-import {KEYS} from "../keys/keymap";
-import {useHotkeys} from "../keys/useHotkeys";
-import {type Constraint, constraintForKey} from "../viewport/handles/dragPlane";
+import type {Constraint} from "../viewport/handles/dragPlane";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import {isCurrent} from "./findings";
@@ -128,12 +123,10 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   }, [view, markable, geometry]);
 
   useEffect(() => {
-    view?.setMoving(tool === "move");
-    view?.setPanning(tool === "pan");
     if (tool === "pan") {
       hover.hover(null);
     }
-  }, [view, tool, hover]);
+  }, [tool, hover]);
 
   // the Inspector shows the camera, and its edits are made here
   const { camera } = models;
@@ -158,14 +151,6 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   }, [view, camera, saveCamera]);
 
   useEffect(() => {
-    view?.setConstraint(constraint);
-  }, [view, constraint]);
-
-  useEffect(() => {
-    view?.setCarryHydrogens(carryHydrogens);
-  }, [view, carryHydrogens]);
-
-  useEffect(() => {
     view?.setTorsion(torsion);
   }, [view, torsion]);
 
@@ -181,21 +166,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.setPivot(pivot, point);
   }, [view, pivot, point]);
 
-  // the whole molecule is moved or turned with handles, which are there while a molecule is selected and a tool that uses them is
   const moleculeSelected = selected.items.some((item) => item.kind === "molecule");
-  const atomsSelected = selected.items.some((item) => item.kind === "atom");
-  const handleMode = tool === "move"
-      ? (moleculeSelected ? "translate" : atomsSelected ? "atoms" : null)
-      : (tool === "rotate" && rotateTarget === "molecule" && moleculeSelected ? "rotate" : null);
-  useEffect(() => {
-    view?.setHandleMode(handleMode);
-  }, [view, handleMode]);
-
-  // turning the whole molecule shows it by its handles, so only what is hovered is tinted, and nothing is labelled
-  const plain = tool === "rotate" && rotateTarget === "molecule";
-  useEffect(() => {
-    view?.setPlain(plain);
-  }, [view, plain]);
 
   // a selected bond has a handle: an arrow along it with the move tool, which slides to change its length, and a ring about
   // it with the rotate tool, which turns to change its torsion. There is none where an atom it would move is locked
@@ -203,59 +174,16 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const bondId = bondItem?.kind === "bond" ? bondItem.id : null;
   const atomId = bondItem?.kind === "atom" ? bondItem.id : null;
   const locked = state?.locked;
+
+  // what the viewport does with the pointer and the keyboard, and the handles it offers, follows the tool and the selection.
+  // It comes after the state is shown, so that it finds the atoms it is to put handles on
   useEffect(() => {
-    // a selected atom has a ring about it with the rotate tool, which turns to change the angle between two of its bonds
-    if (view && index && atomId !== null && internal) {
-      const pair = angle?.centre === atomId ? angle : defaultPair(index, atomId);
-      const moving = pair && angleMovers(index, atomId, pair, hold);
-      view.setMeasurement(moving && ![...moving].some((id) => locked?.includes(id)) && pair ? { mode: "angle", centre: atomId, hold, from: pair.from, to: pair.to } : null);
-      return;
-    }
-
-    const bond = bondId !== null && index ? index.bonds.get(bondId) : undefined;
-    if (!view || !index || !bond || (tool !== "move" && !internal)) {
-      view?.setMeasurement(null);
-      return;
-    }
-
-    const turning = internal;
-    const moving = movers(index, bond, hold, turning);
-    if (!moving || [...moving].some((id) => locked?.includes(id))) {
-      view.setMeasurement(null);
-      return;
-    }
-    if (!turning) {
-      view.setMeasurement({ mode: "length", bond: bond.id, hold });
-      return;
-    }
-
-    // the Inspector says which atoms it measures from when it is showing this bond, and the heaviest neighbours are the default
-    const measured = torsion?.bond === bond.id ? torsion : defaultReference(index, bond);
-    view.setMeasurement(measured ? { mode: "turn", bond: bond.id, hold, from: measured.first, to: measured.second } : null);
-  }, [view, index, bondId, atomId, tool, internal, hold, torsion, angle, locked]);
+    view?.setMode(tool, { constraint, carryHydrogens, rotateTarget, selection: selected.items, index, hold, torsion, angle });
+  }, [view, state, locked, tool, constraint, carryHydrogens, rotateTarget, selected, index, hold, torsion, angle]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
 
-  // X, Y and Z hold a move to an axis, and shift with one holds it to the plane across that axis.
-  // H turns carrying hydrogens on and off, which locks do not stop, since it is the move that a lock refuses
-  const moving = tool === "move";
-  useHotkeys([
-    ...(moving && !blocked
-      ? [
-          {
-            ...KEYS.constrain,
-            run: (event: KeyboardEvent) => {
-              const asked = constraintForKey(tools.get().constraint, event.key, event.shiftKey);
-              if (asked) {
-                tools.constrain(asked);
-              }
-            },
-          },
-        ]
-      : []),
-    ...(moving ? [{ ...KEYS.toggleCarry, run: () => tools.carry(!tools.get().carryHydrogens) }] : []),
-  ]);
 
   useEffect(() => {
     if (!view || !index) {
@@ -273,13 +201,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       return;
     }
     return view.listen({
-      // panning moves the view and nothing else, so nothing is hovered or picked
-      hover: (pick) => hover.hover(pick && tools.get().tool !== "pan" ? resolve(pick, picking, index) : null),
+      hover: (pick) => hover.hover(pick ? resolve(pick, picking, index) : null),
       click: (pick, additive) => {
-        if (tools.get().tool === "pan") {
-          return;
-        }
-
         // turning the whole molecule, an atom stands for its molecule, turned about that atom
         const { tool: current, rotateTarget: turning } = tools.get();
         if (pick?.kind === "atom" && current === "rotate" && turning === "molecule") {
@@ -311,6 +234,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       drag: (moves, done) => (done ? void dropAtoms(moves) : dragAtoms(moves)),
       dragCancel: (moves) => void cancelDrag(moves),
       constraint: (held) => tools.constrain(held),
+      carryHydrogens: (on) => tools.carry(on),
       moleculeDrag: (pose, done) => (done ? void dropMolecule(pose) : dragMolecule(pose)),
       moleculeDragCancel: (from) => void cancelMoleculeDrag(from),
       bondDrag: (edit, done) => (done ? void dropBond(edit) : dragBond(edit)),
