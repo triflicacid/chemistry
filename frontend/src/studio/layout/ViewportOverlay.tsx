@@ -63,7 +63,8 @@ export function DisplayTools({ axes, onAxes, grid, onGrid, gridPlane, onGridPlan
 export interface ActionToolsProps {
   tools: ToolModel;
   state: ToolState;
-  /** Whether a molecule is selected. */
+  /** Whether a grid is shown, which snapping needs. */
+  gridShown: boolean;
   moleculeSelected: boolean;
   /** Whether the selection has a locked atom in it. */
   blocked: boolean;
@@ -75,8 +76,8 @@ export interface ActionToolsProps {
 }
 
 /** The buttons at the top right of the viewport. */
-export function ActionTools({ tools, state, moleculeSelected, blocked, picking, onPickScope, onFrame, onCentre, onReset }: ActionToolsProps) {
-  const { tool, constraint, space, rotateTarget, carryHydrogens } = state;
+export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked, picking, onPickScope, onFrame, onCentre, onReset }: ActionToolsProps) {
+  const { tool, constraint, space, rotateTarget, carryHydrogens, snap } = state;
   return (
     <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
       {tool === "rotate" && <Segmented label="What to rotate" value={rotateTarget} options={ROTATE_TARGETS} onChange={(next) => tools.rotateTarget(next)} />}
@@ -92,6 +93,17 @@ export function ActionTools({ tools, state, moleculeSelected, blocked, picking, 
           onClick={() => tools.carry(!carryHydrogens)}
         >
           Carry H
+        </button>
+      )}
+      {tool === "move" && gridShown && (
+        <button
+          type="button"
+          className="tool"
+          aria-pressed={snap}
+          title="When on, a dragged atom or move handle snaps to the nearest point of the grid, which is marked. Hold Ctrl to do the opposite while dragging. A polar grid snaps only free drags"
+          onClick={() => tools.snapToGrid(!snap)}
+        >
+          Snap to grid
         </button>
       )}
       {tool === "move" && !moleculeSelected && (

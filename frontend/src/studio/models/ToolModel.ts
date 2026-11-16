@@ -52,6 +52,8 @@ export interface ToolState {
   strain: boolean;
   /** Whether moving an atom carries the hydrogens bonded to it. This is a convenience, and nothing is locked. */
   carryHydrogens: boolean;
+  /** Whether a dragged atom snaps to the grid, while one is shown. */
+  snap: boolean;
   /** The torsion the Inspector is showing for the selected bond, which the viewport marks, or null for none. */
   torsion: TorsionView | null;
   /** The angle the Inspector is showing for the selected atom, which the viewport marks, or null for none. */
@@ -65,7 +67,7 @@ export interface ToolState {
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, snap: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first" });
   }
 
   /**
@@ -142,6 +144,17 @@ export class ToolModel extends Observable<ToolState> {
   carry(on: boolean): void {
     if (this.get().carryHydrogens !== on) {
       this.set({ ...this.get(), carryHydrogens: on });
+    }
+  }
+
+  /**
+   * Makes a dragged atom snap to the grid, or stops it.
+   *
+   * @param on whether to snap
+   */
+  snapToGrid(on: boolean): void {
+    if (this.get().snap !== on) {
+      this.set({ ...this.get(), snap: on });
     }
   }
 

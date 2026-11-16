@@ -46,6 +46,13 @@ export class MoveMode extends SelectMode {
   constraint: Constraint = "free";
   /** Whether moving an atom carries the hydrogens bonded to it. */
   private carryHydrogens = false;
+  /** Whether a dragged atom snaps to the grid, which holding Ctrl reverses. */
+  private snap = false;
+
+  /** Whether snapping to the grid is switched on, whether or not there is a grid to snap to. */
+  get snapOn(): boolean {
+    return this.snap;
+  }
   private grab: Grab | null = null;
   /** What the handles on the molecule last did. */
   private handleMode: "translate" | "atoms" | null = null;
@@ -89,6 +96,8 @@ export class MoveMode extends SelectMode {
         grab.point = pointOnConstraint(grab.ray, grab.members[0]!.start, this.constraint, grab.viewDirection, this.dragBasis()) ?? grab.point;
       }
     }
+
+    this.snap = options.snap;
 
     if (options.carryHydrogens !== this.carryHydrogens) {
       this.carryHydrogens = options.carryHydrogens;
@@ -157,7 +166,7 @@ export class MoveMode extends SelectMode {
     }
 
     grab.ray = this.localRayOf(event);
-    const moves = this.placesOf(grab, grab.ray);
+    const moves = this.placesOf(grab, grab.ray, this.snapping(event));
     if (moves) {
       this.host.moveAtoms(moves.map((move) => [move.id, move.position]));
       this.host.emit((listener) => listener.drag?.(moves, false));
@@ -172,9 +181,10 @@ export class MoveMode extends SelectMode {
         this.down = null;
         // a pointer that has left what the drag is held to leaves the atoms where they are
         const moves =
-          this.placesOf(grab, this.localRayOf(event)) ??
+          this.placesOf(grab, this.localRayOf(event), this.snapping(event)) ??
           grab.members.map((member): AtomMove => ({ id: member.node.atom.id, position: toVec3(member.node.at) }));
         this.host.moveAtoms(moves.map((move) => [move.id, move.position]));
+        this.host.reference.showSnap(null);
         this.host.emit((listener) => listener.drag?.(moves, true));
         return;
       }
@@ -290,22 +300,33 @@ export class MoveMode extends SelectMode {
    *
    * @param grab the drag
    * @param ray the pointer's ray
+   * @param snapping whether the atom in hand is to land on the nearest point of the grid
    * @returns each atom's place
    */
-  private placesOf(grab: Grab, ray: Ray): AtomMove[] | null {
+  private placesOf(grab: Grab, ray: Ray, snapping: boolean): AtomMove[] | null {
     const [lead] = grab.members as [Member, ...Member[]];
     const point = pointOnConstraint(ray, lead.start, this.constraint, grab.viewDirection, this.dragBasis());
     if (!point) {
       return null;
     }
 
-    const offset = dragged(grab.point, point, lead.start).sub(lead.start);
+    const target = dragged(grab.point, point, lead.start);
+    // the others keep their places around the atom in hand, so they move by as much as it does
+    const snapped = snapping ? this.host.reference.snap(target, this.constraint) : null;
+    this.host.reference.showSnap(snapped && this.host.scene.content.localToWorld(snapped.clone()));
+    const offset = (snapped ?? target).sub(lead.start);
     return grab.members.map((member) => ({ id: member.node.atom.id, position: toVec3(member.start.clone().add(offset)) }));
+  }
+
+  /** Whether the atom in hand snaps to the grid: it does if that is on and a grid is shown, unless Ctrl or Cmd is held. */
+  private snapping(event: PointerEvent): boolean {
+    return this.snap !== (event.ctrlKey || event.metaKey) && this.host.reference.gridShown;
   }
 
   /** Lets go of the atom in hand, giving the camera its controls back. */
   private releaseGrab(): void {
     this.grab = null;
+    this.host.reference.showSnap(null);
     this.host.lock.release("atomDrag");
     this.host.reference.refreshGuide();
   }

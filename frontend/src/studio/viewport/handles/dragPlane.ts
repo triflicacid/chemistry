@@ -3,6 +3,25 @@ import {type Ray, Vector3} from "three";
 /** What a dragged atom is held to: anywhere in the view plane, along one axis, or within one plane. */
 export type Constraint = "free" | "x" | "y" | "z" | "xy" | "yz" | "xz";
 
+/** What each of the translate handles three.js draws holds a move to, by the name it gives the handle. The middle one is free. */
+const CONSTRAINT_OF_HANDLE: Readonly<Record<string, Constraint>> = {
+  X: "x",
+  Y: "y",
+  Z: "z",
+  XY: "xy",
+  YZ: "yz",
+  XZ: "xz",
+  XYZ: "free",
+};
+
+/**
+ * @param handle the name three.js gives a handle, such as `X`, `XZ` or `XYZ`, or null for none
+ * @returns what the handle holds a move to, or null if it is not a translate handle, such as one that rotates
+ */
+export function constraintOfHandle(handle: string | null): Constraint | null {
+  return (handle && CONSTRAINT_OF_HANDLE[handle]) || null;
+}
+
 /** How close to parallel a ray may be to what it is meant to meet before the meeting is too far off to trust. */
 const PARALLEL = 1e-6;
 

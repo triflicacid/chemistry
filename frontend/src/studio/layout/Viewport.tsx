@@ -45,7 +45,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
-  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, torsion, angle, system, hold } = toolState;
+  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
   const internal = tool === "rotate" && rotateTarget === "internal";
   const picking: PickScope = internal ? "item" : mode;
@@ -180,8 +180,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   // what the viewport does with the pointer and the keyboard, and the handles it offers, follows the tool and the selection.
   // It comes after the state is shown, so that it finds the atoms it is to put handles on
   useEffect(() => {
-    view?.setMode(tool, { constraint, carryHydrogens, rotateTarget, selection: selected.items, index, hold, torsion, angle });
-  }, [view, state, locked, tool, constraint, carryHydrogens, rotateTarget, selected, index, hold, torsion, angle]);
+    view?.setMode(tool, { constraint, carryHydrogens, snap, rotateTarget, selection: selected.items, index, hold, torsion, angle });
+  }, [view, state, locked, tool, constraint, carryHydrogens, snap, rotateTarget, selected, index, hold, torsion, angle]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
@@ -298,6 +298,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
           <ActionTools
             tools={tools}
             state={toolState}
+            gridShown={grid !== "off"}
             moleculeSelected={moleculeSelected}
             blocked={blocked}
             picking={picking}
