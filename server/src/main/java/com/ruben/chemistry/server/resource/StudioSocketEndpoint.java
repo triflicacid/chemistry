@@ -710,6 +710,19 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Forgets every edit in a session's history.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void clearHistory(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        walk(context, body, sequence, "history.clear", StudioSession::clearHistory);
+    }
+
+    /**
      * Gives a bond a length.
      *
      * @param context the connection that asked
@@ -887,7 +900,80 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        StudioSession session = current(context, type, sequence, request.sessionId(), request.baseVersion());
+        walk(context, sequence, type, request.sessionId(), request.baseVersion(), step);
+    }
+
+    /**
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void history(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.HistoryRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.HistoryRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("history.list", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = current(context, "history.list", sequence, request.sessionId(), request.baseVersion());
+        if (session == null)
+        {
+            return;
+        }
+
+        StudioSession.History history = session.history();
+        Map<String, Object> reply = new LinkedHashMap<>();
+        reply.put("type", "history.list");
+        reply.put("sequence", sequence);
+        reply.put("version", session.version());
+        reply.put("position", history.position());
+        reply.put("entries", history.entries().stream()
+                .map(entry -> Map.of("label", entry.label(), "at", entry.at()))
+                .toList());
+        context.sendJson(reply);
+    }
+
+    /**
+     * Moves a session to a point in its history.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void rewind(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.RewindRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.RewindRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("history.rewind", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.position() == null)
+        {
+            context.error("history.rewind", sequence, "INVALID_MESSAGE", "position is required");
+            return;
+        }
+
+        boolean discard = request.discard() != null && request.discard();
+        walk(context, sequence, "history.rewind", request.sessionId(), request.baseVersion(), session -> session.rewind(request.position(), discard));
+    }
+
+    private void walk(WebSocketContext context, Long sequence, String type, String sessionId, Long baseVersion, Function<StudioSession, StudioSession.Applied> step) throws IOException
+    {
+        StudioSession session = current(context, type, sequence, sessionId, baseVersion);
         if (session == null)
         {
             return;
@@ -1114,7 +1200,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("optimise.start", endpoint::optimise),
                     Map.entry("optimise.cancel", endpoint::cancelOptimise),
                     Map.entry("edit.undo", endpoint::undo),
-                    Map.entry("edit.redo", endpoint::redo)));
+                    Map.entry("edit.redo", endpoint::redo),
+                    Map.entry("history.list", endpoint::history),
+                    Map.entry("history.rewind", endpoint::rewind),
+                    Map.entry("history.clear", endpoint::clearHistory)));
             this.endpoint = endpoint;
         }
 

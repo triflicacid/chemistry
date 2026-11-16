@@ -3,6 +3,7 @@ import type {Tool, ToolModel} from "../selection/ToolModel";
 import type {LayoutState, Panel} from "../store";
 import type {Optimising, SessionPhase} from "../session/useSession";
 import {type Segment, Segmented} from "./Segmented";
+import {HistoryMenu, type HistoryMenuProps} from "./HistoryMenu";
 
 /** What a left-drag does, one at a time. */
 const TOOLS: Segment<Tool>[] = [
@@ -42,9 +43,13 @@ export interface ToolbarProps {
   /** How strained the geometry is, ready to show, or null if it has not been worked out. */
   strain: string | null;
   onUndo: () => void;
-  onRedo: () => void;}
+  onRedo: () => void;
+  onLoadHistory: HistoryMenuProps["onLoad"];
+  onGoTo: HistoryMenuProps["onGoTo"];
+  onClearHistory: HistoryMenuProps["onClear"];
+}
 
-export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo }: ToolbarProps) {
+export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain, onUndo, onRedo, onLoadHistory, onGoTo, onClearHistory }: ToolbarProps) {
   const { tool } = useObservable(tools);
 
   return (
@@ -72,6 +77,7 @@ export function Toolbar({ phase, optimising, canOptimise, onOptimise, onCancelOp
         <button type="button" className="tool" disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" onClick={onRedo}>
           Redo
         </button>
+        <HistoryMenu enabled={canUndo || canRedo} onLoad={onLoadHistory} onGoTo={onGoTo} onClear={onClearHistory} />
         <button
           type="button"
           className="tool"

@@ -44,6 +44,9 @@ export function App() {
     cancelOptimise,
     undo,
     redo,
+    history,
+    goTo,
+    clearHistory,
   } = useSession();
 
   const shared = useMemo(createModels, []);
@@ -163,6 +166,8 @@ export function App() {
   const stopOptimise = useCallback(() => void cancelOptimise(), [cancelOptimise]);
   const undoEdit = useCallback(() => void undo(), [undo]);
   const redoEdit = useCallback(() => void redo(), [redo]);
+  const goToEdit = useCallback((position: number, discard: boolean) => void goTo(position, discard), [goTo]);
+  const clearEdits = useCallback(() => void clearHistory(), [clearHistory]);
 
   const resize = useCallback((panel: Panel, size: number) => {
     setLayout((before) => (before[panel] === size ? before : { ...before, [panel]: size }));
@@ -206,6 +211,9 @@ export function App() {
       onCancelBondDrag={cancelBondHandle}
       onUndo={undoEdit}
       onRedo={redoEdit}
+      onLoadHistory={history}
+      onGoTo={goToEdit}
+      onClearHistory={clearEdits}
       optimising={optimising}
       outcome={outcome}
       onOptimise={startOptimise}

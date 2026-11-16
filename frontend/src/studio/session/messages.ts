@@ -222,6 +222,24 @@ export interface LockAck extends ServerEnvelope {
   saved_molecule_id: string | null;
 }
 
+/** One edit in the history. */
+export interface HistoryEntry {
+  /** What the edit did. */
+  label: string;
+  /** When it was made, in milliseconds since the epoch. */
+  at: number;
+}
+
+/** The session's edits, which a point in can be returned to. */
+export interface EditHistory extends ServerEnvelope {
+  type: "history.list";
+  version: number;
+  /** How many of the edits are in effect; the ones after it have been undone. */
+  position: number;
+  /** The edits, the earliest first. */
+  entries: HistoryEntry[];
+}
+
 /** The answer to an undo or redo: only what it changed, not the whole state. */
 export interface EditApplied extends ServerEnvelope {
   type: "edit.applied";

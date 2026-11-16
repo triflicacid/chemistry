@@ -3,6 +3,7 @@ import {
   type BondEditAck,
   type CameraAck,
   type EditApplied,
+  type EditHistory,
   type LockAck,
   type OptimiseCancelAck,
   type OptimiseStarted,
@@ -396,6 +397,51 @@ export class StudioSocket {
   step(direction: "undo" | "redo", sessionId: string, baseVersion: number): Promise<EditApplied | SessionConflict> {
     return this.request<EditApplied | SessionConflict>(
       `edit.${direction}`,
+      { session_id: sessionId, base_version: baseVersion },
+      ["edit.applied", "conflict"],
+    );
+  }
+
+  /**
+   * Lists a session's edits.
+   *
+   * @param sessionId the session to list the edits of
+   * @param baseVersion the version the caller was looking at
+   */
+  history(sessionId: string, baseVersion: number): Promise<EditHistory | SessionConflict> {
+    return this.request<EditHistory | SessionConflict>(
+      "history.list",
+      { session_id: sessionId, base_version: baseVersion },
+      ["history.list", "conflict"],
+    );
+  }
+
+  /**
+   * Moves a session to a point in its history.
+   *
+   * @param sessionId the session to move
+   * @param baseVersion the version the caller was looking at
+   * @param position how many edits to have in effect
+   * @param discard whether to forget the edits after that point instead of keeping them to redo
+   * @returns the atoms that moved, or a conflict carrying the state the session is actually in
+   */
+  rewind(sessionId: string, baseVersion: number, position: number, discard: boolean): Promise<EditApplied | SessionConflict> {
+    return this.request<EditApplied | SessionConflict>(
+      "history.rewind",
+      { session_id: sessionId, base_version: baseVersion, position, discard },
+      ["edit.applied", "conflict"],
+    );
+  }
+
+  /**
+   * Forgets every edit in a session's history, leaving the atoms where they are.
+   *
+   * @param sessionId the session to clear the history of
+   * @param baseVersion the version the caller was looking at
+   */
+  clearHistory(sessionId: string, baseVersion: number): Promise<EditApplied | SessionConflict> {
+    return this.request<EditApplied | SessionConflict>(
+      "history.clear",
       { session_id: sessionId, base_version: baseVersion },
       ["edit.applied", "conflict"],
     );

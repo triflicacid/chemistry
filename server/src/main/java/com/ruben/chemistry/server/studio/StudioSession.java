@@ -99,8 +99,30 @@ public final class StudioSession
      * @param after where each of them is after it
      * @param poseBefore where the molecule sat before the edit, or {@code null} if the edit did not move it as a whole
      * @param poseAfter where it sat after the edit, or {@code null} under the same condition
+     * @param label what the edit did, in a few words
+     * @param at when the edit was made
      */
-    private record Edit(Map<String, Vec3> before, Map<String, Vec3> after, Pose poseBefore, Pose poseAfter)
+    private record Edit(Map<String, Vec3> before, Map<String, Vec3> after, Pose poseBefore, Pose poseAfter, String label, long at)
+    {
+    }
+
+    /**
+     * One edit as the history lists it.
+     *
+     * @param label what the edit did, in a few words
+     * @param at when the edit was made
+     */
+    public record HistoryEntry(String label, long at)
+    {
+    }
+
+    /**
+     * The session's history of edits.
+     *
+     * @param entries the edits, the earliest first, counting the ones that have been undone
+     * @param position how many of the edits are in effect; the ones after it have been undone and can be made again
+     */
+    public record History(List<HistoryEntry> entries, int position)
     {
     }
 
@@ -133,6 +155,9 @@ public final class StudioSession
 
     /** Edits undone and not yet overtaken by a new one, the next to redo last. */
     private final Deque<Edit> undone = new ArrayDeque<>();
+
+    /** What the edit in progress is, or null to describe it by what it moved. */
+    private String pendingLabel;
 
     /** Where each atom was before the uncommitted moves that have touched it, so a commit can say what it replaced. */
     private final Map<String, Vec3> uncommitted = new LinkedHashMap<>();
@@ -468,6 +493,7 @@ public final class StudioSession
             return Optional.of(new Applied(version, Map.of(), null));
         }
 
+        pendingLabel = "Optimise";
         long next = move(moves, true);
         Map<String, Vec3> moved = new LinkedHashMap<>();
         moves.forEach(move -> moved.put(move.atomId(), move.position()));
@@ -492,7 +518,7 @@ public final class StudioSession
     {
         Bond bond = bondNamed(bondId);
         Atom held = heldId == null ? null : atomNamed(heldId);
-        return reshape(() -> BondMotion.withLength(molecule, bond, this::baselineOf, length, held), commit);
+        return reshape(() -> BondMotion.withLength(molecule, bond, this::baselineOf, length, held), commit, "Set bond length");
     }
 
     /**
@@ -517,7 +543,7 @@ public final class StudioSession
         Atom from = atomNamed(fromId);
         Atom to = atomNamed(toId);
         Atom held = heldId == null ? null : atomNamed(heldId);
-        return reshape(() -> BondMotion.withTorsion(molecule, bond, from, to, this::baselineOf, degrees, held), commit);
+        return reshape(() -> BondMotion.withTorsion(molecule, bond, from, to, this::baselineOf, degrees, held), commit, "Set torsion");
     }
 
     /**
@@ -542,7 +568,7 @@ public final class StudioSession
         Atom from = atomNamed(fromId);
         Atom to = atomNamed(toId);
         Atom held = heldId == null ? null : atomNamed(heldId);
-        return reshape(() -> BondMotion.withAngle(molecule, centre, from, to, this::baselineOf, degrees, held), commit);
+        return reshape(() -> BondMotion.withAngle(molecule, centre, from, to, this::baselineOf, degrees, held), commit, "Set angle");
     }
 
     /**
@@ -558,11 +584,12 @@ public final class StudioSession
      *     {@link IllegalArgumentException}
      * @param commit whether this ends the edit it belongs to. A commit that moves nothing, because the edit before it
      *     in the same drag already put the atoms there, still ends that edit
+     * @param label what the edit is called in the history
      * @return what moved, which is nothing if every atom was already where it was sent
      * @throws StudioEditException with {@code INVALID_EDIT} if the plan refused, and {@code LOCKED} if an atom that
      *     would move is locked
      */
-    private Applied reshape(Supplier<Map<Atom, Vec3>> plan, boolean commit)
+    private Applied reshape(Supplier<Map<Atom, Vec3>> plan, boolean commit, String label)
     {
         Map<Atom, Vec3> placed;
         try
@@ -594,6 +621,7 @@ public final class StudioSession
                 moves.add(new Move(atomIds.get(atom), to));
             }
         }
+        pendingLabel = label;
         long next = move(moves, commit);
         Map<String, Vec3> moved = new LinkedHashMap<>();
         moves.forEach(move -> moved.put(move.atomId(), move.position()));
@@ -684,6 +712,7 @@ public final class StudioSession
             Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
             geometry.putAll(restored);
             uncommitted.clear();
+            pendingLabel = null;
 
             Pose restoredPose = uncommittedPose;
             if (restoredPose != null)
@@ -737,6 +766,91 @@ public final class StudioSession
         }
         done.addLast(edit);
         return new Applied(++version, edit.after(), edit.poseAfter());
+    }
+
+    /**
+     * @return what each edit did and how many of them are in effect
+     */
+    public synchronized History history()
+    {
+        List<HistoryEntry> entries = new ArrayList<>();
+        done.forEach(edit -> entries.add(new HistoryEntry(edit.label(), edit.at())));
+        List<Edit> later = new ArrayList<>(undone);
+        Collections.reverse(later);
+        later.forEach(edit -> entries.add(new HistoryEntry(edit.label(), edit.at())));
+        return new History(entries, done.size());
+    }
+
+    /**
+     * Forgets every edit, done or undone, leaving the atoms where they are. There is then nothing to undo or redo.
+     *
+     * @return the version after it, which moved no atom
+     */
+    public synchronized Applied clearHistory()
+    {
+        done.clear();
+        undone.clear();
+        return new Applied(++version, Map.of(), null);
+    }
+
+    /**
+     * Undoes or redoes as many edits as it takes to have exactly {@code position} of them in effect.
+     *
+     * @param position how many edits to have in effect, from 0 to the length of {@link #history()}
+     * @param discard whether to forget the edits after {@code position}, which can then not be made again
+     * @return where the atoms the steps touched now are
+     * @throws StudioEditException with {@code INVALID_EDIT} if there is no such position, and {@code LOCKED} if an
+     *     atom a step would move has been locked, in which case nothing is changed
+     */
+    public synchronized Applied rewind(int position, boolean discard)
+    {
+        int total = done.size() + undone.size();
+        if (position < 0 || position > total)
+        {
+            throw new StudioEditException("INVALID_EDIT", "There is no point " + position + " in a history of " + total + " edits");
+        }
+
+        List<Edit> all = new ArrayList<>(done);
+        List<Edit> later = new ArrayList<>(undone);
+        Collections.reverse(later);
+        all.addAll(later);
+
+        int from = done.size();
+        List<Edit> crossed = position < from ? all.subList(position, from) : all.subList(from, position);
+        for (Edit edit : crossed)
+        {
+            requireUnlocked(position < from ? edit.before().keySet() : edit.after().keySet());
+        }
+
+        Map<String, Vec3> moved = new LinkedHashMap<>();
+        Pose posed = null;
+        if (!uncommitted.isEmpty() || uncommittedPose != null)
+        {
+            Applied cancelled = undo();
+            moved.putAll(cancelled.moved());
+            posed = cancelled.pose();
+        }
+
+        while (done.size() > position)
+        {
+            Applied step = undo();
+            moved.putAll(step.moved());
+            posed = step.pose() != null ? step.pose() : posed;
+        }
+        while (done.size() < position)
+        {
+            Applied step = redo();
+            moved.putAll(step.moved());
+            posed = step.pose() != null ? step.pose() : posed;
+        }
+
+        if (discard)
+        {
+            undone.clear();
+        }
+
+        moved.replaceAll((id, ignored) -> geometry.get(id));
+        return new Applied(version, moved, posed == null ? null : pose);
     }
 
     /**
@@ -863,12 +977,19 @@ public final class StudioSession
         uncommitted.clear();
         uncommittedPose = null;
 
+        String label = pendingLabel;
+        pendingLabel = null;
         if (then.isEmpty() && !posed)
         {
             return;
         }
 
-        done.addLast(new Edit(then, now, posed ? poseThen : null, posed ? pose : null));
+        if (label == null)
+        {
+            label = then.isEmpty() ? "Move molecule" : then.size() == 1 ? "Move atom" : "Move atoms";
+        }
+
+        done.addLast(new Edit(then, now, posed ? poseThen : null, posed ? pose : null, label, System.currentTimeMillis()));
         undone.clear();
         while (done.size() > MAX_UNDO)
         {

@@ -9,6 +9,7 @@ import type {
   BondEditAck,
   EditApplied,
   GeometryResult,
+  HistoryEntry,
   OptimiseProgress,
   OptimiseResult,
   PatchAck,
@@ -171,6 +172,16 @@ export interface Session {
   undo: () => Promise<EditResult>;
   /** Makes the latest undone edit again. */
   redo: () => Promise<EditResult>;
+  /** Lists the edits made, or null if they could not be listed. */
+  history: () => Promise<{ entries: HistoryEntry[]; position: number } | null>;
+  /**
+   * Moves to a point in the history, by having that many edits in effect.
+   *
+   * @param position how many edits to have in effect
+   * @param discard whether to forget the edits after it, rather than keep them to redo
+   */
+  /** Forgets every edit, leaving the structure as it is. */
+  clearHistory: () => Promise<EditResult>;
 }
 
 /**
@@ -907,6 +918,90 @@ export function useSession(client?: ChemistryApi): Session {
   const undo = useCallback(() => step("undo"), [step]);
   const redo = useCallback(() => step("redo"), [step]);
 
+  const history = useCallback(
+    (): Promise<{ entries: HistoryEntry[]; position: number } | null> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return null;
+        }
+
+        try {
+          const reply = await socket.history(base.session_id, base.version);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            return null;
+          }
+          return { entries: reply.entries, position: reply.position };
+        } catch (cause) {
+          note(reason(cause), true);
+          return null;
+        }
+      }),
+    [adopt, note, serially],
+  );
+
+  const goTo = useCallback(
+    (position: number, discard: boolean): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
+
+        try {
+          const reply = await socket.rewind(base.session_id, base.version, position, discard);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note("The structure changed, so the history was not moved", true);
+            return { kind: "conflict" };
+          }
+
+          if (held.current?.version === base.version) {
+            adopt(patched(base, reply.atoms, reply, reply.transform));
+          }
+          note(discard ? `Rewound to edit ${position}, discarding the later edits` : `Went to edit ${position}`);
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
+  const clearHistory = useCallback(
+    (): Promise<EditResult> =>
+      serially(async () => {
+        const socket = socketRef.current;
+        const base = held.current;
+        if (!socket || !base) {
+          return { kind: "refused", message: "There is no open session to edit." };
+        }
+
+        try {
+          const reply = await socket.clearHistory(base.session_id, base.version);
+          if (reply.type === "conflict") {
+            adopt(reply.state);
+            note("The structure changed, so the history was not cleared", true);
+            return { kind: "conflict" };
+          }
+
+          if (held.current?.version === base.version) {
+            adopt(patched(base, reply.atoms, reply, reply.transform));
+          }
+          note("Cleared the history");
+          return { kind: "applied" };
+        } catch (cause) {
+          note(reason(cause), true);
+          return { kind: "refused", message: reason(cause) };
+        }
+      }),
+    [adopt, note, serially],
+  );
+
   return {
     phase,
     state,
@@ -936,6 +1031,9 @@ export function useSession(client?: ChemistryApi): Session {
     cancelOptimise,
     undo,
     redo,
+    history,
+    goTo,
+    clearHistory,
   };
 }
 
