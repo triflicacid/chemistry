@@ -1,6 +1,6 @@
-import type { Pick } from "../../render/parts";
+import type { PartRef } from "../../render/parts";
 
-export type { Pick };
+export type { PartRef };
 
 /** A position on screen, in client pixels. */
 export interface Point {
@@ -11,7 +11,7 @@ export interface Point {
 /** Transient emphasis, such as for what the pointer is over. */
 export interface Highlights {
   /** The part to emphasise, as the view reported it. */
-  hover: Pick | null;
+  hover: PartRef | null;
   /** Atoms to tint; `colour` is 1 or 2. */
   ends: { atom: number; colour: number }[];
 }
@@ -31,8 +31,8 @@ export interface SelectionState {
 }
 
 export interface ViewListener {
-  hover?(target: Pick | null, at: Point): void;
-  click?(target: Pick | null, additive: boolean): void;
+  hover?(target: PartRef | null, at: Point): void;
+  click?(target: PartRef | null, additive: boolean): void;
 }
 
 export interface MoleculeView {
@@ -52,7 +52,7 @@ export interface MoleculeView {
   setFaults(faults: FaultState | null): void;
 
   /** Rows for the hover plaque about what the view knows and the molecule's metadata does not. */
-  describe(target: Pick): [string, string][];
+  describe(target: PartRef): [string, string][];
 
   /** The file type of `exportImage`. */
   readonly imageExtension: "svg" | "png";

@@ -1,7 +1,7 @@
 import {CircleGeometry, Group, Mesh, MeshBasicMaterial, PlaneGeometry, RingGeometry} from "three";
 
 import {ARROW_AT, ARROW_REACH, SPHERE_RADIUS} from "./constants";
-import {CameraWidget, type GizmoHandle, type GizmoPoint, type Look} from "./widget";
+import {HudDial, type HudHandle, type HudPoint, type Look} from "./dial";
 
 /** The radius of the pan ball, in CSS pixels. */
 export const BALL_RADIUS = 12;
@@ -16,9 +16,9 @@ const ARM_REACH = 6;
  * A ball that is pulled out of the middle of its track as the view is panned, and let go of back to the middle, and arms
  * that hold a pan across or up and down.
  */
-export class PanGizmo extends CameraWidget {
+export class PanDial extends HudDial {
   /** Where the ball is, from the centre, in pixels with y up, which the view sets as it pans. */
-  ball: GizmoPoint = { x: 0, y: 0 };
+  ball: HudPoint = { x: 0, y: 0 };
 
   private readonly ballMark = new Group();
   private readonly track = this.material();
@@ -55,7 +55,7 @@ export class PanGizmo extends CameraWidget {
    * @param dy how far it is above the sphere's centre, in pixels
    * @returns the handle, or null if the press is not on the sphere or its arms
    */
-  hit(dx: number, dy: number): GizmoHandle | null {
+  hit(dx: number, dy: number): HudHandle | null {
     if (Math.hypot(dx - this.ball.x, dy - this.ball.y) <= BALL_RADIUS + 3) {
       return "pan";
     }
@@ -74,8 +74,8 @@ export class PanGizmo extends CameraWidget {
     this.ballMark.position.set(this.ball.x, this.ball.y, 0);
   }
 
-  paint(look: (handle: GizmoHandle) => Look): void {
-    const set = (material: MeshBasicMaterial, handle: GizmoHandle) => {
+  paint(look: (handle: HudHandle) => Look): void {
+    const set = (material: MeshBasicMaterial, handle: HudHandle) => {
       const { colour, opacity } = look(handle);
       material.color.setHex(colour);
       material.opacity = opacity;

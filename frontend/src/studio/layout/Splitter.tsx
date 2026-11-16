@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
-import type { Panel } from "../store";
-import { clamp } from "../store";
+import type { Panel } from "../layoutStore";
+import { clamp } from "../layoutStore";
 import * as React from "react";
 
 export interface SplitterProps {

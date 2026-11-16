@@ -239,7 +239,7 @@ export function useSession(client?: ChemistryApi): Session {
         note(`Opened ${opened.smiles}`);
       } catch (cause) {
         const message = reason(cause);
-        setPhase(refusedTheMolecule(cause) ? { kind: "wanted", message } : { kind: "failed", message });
+        setPhase(isUnknownMolecule(cause) ? { kind: "wanted", message } : { kind: "failed", message });
         note(message, true);
       }
     },
@@ -362,7 +362,7 @@ export function useSession(client?: ChemistryApi): Session {
           );
 
           if (base.version === result.base_version) {
-            adopt(patched(base, result.atoms, result));
+            adopt(applyAck(base, result.atoms, result));
           } else if (base.version !== result.version) {
             // the sparse result says nothing of an atom the client has moved since, so ask for the whole state
             socket.resync(base.session_id, base.version).then(adopt).catch((cause: unknown) => note(reason(cause), true));
@@ -489,7 +489,7 @@ export function useSession(client?: ChemistryApi): Session {
 
           // a resync that landed meanwhile is authoritative, and already says where the atom is
           if (held.current?.version === base.version) {
-            adopt(patched(base, moves, reply));
+            adopt(applyAck(base, moves, reply));
           }
           if (commit) {
             const [first] = moves as [AtomMove, ...AtomMove[]];
@@ -532,7 +532,7 @@ export function useSession(client?: ChemistryApi): Session {
 
           // a resync that landed meanwhile is authoritative, and already says where the atoms are
           if (held.current?.version === base.version) {
-            adopt(patched(base, reply.atoms, reply));
+            adopt(applyAck(base, reply.atoms, reply));
           }
           if (message !== null) {
             note(message);
@@ -670,7 +670,7 @@ export function useSession(client?: ChemistryApi): Session {
   }, []);
 
   const dragAtoms = useCallback(
-    (moves: AtomMove[]) => reporting(`atoms:${moves.map((move) => move.id).join(",")}`, moves, sameSpots, (latest) => void send(latest, false)),
+    (moves: AtomMove[]) => reporting(`atoms:${moves.map((move) => move.id).join(",")}`, moves, sameMoves, (latest) => void send(latest, false)),
     [reporting, send],
   );
 
@@ -858,7 +858,7 @@ export function useSession(client?: ChemistryApi): Session {
 
           // the answer is only the atoms that moved; a resync that landed meanwhile already says where they are
           if (held.current?.version === base.version) {
-            adopt(patched(base, reply.atoms, reply, reply.transform));
+            adopt(applyAck(base, reply.atoms, reply, reply.transform));
           }
           note(direction === "undo" ? "Undid the last edit" : "Redid the last undone edit");
           return { kind: "applied" };
@@ -961,7 +961,7 @@ export function useSession(client?: ChemistryApi): Session {
           }
 
           if (held.current?.version === base.version) {
-            adopt(patched(base, reply.atoms, reply, reply.transform));
+            adopt(applyAck(base, reply.atoms, reply, reply.transform));
           }
           note(discard ? `Rewound to edit ${position}, discarding the later edits` : `Went to edit ${position}`);
           return { kind: "applied" };
@@ -991,7 +991,7 @@ export function useSession(client?: ChemistryApi): Session {
           }
 
           if (held.current?.version === base.version) {
-            adopt(patched(base, reply.atoms, reply, reply.transform));
+            adopt(applyAck(base, reply.atoms, reply, reply.transform));
           }
           note("Cleared the history");
           return { kind: "applied" };
@@ -1039,7 +1039,7 @@ export function useSession(client?: ChemistryApi): Session {
 }
 
 /** Whether two reports put the same atoms in the same places. */
-function sameSpots(first: AtomMove[], second: AtomMove[]): boolean {
+function sameMoves(first: AtomMove[], second: AtomMove[]): boolean {
   return first.every((move, i) => {
     const other = second[i];
     return other !== undefined && move.position.x === other.position.x && move.position.y === other.position.y && move.position.z === other.position.z;
@@ -1054,7 +1054,7 @@ function sameSpots(first: AtomMove[], second: AtomMove[]): boolean {
  * @param ack the session's acknowledgement, which says the version and history it is now at
  * @param transform where the molecule now sits, if the change moved it as a whole
  */
-function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | BondEditAck | EditApplied | OptimiseResult, transform: Pose | null = null): SessionState {
+function applyAck(base: SessionState, moves: { id: string; position: Vec3 }[], ack: PatchAck | BondEditAck | EditApplied | OptimiseResult, transform: Pose | null = null): SessionState {
   const to = new Map(moves.map((move) => [move.id, move.position]));
   return {
     ...base,
@@ -1071,7 +1071,7 @@ function patched(base: SessionState, moves: { id: string; position: Vec3 }[], ac
 }
 
 /** Whether the failure was the molecule itself being unusable, rather than the server or network. */
-function refusedTheMolecule(cause: unknown): boolean {
+function isUnknownMolecule(cause: unknown): boolean {
   if (cause instanceof ApiError) {
     return cause.status === 400;
   }

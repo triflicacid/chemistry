@@ -1,36 +1,36 @@
 import {OrthographicCamera, type PerspectiveCamera, type Scene, Vector2, type WebGLRenderer} from "three";
 
-import {GIZMO_GAP, GIZMO_MARGIN, GIZMO_SIZE} from "./constants";
-import {FovGizmo, fovOfSliderOffset} from "./fovGizmo";
-import {OrbitGizmo} from "./orbitGizmo";
-import {PanGizmo} from "./panGizmo";
-import {ACTIVE, type GizmoHandle, type GizmoPoint, HOVERED, type Look, RESTING} from "./widget";
+import {HUD_GAP, HUD_MARGIN, HUD_SIZE} from "./constants";
+import {FovDial, fovOfSliderOffset} from "./fovDial";
+import {OrbitDial} from "./orbitDial";
+import {PanDial} from "./panDial";
+import {ACTIVE, type HudHandle, type HudPoint, HOVERED, type Look, RESTING} from "./dial";
 
 /**
- * Three gizmos in the lower right corner of the canvas to move the camera with, drawn like the triad and the roll ring: an
+ * Three dials in the lower right corner of the canvas to move the camera with, drawn like the triad and the roll ring: an
  * orbit sphere, a pan sphere and a field-of-view cone. They are in a row, the orbit sphere on the right.
  */
-export class CameraGizmos {
+export class CameraHud {
   /** Whether to draw them, and take presses. */
   visible = false;
 
   /** What the pointer is over, which brightens it. */
-  hovered: GizmoHandle | null = null;
+  hovered: HudHandle | null = null;
 
   /** What is being dragged, which brightens it further. */
-  active: GizmoHandle | null = null;
+  active: HudHandle | null = null;
 
-  private readonly camera = new OrthographicCamera(-GIZMO_SIZE / 2, GIZMO_SIZE / 2, GIZMO_SIZE / 2, -GIZMO_SIZE / 2, -200, 200);
-  private readonly orbit = new OrbitGizmo();
-  private readonly pan = new PanGizmo();
-  private readonly fov = new FovGizmo();
+  private readonly camera = new OrthographicCamera(-HUD_SIZE / 2, HUD_SIZE / 2, HUD_SIZE / 2, -HUD_SIZE / 2, -200, 200);
+  private readonly orbit = new OrbitDial();
+  private readonly pan = new PanDial();
+  private readonly fov = new FovDial();
 
   /** Where the pan ball is, from its centre, in pixels with y up, which the view sets as it pans. */
-  get ball(): GizmoPoint {
+  get ball(): HudPoint {
     return this.pan.ball;
   }
 
-  set ball(point: GizmoPoint) {
+  set ball(point: HudPoint) {
     this.pan.ball = point;
   }
 
@@ -62,7 +62,7 @@ export class CameraGizmos {
    * @param y the pointer's vertical position on the page
    * @returns what the pointer is over, or null if they are hidden or it is over none
    */
-  hit(canvas: DOMRect, x: number, y: number): GizmoHandle | null {
+  hit(canvas: DOMRect, x: number, y: number): HudHandle | null {
     if (!this.visible) {
       return null;
     }
@@ -72,13 +72,13 @@ export class CameraGizmos {
     return this.orbit.hit(orbit.x, orbit.y) ?? this.pan.hit(pan.x, pan.y) ?? this.fov.hit(fov.x, fov.y);
   }
 
-  /** The distance between the gizmos' centres, which are in a row. */
+  /** The distance between the dials' centres, which are in a row. */
   private get spacing(): number {
-    return GIZMO_SIZE + GIZMO_GAP;
+    return HUD_SIZE + HUD_GAP;
   }
 
   private orbitCentre(width: number): number {
-    return width - GIZMO_MARGIN - GIZMO_SIZE / 2;
+    return width - HUD_MARGIN - HUD_SIZE / 2;
   }
 
   private panCentre(width: number): number {
@@ -89,11 +89,11 @@ export class CameraGizmos {
     return this.panCentre(width) - this.spacing;
   }
 
-  private offsetFrom(canvas: DOMRect, x: number, y: number, centreX: number): GizmoPoint {
-    return { x: x - canvas.left - centreX, y: canvas.bottom - GIZMO_MARGIN - GIZMO_SIZE / 2 - y };
+  private offsetFrom(canvas: DOMRect, x: number, y: number, centreX: number): HudPoint {
+    return { x: x - canvas.left - centreX, y: canvas.bottom - HUD_MARGIN - HUD_SIZE / 2 - y };
   }
 
-  private look = (handle: GizmoHandle): Look =>
+  private look = (handle: HudHandle): Look =>
     this.active === handle ? ACTIVE : this.hovered === handle && this.active === null ? HOVERED : RESTING;
 
   /**
@@ -117,17 +117,17 @@ export class CameraGizmos {
     const clears = renderer.autoClear;
     renderer.autoClear = false;
     renderer.setScissorTest(true);
-    this.render(renderer, this.orbit.scene, this.orbitCentre(whole.x) - GIZMO_SIZE / 2);
-    this.render(renderer, this.pan.scene, this.panCentre(whole.x) - GIZMO_SIZE / 2);
-    this.render(renderer, this.fov.scene, this.fovCentre(whole.x) - GIZMO_SIZE / 2);
+    this.render(renderer, this.orbit.scene, this.orbitCentre(whole.x) - HUD_SIZE / 2);
+    this.render(renderer, this.pan.scene, this.panCentre(whole.x) - HUD_SIZE / 2);
+    this.render(renderer, this.fov.scene, this.fovCentre(whole.x) - HUD_SIZE / 2);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, whole.x, whole.y);
     renderer.autoClear = clears;
   }
 
   private render(renderer: WebGLRenderer, scene: Scene, left: number): void {
-    renderer.setViewport(left, GIZMO_MARGIN, GIZMO_SIZE, GIZMO_SIZE);
-    renderer.setScissor(left, GIZMO_MARGIN, GIZMO_SIZE, GIZMO_SIZE);
+    renderer.setViewport(left, HUD_MARGIN, HUD_SIZE, HUD_SIZE);
+    renderer.setScissor(left, HUD_MARGIN, HUD_SIZE, HUD_SIZE);
     renderer.clearDepth();
     renderer.render(scene, this.camera);
   }

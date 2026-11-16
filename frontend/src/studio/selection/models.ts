@@ -5,7 +5,7 @@ import {SelectionModel} from "./SelectionModel";
 import {ToolModel} from "./ToolModel";
 
 /** How a click in the viewport picks: the atom or bond itself, or the whole molecule it is in. */
-export type PickMode = "element" | "molecule";
+export type PickScope = "item" | "molecule";
 
 /** What the surfaces share: they write to these and read from them, and never to one another. */
 export interface Models {

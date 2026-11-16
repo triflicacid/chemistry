@@ -28,18 +28,18 @@ import {type Part, PartRegistry} from "../../render/parts";
 import {Primitives} from "../../render/primitives";
 import {sweep} from "../../render/roll";
 import {FIELD_OF_VIEW, Stage} from "../../render/stage";
-import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./dragPlane";
-import {withTerminalHydrogens} from "./carry";
+import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./handles/dragPlane";
+import {withTerminalHydrogens} from "./hydrogens";
 import {buildGrid, type GridKind, type GridPlaneChoice} from "./grid";
-import {CameraGizmos} from "./gizmos/cameraGizmos";
-import {GIZMO_CENTRE, GIZMO_MARGIN, GIZMO_SIZE} from "./gizmos/constants";
-import {BALL_TRAVEL} from "./gizmos/panGizmo";
-import {RollRing} from "./gizmos/rollRing";
-import {Triad} from "./gizmos/triad";
-import type {GizmoHandle} from "./gizmos/widget";
-import {BondGizmo} from "./bondGizmo";
-import {type GizmoMode, MoleculeGizmo} from "./gizmo";
-import {type Guide, makeGuide} from "./guides";
+import {CameraHud} from "./hud/CameraHud";
+import {HUD_CENTRE, HUD_MARGIN, HUD_SIZE} from "./hud/constants";
+import {BALL_TRAVEL} from "./hud/panDial";
+import {RollRing} from "./hud/rollRing";
+import {Triad} from "./hud/triad";
+import type {HudHandle} from "./hud/dial";
+import {MeasurementHandles} from "./handles/MeasurementHandles";
+import {type MoleculeHandleMode, MoleculeHandles} from "./handles/MoleculeHandles";
+import {type Guide, makeGuide} from "./handles/moveGuides";
 import type {
   AtomMove,
   BondEdit,
@@ -54,12 +54,7 @@ import type {AngleView, Pivot, Space, TorsionView} from "../selection/ToolModel"
 import {torsion} from "../selection/torsion";
 import {angleAt, planeNormal} from "../selection/angle";
 import {type CameraEdit, type CameraState, edited, orbitOf} from "../selection/CameraModel";
-
-/** An atom or bond under the pointer, named by the identifier the session gave it. */
-export interface StudioPick {
-  kind: "atom" | "bond";
-  id: string;
-}
+import type {ItemSet, PartItem} from "../selection/items";
 
 /** Where the pointer is, in pixels. */
 export interface ScreenPoint {
@@ -69,9 +64,9 @@ export interface ScreenPoint {
 
 export interface StudioViewListener {
   /** The pointer moved over `pick`, or over nothing if it is null. Not called while a button is held. */
-  hover?(pick: StudioPick | null, at: ScreenPoint): void;
+  hover?(pick: PartItem | null, at: ScreenPoint): void;
   /** A left click that was not a camera drag. `additive` is whether shift, control or command was held. */
-  click?(pick: StudioPick | null, additive: boolean): void;
+  click?(pick: PartItem | null, additive: boolean): void;
   /** An atom has been picked up by the move tool and has begun to move, along with the rest of the selection if it is in it. */
   dragStart?(id: string): void;
   /** The dragged atoms are at `moves`' positions. `done` is true for the last report, when the pointer is released. */
@@ -80,9 +75,9 @@ export interface StudioViewListener {
   dragCancel?(moves: AtomMove[]): void;
   /** A handle that translates has been taken hold of, so `constraint` is what the move is now held to. */
   constraint?(constraint: Constraint): void;
-  /** A handle of the molecule's gizmo has been taken hold of, with the molecule at `from`. */
+  /** A handle of the molecule's handles has been taken hold of, with the molecule at `from`. */
   moleculeDragStart?(from: Pose): void;
-  /** The gizmo has put the molecule at `pose`. `done` is true for the last report, when the handle is let go. */
+  /** The molecule handles have put the molecule at `pose`. `done` is true for the last report, when the handle is let go. */
   moleculeDrag?(pose: Pose, done: boolean): void;
   /** A drag of the molecule was abandoned, and it was put back at `from`, where it was picked up. */
   moleculeDragCancel?(from: Pose): void;
@@ -98,7 +93,7 @@ export interface StudioViewListener {
  * A handle on a bond or an atom, and which atom stays where it is: `first` is the bond's first atom, or the angle's `from`,
  * `second` its second atom or `to`, and `both` is neither.
  */
-export type BondHandle =
+export type MeasurementTarget =
   | {
       /** An arrow along the bond that slides to change its length. */
       mode: "length";
@@ -122,17 +117,11 @@ export type BondHandle =
       to: string;
     };
 
-/** Atoms and bonds, by identifier, to draw with emphasis. */
-export interface Emphasis {
-  atoms: ReadonlySet<string>;
-  bonds: ReadonlySet<string>;
-}
-
 /** What to tint, strongest last: what is selected, the active one among them, and what is hovered. */
-export interface Emphasised {
-  selected: Emphasis;
-  active: Emphasis;
-  hover: Emphasis;
+export interface Emphasis {
+  selected: ItemSet;
+  active: ItemSet;
+  hover: ItemSet;
 }
 
 /** How many selected atoms there can be for the bonds on them to be labelled with their lengths. */
@@ -141,7 +130,7 @@ const LENGTH_LABEL_ATOMS = 4;
 /** The most bonds that are labelled with their lengths at once. */
 const LENGTH_LABEL_BONDS = 12;
 
-const NO_EMPHASIS: Emphasis = { atoms: new Set(), bonds: new Set() };
+const NO_ITEMS: ItemSet = { atoms: new Set(), bonds: new Set() };
 
 /** The tint of the active item: the selection's blue, brightened so that it stands out from the rest. */
 const ACTIVE_TINT = SELECTED_TINT.clone().lerp(new Color("#ffffff"), 0.45);
@@ -229,21 +218,21 @@ interface Grab {
 export class StudioView {
   private readonly stage: Stage;
   private readonly kit = new Primitives();
-  private readonly triad = new Triad(this.kit.labels, GIZMO_SIZE, GIZMO_MARGIN);
+  private readonly triad = new Triad(this.kit.labels, HUD_SIZE, HUD_MARGIN);
   /** The dial round the triad that rolls the view. */
-  private readonly ring = new RollRing(GIZMO_CENTRE);
-  private readonly spheres = new CameraGizmos();
+  private readonly ring = new RollRing(HUD_CENTRE);
+  private readonly cameraHud = new CameraHud();
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
   /** Holds everything drawn of the molecule, positioned in the scene by its pose. Atoms are placed in this group's own frame. */
   private readonly content = new Group();
   /** Turns a guide to the frame it is drawn in: the scene's, the molecule's, or the camera's. */
   private readonly guideFrame = new Group();
-  private readonly gizmo: MoleculeGizmo;
-  private readonly bondGizmo: BondGizmo;
+  private readonly moleculeHandles: MoleculeHandles;
+  private readonly measurementHandles: MeasurementHandles;
 
   /** The handle on a bond that is being offered, or null for none. */
-  private bondHandle: BondHandle | null = null;
+  private measurement: MeasurementTarget | null = null;
   private readonly axes = makeAxes();
   private readonly listeners = new Set<StudioViewListener>();
 
@@ -257,7 +246,7 @@ export class StudioView {
   /** The atoms bonded to each atom, by position in the atom list, as the drawing code wants them. */
   private neighbourMap = new Map<number, number[]>();
   /** A fingerprint of everything about the structure except where its atoms are. */
-  private signature = "";
+  private structureKey = "";
   /** The session the camera was last framed on, so a new session is framed and an edit to the same one is not. */
   private framedSession: string | null = null;
   private down: { x: number; y: number } | null = null;
@@ -270,7 +259,7 @@ export class StudioView {
   /** The roll ring being turned, with the angle the pointer was last at round it, or null while it is not. */
   private rolling: { last: number } | null = null;
   /** The camera sphere being dragged, and where the pointer was at the last step. */
-  private sphereDrag: { handle: GizmoHandle; x: number; y: number } | null = null;
+  private hudDrag: { handle: HudHandle; x: number; y: number } | null = null;
 
   /** When the field-of-view slider was last pressed, from performance.now, or 0 if a press has just been used as a double press. */
   private lastFovPress = 0;
@@ -284,7 +273,7 @@ export class StudioView {
   /** Whether pressing on an atom picks it up. */
   private moving = false;
   private constraint: Constraint = "free";
-  /** Whether constraints, and the molecule's gizmo, follow the scene's axes or the molecule's. */
+  /** Whether constraints, and the molecule's handles, follow the scene's axes or the molecule's. */
   private space: Space = "world";
   private pivot: Pivot = "anchor";
   private pivotPoint = new Vector3();
@@ -294,8 +283,8 @@ export class StudioView {
    * The scene axes and the grid are centred here.
    */
   private anchor = new Vector3();
-  /** What the molecule's gizmo does, or null while it is not shown. */
-  private gizmoMode: GizmoMode | null = null;
+  /** What the molecule's handles do, or null while they are not shown. */
+  private handleMode: MoleculeHandleMode | null = null;
   /** The pose last drawn, so that an unchanged one is not drawn again. */
   private drawnPose: Pose | null = null;
   private grab: Grab | null = null;
@@ -306,14 +295,14 @@ export class StudioView {
   private lengthMarks: Group | null = null;
   private torsionShown: TorsionView | null = null;
   private angleShown: AngleView | null = null;
-  /** The atoms the gizmo is carrying, each with where it was picked up, or null while it is not carrying any. */
+  /** The atoms the handles are carrying, each with where it was picked up, or null while they are not carrying any. */
   private shifting: { node: AtomNode; original: Vector3 }[] | null = null;
   /** The last view a triad click snapped to, so that clicking the same letter again can flip to the far side. */
   private snapped: { axis: Vector3; sign: 1 | -1; orientation: Quaternion } | null = null;
   /** Whether to draw how a move would go. */
   private debug = false;
   private guide: Guide | null = null;
-  private emphasis: Emphasised = { selected: NO_EMPHASIS, active: NO_EMPHASIS, hover: NO_EMPHASIS };
+  private emphasis: Emphasis = { selected: NO_ITEMS, active: NO_ITEMS, hover: NO_ITEMS };
   /** How many times the view is placing the camera itself, which is not the user moving it. */
   private placing = 0;
   /** Whether to leave what is selected undrawn, with no lengths or names for it or for what is hovered. Hover is still tinted. */
@@ -340,11 +329,11 @@ export class StudioView {
     this.axes.visible = false;
     this.triad.visible = true;
     this.stage.scene.add(this.content, this.axes, this.guideFrame);
-    this.gizmo = new MoleculeGizmo(this.stage, this.content, {
+    this.moleculeHandles = new MoleculeHandles(this.stage, this.content, {
       grab: (axis) => {
         // the handles that translate hold a move to an axis or plane just as the keys do, so the keys and buttons follow
         const held = CONSTRAINT_OF_HANDLE[axis];
-        if (this.gizmoMode !== "rotate" && held) {
+        if (this.handleMode !== "rotate" && held) {
           this.listeners.forEach((listener) => listener.constraint?.(held));
         }
       },
@@ -362,10 +351,10 @@ export class StudioView {
       shift: (offset, done) => this.shiftAtoms(offset, done),
       shiftCancel: () => this.cancelShift(),
     });
-    this.bondGizmo = new BondGizmo(this.stage, {
+    this.measurementHandles = new MeasurementHandles(this.stage, {
       change: (value, done) => this.bondChanged(value, done),
       cancel: () => {
-        this.syncBondGizmo();
+        this.syncMeasurementHandles();
         this.listeners.forEach((listener) => listener.bondDragCancel?.());
       },
     });
@@ -377,7 +366,7 @@ export class StudioView {
       // the ring is for turning the view, and does not belong in a picture of the molecule
       if (!capturing) {
         this.ring.draw(renderer);
-        this.spheres.draw(renderer, camera);
+        this.cameraHud.draw(renderer, camera);
       }
     });
 
@@ -386,7 +375,7 @@ export class StudioView {
     // captured, so that this hears the press before the orbit controls do and can keep them from turning the camera
     canvas.addEventListener("pointerdown", this.onTriad, { capture: true });
     canvas.addEventListener("pointerdown", this.onRing, { capture: true });
-    canvas.addEventListener("pointerdown", this.onSpheres, { capture: true });
+    canvas.addEventListener("pointerdown", this.onHud, { capture: true });
     canvas.addEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
@@ -403,14 +392,14 @@ export class StudioView {
    * @param state the state to show; the camera is framed on it the first time a session is shown
    */
   setState(state: SessionState): void {
-    const signature = signatureOf(state);
+    const structureKey = structureKeyOf(state);
     this.locked = new Set(state.locked);
 
     // a molecule in the user's hand is where the pointer has put it, and the session is only catching up
-    if (!this.gizmo.dragging) {
+    if (!this.moleculeHandles.dragging) {
       this.applyPose(state.transform);
     }
-    if (signature === this.signature) {
+    if (structureKey === this.structureKey) {
       // the atom in the user's hand is where the pointer has put it, and the session is only catching up
       const held = new Set([
         ...(this.grab?.dragging ? this.grab.members.map((member) => member.node.atom.id) : []),
@@ -418,14 +407,14 @@ export class StudioView {
       ]);
       this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
       this.refreshLocks();
-      this.syncGizmo();
-      this.syncBondGizmo();
+      this.syncMoleculeHandles();
+      this.syncMeasurementHandles();
       return;
     }
 
     this.grab = null;
     this.stage.controls.enabled = true;
-    this.signature = signature;
+    this.structureKey = structureKey;
     this.build(state);
     this.refreshLocks();
     if (this.framedSession !== state.session_id) {
@@ -441,8 +430,8 @@ export class StudioView {
         this.placing--;
       }
     }
-    this.syncGizmo();
-    this.syncBondGizmo();
+    this.syncMoleculeHandles();
+    this.syncMeasurementHandles();
   }
 
   /**
@@ -475,30 +464,30 @@ export class StudioView {
   }
 
   /**
-   * Shows what the molecule's gizmo does, or hides it.
+   * Shows what the molecule's handles do, or hides them.
    *
    * @param mode translate to carry the molecule along an axis or plane, rotate to turn it about the pivot, atoms to carry
    *     the selected atoms within it, or null for none of them
    */
-  setGizmo(mode: GizmoMode | null): void {
-    this.gizmoMode = mode;
-    this.syncGizmo();
+  setHandleMode(mode: MoleculeHandleMode | null): void {
+    this.handleMode = mode;
+    this.syncMoleculeHandles();
   }
 
   /**
-   * Chooses whether constraints, and the molecule's gizmo, follow the scene's axes or the molecule's own.
+   * Chooses whether constraints, and the molecule's handles, follow the scene's axes or the molecule's own.
    *
    * @param space which to follow
    */
   setSpace(space: Space): void {
     this.space = space;
     this.placeGrid();
-    this.syncGizmo();
+    this.syncMoleculeHandles();
     this.refreshGuide();
   }
 
   /**
-   * Chooses the point the molecule's gizmo sits on and the molecule turns about.
+   * Chooses the point the molecule's handles sit on and the molecule turns about.
    *
    * @param pivot the point the view orbits, the middle of its atoms, its own origin, or a point
    * @param point where the point is, in the scene, when the pivot is a point
@@ -506,7 +495,7 @@ export class StudioView {
   setPivot(pivot: Pivot, point: Vec3): void {
     this.pivot = pivot;
     this.pivotPoint.set(point.x, point.y, point.z);
-    this.syncGizmo();
+    this.syncMoleculeHandles();
   }
 
   /**
@@ -516,16 +505,16 @@ export class StudioView {
    *
    * @param handle what the handle does and to which bond, or null for none
    */
-  setBondHandle(handle: BondHandle | null): void {
-    this.bondHandle = handle;
-    this.syncBondGizmo();
+  setMeasurement(handle: MeasurementTarget | null): void {
+    this.measurement = handle;
+    this.syncMeasurementHandles();
   }
 
   /** Brings the handle to where what it changes is now, or takes it away. A handle being dragged is left alone. */
-  private syncBondGizmo(): void {
-    const handle = this.bondHandle;
+  private syncMeasurementHandles(): void {
+    const handle = this.measurement;
     if (!handle) {
-      this.bondGizmo.hide();
+      this.measurementHandles.hide();
       return;
     }
 
@@ -534,14 +523,14 @@ export class StudioView {
       const from = this.atomById.get(handle.from);
       const to = this.atomById.get(handle.to);
       if (!centre || !from || !to) {
-        this.bondGizmo.hide();
+        this.measurementHandles.hide();
         return;
       }
 
       // the ring is at the atom, and turns about the line at right angles to the plane of the two bonds
       const normal = planeNormal(minus(from.at, centre.at), minus(to.at, centre.at));
       const axis = new Vector3(normal.x, normal.y, normal.z).applyQuaternion(this.content.quaternion);
-      this.bondGizmo.show("angle", this.worldOf(centre), axis, angleAt(from.at, centre.at, to.at), 1);
+      this.measurementHandles.show("angle", this.worldOf(centre), axis, angleAt(from.at, centre.at, to.at), 1);
       return;
     }
 
@@ -549,7 +538,7 @@ export class StudioView {
     const first = link && this.atomById.get(link.bond.first);
     const second = link && this.atomById.get(link.bond.second);
     if (!link || !first || !second) {
-      this.bondGizmo.hide();
+      this.measurementHandles.hide();
       return;
     }
 
@@ -558,17 +547,17 @@ export class StudioView {
     if (handle.mode === "length") {
       // the arrow sits on the atom that moves, which for neither held is the second
       const onFirst = handle.hold === "second";
-      this.bondGizmo.show("length", onFirst ? a : b, b.clone().sub(a), a.distanceTo(b), onFirst ? -1 : 1);
+      this.measurementHandles.show("length", onFirst ? a : b, b.clone().sub(a), a.distanceTo(b), onFirst ? -1 : 1);
       return;
     }
 
     const from = this.atomById.get(handle.from);
     const to = this.atomById.get(handle.to);
     if (!from || !to) {
-      this.bondGizmo.hide();
+      this.measurementHandles.hide();
       return;
     }
-    this.bondGizmo.show("turn", a.clone().add(b).multiplyScalar(0.5), b.clone().sub(a), torsion(from.at, first.at, second.at, to.at), 1);
+    this.measurementHandles.show("turn", a.clone().add(b).multiplyScalar(0.5), b.clone().sub(a), torsion(from.at, first.at, second.at, to.at), 1);
   }
 
   /**
@@ -578,7 +567,7 @@ export class StudioView {
    * @param done whether the handle has just been let go
    */
   private bondChanged(value: number, done: boolean): void {
-    const handle = this.bondHandle;
+    const handle = this.measurement;
     if (!handle) {
       return;
     }
@@ -600,37 +589,37 @@ export class StudioView {
     }
     this.listeners.forEach((listener) => listener.bondDrag?.(edit, done));
     if (done) {
-      this.syncBondGizmo();
+      this.syncMeasurementHandles();
     }
   }
 
   /** Whether the pointer is over a handle of the molecule's or of a bond, so that pressing would take hold of it. */
   private get handleHovered(): boolean {
-    return this.gizmo.hovered || this.bondGizmo.hovered;
+    return this.moleculeHandles.hovered || this.measurementHandles.hovered;
   }
 
-  /** Brings the gizmo into line with its mode, space, pivot and the molecule's pose. A gizmo being dragged is left alone. */
-  private syncGizmo(): void {
-    if (this.gizmoMode === null || this.atoms.length === 0) {
-      this.gizmo.hide();
+  /** Brings the handles into line with their mode, space, pivot and the molecule's pose. Handles being dragged are left alone. */
+  private syncMoleculeHandles(): void {
+    if (this.handleMode === null || this.atoms.length === 0) {
+      this.moleculeHandles.hide();
       return;
     }
 
-    if (this.gizmoMode === "atoms") {
+    if (this.handleMode === "atoms") {
       // a selection with a locked atom in it cannot be moved, so there is nothing to put handles on
       const nodes = this.selectedNodes();
       if (nodes.length === 0 || this.selectionLocked()) {
-        this.gizmo.hide();
+        this.moleculeHandles.hide();
         return;
       }
 
       const box = new Box3();
       nodes.forEach((node) => box.expandByPoint(this.worldOf(node)));
-      this.gizmo.show("atoms", this.space, box.getCenter(new Vector3()));
+      this.moleculeHandles.show("atoms", this.space, box.getCenter(new Vector3()));
       return;
     }
 
-    this.gizmo.show(this.gizmoMode, this.space, this.pivotWorld());
+    this.moleculeHandles.show(this.handleMode, this.space, this.pivotWorld());
   }
 
   /** The drawn atoms that are selected. */
@@ -655,7 +644,7 @@ export class StudioView {
     });
   }
 
-  /** A handle of the gizmo has been taken hold of in the atoms mode: the selected atoms are picked up. */
+  /** A handle of the molecule's handles has been taken hold of in the atoms mode: the selected atoms are picked up. */
   private startShift(): void {
     const nodes = this.withCarried(this.emphasis.selected.atoms).flatMap((id) => this.atomById.get(id) ?? []);
     if (nodes.length === 0) {
@@ -815,11 +804,11 @@ export class StudioView {
     affected.forEach((bond) => this.redraw(bond));
     this.refreshEmphasis();
     this.drawLengths();
-    this.syncBondGizmo();
+    this.syncMeasurementHandles();
     this.placeGuide();
     // the handles sit on the selected atoms, so they follow when something else moves them
-    if (this.gizmoMode === "atoms") {
-      this.syncGizmo();
+    if (this.handleMode === "atoms") {
+      this.syncMoleculeHandles();
     }
   }
 
@@ -828,12 +817,12 @@ export class StudioView {
    *
    * @param emphasis what to tint; the tints are kept across redraws as atoms move
    */
-  setEmphasis(emphasis: Emphasised): void {
+  setEmphasis(emphasis: Emphasis): void {
     this.emphasis = emphasis;
     this.refreshEmphasis();
     this.drawLengths();
     this.refreshGuide();
-    this.syncGizmo();
+    this.syncMoleculeHandles();
   }
 
   /**
@@ -893,7 +882,7 @@ export class StudioView {
       this.lengthMarks = null;
     }
 
-    const { selected, hover } = this.plain ? { selected: NO_EMPHASIS, hover: NO_EMPHASIS } : this.emphasis;
+    const { selected, hover } = this.plain ? { selected: NO_ITEMS, hover: NO_ITEMS } : this.emphasis;
     const few = selected.atoms.size <= LENGTH_LABEL_ATOMS;
     const measured = this.bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || (few && (selected.atoms.has(link.bond.first) || selected.atoms.has(link.bond.second))));
     const named = this.bonds.filter(({ link }) => selected.bonds.has(link.bond.id) || hover.bonds.has(link.bond.id));
@@ -1219,7 +1208,7 @@ export class StudioView {
   }
 
   /**
-   * Anchors the view on an atom, as a right-click on it does, which is where the molecule's gizmo sits when its pivot
+   * Anchors the view on an atom, as a right-click on it does,    which is where the molecule's handles sit when its pivot
    * is the anchor.
    *
    * @param id the atom's identifier; one that is not drawn is ignored
@@ -1234,14 +1223,14 @@ export class StudioView {
   }
 
   /**
-   * Records where the view has been anchored, which is where the molecule's gizmo sits when its pivot is the anchor.
+   * Records where the view has been anchored, which is where the molecule's handles sit when its pivot is the anchor.
    *
    * @param world the point the view now orbits, in the scene
    */
   private anchorOn(world: Vector3): void {
     this.anchor = this.content.worldToLocal(world.clone());
     this.placeReferences();
-    this.syncGizmo();
+    this.syncMoleculeHandles();
   }
 
   /** Puts the axes and the grid where they belong, which is where the anchor and the molecule now are. */
@@ -1337,7 +1326,7 @@ export class StudioView {
   setCarryHydrogens(enabled: boolean): void {
     this.carryHydrogens = enabled;
     this.refreshGuide();
-    this.syncGizmo();
+    this.syncMoleculeHandles();
   }
 
   /**
@@ -1354,9 +1343,9 @@ export class StudioView {
     controls.touches.ONE = enabled ? TOUCH.PAN : TOUCH.ROTATE;
     this.stage.canvas.style.cursor = enabled ? "grab" : "";
     // the spheres are the camera's controls, so they are there while the view is what is being worked on
-    this.spheres.visible = enabled;
+    this.cameraHud.visible = enabled;
     if (!enabled) {
-      this.spheres.hovered = null;
+      this.cameraHud.hovered = null;
     }
     this.stage.requestRender();
   }
@@ -1421,7 +1410,7 @@ export class StudioView {
     canvas.removeEventListener("pointerleave", this.onLeave);
     canvas.removeEventListener("pointerdown", this.onTriad, { capture: true });
     canvas.removeEventListener("pointerdown", this.onRing, { capture: true });
-    canvas.removeEventListener("pointerdown", this.onSpheres, { capture: true });
+    canvas.removeEventListener("pointerdown", this.onHud, { capture: true });
     canvas.removeEventListener("pointerdown", this.onGrab, { capture: true });
     canvas.removeEventListener("pointerdown", this.onDown);
     canvas.removeEventListener("pointerup", this.onUp);
@@ -1429,12 +1418,12 @@ export class StudioView {
     canvas.removeEventListener("pointercancel", this.onCancel);
     window.removeEventListener("keydown", this.onKey, { capture: true });
     this.clear();
-    this.gizmo.dispose();
-    this.bondGizmo.dispose();
+    this.moleculeHandles.dispose();
+    this.measurementHandles.dispose();
     this.guide?.dispose();
     this.triad.dispose();
     this.ring.dispose();
-    this.spheres.dispose();
+    this.cameraHud.dispose();
     disposeMaterials(this.axes);
     this.setGrid(null, "xz");
     this.kit.dispose();
@@ -1603,11 +1592,11 @@ export class StudioView {
     const { selected, active, hover } = this.emphasis;
     const tints = new Map<Object3D, Color>();
     for (const part of this.registry.parts) {
-      const id = part.pick.id;
+      const id = part.ref.id;
       if (id === undefined) {
         continue;
       }
-      const among = (set: Emphasis) => (part.pick.kind === "atom" ? set.atoms : set.bonds).has(id);
+      const among = (set: ItemSet) => (part.ref.kind === "atom" ? set.atoms : set.bonds).has(id);
       const tint = among(hover) ? HOVER_TINT : this.plain ? null : among(active) ? ACTIVE_TINT : among(selected) ? SELECTED_TINT : null;
       if (tint) {
         tints.set(part.object, tint);
@@ -1617,10 +1606,10 @@ export class StudioView {
     this.stage.requestRender();
   }
 
-  private pickAt(event: PointerEvent): StudioPick | null {
+  private pickAt(event: PointerEvent): PartItem | null {
     const hit = this.registry.cast(this.raycaster, this.stage.camera, this.stage.pointer(event));
-    const id = hit?.part.pick.id;
-    return hit && id !== undefined ? { kind: hit.part.pick.kind, id } : null;
+    const id =     hit?.part.ref.id;
+        return hit && id !== undefined ? { kind: hit.part.ref.kind, id } : null;
   }
 
   /** The pointer's ray into the scene. */
@@ -1725,8 +1714,8 @@ export class StudioView {
    * A press on one of the camera spheres takes hold of it, and dragging orbits or pans the view by as far as the pointer
    * goes, along the way the handle holds it to.
    */
-  private readonly onSpheres = (event: PointerEvent): void => {
-    const handle = event.button === 0 ? this.spheres.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) : null;
+  private readonly onHud = (event: PointerEvent): void => {
+    const handle = event.button === 0 ? this.cameraHud.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) : null;
     if (!handle) {
       return;
     }
@@ -1737,8 +1726,8 @@ export class StudioView {
 
     this.stage.controls.enabled = false;
     this.stage.canvas.setPointerCapture(event.pointerId);
-    this.sphereDrag = { handle, x: event.clientX, y: event.clientY };
-    this.spheres.active = handle;
+    this.hudDrag = { handle, x: event.clientX, y: event.clientY };
+    this.cameraHud.active = handle;
     this.stage.canvas.style.cursor = "grabbing";
 
     if (handle === "fov" || handle === "cone") {
@@ -1752,13 +1741,13 @@ export class StudioView {
   };
 
   /** The field of view a pointer asks for on the slider, or by where it is about the cone. */
-  private fovFromPointer(handle: GizmoHandle, event: PointerEvent): number {
+  private fovFromPointer(handle: HudHandle, event: PointerEvent): number {
     const canvas = this.stage.canvas.getBoundingClientRect();
-    return handle === "cone" ? this.spheres.fovOfCone(canvas, event.clientX, event.clientY) : this.spheres.fovAt(canvas, event.clientX);
+    return handle === "cone" ? this.cameraHud.fovOfCone(canvas, event.clientX, event.clientY) : this.cameraHud.fovAt(canvas, event.clientX);
   }
 
   /** Moves the view by a step of a drag on a camera sphere. */
-  private dragSpheres(event: PointerEvent, drag: { handle: GizmoHandle; x: number; y: number }): void {
+  private dragHud(event: PointerEvent, drag: { handle: HudHandle; x: number; y: number }): void {
     if (drag.handle === "fov" || drag.handle === "cone") {
       this.setCamera({ fov: this.fovFromPointer(drag.handle, event) });
       this.stage.requestRender();
@@ -1777,18 +1766,18 @@ export class StudioView {
 
     this.panBy(across, down);
     // the ball is pulled out the way the view goes, as far as its track lets it
-    const pulled = { x: this.spheres.ball.x + across, y: this.spheres.ball.y - down };
+    const pulled = { x: this.cameraHud.ball.x + across, y: this.cameraHud.ball.y - down };
     const length = Math.hypot(pulled.x, pulled.y);
     const scale = length > BALL_TRAVEL ? BALL_TRAVEL / length : 1;
-    this.spheres.ball = { x: pulled.x * scale, y: pulled.y * scale };
+    this.cameraHud.ball = { x: pulled.x * scale, y: pulled.y * scale };
     this.stage.requestRender();
   }
 
   /** Lets go of a camera sphere, giving the camera its controls back and the pan ball back its place. */
-  private endSphereDrag(): void {
-    this.sphereDrag = null;
-    this.spheres.active = null;
-    this.spheres.ball = { x: 0, y: 0 };
+  private endHudDrag(): void {
+    this.hudDrag = null;
+    this.cameraHud.active = null;
+    this.cameraHud.ball = { x: 0, y: 0 };
     this.stage.controls.enabled = true;
     this.stage.canvas.style.cursor = this.panning ? "grab" : "";
     this.stage.requestRender();
@@ -1841,12 +1830,12 @@ export class StudioView {
   };
 
   private readonly onKey = (event: KeyboardEvent): void => {
-    if (event.key === "Escape" && this.gizmo.dragging) {
+    if (event.key === "Escape" && this.moleculeHandles.dragging) {
       event.stopPropagation();
-      this.gizmo.cancel();
-    } else if (event.key === "Escape" && this.bondGizmo.dragging) {
+      this.moleculeHandles.cancel();
+    } else if (event.key === "Escape" && this.measurementHandles.dragging) {
       event.stopPropagation();
-      this.bondGizmo.cancel();
+      this.measurementHandles.cancel();
     } else if (event.key === "Escape" && this.grab?.dragging) {
       // the key abandons the drag and goes no further, so it does not also clear the selection
       event.stopPropagation();
@@ -1855,9 +1844,9 @@ export class StudioView {
   };
 
   private readonly onMove = (event: PointerEvent): void => {
-    const sphereDrag = this.sphereDrag;
+    const sphereDrag = this.hudDrag;
     if (sphereDrag && event.buttons !== 0) {
-      this.dragSpheres(event, sphereDrag);
+      this.dragHud(event, sphereDrag);
       return;
     }
 
@@ -1894,9 +1883,9 @@ export class StudioView {
       return;
     }
     const overTriad = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) !== null;
-    const overSphere = this.spheres.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
-    if (overSphere !== this.spheres.hovered) {
-      this.spheres.hovered = overSphere;
+    const overSphere = this.cameraHud.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+    if (overSphere !== this.cameraHud.hovered) {
+      this.cameraHud.hovered = overSphere;
       this.stage.requestRender();
     }
     const overRing = !overTriad && !overSphere && this.ring.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
@@ -1908,13 +1897,13 @@ export class StudioView {
 
     // an atom the move tool would refuse to pick up, because it or one moving with it is locked, says so
     const refused = this.moving && pick?.kind === "atom" && this.groupOf(pick.id).some((id) => this.locked.has(id));
-    this.stage.canvas.style.cursor = overSphere ? SPHERE_CURSOR[overSphere] : overTriad ? "pointer" : overRing ? "grab" : refused ? "not-allowed" : this.panning ? "grab" : "";
+    this.stage.canvas.style.cursor = overSphere ? HUD_CURSOR[overSphere] : overTriad ? "pointer" : overRing ? "grab" : refused ? "not-allowed" : this.panning ? "grab" : "";
     this.listeners.forEach((listener) => listener.hover?.(pick, { x: event.clientX, y: event.clientY }));
   };
 
   private readonly onLeave = (): void => {
-    if (this.spheres.hovered) {
-      this.spheres.hovered = null;
+    if (this.cameraHud.hovered) {
+      this.cameraHud.hovered = null;
       this.stage.requestRender();
     }
     if (this.ring.hovered) {
@@ -1975,8 +1964,8 @@ export class StudioView {
   }
 
   private readonly onUp = (event: PointerEvent): void => {
-    if (this.sphereDrag) {
-      this.endSphereDrag();
+    if (this.hudDrag) {
+      this.endHudDrag();
       return;
     }
 
@@ -2027,8 +2016,8 @@ export class StudioView {
   };
 
   private readonly onCancel = (): void => {
-    if (this.sphereDrag) {
-      this.endSphereDrag();
+    if (this.hudDrag) {
+      this.endHudDrag();
     }
     if (this.rolling) {
       this.endRoll();
@@ -2039,7 +2028,7 @@ export class StudioView {
 }
 
 /** The cursor over each camera sphere handle: across or up and down for one that holds a drag to that way. */
-const SPHERE_CURSOR: Record<GizmoHandle, string> = {
+const HUD_CURSOR: Record<HudHandle, string> = {
   orbit: "grab",
   yaw: "ew-resize",
   pitch: "ns-resize",
@@ -2066,7 +2055,7 @@ function toVec3(point: Vector3): Vec3 {
 }
 
 /** Everything about a state that decides how it is drawn, other than the atoms' positions. */
-function signatureOf(state: SessionState): string {
+function structureKeyOf(state: SessionState): string {
   const atoms = state.atoms.map((atom) => `${atom.id}:${atom.element}:${atom.charge}:${atom.colour}:${atom.radius}`);
   const bonds = state.bonds.map((bond) => `${bond.id}:${bond.first}:${bond.second}:${bond.order}`);
   return `${atoms.join(",")}|${bonds.join(",")}`;

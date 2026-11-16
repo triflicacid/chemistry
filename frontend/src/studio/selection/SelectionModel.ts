@@ -5,7 +5,7 @@ import {Observable} from "./observable";
 export interface Selection {
   /** In the order they were selected. */
   readonly items: readonly Item[];
-  /** The item the Inspector shows and a gizmo will sit on: the one last selected, or null if none is. */
+  /** The item the Inspector shows and the molecule's handles will sit on: the one last selected, or null if none is. */
   readonly active: Item | null;
 }
 

@@ -1,16 +1,16 @@
 import {type Group, Object3D, Quaternion, Vector3} from "three";
 import {TransformControls} from "three/examples/jsm/controls/TransformControls.js";
-import type {Pose} from "../session/messages";
-import type {Stage} from "../../render/stage";
-import type {Space} from "../selection/ToolModel";
+import type {Pose} from "../../session/messages";
+import type {Stage} from "../../../render/stage";
+import type {Space} from "../../selection/ToolModel";
 
 /**
- * What the gizmo does: carry the whole molecule, turn it, or carry the selected atoms within it, which changes
+ * What the handles do: carry the whole molecule, turn it, or carry the selected atoms within it, which changes
  * their coordinates and not the molecule's pose.
  */
-export type GizmoMode = "translate" | "rotate" | "atoms";
+export type MoleculeHandleMode = "translate" | "rotate" | "atoms";
 
-export interface GizmoHooks {
+export interface MoleculeHandleHooks {
   /** A handle has been taken hold of: `axis` is its name, such as `X`, `YZ` or `XYZ` for the middle of the translate handles. */
   grab(axis: string): void;
   /** A handle has been taken hold of, with the molecule at `from`. */
@@ -31,11 +31,11 @@ export interface GizmoHooks {
 }
 
 /** The handles for moving or turning a whole molecule. */
-export class MoleculeGizmo {
+export class MoleculeHandles {
   private readonly controls: TransformControls;
   /** Stands where the pivot is, which the controls move and this reads. */
   private readonly proxy = new Object3D();
-  private mode: GizmoMode | null = null;
+  private mode: MoleculeHandleMode | null = null;
 
   /** Where the molecule was, and where the pivot was, when the handle was taken hold of. */
   private start: { position: Vector3; rotation: Quaternion; pivot: Vector3 } | null = null;
@@ -48,7 +48,7 @@ export class MoleculeGizmo {
   constructor(
     private readonly stage: Stage,
     private readonly molecule: Group,
-    private readonly hooks: GizmoHooks,
+    private readonly hooks: MoleculeHandleHooks,
   ) {
     this.controls = new TransformControls(stage.camera, stage.canvas);
     this.controls.size = 0.9;
@@ -104,7 +104,7 @@ export class MoleculeGizmo {
    * @param space whether the handles follow the scene's axes or the molecule's
    * @param pivot where in the scene the handles sit and the molecule turns about
    */
-  show(mode: GizmoMode, space: Space, pivot: Vector3): void {
+  show(mode: MoleculeHandleMode, space: Space, pivot: Vector3): void {
     if (this.start) {
       return;
     }

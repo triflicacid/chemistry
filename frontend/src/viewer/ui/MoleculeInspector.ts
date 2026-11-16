@@ -4,7 +4,7 @@ import { FormulaView } from "./FormulaView";
 import { SmilesText } from "./SmilesText";
 import type { Highlight } from "./SmilesText";
 import type { Selection } from "../store";
-import type { MoleculeView, Pick as Target, Point } from "../view/MoleculeView";
+import type { MoleculeView, PartRef as Target, Point } from "../view/MoleculeView";
 
 /** Offset of the plaques from the pointer in pixels. */
 const OFFSET = 14;

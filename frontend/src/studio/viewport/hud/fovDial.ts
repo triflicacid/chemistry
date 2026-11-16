@@ -1,10 +1,10 @@
 import {CircleGeometry, Mesh, MeshBasicMaterial, type PerspectiveCamera, PlaneGeometry, RingGeometry} from "three";
 
 import {MAX_FOV, MIN_FOV} from "../../selection/CameraModel";
-import {CameraWidget, type GizmoHandle, type GizmoPoint, type Look, RESTING} from "./widget";
+import {HudDial, type HudHandle, type HudPoint, type Look, RESTING} from "./dial";
 
 /** Where the camera dot is, from the centre, with the cone opening upwards from it. */
-const APEX: GizmoPoint = { x: 0, y: -18 };
+const APEX: HudPoint = { x: 0, y: -18 };
 
 /** How far the cone reaches from the camera dot, in CSS pixels. */
 const CONE_REACH = 58;
@@ -46,7 +46,7 @@ export function fovOfSliderOffset(dx: number): number {
  * A camera dot, a cone opening upwards from it as wide as the field of view, and a slider below that sets the width. Either
  * the cone or the slider can be dragged.
  */
-export class FovGizmo extends CameraWidget {
+export class FovDial extends HudDial {
   private readonly coneFill = this.material();
   private readonly coneEdges = this.material();
   private readonly coneDot = this.material();
@@ -83,13 +83,13 @@ export class FovGizmo extends CameraWidget {
   }
 
   /**
-   * What a press is on, if it is on the gizmo.
+   * What a press is on, if it is on the dial.
    *
-   * @param dx how far the press is right of the gizmo's centre, in pixels
-   * @param dy how far it is above the gizmo's centre, in pixels
+   * @param dx how far the press is right of the dial's centre, in pixels
+   * @param dy how far it is above the dial's centre, in pixels
    * @returns {@code "fov"} on the slider's track or handle, {@code "cone"} on the cone, otherwise null
    */
-  hit(dx: number, dy: number): GizmoHandle | null {
+  hit(dx: number, dy: number): HudHandle | null {
     if (Math.abs(dy - SLIDER_Y) <= SLIDER_HANDLE + 3 && Math.abs(dx) <= SLIDER_HALF + SLIDER_HANDLE + 2) {
       return "fov";
     }
@@ -113,10 +113,10 @@ export class FovGizmo extends CameraWidget {
    * The field of view that makes the cone's edge pass through a point: the farther the point is from the cone's middle
    * line, the wider the cone.
    *
-   * @param point where the pointer is, from the gizmo's centre
+   * @param point where the pointer is, from the dial's centre
    * @returns the field of view in degrees, kept between the least and greatest the camera allows
    */
-  fovOfCone(point: GizmoPoint): number {
+  fovOfCone(point: HudPoint): number {
     const angle = Math.atan2(Math.abs(point.x - APEX.x), point.y - APEX.y);
     return Math.max(MIN_FOV, Math.min(MAX_FOV, (angle * 360) / Math.PI));
   }
@@ -148,8 +148,8 @@ export class FovGizmo extends CameraWidget {
     });
   }
 
-  paint(look: (handle: GizmoHandle) => Look): void {
-    const set = (material: MeshBasicMaterial, handle: GizmoHandle) => {
+  paint(look: (handle: HudHandle) => Look): void {
+    const set = (material: MeshBasicMaterial, handle: HudHandle) => {
       const { colour, opacity } = look(handle);
       material.color.setHex(colour);
       material.opacity = opacity;

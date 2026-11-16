@@ -1,7 +1,7 @@
 import {CylinderGeometry, Group, Mesh, MeshBasicMaterial, type PerspectiveCamera, SphereGeometry, TorusGeometry} from "three";
 
 import {ARROW_AT, ARROW_REACH, SPHERE_RADIUS} from "./constants";
-import {CameraWidget, type GizmoHandle, type Look, RESTING} from "./widget";
+import {HudDial, type HudHandle, type Look, RESTING} from "./dial";
 
 /** The axes' colours, as the triad and the scene's own axes draw them. */
 const AXIS_COLOURS = [0xe41a1c, 0x2ca02c, 0x1f4fd8];
@@ -10,7 +10,7 @@ const AXIS_COLOURS = [0xe41a1c, 0x2ca02c, 0x1f4fd8];
  * The scene's axes as a ball: it has a ring about each axis, and it turns as the camera does, so it shows how the view is
  * turned and follows it as it is turned. Its arrowheads hold a turn to yaw or to pitch.
  */
-export class OrbitGizmo extends CameraWidget {
+export class OrbitDial extends HudDial {
   /** What turns as the camera does. */
   private readonly globe = new Group();
   private readonly fill = this.material();
@@ -69,7 +69,7 @@ export class OrbitGizmo extends CameraWidget {
    * @param dy how far it is above the sphere's centre, in pixels
    * @returns the handle, or null if the press is not on the sphere or its arrowheads
    */
-  hit(dx: number, dy: number): GizmoHandle | null {
+  hit(dx: number, dy: number): HudHandle | null {
     if (Math.hypot(Math.abs(dx) - ARROW_AT, dy) <= ARROW_REACH) {
       return "yaw";
     }
@@ -83,8 +83,8 @@ export class OrbitGizmo extends CameraWidget {
     this.globe.quaternion.copy(camera.quaternion).invert();
   }
 
-  paint(look: (handle: GizmoHandle) => Look): void {
-    const set = (material: MeshBasicMaterial, handle: GizmoHandle) => {
+  paint(look: (handle: HudHandle) => Look): void {
+    const set = (material: MeshBasicMaterial, handle: HudHandle) => {
       const { colour, opacity } = look(handle);
       material.color.setHex(colour);
       material.opacity = opacity;

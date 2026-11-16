@@ -1,6 +1,6 @@
 import type {Vec3} from "../../api/types/structure";
 import type {Hold} from "./bondLength";
-import type {Constraint} from "../viewport/dragPlane";
+import type {Constraint} from "../viewport/handles/dragPlane";
 import {Observable} from "./observable";
 
 /**
@@ -13,13 +13,13 @@ export type Tool = "select" | "move" | "rotate" | "pan";
  * What the rotate tool turns: the whole molecule, about a pivot, or something inside it, which is a bond that is clicked,
  * turned about to change its torsion, or an atom that is clicked, whose angle between two of its bonds is changed.
  */
-export type RotateMode = "molecule" | "parts";
+export type RotateTarget = "molecule" | "internal";
 
-/** Which axes a constraint, and the molecule's gizmo, is measured along: the scene's or the molecule's own. */
+/** Which axes a constraint, and the molecule's handles, are measured along: the scene's or the molecule's own. */
 export type Space = "world" | "local";
 
 /**
- * The point a molecule turns about, and where its gizmo sits: the point the view orbits (which a right-click on an atom
+ * The point a molecule turns about, and where its handles sit: the point the view orbits (which a right-click on an atom
  * moves onto that atom), the middle of its atoms, its own origin, or a point given.
  */
 export type Pivot = "anchor" | "centre" | "origin" | "point";
@@ -45,7 +45,7 @@ export interface ToolState {
   space: Space;
   pivot: Pivot;
   /** What the rotate tool turns. */
-  rotate: RotateMode;
+  rotateTarget: RotateTarget;
   /** Where the pivot is when it is `point`, in the scene, in angstroms. */
   point: Vec3;
   /** Whether strain is shown: marked in the viewport, and detailed for what is selected. */
@@ -63,7 +63,7 @@ export interface ToolState {
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotate: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, hold: "first" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, hold: "first" });
   }
 
   /**
@@ -89,7 +89,7 @@ export class ToolModel extends Observable<ToolState> {
   }
 
   /**
-   * Measures constraints and the molecule's gizmo along the scene's axes or the molecule's own.
+   * Measures constraints and the molecule's handles along the scene's axes or the molecule's own.
    *
    * @param space which to use
    */
@@ -113,11 +113,11 @@ export class ToolModel extends Observable<ToolState> {
   /**
    * Chooses what the rotate tool turns.
    *
-   * @param rotate the whole molecule, or something inside it
+   * @param target the whole molecule, or something inside it
    */
-  rotating(rotate: RotateMode): void {
-    if (this.get().rotate !== rotate) {
-      this.set({ ...this.get(), rotate });
+  rotateTarget(target: RotateTarget): void {
+    if (this.get().rotateTarget !== target) {
+      this.set({ ...this.get(), rotateTarget: target });
     }
   }
 

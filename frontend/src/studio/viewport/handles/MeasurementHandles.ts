@@ -1,18 +1,18 @@
 import {MathUtils, Object3D, Quaternion, Vector3} from "three";
 import {TransformControls} from "three/examples/jsm/controls/TransformControls.js";
-import type {Stage} from "../../render/stage";
+import type {Stage} from "../../../render/stage";
 
 /**
  * What the handle does: slide along a bond to change its length, turn about it to change its torsion, or turn about an
  * atom, at right angles to the plane of two of its bonds, to change the angle between them.
  */
-export type BondGizmoMode = "length" | "turn" | "angle";
+export type MeasurementMode = "length" | "turn" | "angle";
 
 /** The shortest and longest a drag will make a bond, in angstroms, whichever way round, which are the limits the session accepts. */
 export const MIN_DRAGGED_LENGTH = 0.1;
 export const MAX_DRAGGED_LENGTH = 10;
 
-export interface BondGizmoHooks {
+export interface MeasurementHooks {
   /** The handle has put the bond at `value`. */
   change(value: number, done: boolean): void;
   /** The drag was abandoned. */
@@ -68,11 +68,11 @@ export function draggedAngle(start: number, turn: Quaternion): number {
  * A handle on a bond or an atom: an arrow along a bond that slides to change its length, a ring about a bond that turns
  * to change its torsion, or a ring about an atom that turns to change the angle between two of its bonds.
  */
-export class BondGizmo {
+export class MeasurementHandles {
   private readonly controls: TransformControls;
   /** Stands where the handle is, with its x axis along the bond, which the controls move and this reads. */
   private readonly proxy = new Object3D();
-  private mode: BondGizmoMode | null = null;
+  private mode: MeasurementMode | null = null;
 
   /** The unit vector along the bond, in the scene, from its first atom towards its second. */
   private axis = new Vector3(1, 0, 0);
@@ -92,7 +92,7 @@ export class BondGizmo {
    */
   constructor(
     private readonly stage: Stage,
-    private readonly hooks: BondGizmoHooks,
+    private readonly hooks: MeasurementHooks,
   ) {
     this.controls = new TransformControls(stage.camera, stage.canvas);
     this.controls.size = 0.8;
@@ -138,7 +138,7 @@ export class BondGizmo {
    * @param value the bond's length in angstroms, or its torsion in degrees, which a drag is measured from
    * @param sign for a length handle, which way sliding it changes the length: 1 on the atom that moves with it, -1 on the other
    */
-  show(mode: BondGizmoMode, at: Vector3, axis: Vector3, value: number, sign: 1 | -1): void {
+  show(mode: MeasurementMode, at: Vector3, axis: Vector3, value: number, sign: 1 | -1): void {
     if (this.start) {
       return;
     }

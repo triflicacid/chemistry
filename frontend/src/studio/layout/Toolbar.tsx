@@ -1,6 +1,6 @@
 import {useObservable} from "../selection/observable";
 import type {Tool, ToolModel} from "../selection/ToolModel";
-import type {LayoutState, Panel} from "../store";
+import type {LayoutState, Panel} from "../layoutStore";
 import type {Optimising, SessionPhase} from "../session/useSession";
 import {type Segment, Segmented} from "./Segmented";
 import {HistoryMenu, type HistoryMenuProps} from "./HistoryMenu";

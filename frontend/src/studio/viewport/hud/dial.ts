@@ -3,14 +3,14 @@ import {Mesh, MeshBasicMaterial, type PerspectiveCamera, Scene, Shape, ShapeGeom
 import {ARROW_AT} from "./constants";
 
 /**
- * What a press on the camera gizmos takes hold of: the orbit sphere's body, which turns the view any way, or its
+ * What a press on the camera HUD takes hold of: the orbit sphere's body, which turns the view any way, or its
  * arrowheads, which turn it only across (yaw) or only up and down (pitch); the pan sphere's ball, which moves the view any
  * way, or its arms, which move it only across or only up and down; or the field-of-view cone, or slider's track and handle.
  */
-export type GizmoHandle = "orbit" | "yaw" | "pitch" | "pan" | "pan-x" | "pan-y" | "fov" | "cone";
+export type HudHandle = "orbit" | "yaw" | "pitch" | "pan" | "pan-x" | "pan-y" | "fov" | "cone";
 
-/** A point or offset in a gizmo's own pixels, from its centre, with x to the right and y up. */
-export interface GizmoPoint {
+/** A point or offset in a dial's own pixels, from its centre, with x to the right and y up. */
+export interface HudPoint {
   x: number;
   y: number;
 }
@@ -25,9 +25,9 @@ export const RESTING: Look = { colour: 0x808080, opacity: 0.35 };
 export const HOVERED: Look = { colour: 0x0969da, opacity: 0.8 };
 export const ACTIVE: Look = { colour: 0x0969da, opacity: 0.95 };
 
-/** One gizmo of the camera's controls, which is drawn in a square of its own. */
-export abstract class CameraWidget {
-  /** What the gizmo is drawn from. */
+/** One dial of the camera's controls, which is drawn in a square of its own. */
+export abstract class HudDial {
+  /** What the dial is drawn from. */
   readonly scene = new Scene();
 
   private readonly materials: MeshBasicMaterial[] = [];
@@ -41,7 +41,7 @@ export abstract class CameraWidget {
    *
    * @param look how a handle is drawn
    */
-  abstract paint(look: (handle: GizmoHandle) => Look): void;
+  abstract paint(look: (handle: HudHandle) => Look): void;
 
   /** Frees what it is drawn from. */
   dispose(): void {

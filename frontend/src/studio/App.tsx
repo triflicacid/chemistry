@@ -6,14 +6,14 @@ import {createModels} from "./selection/models";
 import {useObservable} from "./selection/observable";
 import {StateIndex} from "./selection/StateIndex";
 import {useSession} from "./session/useSession";
-import type {Panel} from "./store";
-import {StudioStore} from "./store";
+import type {Panel} from "./layoutStore";
+import {LayoutStore} from "./layoutStore";
 
 /** How long to let a drag settle before writing the layout down. */
 const SETTLE_MS = 200;
 
 export function App() {
-  const store = useMemo(() => new StudioStore(), []);
+  const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const {
     phase,

@@ -10,7 +10,7 @@ import type {
 } from "../session/useSession";
 import type {AtomMove, BondEdit, GeometryResult, Pose, SessionCamera, SessionState} from "../session/messages";
 import type {Models} from "../selection/models";
-import type {LayoutState, Panel} from "../store";
+import type {LayoutState, Panel} from "../layoutStore";
 import {AnalysisPanel} from "./AnalysisPanel";
 import {Inspector} from "./Inspector";
 import {OptimiseNotice} from "./OptimiseNotice";

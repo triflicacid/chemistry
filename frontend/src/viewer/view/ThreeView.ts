@@ -19,7 +19,7 @@ import { disposeMaterials } from "../../render/dispose";
 import { applyTints, HOVER_TINT, SELECTED_TINT } from "../../render/emphasis";
 import { BOND_HALO, fade, HALO_GROWTH, HALO_PADDING, haloMaterial } from "../../render/halo";
 import { angleArc, piCloud, piLabel, piOrbitals } from "../../render/overlays";
-import { type Part, PartRegistry, type Pick } from "../../render/parts";
+import { type Part, PartRegistry, type PartRef } from "../../render/parts";
 import { Primitives } from "../../render/primitives";
 import { FIELD_OF_VIEW, Stage } from "../../render/stage";
 import type { FaultSeverity, FaultState, Highlights, MoleculeView, SelectionState, ViewListener } from "./MoleculeView";
@@ -180,7 +180,7 @@ export class ThreeView implements MoleculeView {
   }
 
   /** What the geometry says about the atom or bond under the pointer */
-  describe(target: Pick): [string, string][] {
+  describe(target: PartRef): [string, string][] {
     const diagnostics = this.structure.conformers[this.conformer]?.diagnostics;
     if (!diagnostics) {
       return [];
@@ -189,7 +189,7 @@ export class ThreeView implements MoleculeView {
   }
 
   /** The strain, worst angle, worst clash, lone pairs and pi electrons of the atom under the pointer. */
-  private describeAtom(diagnostics: Diagnostics3D, target: Pick): [string, string][] {
+  private describeAtom(diagnostics: Diagnostics3D, target: PartRef): [string, string][] {
     const site = this.siteOf.get(target.handle);
     if (site === undefined) {
       return [];
@@ -240,7 +240,7 @@ export class ThreeView implements MoleculeView {
   }
 
   /** The length, worst torsion and pi system of the bond under the pointer. */
-  private describeBond(diagnostics: Diagnostics3D, target: Pick): [string, string][] {
+  private describeBond(diagnostics: Diagnostics3D, target: PartRef): [string, string][] {
     const link = this.linkOf.get(target.handle);
     if (!link) {
       return [];
@@ -428,7 +428,7 @@ export class ThreeView implements MoleculeView {
         ball.scale.setScalar(size);
         fade(ball, dimmed(owners));
         const part = this.registry.add("atom", site.implied ? null : site.atom, { element: site.element, ...this.matchNote(owners) }, ball);
-        this.siteOf.set(part.pick.handle, site.index);
+        this.siteOf.set(part.ref.handle, site.index);
         this.atomParts.set(site.index, part);
         this.content.add(ball);
       }
@@ -441,7 +441,7 @@ export class ThreeView implements MoleculeView {
         const group = buildBond(this.kit, link, sites, this.settings.style, point, neighbours, aromaticRings.get(link));
         if (group) {
           const part = this.registry.add("bond", link.bond >= 0 ? link.bond : null, { order: link.order.toLowerCase(), ...this.matchNote(owners) }, group);
-          this.linkOf.set(part.pick.handle, link);
+          this.linkOf.set(part.ref.handle, link);
           this.registry.claimChildren(part);
           this.content.add(group);
           fade(group, dimmed(owners));
@@ -644,14 +644,14 @@ export class ThreeView implements MoleculeView {
     if (this.faults) {
       const fault = FAULT_COLOURS[this.faults.severity];
       for (const part of this.registry.parts) {
-        const faulted = part.index >= 0 && (part.pick.kind === "atom" ? this.faults.atoms : this.faults.bonds).has(part.index);
+        const faulted = part.index >= 0 && (part.ref.kind === "atom" ? this.faults.atoms : this.faults.bonds).has(part.index);
         if (faulted) {
           tints.set(part.object, fault);
         }
       }
     }
     for (const part of this.registry.parts) {
-      const selected = part.index >= 0 && (part.pick.kind === "atom" ? this.selection.atoms : this.selection.bonds).has(part.index);
+      const selected = part.index >= 0 && (part.ref.kind === "atom" ? this.selection.atoms : this.selection.bonds).has(part.index);
       if (selected) {
         tints.set(part.object, SELECTED_TINT);
       }
@@ -682,7 +682,7 @@ export class ThreeView implements MoleculeView {
       return;
     }
     const part = this.castAt(event)?.part;
-    this.listeners.forEach((listener) => listener.hover?.(part?.pick ?? null, { x: event.clientX, y: event.clientY }));
+    this.listeners.forEach((listener) => listener.hover?.(part?.ref ?? null, { x: event.clientX, y: event.clientY }));
   };
 
   private readonly onLeave = (): void => {

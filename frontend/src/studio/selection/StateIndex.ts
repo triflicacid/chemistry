@@ -1,11 +1,5 @@
 import type { SessionAtom, SessionBond, SessionFragment, SessionState } from "../session/messages";
-import type { Item } from "./items";
-
-/** The atoms and bonds that some items stand for, by identifier. */
-export interface Members {
-  atoms: Set<string>;
-  bonds: Set<string>;
-}
+import type { Item, ItemSet } from "./items";
 
 /**
  * Looks things up in a session state: which molecule an atom is in, what an atom is bonded to,
@@ -133,8 +127,8 @@ export class StateIndex {
    * @param items the items, which may be of any kind
    * @returns every atom and bond they cover, without repeats
    */
-  members(items: Iterable<Item>): Members {
-    const covered: Members = { atoms: new Set(), bonds: new Set() };
+  members(items: Iterable<Item>): ItemSet {
+    const covered = { atoms: new Set<string>(), bonds: new Set<string>() };
     for (const item of items) {
       if (item.kind === "atom") {
         covered.atoms.add(item.id);

@@ -37,8 +37,8 @@ export function clamp(panel: Panel, size: number): number {
 }
 
 /** Remembers how the user arranged the workspace. */
-export class StudioStore {
-  private layoutState = StudioStore.readLayout();
+export class LayoutStore {
+  private layoutState = LayoutStore.readLayout();
 
   get layout(): LayoutState {
     return this.layoutState;

@@ -8,6 +8,20 @@ export interface Item {
   readonly id: string;
 }
 
+/** The kinds of thing that are drawn and can be picked directly in the viewport. */
+export type PartKind = "atom" | "bond";
+
+/** An atom or bond, named by the identifier the session gave it. */
+export interface PartItem extends Item {
+  readonly kind: PartKind;
+}
+
+/** A set of atoms and bonds, by identifier. */
+export interface ItemSet {
+  readonly atoms: ReadonlySet<string>;
+  readonly bonds: ReadonlySet<string>;
+}
+
 /**
  * Names an item as a single string, for use as a map key or a React key.
  *
