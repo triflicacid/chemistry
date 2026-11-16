@@ -23,9 +23,10 @@ export interface StructureActions {
  * @param models what is selected and which tool is in use
  * @returns the actions, and whether each can be done now
  */
-export function useStructureActions({ selection, tools, index }: Models): StructureActions {
+export function useStructureActions({ selection, hover, tools, index }: Models): StructureActions {
   const { addBond: bond, deleteAtoms, deleteBonds } = useSessionContext();
   const { items } = useObservable(selection);
+  const hovered = useObservable(hover);
   const { tool, bondOrder, carryHydrogens } = useObservable(tools);
 
   const pair = useMemo(() => {
@@ -55,6 +56,24 @@ export function useStructureActions({ selection, tools, index }: Models): Struct
     }
   }, [covered, deleteAtoms, deleteBonds, carryHydrogens]);
 
+  // the atom or bond under the pointer is what the key is for, unless it is part of the selection, in which case the key is for
+  // the selection as a whole, as it is in any editor
+  const deleteUnderPointer = useCallback((): boolean => {
+    if (!covered || (hovered?.kind !== "atom" && hovered?.kind !== "bond")) {
+      return false;
+    }
+    if (hovered.kind === "atom" ? covered.atoms.has(hovered.id) : covered.bonds.has(hovered.id)) {
+      return false;
+    }
+
+    if (hovered.kind === "atom") {
+      void deleteAtoms([hovered.id], carryHydrogens);
+    } else {
+      void deleteBonds([hovered.id]);
+    }
+    return true;
+  }, [covered, hovered, deleteAtoms, deleteBonds, carryHydrogens]);
+
   useHotkeys(
     tool === "edit"
       ? [
@@ -63,7 +82,9 @@ export function useStructureActions({ selection, tools, index }: Models): Struct
             ...KEYS.deleteSelection,
             run: (event) => {
               event.preventDefault();
-              deleteSelection();
+              if (!deleteUnderPointer()) {
+                deleteSelection();
+              }
             },
           },
         ]

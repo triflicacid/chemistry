@@ -134,7 +134,7 @@ export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked
             type="button"
             className="tool"
             disabled={!structure.canDelete}
-            title="Delete the selected atoms with their bonds, or the selected bonds (Delete). Nothing else is adjusted, and one undo takes it back"
+            title="Delete the selected atoms with their bonds, or the selected bonds. The Delete key deletes the atom or bond under the pointer instead, unless it is selected. Nothing else is adjusted, and one undo takes it back"
             onClick={structure.deleteSelection}
           >
             Delete
