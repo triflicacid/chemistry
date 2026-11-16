@@ -180,6 +180,7 @@ export interface Session {
    * @param position how many edits to have in effect
    * @param discard whether to forget the edits after it, rather than keep them to redo
    */
+  goTo: (position: number, discard: boolean) => Promise<EditResult>;
   /** Forgets every edit, leaving the structure as it is. */
   clearHistory: () => Promise<EditResult>;
 }

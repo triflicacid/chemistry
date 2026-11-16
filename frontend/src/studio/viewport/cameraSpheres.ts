@@ -17,12 +17,14 @@ import {
   type WebGLRenderer,
 } from "three";
 
+import {MAX_FOV, MIN_FOV} from "../selection/CameraModel";
+
 /**
  * What a press on the camera spheres takes hold of: the orbit sphere's body, which turns the view any way, or its
  * arrowheads, which turn it only across (yaw) or only up and down (pitch); the pan sphere's ball, which moves the view any
- * way, or its arms, which move it only across or only up and down.
+ * way, or its arms, which move it only across or only up and down; or the field-of-view slider's track and handle.
  */
-export type SphereHandle = "orbit" | "yaw" | "pitch" | "pan" | "pan-x" | "pan-y";
+export type SphereHandle = "orbit" | "yaw" | "pitch" | "pan" | "pan-x" | "pan-y" | "fov" | "cone";
 
 /** A point or offset in a sphere's own pixels, from its centre, with x to the right and y up. */
 export interface SpherePoint {
@@ -32,6 +34,56 @@ export interface SpherePoint {
 
 /** The radius of the orbit sphere, and of the track the pan ball moves in, in CSS pixels. */
 export const SPHERE_RADIUS = 34;
+
+/** Where the camera dot is in the field-of-view widget, from its centre, with the cone opening upwards from it. */
+const FOV_APEX: SpherePoint = { x: 0, y: -18 };
+
+/** How far the cone reaches from the camera dot, in CSS pixels. */
+const CONE_REACH = 58;
+
+/** How high the slider's track is, from the widget's centre, in CSS pixels. */
+const SLIDER_Y = -42;
+
+/** How far the slider's track runs either side of the centre, in CSS pixels. */
+const SLIDER_HALF = 40;
+
+/** The radius of the slider's handle, in CSS pixels. */
+const SLIDER_HANDLE = 6;
+
+/**
+ * Where the slider's handle is for a field of view. The scale is logarithmic, so that a step of the handle changes the view
+ * by about as much wherever it is.
+ *
+ * @param fov the vertical field of view, in degrees
+ * @returns how far right of the widget's centre the handle is, in CSS pixels
+ */
+export function sliderOffsetOfFov(fov: number): number {
+  const clamped = Math.max(MIN_FOV, Math.min(MAX_FOV, fov));
+  const fraction = Math.log(clamped / MIN_FOV) / Math.log(MAX_FOV / MIN_FOV);
+  return (fraction * 2 - 1) * SLIDER_HALF;
+}
+
+/**
+ * The field of view the slider's handle gives at a place; the inverse of {@link sliderOffsetOfFov}.
+ *
+ * @param dx how far right of the widget's centre the pointer is, in CSS pixels
+ * @returns the field of view in degrees, kept between the least and greatest the camera allows
+ */
+export function fovOfSliderOffset(dx: number): number {
+  const fraction = (Math.max(-SLIDER_HALF, Math.min(SLIDER_HALF, dx)) / SLIDER_HALF + 1) / 2;
+  return MIN_FOV * Math.pow(MAX_FOV / MIN_FOV, fraction);
+}
+
+/**
+ * What the field-of-view widget is being pressed on, if the press is on it.
+ *
+ * @param dx how far the press is right of the widget's centre, in pixels
+ * @param dy how far it is above the widget's centre, in pixels
+ * @returns {@code "fov"} if the press is on the slider's track or handle, otherwise null
+ */
+export function fovHandleAt(dx: number, dy: number): SphereHandle | null {
+  return Math.abs(dy - SLIDER_Y) <= SLIDER_HANDLE + 3 && Math.abs(dx) <= SLIDER_HALF + SLIDER_HANDLE + 2 ? "fov" : null;
+}
 
 /** How far from the centre the arrowheads are, which is also where the ends of the pan arms are, in CSS pixels. */
 const ARROW_AT = SPHERE_RADIUS + 13;
@@ -120,9 +172,24 @@ export class CameraSpheres {
   private readonly camera: OrthographicCamera;
   private readonly orbitScene = new Scene();
   private readonly panScene = new Scene();
+  private readonly fovScene = new Scene();
   /** What turns as the camera does. */
   private readonly globe = new Group();
   private readonly ballMark = new Group();
+
+  private readonly coneFill = this.material();
+  private readonly coneEdges = this.material();
+  private readonly coneDot = this.material();
+  private readonly sliderTrack = this.material();
+  private readonly sliderHandle = this.material();
+  private readonly coneSector = new Mesh(new CircleGeometry(1, 3), this.coneFill);
+  private readonly coneArc: Mesh = new Mesh(new CircleGeometry(1, 3), this.coneEdges);
+  private readonly coneSides = [new Mesh(new PlaneGeometry(1.5, CONE_REACH), this.coneEdges), new Mesh(new PlaneGeometry(1.5, CONE_REACH), this.coneEdges)];
+  private readonly handleMark = new Mesh(new CircleGeometry(SLIDER_HANDLE, 16), this.sliderHandle);
+  /** The field of view the cone is built for, or null if it has not been built. */
+  private coneBuiltFor: number | null = null;
+  /** The field of view last drawn, which says how wide the cone is to be pressed on. */
+  private fov = 50;
 
   private readonly fill = this.material();
   private readonly rings = AXIS_COLOURS.map((colour) => this.material(colour));
@@ -148,13 +215,25 @@ export class CameraSpheres {
     this.camera = new OrthographicCamera(-size / 2, size / 2, size / 2, -size / 2, -200, 200);
     this.buildOrbit();
     this.buildPan();
+    this.buildFov();
+  }
+
+  /**
+   * The field of view a pointer at a place on the slider asks for.
+   *
+   * @param canvas the canvas's box on the page
+   * @param x the pointer's horizontal position on the page
+   * @returns the field of view in degrees, which is the end's if the pointer is beyond the track
+   */
+  fovAt(canvas: DOMRect, x: number): number {
+    return fovOfSliderOffset(x - canvas.left - this.fovCentre(canvas.width));
   }
 
   /**
    * @param canvas the canvas's box on the page
    * @param x the pointer's horizontal position on the page
    * @param y the pointer's vertical position on the page
-   * @returns what the pointer is over, or null if they are hidden or it is over neither
+   * @returns what the pointer is over, or null if they are hidden or it is over none
    */
   hit(canvas: DOMRect, x: number, y: number): SphereHandle | null {
     if (!this.visible) {
@@ -162,10 +241,38 @@ export class CameraSpheres {
     }
     const orbit = this.offsetFrom(canvas, x, y, this.orbitCentre(canvas.width));
     const pan = this.offsetFrom(canvas, x, y, this.panCentre(canvas.width));
-    return orbitHandleAt(orbit.x, orbit.y) ?? panHandleAt(pan.x, pan.y, this.ball);
+    const fov = this.offsetFrom(canvas, x, y, this.fovCentre(canvas.width));
+    return orbitHandleAt(orbit.x, orbit.y) ?? panHandleAt(pan.x, pan.y, this.ball) ?? fovHandleAt(fov.x, fov.y) ?? this.coneHandleAt(fov.x, fov.y);
   }
 
-  /** The distance between the two spheres' centres, which are in a row. */
+  /** Whether a press is on the cone, which includes a little beyond its edges so that a thin one can be taken hold of. */
+  private coneHandleAt(dx: number, dy: number): SphereHandle | null {
+    const x = dx - FOV_APEX.x;
+    const y = dy - FOV_APEX.y;
+    const distance = Math.hypot(x, y);
+    if (y < -4 || distance > CONE_REACH + 4) {
+      return null;
+    }
+    const half = (this.fov * Math.PI) / 360;
+    const slack = Math.atan2(5, Math.max(distance, 5));
+    return Math.atan2(Math.abs(x), y) <= half + slack ? "cone" : null;
+  }
+
+  /**
+   * The field of view that makes the cone's edge pass through the pointer: the farther the pointer is from the cone's
+   * middle line, the wider the cone.
+   *
+   * @param canvas the canvas's box on the page
+   * @param x the pointer's horizontal position on the page
+   * @param y the pointer's vertical position on the page
+   */
+  fovOfCone(canvas: DOMRect, x: number, y: number): number {
+    const point = this.offsetFrom(canvas, x, y, this.fovCentre(canvas.width));
+    const angle = Math.atan2(Math.abs(point.x - FOV_APEX.x), point.y - FOV_APEX.y);
+    return Math.max(MIN_FOV, Math.min(MAX_FOV, (angle * 360) / Math.PI));
+  }
+
+  /** The distance between the widgets' centres, which are in a row. */
   private get spacing(): number {
     return this.size + 8;
   }
@@ -176,6 +283,10 @@ export class CameraSpheres {
 
   private panCentre(width: number): number {
     return this.orbitCentre(width) - this.spacing;
+  }
+
+  private fovCentre(width: number): number {
+    return this.panCentre(width) - this.spacing;
   }
 
   private offsetFrom(canvas: DOMRect, x: number, y: number, centreX: number): SpherePoint {
@@ -195,6 +306,7 @@ export class CameraSpheres {
 
     this.globe.quaternion.copy(from.quaternion).invert();
     this.ballMark.position.set(this.ball.x, this.ball.y, 0);
+    this.shapeCone(from.fov);
     this.paint();
 
     const whole = renderer.getSize(new Vector2());
@@ -203,6 +315,7 @@ export class CameraSpheres {
     renderer.setScissorTest(true);
     this.render(renderer, this.orbitScene, this.orbitCentre(whole.x) - this.size / 2);
     this.render(renderer, this.panScene, this.panCentre(whole.x) - this.size / 2);
+    this.render(renderer, this.fovScene, this.fovCentre(whole.x) - this.size / 2);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, whole.x, whole.y);
     renderer.autoClear = clears;
@@ -218,9 +331,11 @@ export class CameraSpheres {
   /** Frees what they are drawn from. */
   dispose(): void {
     this.geometries.forEach((geometry) => geometry.dispose());
+    [this.coneSector, this.coneArc, this.handleMark, ...this.coneSides].forEach((mesh) => mesh.geometry.dispose());
     [
       this.fill, ...this.rings, ...this.lines, this.yawArrows, this.pitchArrows, this.track,
       this.ballFill, this.ballShine, this.armsX, this.armsY,
+      this.coneFill, this.coneEdges, this.coneDot, this.sliderTrack, this.sliderHandle,
     ].forEach((material) => material.dispose());
   }
 
@@ -251,6 +366,11 @@ export class CameraSpheres {
     set(this.ballFill, "pan");
     set(this.armsX, "pan-x");
     set(this.armsY, "pan-y");
+    set(this.coneEdges, "cone");
+    set(this.sliderTrack, "fov");
+    set(this.sliderHandle, "fov");
+    this.coneFill.color.setHex(this.look("cone") === RESTING ? 0x808080 : 0x0969da);
+    this.coneFill.opacity = this.look("cone") === RESTING ? 0.12 : 0.22;
 
     // the orbit sphere keeps the axes' colours, and only gains strength and a tint when it is the one in use
     const orbit = this.look("orbit");
@@ -302,6 +422,57 @@ export class CameraSpheres {
     // a pair of arrowheads each side of the sphere, across for a yaw and up and down for a pitch, which stay as they are
     this.arrowheads(this.orbitScene, this.yawArrows, [0, Math.PI]);
     this.arrowheads(this.orbitScene, this.pitchArrows, [Math.PI / 2, -Math.PI / 2]);
+  }
+
+  /** A camera dot, a cone opening upwards from it as wide as the field of view, and a slider below that sets the width. */
+  private buildFov(): void {
+    this.coneSector.position.set(FOV_APEX.x, FOV_APEX.y, 0);
+    this.coneArc.position.set(FOV_APEX.x, FOV_APEX.y, 0);
+    this.coneSector.renderOrder = 0;
+    this.coneArc.renderOrder = 1;
+    this.coneFill.depthWrite = false;
+    this.fovScene.add(this.coneSector, this.coneArc, ...this.coneSides);
+
+    const dot = new Mesh(this.owned(new CircleGeometry(4.5, 16)), this.coneDot);
+    dot.position.set(FOV_APEX.x, FOV_APEX.y, 0);
+    dot.renderOrder = 5;
+    this.fovScene.add(dot);
+
+    const track = new Mesh(this.owned(new PlaneGeometry(SLIDER_HALF * 2, 2)), this.sliderTrack);
+    track.position.set(0, SLIDER_Y, 0);
+    this.handleMark.position.set(0, SLIDER_Y, 1);
+    this.handleMark.renderOrder = 5;
+    this.fovScene.add(track, this.handleMark);
+  }
+
+  /**
+   * Sets the cone and the slider's handle for a field of view.
+   *
+   * @param fov the camera's vertical field of view, in degrees
+   */
+  private shapeCone(fov: number): void {
+    this.fov = fov;
+    this.handleMark.position.x = sliderOffsetOfFov(fov);
+    if (this.coneBuiltFor === fov) {
+      return;
+    }
+    this.coneBuiltFor = fov;
+
+    const half = (Math.max(MIN_FOV, Math.min(MAX_FOV, fov)) * Math.PI) / 360;
+    const start = Math.PI / 2 - half;
+    this.coneSector.geometry.dispose();
+    this.coneSector.geometry = new CircleGeometry(CONE_REACH, 48, start, half * 2);
+    this.coneArc.geometry.dispose();
+    this.coneArc.geometry = new RingGeometry(CONE_REACH - 1.5, CONE_REACH, 48, 1, start, half * 2);
+
+    // each side is a strip along y, turned from pointing up to pointing along its edge of the cone
+    [-1, 1].forEach((side, i) => {
+      const turn = side * half;
+      const mesh = this.coneSides[i] as Mesh;
+      mesh.rotation.z = -turn;
+      mesh.position.set(FOV_APEX.x + Math.sin(turn) * CONE_REACH / 2, FOV_APEX.y + Math.cos(turn) * CONE_REACH / 2, 0);
+      mesh.renderOrder = 1;
+    });
   }
 
   private buildPan(): void {

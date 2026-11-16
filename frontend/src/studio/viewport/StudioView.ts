@@ -195,6 +195,9 @@ const TRIAD_MARGIN = 24;
 /** How far the middle of the triad, which the roll ring goes round, is from the canvas's left and bottom edges. */
 const TRIAD_CENTRE = TRIAD_MARGIN + TRIAD_SIZE / 2;
 
+/** The longest gap between two presses of the field-of-view slider that count as a double press, in milliseconds. */
+const FOV_RESET_MS = 350;
+
 const STYLE: Style = "ball_and_stick";
 
 /** An atom that moves with a drag. */
@@ -272,6 +275,9 @@ export class StudioView {
   private rolling: { last: number } | null = null;
   /** The camera sphere being dragged, and where the pointer was at the last step. */
   private sphereDrag: { handle: SphereHandle; x: number; y: number } | null = null;
+
+  /** When the field-of-view slider was last pressed, from performance.now, or 0 if a press has just been used as a double press. */
+  private lastFovPress = 0;
   /** When the ring was last pressed, so that a second press soon after can level the view. */
   private lastRingPress = 0;
   /** Whether moving an atom carries the hydrogens bonded to it. */
@@ -1738,11 +1744,31 @@ export class StudioView {
     this.sphereDrag = { handle, x: event.clientX, y: event.clientY };
     this.spheres.active = handle;
     this.stage.canvas.style.cursor = "grabbing";
+
+    if (handle === "fov" || handle === "cone") {
+      // pressing the slider or cone twice quickly puts the field of view back to the default
+      const now = performance.now();
+      const again = now - this.lastFovPress < FOV_RESET_MS;
+      this.lastFovPress = again ? 0 : now;
+      this.setCamera({ fov: again ? FIELD_OF_VIEW : this.fovFromPointer(handle, event) });
+    }
     this.stage.requestRender();
   };
 
+  /** The field of view a pointer asks for on the slider, or by where it is about the cone. */
+  private fovFromPointer(handle: SphereHandle, event: PointerEvent): number {
+    const canvas = this.stage.canvas.getBoundingClientRect();
+    return handle === "cone" ? this.spheres.fovOfCone(canvas, event.clientX, event.clientY) : this.spheres.fovAt(canvas, event.clientX);
+  }
+
   /** Moves the view by a step of a drag on a camera sphere. */
   private dragSpheres(event: PointerEvent, drag: { handle: SphereHandle; x: number; y: number }): void {
+    if (drag.handle === "fov" || drag.handle === "cone") {
+      this.setCamera({ fov: this.fovFromPointer(drag.handle, event) });
+      this.stage.requestRender();
+      return;
+    }
+
     const across = drag.handle === "pitch" || drag.handle === "pan-y" ? 0 : event.clientX - drag.x;
     const down = drag.handle === "yaw" || drag.handle === "pan-x" ? 0 : event.clientY - drag.y;
     drag.x = event.clientX;
@@ -2024,6 +2050,8 @@ const SPHERE_CURSOR: Record<SphereHandle, string> = {
   pan: "grab",
   "pan-x": "ew-resize",
   "pan-y": "ns-resize",
+  fov: "ew-resize",
+  cone: "grab",
 };
 
 /** The constraint a translate handle holds a move to, by the name three.js gives the handle. */
