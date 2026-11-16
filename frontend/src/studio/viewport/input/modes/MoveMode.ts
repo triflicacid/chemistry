@@ -75,7 +75,7 @@ export class MoveMode extends SelectMode {
   }
 
   override get dragging(): boolean {
-    return this.grab?.dragging ?? false;
+    return (this.grab?.dragging ?? false) || this.boxing;
   }
 
   override enter(): void {
@@ -86,6 +86,7 @@ export class MoveMode extends SelectMode {
   override exit(): void {
     this.active = false;
     this.cancelDrag();
+    this.abandonBox();
     this.host.stage.canvas.style.cursor = "";
     this.host.reference.refreshGuide();
     this.handleMode = null;
@@ -250,6 +251,7 @@ export class MoveMode extends SelectMode {
   }
 
   override cancelDrag(): void {
+    this.abandonBox();
     const grab = this.grab;
     if (!grab) {
       return;
@@ -394,7 +396,8 @@ export class MoveMode extends SelectMode {
 
   /** Takes hold of an atom pressed on, which becomes a drag once the pointer has moved. */
   private startGrab(event: PointerEvent): void {
-    if (event.button !== 0 || !this.grabs) {
+    // Shift and a drag draws a rectangle, wherever it starts, and so does not pick an atom up
+    if (event.button !== 0 || !this.grabs || (event.shiftKey && this.marquees)) {
       return;
     }
 

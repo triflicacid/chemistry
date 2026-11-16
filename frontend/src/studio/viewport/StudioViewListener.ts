@@ -33,7 +33,10 @@ export interface StudioViewListener {
   ringSize?(size: number): void;
   /** A rectangle is being dragged to select the atoms inside it, and is at `rect`, or has gone if it is null. */
   marquee?(rect: ScreenRect | null): void;
-  /** A rectangle was let go of, and the atoms whose centres were inside it are `atoms`. */
+  /**
+   * A rectangle was let go of, and the atoms whose centres were inside it are `atoms`, nearest the camera first, so that the
+   * first is the first thing a ray through the rectangle meets.
+   */
   box?(atoms: string[]): void;
   /** An atom has been picked up by the move tool and has begun to move, along with the rest of the selection if it is in it. */
   dragStart?(id: string): void;

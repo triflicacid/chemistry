@@ -269,7 +269,15 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
         }
       },
       marquee: setMarquee,
-      box: (atoms) => {
+      box: (all) => {
+        // the rectangle selects from one molecule, the one of the first thing in it, and leaves what is behind that in others
+        const [first] = all;
+        if (first === undefined) {
+          return;
+        }
+        const fragment = index.fragmentOf({ kind: "atom", id: first });
+        const atoms = fragment === null ? [first] : all.filter((id) => index.fragmentOf({ kind: "atom", id }) === fragment);
+
         // the bonds between the atoms inside go with them
         const inside = new Set(atoms);
         const bonds = [...index.bonds.values()].filter((bond) => inside.has(bond.first) && inside.has(bond.second));

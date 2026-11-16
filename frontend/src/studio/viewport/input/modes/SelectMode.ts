@@ -1,4 +1,4 @@
-import type {Vector3} from "three";
+import {Vector3} from "three";
 import type {Tool} from "../../../models/ToolModel";
 import type {Binding} from "../../../keys/binding";
 import type {PartItem} from "../../../models/items";
@@ -43,9 +43,12 @@ export class SelectMode implements ToolMode {
     return true;
   }
 
-  /** Whether Shift and a left-drag draws a rectangle that selects the atoms inside it, which only the select tool does. */
+  /**
+   * Whether Shift and a left-drag draws a rectangle that selects the atoms inside it, which the tools that select and then act
+   * on a selection do: select, move and rotate. The camera tool, whose drag is the camera's, does not.
+   */
   protected get marquees(): boolean {
-    return this.tool === "select";
+    return this.tool === "select" || this.tool === "move" || this.tool === "rotate";
   }
 
   /** Whether a rectangle is being drawn. */
@@ -165,13 +168,20 @@ export class SelectMode implements ToolMode {
     this.down = null;
     const rect = this.rectTo(box.from, event);
     const canvas = this.host.stage.canvas.getBoundingClientRect();
-    const inside = this.host.scene.atoms.filter((node) => {
+    const { scene, stage } = this.host;
+    const inside = scene.atoms.filter((node) => {
       const at = this.screenOf(node.at);
       const x = at.x - canvas.left;
       const y = at.y - canvas.top;
       return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
     });
-    this.host.emit((listener) => listener.box?.(inside.map((node) => node.atom.id)));
+
+    // nearest the camera first, which is the order a ray through the rectangle meets them in, and the first is what decides
+    // which molecule the rectangle is selecting from
+    const forward = stage.camera.getWorldDirection(new Vector3());
+    const depthOf = (node: (typeof inside)[number]) => scene.worldOf(node).sub(stage.camera.position).dot(forward);
+    const nearestFirst = [...inside].sort((a, b) => depthOf(a) - depthOf(b));
+    this.host.emit((listener) => listener.box?.(nearestFirst.map((node) => node.atom.id)));
     return true;
   }
 
