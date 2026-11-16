@@ -1,20 +1,23 @@
 import {Box3, MOUSE, Ray, Raycaster, TOUCH, Vector3} from "three";
 import type {Vec3} from "../../api/types/structure";
 import {Primitives} from "../../render/primitives";
-import {sweep} from "../../render/roll";
-import {FIELD_OF_VIEW, Stage} from "../../render/stage";
+import {Stage} from "../../render/stage";
 import {type Basis, type Constraint, dragged, pointOnConstraint, STANDARD_BASIS} from "./handles/dragPlane";
 import {withTerminalHydrogens} from "./hydrogens";
 import type {GridKind, GridPlaneChoice} from "./grid";
 import {CameraHud} from "./hud/CameraHud";
 import {HUD_CENTRE, HUD_MARGIN, HUD_SIZE} from "./hud/constants";
-import {BALL_TRAVEL} from "./hud/panDial";
 import {RollRing} from "./hud/rollRing";
 import {Triad} from "./hud/triad";
-import type {HudHandle} from "./hud/dial";
 import {MeasurementHandles} from "./handles/MeasurementHandles";
 import {type MoleculeHandleMode, MoleculeHandles} from "./handles/MoleculeHandles";
-import {CameraRig, SAME_VIEW} from "./camera/CameraRig";
+import {CameraRig} from "./camera/CameraRig";
+import {CLICK_SLOP, DOUBLE_CLICK_MS} from "./input/constants";
+import {CameraHudHandler} from "./input/CameraHudHandler";
+import {TransformHandleInteraction} from "./input/TransformHandleInteraction";
+import {type InteractionHandler, PointerRouter} from "./input/PointerRouter";
+import {RollRingHandler} from "./input/RollRingHandler";
+import {TriadHandler} from "./input/TriadHandler";
 import {Annotations} from "./scene/Annotations";
 import {type AtomNode, type Emphasis, MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
 import {ReferenceLayer} from "./scene/ReferenceLayer";
@@ -89,15 +92,6 @@ export type MeasurementTarget =
       to: string;
     };
 
-/** How far the pointer may move between pressing and releasing and still count as a click. */
-const CLICK_SLOP = 4;
-
-/** The longest, in milliseconds, between two clicks that make a double-click. */
-const DOUBLE_CLICK_MS = 350;
-
-/** The longest gap between two presses of the field-of-view slider that count as a double press, in milliseconds. */
-const FOV_RESET_MS = 350;
-
 /** An atom that moves with a drag. */
 interface Member {
   node: AtomNode;
@@ -160,15 +154,10 @@ export class StudioView {
   private lastClick: (ScreenPoint & { at: number }) | null = null;
   /** Whether a left-drag pans the view, and a right-drag orbits it. */
   private panning = false;
-  /** The roll ring being turned, with the angle the pointer was last at round it, or null while it is not. */
-  private rolling: { last: number } | null = null;
-  /** The camera sphere being dragged, and where the pointer was at the last step. */
-  private hudDrag: { handle: HudHandle; x: number; y: number } | null = null;
-
-  /** When the field-of-view slider was last pressed, from performance.now, or 0 if a press has just been used as a double press. */
-  private lastFovPress = 0;
-  /** When the ring was last pressed, so that a second press soon after can level the view. */
-  private lastRingPress = 0;
+  /** What the pointer is over in the molecule, found as it moves, for the cursor. */
+  private hoveredPick: PartItem | null = null;
+  /** Hears the canvas's pointer, and offers it to what is in the viewport in order of precedence. */
+  private readonly router: PointerRouter;
   /** Whether moving an atom carries the hydrogens bonded to it. */
   private carryHydrogens = false;
   /** Whether pressing on an atom picks it up. */
@@ -261,17 +250,15 @@ export class StudioView {
       }
     });
 
-    canvas.addEventListener("pointermove", this.onMove);
-    canvas.addEventListener("pointerleave", this.onLeave);
-    // captured, so that this hears the press before the orbit controls do and can keep them from turning the camera
-    canvas.addEventListener("pointerdown", this.onTriad, { capture: true });
-    canvas.addEventListener("pointerdown", this.onRing, { capture: true });
-    canvas.addEventListener("pointerdown", this.onHud, { capture: true });
-    canvas.addEventListener("pointerdown", this.onGrab, { capture: true });
-    canvas.addEventListener("pointerdown", this.onDown);
-    canvas.addEventListener("pointerup", this.onUp);
-    canvas.addEventListener("pointerup", this.onRightClick);
-    canvas.addEventListener("pointercancel", this.onCancel);
+    const resting = () => (this.panning ? "grab" : "");
+    // in order of precedence: the first to take a press keeps the rest from having it
+    this.router = new PointerRouter(canvas, [
+      new CameraHudHandler(this.stage, this.cameraHud, this.rig, resting),
+      new TriadHandler(this.stage, this.triad, this.rig),
+      new RollRingHandler(this.stage, this.ring, resting),
+      new TransformHandleInteraction(this.stage, () => this.handleHovered),
+      this.viewportHandler(),
+    ]);
     window.addEventListener("keydown", this.onKey, { capture: true });
 
     this.rig.frameScene();
@@ -906,17 +893,7 @@ export class StudioView {
 
   /** Releases the canvas, the renderer and everything drawn. */
   dispose(): void {
-    const canvas = this.stage.canvas;
-    canvas.removeEventListener("pointermove", this.onMove);
-    canvas.removeEventListener("pointerleave", this.onLeave);
-    canvas.removeEventListener("pointerdown", this.onTriad, { capture: true });
-    canvas.removeEventListener("pointerdown", this.onRing, { capture: true });
-    canvas.removeEventListener("pointerdown", this.onHud, { capture: true });
-    canvas.removeEventListener("pointerdown", this.onGrab, { capture: true });
-    canvas.removeEventListener("pointerdown", this.onDown);
-    canvas.removeEventListener("pointerup", this.onUp);
-    canvas.removeEventListener("pointerup", this.onRightClick);
-    canvas.removeEventListener("pointercancel", this.onCancel);
+    this.router.dispose();
     window.removeEventListener("keydown", this.onKey, { capture: true });
     this.scene.clear();
     this.moleculeHandles.dispose();
@@ -993,147 +970,8 @@ export class StudioView {
     this.reference.refreshGuide();
   }
 
-  private readonly onTriad = (event: PointerEvent): void => {
-    if (event.button !== 0) {
-      return;
-    }
-    const axis = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
-    if (!axis) {
-      return;
-    }
-
-    // the press is the triad's: it must not orbit the camera, pick up an atom behind it, or clear the selection
-    event.stopImmediatePropagation();
-    event.preventDefault();
-
-    // the same letter again, with the camera where the last click left it, goes round to the other side
-    const last = this.rig.snapped;
-    const again = last !== null && last.axis.dot(axis) > 0.99 && this.stage.camera.quaternion.angleTo(last.orientation) < SAME_VIEW;
-    const sign = again && last.sign === 1 ? -1 : 1;
-
-    this.stage.lookFrom(axis.clone().multiplyScalar(sign));
-    this.rig.snapped = { axis, sign, orientation: this.stage.camera.quaternion.clone() };
-  };
-
-  /**
-   * A press on the roll ring takes hold of it, and turning it rolls the view by as far as the pointer goes round. A
-   * second press soon after, in the same place, takes the roll out instead.
-   */
-  private readonly onRing = (event: PointerEvent): void => {
-    const box = this.stage.canvas.getBoundingClientRect();
-    if (event.button !== 0 || !this.ring.hit(box, event.clientX, event.clientY)) {
-      return;
-    }
-
-    // the press is the ring's: it must not orbit the camera, pick up an atom behind it, or clear the selection
-    event.stopImmediatePropagation();
-    event.preventDefault();
-
-    const now = performance.now();
-    if (now - this.lastRingPress < DOUBLE_CLICK_MS) {
-      this.lastRingPress = 0;
-      this.stage.level();
-      return;
-    }
-    this.lastRingPress = now;
-
-    this.stage.controls.enabled = false;
-    this.stage.canvas.setPointerCapture(event.pointerId);
-    this.stage.canvas.style.cursor = "grabbing";
-    this.rolling = { last: this.ring.angleAt(box, event.clientX, event.clientY) };
-    this.ring.active = true;
-    this.stage.requestRender();
-  };
-
-  /** Lets go of the roll ring, giving the camera its controls back. */
-  private endRoll(): void {
-    this.rolling = null;
-    this.ring.active = false;
-    this.stage.controls.enabled = true;
-    this.stage.canvas.style.cursor = this.panning ? "grab" : "";
-    this.stage.requestRender();
-  }
-
-  /**
-   * A press on one of the camera spheres takes hold of it, and dragging orbits or pans the view by as far as the pointer
-   * goes, along the way the handle holds it to.
-   */
-  private readonly onHud = (event: PointerEvent): void => {
-    const handle = event.button === 0 ? this.cameraHud.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) : null;
-    if (!handle) {
-      return;
-    }
-
-    // the press is the sphere's: it must not orbit the camera, pick up an atom behind it, or clear the selection
-    event.stopImmediatePropagation();
-    event.preventDefault();
-
-    this.stage.controls.enabled = false;
-    this.stage.canvas.setPointerCapture(event.pointerId);
-    this.hudDrag = { handle, x: event.clientX, y: event.clientY };
-    this.cameraHud.active = handle;
-    this.stage.canvas.style.cursor = "grabbing";
-
-    if (handle === "fov" || handle === "cone") {
-      // pressing the slider or cone twice quickly puts the field of view back to the default
-      const now = performance.now();
-      const again = now - this.lastFovPress < FOV_RESET_MS;
-      this.lastFovPress = again ? 0 : now;
-      this.rig.setCamera({ fov: again ? FIELD_OF_VIEW : this.fovFromPointer(handle, event) });
-    }
-    this.stage.requestRender();
-  };
-
-  /** The field of view a pointer asks for on the slider, or by where it is about the cone. */
-  private fovFromPointer(handle: HudHandle, event: PointerEvent): number {
-    const canvas = this.stage.canvas.getBoundingClientRect();
-    return handle === "cone" ? this.cameraHud.fovOfCone(canvas, event.clientX, event.clientY) : this.cameraHud.fovAt(canvas, event.clientX);
-  }
-
-  /** Moves the view by a step of a drag on a camera sphere. */
-  private dragHud(event: PointerEvent, drag: { handle: HudHandle; x: number; y: number }): void {
-    if (drag.handle === "fov" || drag.handle === "cone") {
-      this.rig.setCamera({ fov: this.fovFromPointer(drag.handle, event) });
-      this.stage.requestRender();
-      return;
-    }
-
-    const across = drag.handle === "pitch" || drag.handle === "pan-y" ? 0 : event.clientX - drag.x;
-    const down = drag.handle === "yaw" || drag.handle === "pan-x" ? 0 : event.clientY - drag.y;
-    drag.x = event.clientX;
-    drag.y = event.clientY;
-
-    if (drag.handle === "orbit" || drag.handle === "yaw" || drag.handle === "pitch") {
-      this.rig.orbitBy(across, down);
-      return;
-    }
-
-    this.rig.panBy(across, down);
-    // the ball is pulled out the way the view goes, as far as its track lets it
-    const pulled = { x: this.cameraHud.ball.x + across, y: this.cameraHud.ball.y - down };
-    const length = Math.hypot(pulled.x, pulled.y);
-    const scale = length > BALL_TRAVEL ? BALL_TRAVEL / length : 1;
-    this.cameraHud.ball = { x: pulled.x * scale, y: pulled.y * scale };
-    this.stage.requestRender();
-  }
-
-  /** Lets go of a camera sphere, giving the camera its controls back and the pan ball back its place. */
-  private endHudDrag(): void {
-    this.hudDrag = null;
-    this.cameraHud.active = null;
-    this.cameraHud.ball = { x: 0, y: 0 };
-    this.stage.controls.enabled = true;
-    this.stage.canvas.style.cursor = this.panning ? "grab" : "";
-    this.stage.requestRender();
-  }
-
-  private readonly onGrab = (event: PointerEvent): void => {
-    if (event.button === 0 && this.handleHovered) {
-      // a handle is under the pointer, which takes hold of it, and the camera must stay put
-      this.stage.controls.enabled = false;
-      return;
-    }
-
+  /** Takes hold of an atom pressed on while the move tool is in use, which becomes a drag once the pointer has moved. */
+  private startGrab(event: PointerEvent): void {
     if (!this.moving || event.button !== 0) {
       return;
     }
@@ -1171,7 +1009,7 @@ export class StudioView {
     // the camera must not turn while the atom does, and the pointer must keep reporting if it leaves the canvas
     this.stage.controls.enabled = false;
     this.stage.canvas.setPointerCapture(event.pointerId);
-  };
+  }
 
   /** Shortcuts heard in the capture phase; see {@link KEYS} for why Escape is among them. */
   private readonly bindings: Binding[] = [
@@ -1195,91 +1033,79 @@ export class StudioView {
 
   private readonly onKey = (event: KeyboardEvent): void => dispatchKey(this.bindings, event, true);
 
-  private readonly onMove = (event: PointerEvent): void => {
-    const sphereDrag = this.hudDrag;
-    if (sphereDrag && event.buttons !== 0) {
-      this.dragHud(event, sphereDrag);
-      return;
-    }
-
-    const rolling = this.rolling;
-    if (rolling && event.buttons !== 0) {
-      // the picture turns as far as the pointer has gone round the ring since the last move, however far from it
-      const angle = this.ring.angleAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
-      this.stage.roll(sweep(rolling.last, angle));
-      rolling.last = angle;
-      return;
-    }
-
-    const grab = this.grab;
-    if (grab && event.buttons !== 0) {
-      if (!grab.dragging) {
-        if (Math.hypot(event.clientX - grab.from.x, event.clientY - grab.from.y) <= CLICK_SLOP) {
-          return;
+  /**
+   * What is left for the pointer once nothing in front of it has taken it: picking up atoms, clicking, and the clicks
+   * that move the anchor. It takes every press that reaches it, but leaves it to be heard by the camera's controls.
+   */
+  private viewportHandler(): InteractionHandler {
+    return {
+      swallows: false,
+      hitTest: () => true,
+      press: (event) => {
+        this.startGrab(event);
+        // a press on a handle is the handle's, and never reaches here, so it does not also select what is under it
+        this.down = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+        this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
+        if (this.panning && event.button === 0) {
+          this.stage.canvas.style.cursor = "grabbing";
         }
-        grab.dragging = true;
-        this.reference.refreshGuide();
-        this.listeners.forEach((listener) => listener.dragStart?.(grab.id));
-      }
+        return true;
+      },
+      move: (event) => this.dragGrab(event),
+      release: (event) => {
+        this.up(event);
+        this.rightClick(event);
+      },
+      cancel: () => {
+        this.down = null;
+        this.cancelDrag();
+      },
+      hover: (event) => {
+        this.hoveredPick = this.scene.pickAt(event);
+        this.listeners.forEach((listener) => listener.hover?.(this.hoveredPick, { x: event.clientX, y: event.clientY }));
+      },
+      cursor: () => {
+        const pick = this.hoveredPick;
+        // an atom the move tool would refuse to pick up, because it or one moving with it is locked, says so
+        const refused = this.moving && pick?.kind === "atom" && this.groupOf(pick.id).some((id) => this.scene.locked.has(id));
+        return refused ? "not-allowed" : this.panning ? "grab" : "";
+      },
+      leave: () => {
+        this.stage.canvas.style.cursor = this.panning ? "grab" : "";
+        this.listeners.forEach((listener) => listener.hover?.(null, { x: 0, y: 0 }));
+      },
+    };
+  }
 
-      grab.ray = this.localRayOf(event);
-      const moves = this.placesOf(grab, grab.ray);
-      if (moves) {
-        this.moveAtoms(moves.map((move) => [move.id, move.position]));
-        this.listeners.forEach((listener) => listener.drag?.(moves, false));
-      }
+  /** Carries the atoms in hand to where the pointer has got to, once it has moved far enough for the press to be a drag. */
+  private dragGrab(event: PointerEvent): void {
+    const grab = this.grab;
+    if (!grab) {
       return;
     }
 
-    if (event.buttons !== 0) {
-      return;
+    if (!grab.dragging) {
+      if (Math.hypot(event.clientX - grab.from.x, event.clientY - grab.from.y) <= CLICK_SLOP) {
+        return;
+      }
+      grab.dragging = true;
+      this.reference.refreshGuide();
+      this.listeners.forEach((listener) => listener.dragStart?.(grab.id));
     }
-    const overTriad = this.triad.axisAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY) !== null;
-    const overSphere = this.cameraHud.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
-    if (overSphere !== this.cameraHud.hovered) {
-      this.cameraHud.hovered = overSphere;
-      this.stage.requestRender();
-    }
-    const overRing = !overTriad && !overSphere && this.ring.hit(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
-    if (overRing !== this.ring.hovered) {
-      this.ring.hovered = overRing;
-      this.stage.requestRender();
-    }
-    const pick = this.scene.pickAt(event);
 
-    // an atom the move tool would refuse to pick up, because it or one moving with it is locked, says so
-    const refused = this.moving && pick?.kind === "atom" && this.groupOf(pick.id).some((id) => this.scene.locked.has(id));
-    this.stage.canvas.style.cursor = overSphere ? HUD_CURSOR[overSphere] : overTriad ? "pointer" : overRing ? "grab" : refused ? "not-allowed" : this.panning ? "grab" : "";
-    this.listeners.forEach((listener) => listener.hover?.(pick, { x: event.clientX, y: event.clientY }));
-  };
-
-  private readonly onLeave = (): void => {
-    if (this.cameraHud.hovered) {
-      this.cameraHud.hovered = null;
-      this.stage.requestRender();
+    grab.ray = this.localRayOf(event);
+    const moves = this.placesOf(grab, grab.ray);
+    if (moves) {
+      this.moveAtoms(moves.map((move) => [move.id, move.position]));
+      this.listeners.forEach((listener) => listener.drag?.(moves, false));
     }
-    if (this.ring.hovered) {
-      this.ring.hovered = false;
-      this.stage.requestRender();
-    }
-    this.stage.canvas.style.cursor = this.panning ? "grab" : "";
-    this.listeners.forEach((listener) => listener.hover?.(null, { x: 0, y: 0 }));
-  };
-
-  private readonly onDown = (event: PointerEvent): void => {
-    // a press on a handle is the handle's, and when it lets go it must not also select what is under it
-    this.down = event.button === 0 && !this.handleHovered ? { x: event.clientX, y: event.clientY } : null;
-    this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
-    if (this.panning && event.button === 0) {
-      this.stage.canvas.style.cursor = "grabbing";
-    }
-  };
+  }
 
   /**
    * Re-binds the orbit anchor: a right-click that was not a pan or an orbit centres the view on the atom nearest what was
    * clicked, or goes back to the middle of the molecule if the click was on nothing.
    */
-  private readonly onRightClick = (event: PointerEvent): void => {
+  private rightClick(event: PointerEvent): void {
     const down = this.rightDown;
     this.rightDown = null;
     if (event.button !== 2 || !down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_SLOP) {
@@ -1287,7 +1113,7 @@ export class StudioView {
     }
 
     this.centreOn(event);
-  };
+  }
 
   /**
    * Brings the atom nearest where the pointer is to the middle of the view, which then orbits it and which the molecule's
@@ -1315,17 +1141,8 @@ export class StudioView {
     this.rig.anchorOn(anchored);
   }
 
-  private readonly onUp = (event: PointerEvent): void => {
-    if (this.hudDrag) {
-      this.endHudDrag();
-      return;
-    }
-
-    if (this.rolling) {
-      this.endRoll();
-      return;
-    }
-
+  /** Ends a press on the viewport: lets go of any atoms in hand, or counts it as a click or the second of a double-click. */
+  private up(event: PointerEvent): void {
     if (this.panning && event.button === 0) {
       this.stage.canvas.style.cursor = "grab";
     }
@@ -1365,31 +1182,8 @@ export class StudioView {
 
     const pick = this.scene.pickAt(event);
     this.listeners.forEach((listener) => listener.click?.(pick, event.shiftKey || event.ctrlKey || event.metaKey));
-  };
-
-  private readonly onCancel = (): void => {
-    if (this.hudDrag) {
-      this.endHudDrag();
-    }
-    if (this.rolling) {
-      this.endRoll();
-    }
-    this.down = null;
-    this.cancelDrag();
-  };
+  }
 }
-
-/** The cursor over each camera sphere handle: across or up and down for one that holds a drag to that way. */
-const HUD_CURSOR: Record<HudHandle, string> = {
-  orbit: "grab",
-  yaw: "ew-resize",
-  pitch: "ns-resize",
-  pan: "grab",
-  "pan-x": "ew-resize",
-  "pan-y": "ns-resize",
-  fov: "ew-resize",
-  cone: "grab",
-};
 
 /** The constraint a translate handle holds a move to, by the name three.js gives the handle. */
 const CONSTRAINT_OF_HANDLE: Record<string, Constraint | undefined> = {

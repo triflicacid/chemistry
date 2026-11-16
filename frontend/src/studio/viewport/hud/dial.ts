@@ -2,11 +2,7 @@ import {Mesh, MeshBasicMaterial, type PerspectiveCamera, Scene, Shape, ShapeGeom
 
 import {ARROW_AT} from "./constants";
 
-/**
- * What a press on the camera HUD takes hold of: the orbit sphere's body, which turns the view any way, or its
- * arrowheads, which turn it only across (yaw) or only up and down (pitch); the pan sphere's ball, which moves the view any
- * way, or its arms, which move it only across or only up and down; or the field-of-view cone, or slider's track and handle.
- */
+/** What a press on the camera HUD takes hold of. */
 export type HudHandle = "orbit" | "yaw" | "pitch" | "pan" | "pan-x" | "pan-y" | "fov" | "cone";
 
 /** A point or offset in a dial's own pixels, from its centre, with x to the right and y up. */
