@@ -103,7 +103,9 @@ export class StudioSocket {
         if (ready.protocol_version === PROTOCOL_VERSION) {
           resolve(ready);
         } else {
-          reject(mismatch(ready.protocol_version));
+          const mismatched = mismatch(ready.protocol_version);
+          console.error(mismatched);
+          reject(mismatched);
         }
       });
 
@@ -117,6 +119,7 @@ export class StudioSocket {
 
       socket.addEventListener("error", () => {
         greeted();
+        console.error(`Cannot reach ${this.url}`);
         reject(new StudioError("NETWORK", `Cannot reach ${this.url}`));
       });
     });
@@ -175,13 +178,16 @@ export class StudioSocket {
       try {
         sequence = this.send(type, payload);
       } catch (cause) {
+        console.error(`'${type}' could not be sent:`, cause);
         reject(cause as Error);
         return;
       }
 
       const timer = setTimeout(() => {
         this.pending.delete(sequence);
-        reject(new StudioError("TIMEOUT", `The server did not answer '${type}' in time`, type));
+        const failure = new StudioError("TIMEOUT", `The server did not answer '${type}' in time`, type);
+        console.error(failure);
+        reject(failure);
       }, this.options.requestTimeoutMs);
 
       this.pending.set(sequence, {
@@ -451,8 +457,8 @@ export class StudioSocket {
     let message: ServerEnvelope;
     try {
       message = JSON.parse(text) as ServerEnvelope;
-    } catch {
-      // a server that sends something other than JSON is broken; there is nothing to do here
+    } catch (cause) {
+      console.error("The server sent something that is not JSON:", cause, text);
       return;
     }
 
@@ -464,7 +470,9 @@ export class StudioSocket {
         this.wanted = false;
         this.notify(message);
         this.socket?.close();
-        this.options.onIncompatible?.(mismatch(ready.protocol_version));
+        const mismatched = mismatch(ready.protocol_version);
+        console.error(mismatched);
+        this.options.onIncompatible?.(mismatched);
         return;
       }
 
@@ -478,12 +486,11 @@ export class StudioSocket {
 
   /** Settles the request a message is the reply to, if it is one. */
   private answer(message: ServerEnvelope): void {
-    if (typeof message.sequence !== "number") {
-      return;
+    const waiting = typeof message.sequence === "number" ? this.pending.get(message.sequence) : undefined;
+    if (message.type === "error" && !waiting) {
+      console.error("The server sent an error nothing was waiting for:", message);
     }
-
-    const waiting = this.pending.get(message.sequence);
-    if (!waiting || (!waiting.replyTypes.includes(message.type) && message.type !== "error")) {
+    if (typeof message.sequence !== "number" || !waiting || (!waiting.replyTypes.includes(message.type) && message.type !== "error")) {
       return;
     }
 
@@ -492,9 +499,9 @@ export class StudioSocket {
 
     if (message.type === "error") {
       const failure = message as ServerEnvelope & { answering?: string; error?: { code?: string; message?: string } };
-      waiting.reject(
-        new StudioError(failure.error?.code ?? "UNKNOWN", failure.error?.message ?? "The server refused the message", failure.answering),
-      );
+      const error = new StudioError(failure.error?.code ?? "UNKNOWN", failure.error?.message ?? "The server refused the message", failure.answering);
+      console.error(error);
+      waiting.reject(error);
       return;
     }
 
@@ -518,6 +525,7 @@ export class StudioSocket {
   private dropped(reason: string): void {
     this.socket = null;
     clearTimeout(this.quiet);
+    console.error(`The connection dropped (${reason})`);
     this.fail(new StudioError("DROPPED", reason));
 
     if (!this.wanted) {

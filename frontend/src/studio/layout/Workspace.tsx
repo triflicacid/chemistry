@@ -17,8 +17,6 @@ export interface WorkspaceProps {
   phase: SessionPhase;
   state: SessionState | null;
   geometry: GeometryResult | null;
-  /** How strained the geometry is, ready to show, or null if it has not been worked out. */
-  strain: string | null;
   models: Models;
   activity: Activity[];
   layout: LayoutState;
@@ -31,7 +29,7 @@ export interface WorkspaceProps {
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onSubmitSmiles, canLock, lockPressed, onToggleLock } = props;
+  const { phase, state, geometry, models, activity, layout, onResize, onCollapse, onSubmitSmiles, canLock, lockPressed, onToggleLock } = props;
   const { outcome } = useSessionContext();
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
@@ -64,8 +62,6 @@ export function Workspace(props: WorkspaceProps) {
         onCollapse={onCollapse}
         canUndo={state?.can_undo ?? false}
         canRedo={state?.can_redo ?? false}
-        saved={state?.saved_molecule_id != null}
-        strain={strain}
       />
 
       <SmilesBar state={state} onSubmit={onSubmitSmiles} />

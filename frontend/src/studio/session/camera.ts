@@ -50,8 +50,9 @@ export function useCameraSave({ socketRef, held, adopt }: SessionLink): (camera:
               held.current = { ...now, camera };
             }
           })
-          .catch(() => {
+          .catch((cause: unknown) => {
             // the view is as the user left it, and the next change tries again
+            console.warn("The camera could not be saved:", cause);
           });
       }, CAMERA_SAVE_MS);
     },

@@ -44,14 +44,18 @@ export class HttpClient {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "TimeoutError") {
-        throw new ApiError(0, "TIMEOUT", `The server did not respond within ${REQUEST_TIMEOUT_MS / 1000} seconds`);
-      }
-      throw new ApiError(0, "NETWORK", `Cannot reach the server (${String(cause)})`);
+      const failure =
+        cause instanceof DOMException && cause.name === "TimeoutError"
+          ? new ApiError(0, "TIMEOUT", `The server did not respond within ${REQUEST_TIMEOUT_MS / 1000} seconds`)
+          : new ApiError(0, "NETWORK", `Cannot reach the server (${String(cause)})`);
+      console.error(`${method} ${path} failed:`, failure);
+      throw failure;
     }
 
     if (!response.ok) {
-      throw await HttpClient.failure(response);
+      const failure = await HttpClient.failure(response);
+      console.error(`${method} ${path} failed:`, failure);
+      throw failure;
     }
     return response;
   }

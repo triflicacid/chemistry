@@ -36,12 +36,9 @@ export interface ToolbarProps {
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   canUndo: boolean;
   canRedo: boolean;
-  saved: boolean;
-  /** How strained the geometry is, ready to show, or null if it has not been worked out. */
-  strain: string | null;
 }
 
-export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, saved, strain }: ToolbarProps) {
+export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo }: ToolbarProps) {
   const { optimising, optimise, cancelOptimise, undo, redo, history, goTo, clearHistory } = useSessionContext();
   const { tool } = useObservable(tools);
 
@@ -83,7 +80,7 @@ export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onTog
           }
           onClick={() => void (optimising ? cancelOptimise() : optimise())}
         >
-          {optimising ? "Stop" : "Optimise"}
+          {optimising ? `Stop · step ${optimising.iteration}` : "Optimise"}
         </button>
       </div>
 
@@ -95,9 +92,9 @@ export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onTog
 
       <span className={`status status-${phase.kind}`} role="status">
         {describe(phase)}
-        {phase.kind === "open" && optimising ? ` · optimising, step ${optimising.iteration}` : ""}
-        {phase.kind === "open" && strain ? ` · ${strain}` : ""}
-        {phase.kind === "open" && saved ? " · edits saved" : ""}
+      </span>
+      <span className="sr-only" role="status">
+        {optimising ? "Optimising" : ""}
       </span>
     </header>
   );
@@ -131,7 +128,7 @@ function describe(phase: SessionPhase): string {
     case "opening":
       return "Opening";
     case "open":
-      return "Ready";
+      return "Connected";
     case "wanted":
       return "No molecule";
     default:

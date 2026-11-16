@@ -148,7 +148,9 @@ export class ChemistryApi {
     const response = await this.http.send(method, path, { ...options, accept: "application/json" });
     const moleculeId = response.headers.get(MOLECULE_ID_HEADER);
     if (!moleculeId) {
-      throw new ApiError(response.status, "MISSING_MOLECULE_ID", `The response had no ${MOLECULE_ID_HEADER} header`);
+      const failure = new ApiError(response.status, "MISSING_MOLECULE_ID", `The response had no ${MOLECULE_ID_HEADER} header`);
+      console.error(`${method} ${path} failed:`, failure);
+      throw failure;
     }
     return { scene: (await response.json()) as Scene, moleculeId };
   }
@@ -157,7 +159,9 @@ export class ChemistryApi {
     const response = await this.http.send(method, path, { ...options, accept: "image/svg+xml" });
     const moleculeId = response.headers.get(MOLECULE_ID_HEADER);
     if (!moleculeId) {
-      throw new ApiError(response.status, "MISSING_MOLECULE_ID", `The response had no ${MOLECULE_ID_HEADER} header`);
+      const failure = new ApiError(response.status, "MISSING_MOLECULE_ID", `The response had no ${MOLECULE_ID_HEADER} header`);
+      console.error(`${method} ${path} failed:`, failure);
+      throw failure;
     }
     return { svg: await response.text(), moleculeId };
   }

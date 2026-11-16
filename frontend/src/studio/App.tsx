@@ -91,16 +91,6 @@ export function App() {
   ]);
 
   // a result describes the version it was made at, so it is out of date once the session has moved on from that
-  const strain = useMemo(() => {
-    if (!geometry) {
-      return null;
-    }
-    if (geometry.status === "failed" || geometry.strain === null) {
-      return "strain unavailable";
-    }
-    return `strain ${geometry.strain.toFixed(1)}${geometry.version === state?.version ? "" : "…"}`;
-  }, [geometry, state?.version]);
-
   const resize = useCallback((panel: Panel, size: number) => {
     setLayout((before) => (before[panel] === size ? before : { ...before, [panel]: size }));
   }, []);
@@ -115,7 +105,6 @@ export function App() {
         phase={phase}
         state={state}
         geometry={geometry}
-        strain={strain}
         models={models}
         activity={activity}
         layout={layout}
