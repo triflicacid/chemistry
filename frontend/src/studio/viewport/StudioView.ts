@@ -22,6 +22,7 @@ import {PointerRouter} from "./input/PointerRouter";
 import {RollRingInteraction} from "./input/RollRingInteraction";
 import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
+import {PanGuide} from "./scene/PanGuide";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
 import type {Emphasis} from "../models/items";
 import type {SystemView} from "../geometry/conjugation";
@@ -54,6 +55,8 @@ export class StudioView {
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
   private readonly reference: ReferenceLayer;
+  /** What debugging shows while the view is panned. */
+  private readonly panGuide: PanGuide;
   /** The handles on the molecule as a whole. */
   private readonly molecule: MoleculeHandleController;
   /** The handle on a bond or an angle. */
@@ -80,11 +83,13 @@ export class StudioView {
       sizedBy: canvas,
       onMove: () => {
         this.reference.placeGuide();
+        this.panGuide.update();
         const camera = this.rig.cameraState();
         const byUser = this.rig.byUser;
         this.listeners.forEach((listener) => listener.camera?.(camera, byUser));
       },
     });
+    this.panGuide = new PanGuide(this.stage);
     this.scene = new MoleculeScene(this.stage, this.kit);
     this.lock = new CameraLock(this.stage);
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
@@ -131,6 +136,7 @@ export class StudioView {
       reference: this.reference,
       annotations: this.annotations,
       cameraHud: this.cameraHud,
+      panGuide: this.panGuide,
       molecule: this.molecule,
       bonds: this.bonds,
       space: () => this.space,
@@ -178,6 +184,7 @@ export class StudioView {
   setMode(tool: Tool, options: ModeOptions): void {
     this.active.switchTo(this.modes[tool]);
     this.active.mode.configure(options);
+    this.panGuide.show(this.annotations.debug && tool === "pan");
   }
 
   /** The mode in use. */
@@ -469,13 +476,15 @@ export class StudioView {
   }
 
   /**
-   * Turns the debugging overlays on or off. Today that is the guide for a move: arrows along the axis, or a faint
-   * plane, that the atom being moved is held to.
+   * Turns the debugging overlays on or off. These are the guide for a move: arrows along the axis, or a faint
+   * plane, that the atom being moved is held to; and the guide for a pan: the orbit point, the plane it moves in and
+   * the path it has taken.
    *
    * @param enabled whether to draw them
    */
   setDebug(enabled: boolean): void {
     this.annotations.debug = enabled;
+    this.panGuide.show(enabled && this.mode.tool === "pan");
     this.reference.refreshGuide();
     this.annotations.drawLengths();
   }
@@ -502,6 +511,7 @@ export class StudioView {
     this.triad.dispose();
     this.ring.dispose();
     this.cameraHud.dispose();
+    this.panGuide.dispose();
     this.reference.dispose();
     this.kit.dispose();
     this.stage.dispose();

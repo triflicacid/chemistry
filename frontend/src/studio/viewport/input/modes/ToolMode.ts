@@ -13,6 +13,7 @@ import type {MoleculeHandleController} from "../../handles/MoleculeHandleControl
 import type {CameraHud} from "../../hud/CameraHud";
 import type {Annotations} from "../../scene/Annotations";
 import type {MoleculeScene} from "../../scene/MoleculeScene";
+import type {PanGuide} from "../../scene/PanGuide";
 import type {ReferenceLayer} from "../../scene/ReferenceLayer";
 import type {StudioViewListener} from "../../StudioViewListener";
 import type {InteractionHandler} from "../PointerRouter";
@@ -48,6 +49,8 @@ export interface ModeHost {
   readonly reference: ReferenceLayer;
   readonly annotations: Annotations;
   readonly cameraHud: CameraHud;
+  /** What debugging shows while the view is panned. */
+  readonly panGuide: PanGuide;
   /** The handles on the molecule as a whole. */
   readonly molecule: MoleculeHandleController;
   /** The handle on a bond or an angle. */

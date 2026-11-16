@@ -40,6 +40,7 @@ export class PanMode extends SelectMode {
   override press(event: PointerEvent): boolean {
     if (event.button === 0) {
       this.host.stage.canvas.style.cursor = "grabbing";
+      this.host.panGuide.begin();
     }
     return super.press(event);
   }
@@ -47,8 +48,14 @@ export class PanMode extends SelectMode {
   override release(event: PointerEvent): void {
     if (event.button === 0) {
       this.host.stage.canvas.style.cursor = "grab";
+      this.host.panGuide.end();
     }
     super.release(event);
+  }
+
+  override cancel(): void {
+    this.host.panGuide.end();
+    super.cancel();
   }
 
   private remap(panning: boolean): void {
