@@ -169,4 +169,14 @@ public final class StudioRequests
     public record HistoryRequest(String sessionId, Long baseVersion)
     {
     }
+
+    /**
+     * @param sessionId the session to move through the history of
+     * @param baseVersion the version the client was looking at, so that a move over a changed session is refused
+     * @param position how many edits to have in effect, from 0 (none) to the length of the history
+     * @param discard whether to forget the edits after that point instead of keeping them to redo (optional, default false)
+     */
+    public record RewindRequest(String sessionId, Long baseVersion, Integer position, Boolean discard)
+    {
+    }
 }

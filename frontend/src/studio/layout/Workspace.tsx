@@ -17,7 +17,7 @@ import {OptimiseNotice} from "./OptimiseNotice";
 import {Outliner} from "./Outliner";
 import {SmilesBar} from "./SmilesBar";
 import {Splitter} from "./Splitter";
-import {Toolbar} from "./Toolbar";
+import {Toolbar, type ToolbarProps} from "./Toolbar";
 import {Viewport} from "./Viewport";
 
 export interface WorkspaceProps {
@@ -55,6 +55,9 @@ export interface WorkspaceProps {
   onCancelBondDrag: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onLoadHistory: ToolbarProps["onLoadHistory"];
+  onGoTo: ToolbarProps["onGoTo"];
+  onClearHistory: ToolbarProps["onClearHistory"];
   optimising: Optimising | null;
   outcome: OptimisationOutcome | null;
   onOptimise: () => void;
@@ -62,7 +65,7 @@ export interface WorkspaceProps {
 }
 
 export function Workspace(props: WorkspaceProps) {
-  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onLockAtoms, onSaveCamera, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag, onUndo, onRedo } = props;
+  const { optimising, outcome, onOptimise, onCancelOptimise, phase, state, geometry, strain, models, activity, layout, onResize, onCollapse, onOpenSmiles, onSubmitSmiles, onMoveAtom, onSetBondLength, onSetBondTorsion, onSetAngle, onLockAtoms, onSaveCamera, canLock, lockPressed, onToggleLock, onDragAtoms, onDropAtoms, onCancelDrag, onMoveMolecule, onDragMolecule, onDropMolecule, onCancelMoleculeDrag, onDragBond, onDropBond, onCancelBondDrag, onUndo, onRedo, onLoadHistory, onGoTo, onClearHistory } = props;
 
   // the viewport tracks must be able to shrink to nothing, or the canvas holds the grid open
   const columns = [
@@ -101,6 +104,9 @@ export function Workspace(props: WorkspaceProps) {
         strain={strain}
         onUndo={onUndo}
         onRedo={onRedo}
+        onLoadHistory={onLoadHistory}
+        onGoTo={onGoTo}
+        onClearHistory={onClearHistory}
       />
 
       <SmilesBar state={state} onSubmit={onSubmitSmiles} />

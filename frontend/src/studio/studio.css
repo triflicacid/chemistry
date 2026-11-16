@@ -189,6 +189,101 @@ body.resizing {
   background: var(--selected-fill);
 }
 
+.history {
+  position: relative;
+}
+
+.history-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 16rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  font-size: 0.8rem;
+  cursor: default;
+  user-select: none;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.2);
+}
+
+.history-menu ol {
+  margin: 0;
+  padding: 0.2rem;
+  list-style: none;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+
+.history-row:hover {
+  background: var(--selected-fill);
+}
+
+.history-here {
+  font-weight: 600;
+  border-left: 3px solid var(--accent);
+}
+
+.history-later .history-label {
+  color: var(--ink-soft);
+}
+
+.history-time {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: normal;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-note {
+  padding: 0.2rem 0.4rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.history-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.history-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.25rem 0.4rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--edge);
+}
+
+.history-head button,
+.history-actions button {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0 0.4rem;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.history-head button:hover,
+.history-actions button:hover {
+  border-color: var(--accent);
+}
+
 .status {
   font-size: 0.75rem;
   color: var(--ink-soft);

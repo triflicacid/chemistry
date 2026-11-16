@@ -320,6 +320,80 @@ class StudioSessionTest
     }
 
     @Test
+    void goes_to_a_point_in_the_history_keeping_the_later_edits_to_redo()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        Vec3 start = session.positionOf(atom);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 0, 0))), true);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(2, 0, 0))), true);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(3, 0, 0))), true);
+
+        StudioSession.Applied applied = session.rewind(1, false);
+
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 0, 0));
+        assertThat(applied.moved()).containsEntry(atom, new Vec3(1, 0, 0));
+        assertThat(session.history().position()).isEqualTo(1);
+        assertThat(session.history().entries()).extracting(StudioSession.HistoryEntry::label).containsExactly("Move atom", "Move atom", "Move atom");
+        assertThat(session.history().entries()).allSatisfy(entry -> assertThat(entry.at()).isPositive());
+
+        session.rewind(3, false);
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(3, 0, 0));
+
+        session.rewind(0, false);
+        assertThat(session.positionOf(atom)).isEqualTo(start);
+        assertThat(session.canRedo()).isTrue();
+    }
+
+    @Test
+    void reverts_to_a_point_in_the_history_forgetting_the_later_edits()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 0, 0))), true);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(2, 0, 0))), true);
+
+        session.rewind(1, true);
+
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 0, 0));
+        assertThat(session.canRedo()).isFalse();
+        assertThat(session.history().entries()).hasSize(1);
+    }
+
+    @Test
+    void refuses_a_point_that_is_not_in_the_history_and_a_move_over_a_locked_atom()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 0, 0))), true);
+
+        assertThatThrownBy(() -> session.rewind(2, false))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("INVALID_EDIT"));
+
+        session.lock(List.of(atom), true);
+        assertThatThrownBy(() -> session.rewind(0, false))
+                .isInstanceOfSatisfying(StudioEditException.class, refused -> assertThat(refused.code()).isEqualTo("LOCKED"));
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 0, 0));
+    }
+
+    @Test
+    void clears_the_history_leaving_the_atoms_where_they_are()
+    {
+        StudioSession session = open("CCO");
+        String atom = ids(session).getFirst();
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(1, 0, 0))), true);
+        session.move(List.of(new StudioSession.Move(atom, new Vec3(2, 0, 0))), true);
+        session.undo();
+
+        session.clearHistory();
+
+        assertThat(session.positionOf(atom)).isEqualTo(new Vec3(1, 0, 0));
+        assertThat(session.canUndo()).isFalse();
+        assertThat(session.canRedo()).isFalse();
+        assertThat(session.history().entries()).isEmpty();
+    }
+
+    @Test
     void cancels_an_edit_in_progress_instead_of_undoing_the_one_before()
     {
         StudioSession session = open("CCO");
