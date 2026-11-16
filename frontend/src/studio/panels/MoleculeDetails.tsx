@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState, type ReactNode} from "react";
 import {ChemistryApi} from "../../api/ChemistryApi";
 import type {Span} from "../../api/types/span";
 import type {AtomInfo, MoleculeMetadata} from "../../api/types/metadata";
@@ -98,10 +98,12 @@ function CopyButton({text, label}: { text: string; label: string }) {
 interface MoleculeDetailsProps {
   state: SessionState;
   models: Models;
+  /** Further rows of the same list, which show at once while the rest loads. */
+  children?: ReactNode;
 }
 
 /** The molecule's SMILES, canonical SMILES and formulae, which mark what is hovered and centre the camera on what is clicked. */
-export function MoleculeDetails({state, models}: MoleculeDetailsProps) {
+export function MoleculeDetails({state, models, children}: MoleculeDetailsProps) {
   const [metadata, setMetadata] = useState<MoleculeMetadata | null>(null);
   const [failed, setFailed] = useState(false);
   const item = useObservable(models.hover);
@@ -123,13 +125,17 @@ export function MoleculeDetails({state, models}: MoleculeDetailsProps) {
     };
   }, [state.smiles, state.saved_molecule_id, state.source_molecule_id]);
 
-  if (failed) {
-    return <p className="panel-empty">The molecule's formulae could not be loaded.</p>;
-  }
-  if (!metadata) {
-    return <p className="panel-empty">Reading the molecule…</p>;
-  }
-  return <Loaded state={state} metadata={metadata} item={item} models={models}/>;
+  const note = (text: string) => (
+    <dd className="note-row"><p className="panel-empty">{text}</p></dd>
+  );
+  return (
+    <dl className="properties">
+      {failed ? note("The molecule's formulae could not be loaded.") : !metadata ? note("Reading the molecule…") : (
+        <Loaded state={state} metadata={metadata} item={item} models={models}/>
+      )}
+      {children}
+    </dl>
+  );
 }
 
 interface LoadedProps {
@@ -251,13 +257,13 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
   }, [item, metadata, state, smiles, canonical, formula]);
 
   return (
-    <dl className="properties">
+    <>
       <dt>SMILES</dt>
       <dd className="wrap mono"><Mount element={smiles.element}/><CopyButton text={metadata.smiles} label="Copy SMILES"/></dd>
       <dt>Canonical</dt>
       <dd className="wrap mono"><Mount element={canonical.element}/><CopyButton text={metadata.canonical_smiles} label="Copy canonical SMILES"/></dd>
       <dt>Formula</dt>
       <dd className="wrap"><Mount element={formula.element}/></dd>
-    </dl>
+    </>
   );
 }
