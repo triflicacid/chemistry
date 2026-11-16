@@ -7,6 +7,7 @@ import type {LayoutState, Panel} from "../layoutStore";
 import {AnalysisPanel} from "../panels/AnalysisPanel";
 import {Inspector} from "../panels/Inspector";
 import {OptimiseNotice} from "../panels/OptimiseNotice";
+import {RenderOptions} from "../panels/RenderOptions";
 import {Outliner} from "../panels/Outliner";
 import {SmilesBar} from "../controls/SmilesBar";
 import {Splitter} from "../controls/Splitter";
@@ -66,7 +67,7 @@ export function Workspace(props: WorkspaceProps) {
 
       <SmilesBar state={state} onSubmit={onSubmitSmiles} />
 
-      <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse}>
+      <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} footer={<RenderOptions models={models} />}>
         <Outliner state={state} models={models} />
       </Side>
 
@@ -115,9 +116,11 @@ interface SideProps {
   collapsed: boolean;
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   children: ReactNode;
+  /** Something pinned to the foot of the panel, which the body does not scroll under. */
+  footer?: ReactNode;
 }
 
-function Side({ panel, name, collapsed, onCollapse, children }: SideProps) {
+function Side({ panel, name, collapsed, onCollapse, children, footer }: SideProps) {
   if (collapsed) {
     return (
       <div className={`rail rail-${panel}`}>
@@ -132,6 +135,7 @@ function Side({ panel, name, collapsed, onCollapse, children }: SideProps) {
     <section className={`panel panel-${panel}`} aria-label={name}>
       <Header name={name} panel={panel} collapsed={false} onCollapse={onCollapse} />
       <div className="panel-body">{children}</div>
+      {footer}
     </section>
   );
 }

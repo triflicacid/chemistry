@@ -1,3 +1,4 @@
+import type {Finish} from "../../render/finish";
 import type {BondOrder} from "../session/messages";
 import type {EditClick, RotateTarget, Space} from "../models/ToolModel";
 import type {Constraint} from "../viewport/handles/dragPlane";
@@ -58,4 +59,9 @@ export const EDIT_CLICKS: Segment<EditClick>[] = [
       "Click an atom to draw a ring on it. Drag from the atom to turn the ring, scroll to change how many atoms it has, then click the ghost atoms in turn to place them. The last one closes the ring, and Esc puts the ring away, leaving the atoms (Tab)",
   },
   { value: "select", label: "Select", title: "Clicking selects atoms and bonds, and dragging turns the camera, as with the select tool, so they can be bonded or deleted (Tab)" },
+];
+
+export const FINISH_OPTIONS: Segment<Finish>[] = [
+  { value: "matte", label: "Matte", title: "Draw atoms and bonds flat, as chalk" },
+  { value: "glossy", label: "Glossy", title: "Draw atoms and bonds smooth and reflecting a studio-like room, as glossy plastic" },
 ];

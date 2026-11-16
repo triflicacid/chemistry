@@ -2,12 +2,15 @@ import {
   AmbientLight,
   DirectionalLight,
   PerspectiveCamera,
+  PMREMGenerator,
   type Quaternion,
   Scene,
+  type Texture,
   Vector2,
   Vector3,
   WebGLRenderer,
 } from "three";
+import {RoomEnvironment} from "three/examples/jsm/environments/RoomEnvironment.js";
 import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 import {UP} from "./primitives";
 import {rolled, rollOf} from "./roll";
@@ -20,6 +23,13 @@ export const DEFAULT_YAW = 30;
 export const DEFAULT_PITCH = 20;
 
 const suppress = (event: Event): void => event.preventDefault();
+
+/** How strong the lights are before the brightness scales them. */
+const AMBIENT_LIGHT = 0.75;
+const KEY_LIGHT = 1.1;
+
+/** How strongly a room that surfaces reflect lights them, held back so that colours do not wash out. */
+const ENVIRONMENT_LIGHT = 0.7;
 
 /** Where a stage is drawn, and what to tell when the view moves. */
 export interface StageOptions {
@@ -42,9 +52,15 @@ export class Stage {
   readonly renderer: WebGLRenderer;
   readonly controls: OrbitControls;
 
+  /** The light that reaches everything, and the one that comes from over the camera's shoulder, at their usual strengths. */
+  private readonly ambient = new AmbientLight(0xffffff, AMBIENT_LIGHT);
+  private readonly key = new DirectionalLight(0xffffff, KEY_LIGHT);
+
   private readonly resizer: ResizeObserver;
   private readonly overlays = new Set<(renderer: WebGLRenderer, camera: PerspectiveCamera, capturing: boolean) => void>();
   private pending = 0;
+  /** What shiny surfaces reflect, made the first time it is wanted and kept, so that turning it on again is instant. */
+  private environment: Texture | null = null;
   /** Where the camera stood when a look-around drag began, while one is under way. */
   private eye: Vector3 | null = null;
   private pressed = -1;
@@ -57,10 +73,9 @@ export class Stage {
     this.renderer.setPixelRatio(window.devicePixelRatio);
 
     this.scene.add(this.camera);
-    this.scene.add(new AmbientLight(0xffffff, 0.75));
-    const light = new DirectionalLight(0xffffff, 1.1);
-    light.position.set(0.4, 0.8, 1);
-    this.camera.add(light);
+    this.scene.add(this.ambient);
+    this.key.position.set(0.4, 0.8, 1);
+    this.camera.add(this.key);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = false;
@@ -86,6 +101,33 @@ export class Stage {
 
     this.resizer = new ResizeObserver(() => this.resize());
     this.resizer.observe(options.sizedBy);
+  }
+
+  /**
+   * Lets surfaces reflect a studio-like room, which is what makes a smooth surface look glossy: a highlight alone is only a dot.
+   *
+   * @param on whether surfaces reflect it
+   */
+  setEnvironment(on: boolean): void {
+    if (on && !this.environment) {
+      const generator = new PMREMGenerator(this.renderer);
+      this.environment = generator.fromScene(new RoomEnvironment(), 0.04).texture;
+      generator.dispose();
+    }
+    this.scene.environment = on ? this.environment : null;
+    this.requestRender();
+  }
+
+  /**
+   * Makes the scene brighter or dimmer, the lamps and the reflected room together.
+   *
+   * @param factor a multiple of the usual strength: 1 leaves the lighting as it is
+   */
+  setBrightness(factor: number): void {
+    this.ambient.intensity = AMBIENT_LIGHT * factor;
+    this.key.intensity = KEY_LIGHT * factor;
+    this.scene.environmentIntensity = ENVIRONMENT_LIGHT * factor;
+    this.requestRender();
   }
 
   /** The canvas the stage draws on. */
@@ -274,6 +316,7 @@ export class Stage {
     this.resizer.disconnect();
     this.canvas.removeEventListener("contextmenu", suppress);
     this.controls.dispose();
+    this.environment?.dispose();
     this.renderer.dispose();
   }
 

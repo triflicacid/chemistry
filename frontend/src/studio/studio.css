@@ -1078,3 +1078,41 @@ body.resizing {
   border: 1px solid var(--accent);
   background: var(--selected-fill);
 }
+
+/* the Render options section, pinned to the foot of the Outliner and folding down to its title */
+.render-options {
+  flex: none;
+  border-top: 1px solid var(--edge);
+  padding: 0.2rem 0.5rem 0.35rem;
+}
+
+.render-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.2rem 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.render-body {
+  margin: 0.15rem 0 0;
+}
+
+.render-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.render-value {
+  min-width: 2.6rem;
+  text-align: right;
+}

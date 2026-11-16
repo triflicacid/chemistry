@@ -1,28 +1,26 @@
-import {
-  Box3,
-  Color,
-  Group,
-  Mesh,
-  MeshBasicMaterial,
-  MeshStandardMaterial,
-  Object3D,
-  Raycaster,
-  Vector3,
-} from "three";
-import type { MatchHighlight } from "../../api/types/match";
-import type { OptionValues } from "../../api/types/options";
-import type { CameraPose, Conjugation3D, Connection3D, Diagnostics3D, Site3D, Structure3D, Vec3 } from "../../api/types/structure";
-import { AXIS_LENGTH, makeAxes } from "../../render/axes";
-import { aromaticCentres } from "../../render/aromatic";
-import { ballRadius, buildBond, LONE_ATOM_RADIUS, type Style } from "../../render/bonds";
-import { disposeMaterials } from "../../render/dispose";
-import { applyTints, HOVER_TINT, SELECTED_TINT } from "../../render/emphasis";
-import { BOND_HALO, fade, HALO_GROWTH, HALO_PADDING, haloMaterial } from "../../render/halo";
-import { angleArc, piCloud, piLabel, piOrbitals } from "../../render/overlays";
-import { type Part, PartRegistry, type PartRef } from "../../render/parts";
-import { Primitives } from "../../render/primitives";
-import { FIELD_OF_VIEW, Stage } from "../../render/stage";
-import type { FaultSeverity, FaultState, Highlights, MoleculeView, SelectionState, ViewListener } from "./MoleculeView";
+import {Box3, Color, Group, Mesh, MeshBasicMaterial, Object3D, Raycaster, Vector3,} from "three";
+import type {MatchHighlight} from "../../api/types/match";
+import type {OptionValues} from "../../api/types/options";
+import type {
+    CameraPose,
+    Conjugation3D,
+    Connection3D,
+    Diagnostics3D,
+    Site3D,
+    Structure3D,
+    Vec3
+} from "../../api/types/structure";
+import {AXIS_LENGTH, makeAxes} from "../../render/axes";
+import {aromaticCentres} from "../../render/aromatic";
+import {ballRadius, buildBond, LONE_ATOM_RADIUS, type Style} from "../../render/bonds";
+import {disposeMaterials} from "../../render/dispose";
+import {applyTints, HOVER_TINT, SELECTED_TINT} from "../../render/emphasis";
+import {BOND_HALO, fade, HALO_GROWTH, HALO_PADDING, haloMaterial} from "../../render/halo";
+import {angleArc, piCloud, piLabel, piOrbitals} from "../../render/overlays";
+import {type Part, type PartRef, PartRegistry} from "../../render/parts";
+import {Primitives} from "../../render/primitives";
+import {FIELD_OF_VIEW, Stage} from "../../render/stage";
+import type {FaultSeverity, FaultState, Highlights, MoleculeView, SelectionState, ViewListener} from "./MoleculeView";
 
 /** The matches of a SMARTS pattern to show in a view. */
 export interface MatchLook {
@@ -423,7 +421,7 @@ export class ThreeView implements MoleculeView {
         if (look?.recolour && first !== undefined) {
           colour.set(look.matches[first]?.colour ?? site.colour);
         }
-        const ball = new Mesh(this.kit.sphereGeometry, new MeshStandardMaterial({ color: colour, roughness: 0.5 }));
+        const ball = new Mesh(this.kit.sphereGeometry, this.kit.solid(colour));
         ball.position.copy(at);
         ball.scale.setScalar(size);
         fade(ball, dimmed(owners));

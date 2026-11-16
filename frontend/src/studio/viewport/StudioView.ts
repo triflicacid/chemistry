@@ -1,4 +1,6 @@
+import {Mesh, MeshStandardMaterial} from "three";
 import type {Vec3} from "../../api/types/structure";
+import {type Finish, roughnessOf} from "../../render/finish";
 import {Primitives} from "../../render/primitives";
 import {Stage} from "../../render/stage";
 import type {GridKind, GridPlaneChoice} from "./grid";
@@ -504,6 +506,33 @@ export class StudioView {
    */
   setAxes(visible: boolean): void {
     this.reference.setAxes(visible);
+  }
+
+  /**
+   * Chooses how shiny the atoms and bonds are drawn. What is drawn already is changed, and what is drawn after is made with it.
+   *
+   * @param finish matte, or glossy, which also lets them reflect a studio-like room
+   */
+  setFinish(finish: Finish): void {
+    this.kit.finish = finish;
+    this.stage.setEnvironment(finish === "glossy");
+
+    const roughness = roughnessOf(finish);
+    this.scene.content.traverse((object) => {
+      if (object instanceof Mesh && object.material instanceof MeshStandardMaterial) {
+        object.material.roughness = roughness;
+      }
+    });
+    this.stage.requestRender();
+  }
+
+  /**
+   * Makes the scene brighter or dimmer.
+   *
+   * @param factor a multiple of the usual lighting: 1 leaves it as it is
+   */
+  setBrightness(factor: number): void {
+    this.stage.setBrightness(factor);
   }
 
   /**

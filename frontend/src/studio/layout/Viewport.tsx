@@ -85,6 +85,16 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.setAxes(axes);
   }, [view, axes]);
 
+  // how the molecule is drawn is set in the Render options section, and is shown here
+  const { finish, brightness } = useObservable(models.render);
+  useEffect(() => {
+    view?.setFinish(finish);
+  }, [view, finish]);
+
+  useEffect(() => {
+    view?.setBrightness(brightness);
+  }, [view, brightness]);
+
   useEffect(() => {
     view?.setLookAround(look);
   }, [view, look]);

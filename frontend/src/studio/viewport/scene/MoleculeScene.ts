@@ -1,4 +1,4 @@
-import {Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, Ray, Raycaster, type Sprite, Vector3} from "three";
+import {Box3, Color, Group, Mesh, type Object3D, Ray, Raycaster, type Sprite, Vector3} from "three";
 import type {Vec3} from "../../../api/types/structure";
 import {aromaticCentres} from "../../../render/aromatic";
 import {ballRadius, type BondEnds, buildBond, type Style} from "../../../render/bonds";
@@ -110,7 +110,7 @@ export class MoleculeScene {
   private drawAtom(atom: SessionAtom, index: number): AtomNode {
     const at = new Vector3(atom.position.x, atom.position.y, atom.position.z);
     const radius = ballRadius(atom.radius, STYLE, true);
-    const ball = new Mesh(this.kit.sphereGeometry, new MeshStandardMaterial({ color: new Color(atom.colour), roughness: 0.5 }));
+    const ball = new Mesh(this.kit.sphereGeometry, this.kit.solid(new Color(atom.colour)));
     ball.position.copy(at);
     ball.scale.setScalar(radius);
     this.registry.add("atom", null, { element: atom.element }, ball, atom.id);
