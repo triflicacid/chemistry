@@ -402,7 +402,7 @@ describe("the Studio socket", () => {
     }
     await expect(socket.addBond(opened.session_id, bonded.version, oxygen.id, lone, "SINGLE")).rejects.toMatchObject({ code: "INVALID_EDIT" });
 
-    const reordered = await socket.setBondOrder(opened.session_id, bonded.version, bondId, "TRIPLE");
+    const reordered = await socket.setBondOrder(opened.session_id, bonded.version, [bondId], "TRIPLE");
     expect(reordered.type === "bond.order.ack" && reordered.state.bonds.find((bond) => bond.id === bondId)?.order).toBe("TRIPLE");
     if (reordered.type !== "bond.order.ack") {
       return;

@@ -211,7 +211,7 @@ export type BondOrder = "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE" | "AROMATIC
 export type AtomPlacement = { attach: string; position?: Vec3 } | { position: Vec3 };
 
 export interface GraphEditAck extends ServerEnvelope {
-  type: "atom.set.ack" | "atom.add.ack" | "atom.delete.ack" | "bond.add.ack" | "bond.delete.ack" | "bond.order.ack";
+  type: "atom.set.ack" | "atom.add.ack" | "atom.delete.ack" | "atom.fill.ack" | "bond.add.ack" | "bond.delete.ack" | "bond.order.ack";
   /** The version the session is at after the change, which is the one before it if nothing needed to change. */
   version: number;
   status: "applied";

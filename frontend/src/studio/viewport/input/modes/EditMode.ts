@@ -1,6 +1,8 @@
 import {Quaternion, Vector3} from "three";
 import type {Vec3} from "../../../../api/types/structure";
 import {aimedAt, clampRing, ringBondLength, ringLayout, type RingLayout, roomFor} from "../../../geometry/ring";
+import type {Binding} from "../../../keys/binding";
+import {KEYS} from "../../../keys/keymap";
 import type {PartItem} from "../../../models/items";
 import type {EditClick} from "../../../models/ToolModel";
 import type {BondOrder} from "../../../session/messages";
@@ -134,6 +136,12 @@ export class EditMode extends MoveMode {
 
   // there are no handles on the molecule, atoms or bonds
   protected override arrange(_options: ModeOptions): void {}
+
+  // H is the edit tool's own: it fills the valence of a selected atom, and only otherwise toggles Carry H, which is decided with
+  // the selection where the tool's buttons are, so the move tool's key for it is not taken here
+  override keys(): Binding[] {
+    return super.keys().filter((binding) => binding.key !== KEYS.toggleCarry.key);
+  }
 
   override reset(): void {
     super.reset();

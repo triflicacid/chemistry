@@ -6,6 +6,8 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.ValenceTable;
+import com.ruben.chemistry.core.Valences;
 import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.molecule.StudioSnapshot;
@@ -830,32 +832,58 @@ public final class StudioSession
     }
 
     /**
-     * Gives a bond an order as one edit that can be undone. A double bond's declared stereo goes if it stops being double.
+     * Gives a bond an order, as one edit that can be undone. A double bond's declared stereo goes if it stops being double.
      *
      * @param bondId the bond to change
      * @param order its new order
      * @return what changed and the version after it, which is the version the session was at if the bond already had that order
-     * @throws StudioEditException with {@code UNKNOWN_ID} for a bond this session does not hold, {@code LOCKED} if either
-     *     of its atoms is locked, {@code BUSY} if an edit is in progress, and {@code INVALID_MESSAGE} if there is no order
+     * @throws StudioEditException as {@link #setBondOrders}
      */
     public synchronized Applied setBondOrder(String bondId, BondOrder order)
+    {
+        return setBondOrders(List.of(bondId), order);
+    }
+
+    /**
+     * Gives bonds an order, as one edit that can be undone however many there are. A bond that has that order already is left
+     * alone, and a double bond's declared stereo goes if it stops being double.
+     *
+     * @param bondIds the bonds to change
+     * @param order their new order
+     * @return what changed and the version after it, which is the version the session was at if every bond had that order
+     * @throws StudioEditException with {@code UNKNOWN_ID} for a bond this session does not hold, {@code LOCKED} if an atom of
+     *     a bond that would change is locked, {@code BUSY} if an edit is in progress, {@code INVALID_EDIT} if no bond is named,
+     *     and {@code INVALID_MESSAGE} if there is no order
+     */
+    public synchronized Applied setBondOrders(Collection<String> bondIds, BondOrder order)
     {
         requireIdle();
         if (order == null)
         {
             throw new StudioEditException("INVALID_MESSAGE", "An order is required");
         }
-        Bond bond = bondNamed(bondId);
-        if (bond.order() == order)
+        if (bondIds.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "No bond was named to change");
+        }
+
+        List<Bond> changing = bondIds.stream().distinct().map(this::bondNamed).filter(bond -> bond.order() != order).toList();
+        if (changing.isEmpty())
         {
             return new Applied(version, Map.of(), null);
         }
-        List<String> ends = List.of(atomIds.get(bond.first()), atomIds.get(bond.second()));
+
+        Set<String> ends = new LinkedHashSet<>();
+        changing.forEach(bond ->
+        {
+            ends.add(atomIds.get(bond.first()));
+            ends.add(atomIds.get(bond.second()));
+        });
         requireUnlocked(ends);
 
         Draft draft = new Draft();
-        draft.reorder(draft.jointOf(bond), order);
-        return commit(draft, "Set bond order", ends);
+        changing.forEach(bond -> draft.reorder(draft.jointOf(bond), order));
+        return commit(draft, changing.size() == 1 ? "Set bond order" : "Set bond orders", ends);
     }
 
     /**
@@ -954,6 +982,166 @@ public final class StudioSession
         restore(new Graph(draft.build(), draft.ids, draft.jointIds, draft.positions));
         file(new Edit(Map.of(), Map.of(), null, null, before, graph(), new LinkedHashSet<>(touched), label, System.currentTimeMillis()));
         return new Applied(++version, Map.of(), null, true);
+    }
+
+    /**
+     * Gives atoms the hydrogens that fill their valence.
+     *
+     * @param ids the atoms to fill
+     * @return the edit and the hydrogens and bonds it made, which is nothing, and does not raise the version, if every atom was full already
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, {@code LOCKED} if an atom
+     *     that would take a hydrogen is locked, {@code BUSY} if an edit is in progress, and {@code INVALID_EDIT} if none is
+     *     named or none is an atom whose valence is known
+     */
+    public synchronized Created fillValences(Collection<String> ids)
+    {
+        requireIdle();
+        if (ids.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "No atom was named to fill");
+        }
+
+        List<Atom> named = ids.stream().distinct().map(this::atomNamed).toList();
+        List<Atom> known = named.stream().filter(atom -> Valences.areKnownFor(atom.element())).toList();
+        if (known.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "None of the atoms is one whose valence is known, which only the organic subset is");
+        }
+
+        Map<Atom, Integer> wanting = new IdentityHashMap<>();
+        List<Atom> order = new ArrayList<>();
+        for (Atom atom : known)
+        {
+            int missing = hydrogensMissing(atom);
+            if (missing > 0)
+            {
+                wanting.put(atom, missing);
+                order.add(atom);
+            }
+        }
+        if (order.isEmpty())
+        {
+            return new Created(new Applied(version, Map.of(), null), List.of(), List.of());
+        }
+        requireUnlocked(order.stream().map(atomIds::get).toList());
+
+        Draft draft = new Draft();
+        List<String> atoms = new ArrayList<>();
+        List<String> bonds = new ArrayList<>();
+        List<String> touched = new ArrayList<>();
+        for (Atom atom : order)
+        {
+            touched.add(atomIds.get(atom));
+            Vec3 centre = positionOfAtom(atom);
+            double length = ElementData.covalentRadius(ElementData.numberOf(atom.element())) + ElementData.covalentRadius(1);
+
+            List<Vec3> arms = new ArrayList<>();
+            for (Atom neighbour : molecule.neighboursOf(atom))
+            {
+                Vec3 arm = positionOfAtom(neighbour).minus(centre);
+                if (arm.length() > 1e-6)
+                {
+                    arms.add(arm.normalised());
+                }
+            }
+
+            for (int each = 0; each < wanting.get(atom); each++)
+            {
+                Vec3 direction = hydrogenDirection(atom, arms);
+                arms.add(direction);
+                Atom hydrogen = Atom.builder("H").hydrogenCount(0).build();
+                String hydrogenId = draft.add(hydrogen, centre.plus(direction.times(length)));
+                atoms.add(hydrogenId);
+                touched.add(hydrogenId);
+                bonds.add(draft.join(atom, hydrogen, BondOrder.SINGLE));
+            }
+        }
+
+        return new Created(commit(draft, "Fill valences", touched), atoms, bonds);
+    }
+
+    /**
+     * @param atom an atom of the working graph whose valence is known
+     * @return how many hydrogens it takes to fill the smallest valence its charge allows that its bonds do not exceed
+     */
+    private int hydrogensMissing(Atom atom)
+    {
+        int spent = 0;
+        int aromatic = 0;
+        for (Bond bond : molecule.bondsOf(atom))
+        {
+            switch (bond.order())
+            {
+                case SINGLE -> spent += 1;
+                case DOUBLE -> spent += 2;
+                case TRIPLE -> spent += 3;
+                case QUADRUPLE -> spent += 4;
+                case AROMATIC -> aromatic++;
+            }
+        }
+        // aromatic bonds are worth one and a half each, as the molecule counts them
+        spent += Math.round(1.5f * aromatic);
+
+        int required = spent;
+        OptionalInt valence = ValenceTable.allowedFor(atom.element(), atom.charge()).stream().mapToInt(Integer::intValue).filter(each -> each >= required).findFirst();
+        if (valence.isEmpty())
+        {
+            valence = Valences.toFill(atom.element(), required);
+        }
+        return valence.isPresent() ? Math.max(0, valence.getAsInt() - spent) : 0;
+    }
+
+    /**
+     * Chooses where the next hydrogen of an atom goes: where its neighbours, and the hydrogens already placed on it, leave
+     * room, which for an atom with a double bond and nothing else is in the plane of what is beyond that bond.
+     *
+     * @param atom the atom
+     * @param arms unit vectors from the atom to each of its neighbours and the hydrogens already placed
+     * @return a unit vector for the new bond
+     */
+    private Vec3 hydrogenDirection(Atom atom, List<Vec3> arms)
+    {
+        // the one arm is a bond of the atom's own, and not a hydrogen placed a moment ago on an atom with none
+        if (arms.size() == 1 && molecule.bondsOf(atom).size() == 1)
+        {
+            Vec3 along = arms.getFirst();
+            BondOrder order = molecule.bondsOf(atom).getFirst().order();
+            if (order == BondOrder.TRIPLE)
+            {
+                return along.times(-1);
+            }
+            if (order == BondOrder.DOUBLE)
+            {
+                Vec3 across = acrossDoubleBond(atom, along);
+                return along.times(-0.5).plus(across.times(Math.sqrt(3) / 2));
+            }
+        }
+        return freeDirection(arms);
+    }
+
+    /**
+     * @param atom an atom with one double bond and no other bond
+     * @param along the unit vector from it along that bond
+     * @return a unit vector at right angles to the bond, in the plane of what is bonded beyond it and on the side away from
+     *     it, so that the atom's hydrogens and the other end's substituents lie in one plane; any at right angles if the
+     *     other end has no other bond
+     */
+    private Vec3 acrossDoubleBond(Atom atom, Vec3 along)
+    {
+        Atom other = molecule.neighboursOf(atom).getFirst();
+        for (Atom beyond : molecule.neighboursOf(other))
+        {
+            if (beyond != atom)
+            {
+                Vec3 toBeyond = positionOfAtom(beyond).minus(positionOfAtom(other));
+                Vec3 flat = toBeyond.minus(along.times(toBeyond.dot(along)));
+                if (flat.length() > 1e-6)
+                {
+                    return flat.normalised().times(-1);
+                }
+            }
+        }
+        return perpendicularTo(along);
     }
 
     /**

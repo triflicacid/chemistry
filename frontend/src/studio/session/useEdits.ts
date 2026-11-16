@@ -32,8 +32,9 @@ export interface Edits {
   setAtom: (id: string, change: AtomChange) => Promise<EditResult>;
   addAtom: (element: string, placement: AtomPlacement, order: BondOrder) => Promise<EditResult>;
   addBond: (first: string, second: string, order: BondOrder) => Promise<EditResult>;
-  setBondOrder: (bond: string, order: BondOrder) => Promise<EditResult>;
+  setBondOrder: (bonds: string[], order: BondOrder) => Promise<EditResult>;
   deleteAtoms: (ids: string[], hydrogens: boolean) => Promise<EditResult>;
+  fillValences: (ids: string[]) => Promise<EditResult>;
   deleteBonds: (ids: string[]) => Promise<EditResult>;
   setBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
   setBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
@@ -194,13 +195,20 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
   );
 
   const setBondOrder = useCallback(
-    (bond: string, order: BondOrder) => graph((socket, base) => socket.setBondOrder(base.session_id, base.version, bond, order), `Made ${bond} ${order.toLowerCase()}`),
+    (bonds: string[], order: BondOrder) =>
+      graph((socket, base) => socket.setBondOrder(base.session_id, base.version, bonds, order), `Made ${bonds.length === 1 ? bonds[0] : `${bonds.length} bonds`} ${order.toLowerCase()}`),
     [graph],
   );
 
   const deleteAtoms = useCallback(
     (ids: string[], hydrogens: boolean) =>
       graph((socket, base) => socket.deleteAtoms(base.session_id, base.version, ids, hydrogens), `Deleted ${ids.length === 1 ? ids[0] : `${ids.length} atoms`}${hydrogens ? " and their hydrogens" : ""}`),
+    [graph],
+  );
+
+  const fillValences = useCallback(
+    (ids: string[]) =>
+      graph((socket, base) => socket.fillValences(base.session_id, base.version, ids), `Filled the valence of ${ids.length === 1 ? ids[0] : `${ids.length} atoms`} with hydrogens`),
     [graph],
   );
 
@@ -486,5 +494,5 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
     [adopt, held, note, serially, socketRef],
   );
 
-  return { serially, send, sendBond, sendPose, submitSmiles, moveAtom, setAtom, addAtom, addBond, setBondOrder, deleteAtoms, deleteBonds, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory };
+  return { serially, send, sendBond, sendPose, submitSmiles, moveAtom, setAtom, addAtom, addBond, setBondOrder, deleteAtoms, fillValences, deleteBonds, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory };
 }

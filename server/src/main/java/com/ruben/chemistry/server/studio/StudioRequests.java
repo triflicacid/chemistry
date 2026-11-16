@@ -200,6 +200,15 @@ public final class StudioRequests
     /**
      * @param sessionId the session to edit
      * @param baseVersion the version the client was looking at when it composed the change
+     * @param atoms the atoms to give the hydrogens that fill their valence
+     */
+    public record AtomFillRequest(String sessionId, Long baseVersion, List<String> atoms)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
      * @param first one atom to bond
      * @param second the other
      * @param order the bond's order (optional, default single)
@@ -220,11 +229,28 @@ public final class StudioRequests
     /**
      * @param sessionId the session to edit
      * @param baseVersion the version the client was looking at when it composed the change
-     * @param bond the bond to change
-     * @param order its new order
+     * @param bond the bond to change (optional if {@code bonds} names them)
+     * @param bonds the bonds to change, all in one edit (optional if {@code bond} names one)
+     * @param order their new order
      */
-    public record BondOrderRequest(String sessionId, Long baseVersion, String bond, BondOrder order)
+    public record BondOrderRequest(String sessionId, Long baseVersion, String bond, List<String> bonds, BondOrder order)
     {
+        /**
+         * @return every bond the request names, once each
+         */
+        public List<String> named()
+        {
+            List<String> all = new java.util.ArrayList<>();
+            if (bond != null)
+            {
+                all.add(bond);
+            }
+            if (bonds != null)
+            {
+                all.addAll(bonds);
+            }
+            return all.stream().distinct().toList();
+        }
     }
 
     /**

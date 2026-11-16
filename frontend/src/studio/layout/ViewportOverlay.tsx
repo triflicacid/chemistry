@@ -93,7 +93,7 @@ export interface ActionToolsProps {
 
 /** The buttons at the top right of the viewport. */
 export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked, look, onLook, picking, onPickScope, structure, onFrame, onCentre, onReset }: ActionToolsProps) {
-  const { tool, constraint, space, rotateTarget, carryHydrogens, snap, editClick, element, bondOrder } = state;
+  const { tool, constraint, space, rotateTarget, carryHydrogens, snap, editClick, element } = state;
   return (
     <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
       {tool === "pan" && (
@@ -119,7 +119,7 @@ export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked
           </span>
           <span className="segmented-captioned">
             <span className="segmented-caption">Bond</span>
-            <Segmented label="Order of the bonds made" value={bondOrder} options={BOND_ORDERS} onChange={(next) => tools.bondWith(next)} />
+            <Segmented label="Order of the bonds made, and of the selected bonds" value={structure.order} options={BOND_ORDERS} onChange={structure.chooseOrder} />
           </span>
           <button
             type="button"
@@ -148,12 +148,22 @@ export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked
           aria-pressed={carryHydrogens}
           title={
             tool === "edit"
-              ? "When on, deleting an atom deletes the hydrogens bonded only to it too (H)"
+              ? "When on, deleting an atom deletes the hydrogens bonded only to it too (H, when no atom that can be filled is selected)"
               : "When on, moving an atom carries the hydrogens bonded to it by the same amount, so their bonds keep their lengths and angles (H). Nothing is locked"
           }
           onClick={() => tools.carry(!carryHydrogens)}
         >
           Carry H
+        </button>
+      )}
+      {tool === "edit" && structure.canFill && (
+        <button
+          type="button"
+          className="tool"
+          title="Add the hydrogens that fill the valence of the selected atoms whose valence is known, each placed in the direction the atom's geometry leaves (H). One undo takes it back"
+          onClick={structure.fill}
+        >
+          Fill valence
         </button>
       )}
       {tool === "move" && gridShown && (

@@ -14,5 +14,8 @@ export const ELEMENTS = [
   "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og",
 ];
 
+/** The elements whose hydrogens can be filled in. */
+export const ORGANIC_ELEMENTS = ["B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"];
+
 /** The elements a picker offers first, because they are the ones most structures are made of. */
 export const COMMON_ELEMENTS = ["H", "C", "N", "O", "F", "P", "S", "Cl", "Br", "I"];

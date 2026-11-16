@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {StateIndex} from "../geometry/StateIndex";
-import type {GeometryResult, SessionBond} from "../session/messages";
+import type {BondOrder, GeometryResult, SessionBond} from "../session/messages";
 import type {EditResult} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
 import {NumberField} from "../controls/NumberField";
@@ -13,6 +13,15 @@ import {Links, Property} from "./paneParts";
 import {RingMemberships} from "./RingMemberships";
 import {StrainDetails} from "./StrainDetails";
 
+/** Every order a bond can have, which is more than the edit tool makes bonds with. */
+const ORDERS: { value: BondOrder; label: string }[] = [
+  { value: "SINGLE", label: "Single" },
+  { value: "DOUBLE", label: "Double" },
+  { value: "TRIPLE", label: "Triple" },
+  { value: "QUADRUPLE", label: "Quadruple" },
+  { value: "AROMATIC", label: "Aromatic" },
+];
+
 interface BondPaneProps {
   bond: SessionBond;
   index: StateIndex;
@@ -22,7 +31,7 @@ interface BondPaneProps {
 
 /** Details about a single bond. */
 export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
-  const { setBondLength, setBondTorsion } = useSessionContext();
+  const { setBondLength, setBondTorsion, setBondOrder } = useSessionContext();
   const { tools } = models;
   // which atom stays is shared with the viewport's handle on the bond
   const { hold } = useObservable(tools);
@@ -57,6 +66,9 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
   const heldAtom = hold === "first" ? bond.first : hold === "second" ? bond.second : null;
   const told = (result: EditResult) => setRefusal(result.kind === "refused" ? result.message : null);
 
+  // a locked atom refuses edits, and the bond to it is one
+  const locked = index.state.locked.includes(bond.first) || index.state.locked.includes(bond.second);
+
   const first = index.atoms.get(bond.first);
   const second = index.atoms.get(bond.second);
   const a = reference && index.atoms.get(reference.first);
@@ -80,7 +92,22 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
 
       <h4 className="pane-subtitle">Chemistry</h4>
       <dl className="properties">
-        <Property name="Order" value={bond.order.toLowerCase()} />
+        <dt>Order</dt>
+        <dd>
+          <select
+            value={bond.order}
+            disabled={locked}
+            aria-label={`Order of ${index.bondLabel(bond)}`}
+            title={locked ? "An atom of this bond is locked, so its order cannot be changed" : "Change the order of the bond. Nothing else is adjusted, and one undo takes it back"}
+            onChange={(event) => void setBondOrder([bond.id], event.target.value as BondOrder).then(told)}
+          >
+            {ORDERS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </dd>
         <Property name="Aromatic" value={bond.aromatic ? "yes" : "no"} />
       </dl>
 

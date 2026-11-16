@@ -912,6 +912,36 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Gives atoms the hydrogens that fill their valence.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void fillValences(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.AtomFillRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.AtomFillRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("atom.fill", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.atoms() == null || request.atoms().isEmpty() || request.atoms().contains(null))
+        {
+            context.error("atom.fill", sequence, "INVALID_MESSAGE", "atoms are required");
+            return;
+        }
+
+        graphEdit(context, "atom.fill", sequence, request.sessionId(), request.baseVersion(), session -> session.fillValences(request.atoms()));
+    }
+
+    /**
      * Bonds two atoms.
      *
      * @param context the connection that asked
@@ -994,14 +1024,14 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        if (request.bond() == null || request.order() == null)
+        if (request.named().isEmpty() || request.named().contains(null) || request.order() == null)
         {
-            context.error("bond.order", sequence, "INVALID_MESSAGE", "bond and order are required");
+            context.error("bond.order", sequence, "INVALID_MESSAGE", "bond or bonds, and order, are required");
             return;
         }
 
         graphEdit(context, "bond.order", sequence, request.sessionId(), request.baseVersion(),
-                session -> noneCreated(session.setBondOrder(request.bond(), request.order())));
+                session -> noneCreated(session.setBondOrders(request.named(), request.order())));
     }
 
     /**
@@ -1454,6 +1484,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("atom.set", endpoint::setAtom),
                     Map.entry("atom.add", endpoint::addAtom),
                     Map.entry("atom.delete", endpoint::deleteAtoms),
+                    Map.entry("atom.fill", endpoint::fillValences),
                     Map.entry("bond.add", endpoint::addBond),
                     Map.entry("bond.delete", endpoint::deleteBonds),
                     Map.entry("bond.order", endpoint::bondOrder),

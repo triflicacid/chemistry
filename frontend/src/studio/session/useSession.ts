@@ -50,10 +50,15 @@ export interface Session {
   addAtom: (element: string, placement: AtomPlacement, order: BondOrder) => Promise<EditResult>;
   /** Bonds two atoms where they stand, as one edit that can be undone. */
   addBond: (first: string, second: string, order: BondOrder) => Promise<EditResult>;
-  /** Gives a bond an order, as one edit that can be undone. */
-  setBondOrder: (bond: string, order: BondOrder) => Promise<EditResult>;
+  /** Gives bonds an order, as one edit that can be undone however many there are. */
+  setBondOrder: (bonds: string[], order: BondOrder) => Promise<EditResult>;
   /** Deletes atoms and their bonds, with the hydrogens bonded only to them if asked, as one edit that can be undone. */
   deleteAtoms: (ids: string[], hydrogens: boolean) => Promise<EditResult>;
+  /**
+   * Gives atoms the hydrogens that fill their valence, as one edit that can be undone. The server works out how many and
+   * where to put them, and leaves alone any atom whose valence it does not know.
+   */
+  fillValences: (ids: string[]) => Promise<EditResult>;
   /** Deletes bonds and leaves their atoms, as one edit that can be undone. */
   deleteBonds: (ids: string[]) => Promise<EditResult>;
   /**
@@ -140,7 +145,7 @@ export function useSession(client?: ChemistryApi): Session {
   const saveCamera = useCameraSave(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
-  const { moveAtom, setAtom, addAtom, addBond, setBondOrder, deleteAtoms, deleteBonds, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory, submitSmiles } = edits;
+  const { moveAtom, setAtom, addAtom, addBond, setBondOrder, deleteAtoms, fillValences, deleteBonds, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory, submitSmiles } = edits;
 
   return {
     phase,
@@ -157,6 +162,7 @@ export function useSession(client?: ChemistryApi): Session {
     addBond,
     setBondOrder,
     deleteAtoms,
+    fillValences,
     deleteBonds,
     setBondLength,
     setBondTorsion,
