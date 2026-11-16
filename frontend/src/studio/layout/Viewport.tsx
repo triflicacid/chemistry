@@ -47,7 +47,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
-  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold } = toolState;
+  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold, axis } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
   const internal = tool === "rotate" && rotateTarget === "internal";
   const picking: PickScope = internal ? "item" : mode;
@@ -174,6 +174,15 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.setPivot(pivot, point);
   }, [view, pivot, point]);
 
+  // the axle the molecule is turned about is a bond clicked with the rotate tool, which lasts only while it is turning the molecule
+  const turning = tool === "rotate" && rotateTarget === "molecule";
+  useEffect(() => {
+    if (!turning && axis !== null) {
+      tools.turnAbout(null);
+    }
+    view?.setAxis(turning && axis !== null ? (index?.bonds.get(axis) ?? null) : null);
+  }, [view, index, tools, turning, axis]);
+
   const moleculeSelected = selected.items.some((item) => item.kind === "molecule");
 
   // a selected bond has a handle: an arrow along it with the move tool, which slides to change its length, and a ring about
@@ -218,17 +227,23 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     return view.listen({
       hover: (pick) => hover.hover(pick ? resolve(pick, picking, index) : null),
       click: (pick, additive) => {
-        // turning the whole molecule, an atom stands for its molecule, turned about that atom
+        // turning the whole molecule, an atom stands for its molecule, turned about that atom, and a bond for its molecule,
+        // turned about the bond as an axle
         const { tool: current, rotateTarget: turning } = tools.get();
-        if (pick?.kind === "atom" && current === "rotate" && turning === "molecule") {
+        if ((pick?.kind === "atom" || pick?.kind === "bond") && current === "rotate" && turning === "molecule") {
           const fragment = index.fragmentOf(pick);
           if (fragment !== null) {
             // clicking what is selected already would deselect it, and here it only moves the pivot
             if (!selection.get().items.some((item) => item.kind === "molecule" && item.id === fragment)) {
               selection.select({ kind: "molecule", id: fragment });
             }
-            tools.pivotOn("anchor");
-            view.anchorOnAtom(pick.id);
+            if (pick.kind === "bond") {
+              tools.turnAbout(pick.id);
+            } else {
+              tools.turnAbout(null);
+              tools.pivotOn("anchor");
+              view.anchorOnAtom(pick.id);
+            }
             return;
           }
         }

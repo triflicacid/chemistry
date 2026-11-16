@@ -38,6 +38,8 @@ export class MoleculeHandleController {
   /** What the handles do, or null while they are not shown. */
   private mode: MoleculeHandleMode | null = null;
   private pivot: Pivot = "anchor";
+  /** The atoms at the ends of the bond the molecule is turned about, or null while it is turned freely. */
+  private axis: { first: string; second: string } | null = null;
   private readonly pivotPoint = new Vector3();
   /** The pose last drawn, so that an unchanged one is not drawn again. */
   private drawnPose: Pose | null = null;
@@ -173,7 +175,35 @@ export class MoleculeHandleController {
       return;
     }
 
-    this.handles.show(this.mode, this.host.space(), this.pivotWorld());
+    this.handles.show(this.mode, this.host.space(), this.pivotWorld(), this.axisWorld());
+  }
+
+  /**
+   * Chooses the bond the molecule is turned about.
+   *
+   * @param bond the atoms at its ends, or null to turn the molecule freely about the pivot
+   */
+  setAxis(bond: { first: string; second: string } | null): void {
+    this.axis = bond;
+    this.sync();
+  }
+
+  /** The direction in the scene of the bond the molecule is turned about, or null while it is turned freely. */
+  private axisWorld(): Vector3 | null {
+    const ends = this.axisEnds();
+    return ends ? ends[1].clone().sub(ends[0]).normalize() : null;
+  }
+
+  /** Where the two ends of the bond the molecule is turned about are in the scene, or null if there is none. */
+  private axisEnds(): [Vector3, Vector3] | null {
+    const { scene } = this.host;
+    const first = this.axis && scene.atomById.get(this.axis.first);
+    const second = this.axis && scene.atomById.get(this.axis.second);
+    if (this.mode !== "rotate" || !first || !second) {
+      return null;
+    }
+    const ends: [Vector3, Vector3] = [scene.worldOf(first), scene.worldOf(second)];
+    return ends[0].distanceToSquared(ends[1]) > 1e-12 ? ends : null;
   }
 
   /** Releases what the handles drew. */
@@ -194,9 +224,13 @@ export class MoleculeHandleController {
     return [...scene.emphasis.selected.atoms].flatMap((id) => scene.atomById.get(id) ?? []);
   }
 
-  /** Where the pivot is in the scene. */
+  /** Where the pivot is in the scene: the middle of the bond the molecule is turned about, if there is one. */
   private pivotWorld(): Vector3 {
     const { scene, rig } = this.host;
+    const ends = this.axisEnds();
+    if (ends) {
+      return ends[0].clone().add(ends[1]).multiplyScalar(0.5);
+    }
     if (this.pivot === "point") {
       return this.pivotPoint.clone();
     }

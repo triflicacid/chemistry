@@ -48,6 +48,8 @@ export interface ToolState {
   rotateTarget: RotateTarget;
   /** Where the pivot is when it is `point`, in the scene, in angstroms. */
   point: Vec3;
+  /** The bond the rotate tool turns the whole molecule about, as an axle, or null to turn it about the pivot freely. */
+  axis: string | null;
   /** Whether strain is shown: marked in the viewport, and detailed for what is selected. */
   strain: boolean;
   /** Whether moving an atom carries the hydrogens bonded to it. This is a convenience, and nothing is locked. */
@@ -67,7 +69,7 @@ export interface ToolState {
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, snap: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, axis: null, strain: false, carryHydrogens: false, snap: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first" });
   }
 
   /**
@@ -111,6 +113,17 @@ export class ToolModel extends Observable<ToolState> {
   pivotOn(pivot: Pivot): void {
     if (this.get().pivot !== pivot) {
       this.set({ ...this.get(), pivot });
+    }
+  }
+
+  /**
+   * Chooses the bond the rotate tool turns the whole molecule about.
+   *
+   * @param bond the bond's identifier, or null to turn the molecule freely about its pivot
+   */
+  turnAbout(bond: string | null): void {
+    if (this.get().axis !== bond) {
+      this.set({ ...this.get(), axis: bond });
     }
   }
 

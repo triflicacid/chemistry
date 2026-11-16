@@ -43,8 +43,8 @@ export class MoleculeHandles {
   private readonly proxy = new Object3D();
   private mode: MoleculeHandleMode | null = null;
 
-  /** Where the molecule was, and where the pivot was, when the handle was taken hold of. */
-  private start: { position: Vector3; rotation: Quaternion; pivot: Vector3 } | null = null;
+  /** Where the molecule was, where the pivot was and how the handles were turned, when the handle was taken hold of. */
+  private start: { position: Vector3; rotation: Quaternion; pivot: Vector3; handleRotation: Quaternion } | null = null;
   /** Whether Ctrl or Cmd was held at the pointer's last move. */
   private inverted = false;
   private readonly onPointer = (event: PointerEvent): void => {
@@ -84,6 +84,7 @@ export class MoleculeHandles {
         position: this.molecule.position.clone(),
         rotation: this.molecule.quaternion.clone(),
         pivot: this.proxy.position.clone(),
+        handleRotation: this.proxy.quaternion.clone(),
       };
       if (this.mode === "atoms") {
         this.hooks.shiftStart();
@@ -126,17 +127,27 @@ export class MoleculeHandles {
    * @param mode what the handles do
    * @param space whether the handles follow the scene's axes or the molecule's
    * @param pivot where in the scene the handles sit and the molecule turns about
+   * @param axis the direction in the scene of the one line to turn about, for the rotate mode, or null to offer every axis
    */
-  show(mode: MoleculeHandleMode, space: Space, pivot: Vector3): void {
+  show(mode: MoleculeHandleMode, space: Space, pivot: Vector3, axis: Vector3 | null = null): void {
     if (this.start) {
       return;
     }
 
+    const about = mode === "rotate" ? axis : null;
     this.mode = mode;
     this.proxy.position.copy(pivot);
-    this.proxy.quaternion.copy(this.molecule.quaternion);
+    if (about) {
+      this.proxy.quaternion.setFromUnitVectors(new Vector3(1, 0, 0), about);
+    } else {
+      this.proxy.quaternion.copy(this.molecule.quaternion);
+    }
     this.controls.setMode(mode === "atoms" ? "translate" : mode);
-    this.controls.setSpace(space);
+    // about a bond, the handles follow it: the x ring turns about the bond itself and the others about what is across it
+    this.controls.setSpace(about ? "local" : space);
+    this.controls.showX = true;
+    this.controls.showY = true;
+    this.controls.showZ = true;
     this.controls.attach(this.proxy);
     this.stage.requestRender();
   }
@@ -166,7 +177,7 @@ export class MoleculeHandles {
       this.molecule.updateMatrixWorld(true);
     }
     this.proxy.position.copy(start.pivot);
-    this.proxy.quaternion.copy(start.rotation);
+    this.proxy.quaternion.copy(start.handleRotation);
 
     // the controls go on thinking a handle is held until the button comes up, so they are let go of and taken up afresh
     this.controls.detach();
@@ -240,8 +251,8 @@ export class MoleculeHandles {
       return true;
     }
 
-    const turn = this.proxy.quaternion.clone().multiply(start.rotation.clone().invert());
-    this.molecule.quaternion.copy(this.proxy.quaternion);
+    const turn = this.proxy.quaternion.clone().multiply(start.handleRotation.clone().invert());
+    this.molecule.quaternion.copy(turn).multiply(start.rotation);
     this.molecule.position.copy(start.position).sub(start.pivot).applyQuaternion(turn).add(this.proxy.position);
     this.molecule.updateMatrixWorld(true);
     this.stage.requestRender();

@@ -254,6 +254,15 @@ export class StudioView {
   }
 
   /**
+   * Chooses the bond the rotate tool turns the whole molecule about.
+   *
+   * @param bond the atoms at its ends, or null to turn the molecule freely about its pivot
+   */
+  setAxis(bond: { first: string; second: string } | null): void {
+    this.molecule.setAxis(bond);
+  }
+
+  /**
    * Moves one atom, redrawing it and only the bonds its position affects.
    *
    * @param id the atom's identifier
