@@ -1,5 +1,5 @@
 import {useObservable} from "../models/observable";
-import type {Tool, ToolModel} from "../models/ToolModel";
+import {type Tool, TOOL_ORDER, type ToolModel} from "../models/ToolModel";
 import type {LayoutState, Panel} from "../layoutStore";
 import type {SessionPhase} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
@@ -52,7 +52,7 @@ export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onTog
       <span className="brand">Molecular Studio</span>
 
       <div className="tool-group" role="group" aria-label="Tools">
-        <Segmented label="Tool" value={tool} options={TOOLS} onChange={(next) => tools.use(next)} />
+        <Segmented label="Tool" value={tool} options={TOOLS.map((each) => ({ ...each, title: `${each.title} (${TOOL_ORDER.indexOf(each.value) + 1})` }))} onChange={(next) => tools.use(next)} />
         <button
           type="button"
           className="tool"

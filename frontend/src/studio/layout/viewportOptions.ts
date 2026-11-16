@@ -18,8 +18,8 @@ export const GRID_PLANES: Segment<GridPlaneChoice>[] = [
 ];
 
 export const ROTATE_TARGETS: Segment<RotateTarget>[] = [
-  { value: "molecule", label: "Molecule", title: "Click an atom to turn the whole molecule about it, with rings that turn it about the pivot" },
-  { value: "internal", label: "Bonds & angles", title: "Click a bond to turn one side of it about the bond (its torsion), or an atom to change an angle between two of its bonds" },
+  { value: "molecule", label: "Molecule", title: "Click an atom to turn the whole molecule about it, with rings that turn it about the pivot (Tab)" },
+  { value: "internal", label: "Bonds & angles", title: "Click a bond to turn one side of it about the bond (its torsion), or an atom to change an angle between two of its bonds (Tab)" },
 ];
 
 export const DRAGS: Segment<"pan" | "look">[] = [
@@ -50,6 +50,6 @@ export const BOND_ORDERS: Segment<BondOrder>[] = [
 ];
 
 export const EDIT_CLICKS: Segment<EditClick>[] = [
-  { value: "add", label: "Add", title: "Clicking an atom adds an atom bonded to it, clicking empty space adds one on its own, and dragging an atom moves it. Shift-click, or a click on a bond, still selects" },
-  { value: "select", label: "Select", title: "Clicking selects atoms and bonds, and dragging turns the camera, as with the select tool, so they can be bonded or deleted" },
+  { value: "add", label: "Add", title: "Clicking an atom adds an atom bonded to it, clicking empty space adds one on its own, and dragging an atom moves it. Shift-click, or a click on a bond, still selects (Tab)" },
+  { value: "select", label: "Select", title: "Clicking selects atoms and bonds, and dragging turns the camera, as with the select tool, so they can be bonded or deleted (Tab)" },
 ];

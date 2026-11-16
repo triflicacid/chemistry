@@ -10,6 +10,9 @@ import {Observable} from "./observable";
  */
 export type Tool = "select" | "move" | "rotate" | "edit" | "pan";
 
+/** The tools in the order the toolbar lists them, which is the order of the number keys that choose them. */
+export const TOOL_ORDER: readonly Tool[] = ["select", "move", "rotate", "edit", "pan"];
+
 /**
  * What the rotate tool turns: the whole molecule, about a pivot, or something inside it, which is a bond that is clicked,
  * turned about to change its torsion, or an atom that is clicked, whose angle between two of its bonds is changed.
