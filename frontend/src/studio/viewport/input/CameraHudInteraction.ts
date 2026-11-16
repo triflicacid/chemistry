@@ -4,7 +4,7 @@ import type {CameraRig} from "../camera/CameraRig";
 import type {CameraLock} from "../camera/CameraLock";
 import type {CameraHud} from "../hud/CameraHud";
 import type {HudHandle} from "../hud/dial";
-import {BALL_TRAVEL} from "../hud/constants";
+import {BALL_TRAVEL, LIFT_RANGE} from "../hud/constants";
 import {FOV_RESET_MS} from "./constants";
 import type {InteractionHandler} from "./PointerRouter";
 
@@ -14,6 +14,7 @@ const HUD_CURSOR: Record<HudHandle, string> = {
   yaw: "ew-resize",
   pitch: "ns-resize",
  fly: "grab",
+ lift: "grab",
   fov: "ew-resize",
   cone: "grab",
 };
@@ -23,7 +24,7 @@ export class CameraHudInteraction implements InteractionHandler {
   readonly swallows = true;
 
   /** The camera sphere being dragged, and where the pointer was at the last step. */
-  private drag: { handle: HudHandle; x: number; y: number; fromX: number; fromY: number } | null = null;
+  private drag: { handle: HudHandle; x: number; y: number; fromX: number; fromY: number; fromAngle: number } | null = null;
   /** When the field-of-view slider was last pressed, from performance.now, or 0 if a press has just been used as a double press. */
   private lastFovPress = 0;
 
@@ -56,7 +57,14 @@ export class CameraHudInteraction implements InteractionHandler {
 
     this.lock.hold("cameraHud");
     this.stage.canvas.setPointerCapture(event.pointerId);
-    this.drag = { handle, x: event.clientX, y: event.clientY, fromX: event.clientX, fromY: event.clientY };
+    this.drag = {
+      handle,
+      x: event.clientX,
+      y: event.clientY,
+      fromX: event.clientX,
+      fromY: event.clientY,
+      fromAngle: this.hud.flyAngleAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY),
+    };
     this.hud.active = handle;
     this.stage.canvas.style.cursor = "grabbing";
 
@@ -89,6 +97,11 @@ export class CameraHudInteraction implements InteractionHandler {
       return;
     }
 
+    if (drag.handle === "lift") {
+      this.turn(drag, event);
+      return;
+    }
+
     const across = drag.handle === "pitch" ? 0 : event.clientX - drag.x;
     const down = drag.handle === "yaw" ? 0 : event.clientY - drag.y;
     drag.x = event.clientX;
@@ -103,6 +116,18 @@ export class CameraHudInteraction implements InteractionHandler {
     const y = clamp(drag.fromY - event.clientY);
     this.hud.stick = { x, y };
     this.fly.setStick(x / BALL_TRAVEL, y / BALL_TRAVEL);
+    this.stage.requestRender();
+  }
+
+  /** Turns the lift ring as far round as the pointer has gone from where it was pressed, which flies the camera up or down. */
+  private turn(drag: { fromAngle: number }, event: PointerEvent): void {
+    const angle = this.hud.flyAngleAt(this.stage.canvas.getBoundingClientRect(), event.clientX, event.clientY);
+    // the angle is counterclockwise, and clockwise lifts; it is brought into half a turn either way so the seam at the left is crossed smoothly
+    let turned = drag.fromAngle - angle;
+    turned -= Math.round(turned / (2 * Math.PI)) * 2 * Math.PI;
+    const lift = Math.max(-1, Math.min(1, turned / LIFT_RANGE));
+    this.hud.lift = lift;
+    this.fly.setStick(0, 0, lift);
     this.stage.requestRender();
   }
 
@@ -152,6 +177,7 @@ export class CameraHudInteraction implements InteractionHandler {
     this.drag = null;
     this.hud.active = null;
    this.hud.stick = { x: 0, y: 0 };
+   this.hud.lift = 0;
     this.fly.setStick(0, 0);
     this.lock.release("cameraHud");
     this.stage.canvas.style.cursor = this.resting();

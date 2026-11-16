@@ -34,6 +34,28 @@ export class CameraHud {
     this.fly.ball = point;
   }
 
+  /** How far the fly stick's lift ring is turned, from -1 to 1 with rising positive, which the view sets as it is turned. */
+  get lift(): number {
+    return this.fly.lift;
+  }
+
+  set lift(amount: number) {
+    this.fly.lift = amount;
+  }
+
+  /**
+   * The angle a pointer is at round the fly stick, which is what turns its lift ring.
+   *
+   * @param canvas the canvas's box on the page
+   * @param x the pointer's horizontal position on the page
+   * @param y the pointer's vertical position on the page
+   * @returns the angle in radians, counterclockwise from the right
+   */
+  flyAngleAt(canvas: DOMRect, x: number, y: number): number {
+    const offset = this.offsetFrom(canvas, x, y, this.flyCentre(canvas.width));
+    return Math.atan2(offset.y, offset.x);
+  }
+
   /**
    * The field of view a pointer at a place on the slider asks for.
    *

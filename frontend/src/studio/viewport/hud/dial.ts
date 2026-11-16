@@ -3,7 +3,7 @@ import {Mesh, MeshBasicMaterial, type PerspectiveCamera, Scene, Shape, ShapeGeom
 import {ARROW_AT} from "./constants";
 
 /** What a press on the camera HUD takes hold of. */
-export type HudHandle = "orbit" | "yaw" | "pitch" | "fly" | "fov" | "cone";
+export type HudHandle = "orbit" | "yaw" | "pitch" | "fly" | "lift" | "fov" | "cone";
 
 /** A point or offset in a dial's own pixels, from its centre, with x to the right and y up. */
 export interface HudPoint {
@@ -62,14 +62,15 @@ export abstract class HudDial {
    *
    * @param material what to make them of
    * @param angles where each goes, counterclockwise from the right
+   * @param at how far from the centre each is
    */
-  protected arrowheads(material: MeshBasicMaterial, angles: number[]): void {
+  protected arrowheads(material: MeshBasicMaterial, angles: number[], at = ARROW_AT): void {
     const head = this.owned(new ShapeGeometry(new Shape().moveTo(0, 7).lineTo(-6, -5).lineTo(6, -5).closePath()));
-    for (const at of angles) {
+    for (const angle of angles) {
       const arrow = new Mesh(head, material);
-      arrow.position.set(ARROW_AT * Math.cos(at), ARROW_AT * Math.sin(at), 0);
+      arrow.position.set(at * Math.cos(angle), at * Math.sin(angle), 0);
       // the tip is along +y until it is turned, so a quarter turn back points it away from the centre
-      arrow.rotation.z = at - Math.PI / 2;
+      arrow.rotation.z = angle - Math.PI / 2;
       arrow.renderOrder = 10;
       this.scene.add(arrow);
     }

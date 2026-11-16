@@ -21,7 +21,7 @@ const KEY_AXES: Record<string, readonly [number, number, number]> = {
 /** Flies the camera. */
 export class CameraFly {
   private readonly keys = new Set<string>();
-  private stick = { x: 0, y: 0 };
+  private stick = { x: 0, y: 0, lift: 0 };
   private fast = false;
   private frame = 0;
   private last = 0;
@@ -57,16 +57,17 @@ export class CameraFly {
    *
    * @param x how far to the right, from -1 to 1
    * @param y how far forward, from -1 to 1
+   * @param lift how far up, from -1 to 1
    */
-  setStick(x: number, y: number): void {
-    this.stick = { x, y };
+  setStick(x: number, y: number, lift = 0): void {
+    this.stick = { x, y, lift };
     this.run();
   }
 
   /** Lets go of every key and the stick, which stops the camera. */
   readonly stop = (): void => {
     this.keys.clear();
-    this.stick = { x: 0, y: 0 };
+    this.stick = { x: 0, y: 0, lift: 0 };
     cancelAnimationFrame(this.frame);
     this.frame = 0;
   };
@@ -103,7 +104,7 @@ export class CameraFly {
   }
 
   private wanted(): boolean {
-    return this.keys.size > 0 || this.stick.x !== 0 || this.stick.y !== 0;
+    return this.keys.size > 0 || this.stick.x !== 0 || this.stick.y !== 0 || this.stick.lift !== 0;
   }
 
   private readonly step = (now: number): void => {
@@ -113,7 +114,7 @@ export class CameraFly {
     }
 
     let right = this.stick.x;
-    let up = 0;
+    let up = this.stick.lift;
     let forward = this.stick.y;
     for (const key of this.keys) {
       const [x, y, z] = KEY_AXES[key] ?? [0, 0, 0];
