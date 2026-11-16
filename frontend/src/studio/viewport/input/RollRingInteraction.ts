@@ -5,7 +5,8 @@ import type {CameraLock} from "../camera/CameraLock";
 import {DOUBLE_CLICK_MS} from "./constants";
 import type {InteractionHandler} from "./PointerRouter";
 
-export class RollRingHandler implements InteractionHandler {
+/** The dial round the triad. */
+export class RollRingInteraction implements InteractionHandler {
   readonly swallows = true;
 
   /** The angle the pointer was last at round the ring, or null while the ring is not being turned. */
@@ -89,7 +90,6 @@ export class RollRingHandler implements InteractionHandler {
     }
   }
 
-  /** Lets go of the roll ring, giving the camera its controls back. */
   private endRoll(): void {
     if (!this.rolling) {
       return;

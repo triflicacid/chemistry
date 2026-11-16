@@ -7,6 +7,9 @@ export const HOVER_TINT = new Color("#ffd33d");
 /** The tint of what is selected. */
 export const SELECTED_TINT = new Color("#58a6ff");
 
+/** The tint of the item that is active among those selected. */
+export const ACTIVE_TINT = SELECTED_TINT.clone().lerp(new Color("#ffffff"), 0.45);
+
 /** How strongly a tint glows against the part's own colour. */
 const TINT_INTENSITY = 0.55;
 

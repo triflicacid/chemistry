@@ -7,7 +7,8 @@ import type {GeometryResult} from "../../session/messages";
 import type {AngleView, TorsionView} from "../../selection/ToolModel";
 import {torsion} from "../../selection/torsion";
 import {angleAt, planeNormal} from "../../selection/angle";
-import {type AtomNode, type MoleculeScene, NO_ITEMS, STYLE} from "./MoleculeScene";
+import {type AtomNode, type MoleculeScene, STYLE} from "./MoleculeScene";
+import {NO_ITEMS} from "../../selection/items";
 
 /** How many selected atoms there can be for the bonds on them to be labelled with their lengths. */
 const LENGTH_LABEL_ATOMS = 4;

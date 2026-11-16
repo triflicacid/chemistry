@@ -1,18 +1,16 @@
 import {useEffect, useRef, useState} from "react";
 import type {Item, PartItem} from "../selection/items";
 import type {Models, PickScope} from "../selection/models";
-import type {RotateTarget, Space} from "../selection/ToolModel";
 import {useObservable} from "../selection/observable";
 import type {StateIndex} from "../selection/StateIndex";
 import type {GeometryResult, SessionState} from "../session/messages";
-import type {SessionPhase} from "../session/useSession";
+import type {SessionPhase} from "../session/types";
 import {useSessionContext} from "../session/SessionContext";
-import type {Constraint} from "../viewport/handles/dragPlane";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "./OpenMolecule";
-import {type Segment, Segmented} from "./Segmented";
+import {ActionTools, DisplayTools} from "./ViewportOverlay";
 
 export interface ViewportProps {
   phase: SessionPhase;
@@ -21,39 +19,6 @@ export interface ViewportProps {
   geometry: GeometryResult | null;
   models: Models;
 }
-
-const GRIDS: Segment<GridKind | "off">[] = [
-  { value: "off", label: "Off", title: "Show no grid" },
-  { value: "cartesian", label: "Square", title: "Lines every angstrom, with a stronger one every five. In Local space it turns with the molecule" },
-  { value: "polar", label: "Polar", title: "Spheres every angstrom about the orbit anchor, with lines of latitude and longitude every 30 degrees. It fills space, so it has no plane" },
-];
-
-const GRID_PLANES: Segment<GridPlaneChoice>[] = [
-  { value: "xz", label: "XZ", title: "The plane spanned by the x and z axes" },
-  { value: "xy", label: "XY", title: "The plane spanned by the x and y axes" },
-  { value: "yz", label: "YZ", title: "The plane spanned by the y and z axes" },
-  { value: "all", label: "All", title: "All three planes at once, which reach less far" },
-];
-
-const ROTATE_TARGETS: Segment<RotateTarget>[] = [
-  { value: "molecule", label: "Molecule", title: "Click an atom to turn the whole molecule about it, with rings that turn it about the pivot" },
-  { value: "internal", label: "Bonds & angles", title: "Click a bond to turn one side of it about the bond (its torsion), or an atom to change an angle between two of its bonds" },
-];
-
-const SPACES: Segment<Space>[] = [
-  { value: "world", label: "World", title: "Measure moves and handles along the scene's axes" },
-  { value: "local", label: "Local", title: "Measure moves and handles along the molecule's own axes, which turn with it" },
-];
-
-const CONSTRAINTS: { value: Constraint; label: string; title: string }[] = [
-  { value: "free", label: "Free", title: "Move in the plane facing the camera" },
-  { value: "x", label: "X", title: "Move along the x axis (X)" },
-  { value: "y", label: "Y", title: "Move along the y axis (Y)" },
-  { value: "z", label: "Z", title: "Move along the z axis (Z)" },
-  { value: "yz", label: "YZ", title: "Move in the yz plane (Shift+X)" },
-  { value: "xz", label: "XZ", title: "Move in the xz plane (Shift+Y)" },
-  { value: "xy", label: "XY", title: "Move in the xy plane (Shift+Z)" },
-];
 
 /** The canvas, which fills whatever space the workspace leaves it, and the molecule drawn on it. */
 export function Viewport({ phase, state, geometry, models }: ViewportProps) {
@@ -78,7 +43,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [debug, setDebug] = useState(false);
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
-  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, torsion, angle, hold } = useObservable(tools);
+  const toolState = useObservable(tools);
+  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, torsion, angle, hold } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
   const internal = tool === "rotate" && rotateTarget === "internal";
   const picking: PickScope = internal ? "item" : mode;
@@ -269,108 +235,33 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       <canvas ref={canvasRef} className="viewport-canvas" />
       {state && (
         <>
-          <div className="viewport-tools viewport-tools-left" role="group" aria-label="Display">
-            <button type="button" className="tool" aria-pressed={axes} title="Show or hide the x, y and z axes at the orbit anchor. The small triad in the corner is always shown" onClick={() => setAxes(!axes)}>
-              Axes
-            </button>
-            <span className="segmented-captioned">
-              <span className="segmented-caption">Grid</span>
-              <Segmented label="Grid" value={grid} options={GRIDS} onChange={setGrid} />
-            </span>
-            {grid === "cartesian" && (
-              <span className="segmented-captioned">
-                <span className="segmented-caption">Plane</span>
-                <Segmented label="Grid plane" value={gridPlane} options={GRID_PLANES} onChange={setGridPlane} />
-              </span>
-            )}
-            <button
-              type="button"
-              className="tool"
-              aria-pressed={strain}
-              title="Mark what is strained: a red halo on atoms, red bonds with their lengths, orange angles with their sizes, and a red line between atoms that are too close. Selecting an atom or bond then details its strain"
-              onClick={() => tools.showStrain(!strain)}
-            >
-              Strain
-            </button>
-            <button
-              type="button"
-              className="tool"
-              aria-pressed={debug}
-              title="Draw guides for moving: the axis or plane the selected atom is held to, as arrows or a faint plane"
-              onClick={() => setDebug(!debug)}
-            >
-              Debug
-            </button>
-            <button type="button" className="tool" title="Save a picture of what the camera sees as a PNG" onClick={screenshot}>
-              Screenshot
-            </button>
-          </div>
+          <DisplayTools
+            axes={axes}
+            onAxes={setAxes}
+            grid={grid}
+            onGrid={setGrid}
+            gridPlane={gridPlane}
+            onGridPlane={setGridPlane}
+            strain={strain}
+            tools={tools}
+            debug={debug}
+            onDebug={setDebug}
+            onScreenshot={screenshot}
+          />
 
-          <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
-            {tool === "rotate" && <Segmented label="What to rotate" value={rotateTarget} options={ROTATE_TARGETS} onChange={(next) => tools.rotateTarget(next)} />}
-            {(tool === "move" || (tool === "rotate" && rotateTarget === "molecule" && moleculeSelected)) && (
-              <Segmented
-                label="Space"
-                value={space}
-                options={SPACES}
-                onChange={(next) => tools.useSpace(next)}
-              />
-            )}
-            {tool === "move" && (
-              <button
-                type="button"
-                className="tool"
-                aria-pressed={carryHydrogens}
-                title="When on, moving an atom carries the hydrogens bonded to it by the same amount, so their bonds keep their lengths and angles (H). Nothing is locked"
-                onClick={() => tools.carry(!carryHydrogens)}
-              >
-                Carry H
-              </button>
-            )}
-            {tool === "rotate" && rotateTarget === "molecule" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
-            {internal && bondId === null && atomId === null && <span className="viewport-hint">Click a bond to turn about it, or an atom to change an angle</span>}
-            {tool === "move" && !moleculeSelected && (
-              <Segmented
-                label="Move constraint"
-                value={constraint}
-                options={CONSTRAINTS.map((each) => ({
-                  ...each,
-                  disabled: blocked,
-                  title: blocked ? "A locked atom is selected, so the selection cannot be moved" : each.title,
-                }))}
-                onChange={(next) => tools.constrain(next)}
-              />
-            )}
-            <button type="button" className="tool" title="Centre the camera on the selection, or on everything if nothing is selected" onClick={frame}>
-              Frame selection
-            </button>
-            <button
-              type="button"
-              className="tool"
-              title="Bring the middle of the molecule to the middle of the view, keeping the angle and distance the camera has"
-              onClick={() => view?.centreCamera()}
-            >
-              Centre camera
-            </button>
-            <button
-              type="button"
-              className="tool"
-              title="Put the camera at the built-in defaults, not at how it was when the session opened: level, at the default angle and field of view, framing the whole molecule"
-              onClick={() => view?.resetCamera()}
-            >
-              Reset camera
-            </button>
-            <button
-              type="button"
-              className="tool"
-              aria-pressed={picking === "molecule"}
-              disabled={internal}
-              title={internal ? "Turning a bond or an angle picks single atoms and bonds" : "When on, clicking or hovering an atom or bond picks the whole molecule it belongs to"}
-              onClick={() => setMode(mode === "molecule" ? "item" : "molecule")}
-            >
-              Pick whole molecule
-            </button>
-          </div>
+          <ActionTools
+            tools={tools}
+            state={toolState}
+            moleculeSelected={moleculeSelected}
+            internalTarget={bondId !== null || atomId !== null}
+            internal={internal}
+            blocked={blocked}
+            picking={picking}
+            onPickScope={() => setMode(mode === "molecule" ? "item" : "molecule")}
+            onFrame={frame}
+            onCentre={() => view?.centreCamera()}
+            onReset={() => view?.resetCamera()}
+          />
         </>
       )}
       {phase.kind === "wanted" ? (

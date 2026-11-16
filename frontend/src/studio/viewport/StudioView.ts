@@ -10,7 +10,7 @@ import {BondHandleController} from "./handles/BondHandleController";
 import {MoleculeHandleController} from "./handles/MoleculeHandleController";
 import {CameraRig} from "./camera/CameraRig";
 import {CameraLock} from "./camera/CameraLock";
-import {CameraHudHandler} from "./input/CameraHudHandler";
+import {CameraHudInteraction} from "./input/CameraHudInteraction";
 import {TransformHandleInteraction} from "./input/TransformHandleInteraction";
 import {ActiveMode} from "./input/modes/ActiveMode";
 import {MoveMode} from "./input/modes/MoveMode";
@@ -19,10 +19,11 @@ import {RotateMode} from "./input/modes/RotateMode";
 import {SelectMode} from "./input/modes/SelectMode";
 import type {ModeHost, ModeOptions, ToolMode} from "./input/modes/ToolMode";
 import {PointerRouter} from "./input/PointerRouter";
-import {RollRingHandler} from "./input/RollRingHandler";
-import {TriadHandler} from "./input/TriadHandler";
+import {RollRingInteraction} from "./input/RollRingInteraction";
+import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
-import {type Emphasis, MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
+import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
+import type {Emphasis} from "../selection/items";
 import {ReferenceLayer} from "./scene/ReferenceLayer";
 import type {StudioViewListener} from "./StudioViewListener";
 import type {GeometryResult, SessionState} from "../session/messages";
@@ -153,9 +154,9 @@ export class StudioView {
     const resting = () => this.mode.resting();
     // in order of precedence: the first to take a press keeps the rest from having it
     this.router = new PointerRouter(canvas, [
-      new CameraHudHandler(this.stage, this.cameraHud, this.rig, this.lock, resting),
-      new TriadHandler(this.stage, this.triad, this.rig),
-      new RollRingHandler(this.stage, this.ring, this.lock, resting),
+      new CameraHudInteraction(this.stage, this.cameraHud, this.rig, this.lock, resting),
+      new TriadInteraction(this.stage, this.triad, this.rig),
+      new RollRingInteraction(this.stage, this.ring, this.lock, resting),
       new TransformHandleInteraction(this.lock, () => this.molecule.hovered || this.bonds.hovered),
       this.active,
     ]);

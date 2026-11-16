@@ -4,7 +4,8 @@ import {SAME_VIEW} from "../camera/CameraRig";
 import type {Triad} from "../hud/triad";
 import type {InteractionHandler} from "./PointerRouter";
 
-export class TriadHandler implements InteractionHandler {
+/** The triad in the corner. */
+export class TriadInteraction implements InteractionHandler {
   readonly swallows = true;
 
   constructor(

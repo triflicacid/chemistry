@@ -3,24 +3,14 @@ import type {Vec3} from "../../../api/types/structure";
 import {aromaticCentres} from "../../../render/aromatic";
 import {ballRadius, type BondEnds, buildBond, type Style} from "../../../render/bonds";
 import {disposeMaterials} from "../../../render/dispose";
-import {applyTints, HOVER_TINT, SELECTED_TINT} from "../../../render/emphasis";
+import {ACTIVE_TINT, applyTints, HOVER_TINT, SELECTED_TINT} from "../../../render/emphasis";
 import {type Part, PartRegistry} from "../../../render/parts";
 import type {Primitives} from "../../../render/primitives";
 import type {Stage} from "../../../render/stage";
 import type {SessionAtom, SessionBond, SessionState} from "../../session/messages";
 import type {ItemSet, PartItem} from "../../selection/items";
+import {type Emphasis, NO_ITEMS} from "../../selection/items";
 
-/** What to tint, strongest last. */
-export interface Emphasis {
-  selected: ItemSet;
-  active: ItemSet;
-  hover: ItemSet;
-}
-
-export const NO_ITEMS: ItemSet = { atoms: new Set(), bonds: new Set() };
-
-/** The tint of the active item. */
-const ACTIVE_TINT = SELECTED_TINT.clone().lerp(new Color("#ffffff"), 0.45);
 
 /** How the molecule is drawn. */
 export const STYLE: Style = "ball_and_stick";

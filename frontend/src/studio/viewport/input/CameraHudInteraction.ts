@@ -19,7 +19,8 @@ const HUD_CURSOR: Record<HudHandle, string> = {
   cone: "grab",
 };
 
-export class CameraHudHandler implements InteractionHandler {
+/** The camera spheres and FOV cone shown with the pan tool. */
+export class CameraHudInteraction implements InteractionHandler {
   readonly swallows = true;
 
   /** The camera sphere being dragged, and where the pointer was at the last step. */

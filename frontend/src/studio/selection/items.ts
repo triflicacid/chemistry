@@ -22,6 +22,16 @@ export interface ItemSet {
   readonly bonds: ReadonlySet<string>;
 }
 
+/** The empty set of items. */
+export const NO_ITEMS: ItemSet = { atoms: new Set(), bonds: new Set() };
+
+/** What to tint on the molecule, strongest last. */
+export interface Emphasis {
+  selected: ItemSet;
+  active: ItemSet;
+  hover: ItemSet;
+}
+
 /**
  * Names an item as a single string, for use as a map key or a React key.
  *
