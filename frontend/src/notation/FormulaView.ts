@@ -1,4 +1,5 @@
-import type { FormulaInfo, UnitInfo } from "../../api/types/formula";
+import "./notation.css";
+import type { FormulaInfo, UnitInfo } from "../api/types/formula";
 import { SmilesText } from "./SmilesText";
 
 /** One formula shown in the card. */

@@ -1,5 +1,5 @@
 import type { FindingInfo, ValidationReport } from "../../api/types/validation";
-import { SmilesText } from "./SmilesText";
+import { SmilesText } from "../../notation/SmilesText";
 
 
 export class ValidationView {

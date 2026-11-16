@@ -2,10 +2,10 @@ import type { MoleculeMetadata } from "../../api/types/metadata";
 import type { MoleculeId } from "../../api/types/stored";
 import { Selection } from "../store";
 import type { FaultState, MoleculeView } from "../view/MoleculeView";
-import { FormulaView } from "./FormulaView";
+import { FormulaView } from "../../notation/FormulaView";
 import { MoleculeInspector } from "./MoleculeInspector";
 import { SmilesField } from "./SmilesField";
-import { SmilesText } from "./SmilesText";
+import { SmilesText } from "../../notation/SmilesText";
 
 /** The molecule currently shown. */
 interface Shown {

@@ -10,6 +10,7 @@ import {eulerOf, withEuler} from "../session/pose";
 import {useSessionContext} from "../session/SessionContext";
 import type {Pivot} from "../models/ToolModel";
 import {describeFinding, isCurrent} from "../layout/findings";
+import {MoleculeDetails} from "./MoleculeDetails";
 import {NumberField} from "../controls/NumberField";
 import {type Segment, Segmented} from "../controls/Segmented";
 import {type Hold, sideOf} from "../geometry/bondLength";
@@ -48,6 +49,8 @@ export function Inspector({ state, geometry, models }: InspectorProps) {
       <>
         <p className="panel-empty">Nothing selected.</p>
         <SessionPane state={state} geometry={geometry} />
+        <hr className="pane-divider" />
+        <MoleculeDetails state={state} hover={models.hover} />
       </>
     );
   }

@@ -1,4 +1,5 @@
-import type { Span } from "../../api/types/span";
+import "./notation.css";
+import type { Span } from "../api/types/span";
 
 /** A range to highlight, and which of the stylesheet's colours to give it. */
 export interface Highlight {

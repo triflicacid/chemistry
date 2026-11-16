@@ -30,6 +30,8 @@ export interface Emphasis {
   selected: ItemSet;
   active: ItemSet;
   hover: ItemSet;
+  /** Atoms to tint in a colour of their own, as the ends of a hovered bond are; the colour indexes END_COLOURS. */
+  ends?: readonly { id: string; colour: number }[];
 }
 
 /**

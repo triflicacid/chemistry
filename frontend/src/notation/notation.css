@@ -1,0 +1,28 @@
+.smiles-highlight {
+  background: color-mix(in srgb, #ffd33d 70%, transparent);
+  border-radius: 2px;
+}
+
+.smiles-highlight-1 {
+  background: color-mix(in srgb, #79c0ff 70%, transparent);
+}
+
+.smiles-highlight-2 {
+  background: color-mix(in srgb, #ffa657 70%, transparent);
+}
+
+.formula {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.formula-label {
+  font-size: 0.75rem;
+  color: var(--ink-soft, #57606a);
+}
+
+.formula-text {
+  font-family: inherit;
+  overflow-wrap: anywhere;
+}

@@ -152,10 +152,13 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     if (!view || !index) {
       return;
     }
+    // the ends of a hovered bond are tinted as the SMILES marks them, but only while nothing is selected, as the Inspector does
+    const bond = hovered?.kind === "bond" && selected.items.length === 0 ? index.bonds.get(hovered.id) : undefined;
     view.setEmphasis({
       selected: index.members(selected.items),
       active: index.members(selected.active ? [selected.active] : []),
       hover: index.members(hovered ? [hovered] : []),
+      ends: bond ? [{ id: bond.first, colour: 1 }, { id: bond.second, colour: 2 }] : [],
     });
   }, [view, index, selected, hovered]);
 
