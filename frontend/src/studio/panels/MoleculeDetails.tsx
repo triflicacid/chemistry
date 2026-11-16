@@ -1,41 +1,13 @@
 import {useEffect, useMemo, useRef, useState, type ReactNode} from "react";
-import {ChemistryApi} from "../../api/ChemistryApi";
 import type {Span} from "../../api/types/span";
 import type {AtomInfo, MoleculeMetadata} from "../../api/types/metadata";
 import {FormulaView} from "../../notation/FormulaView";
 import {type Highlight, SmilesText} from "../../notation/SmilesText";
+import {indexOfId as indexOf} from "../chemistry/Chemistry";
 import type {Item} from "../models/items";
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {SessionState} from "../session/messages";
-
-const api = new ChemistryApi();
-
-async function metadataOf(state: SessionState): Promise<MoleculeMetadata> {
-  for (const id of [state.saved_molecule_id, state.source_molecule_id]) {
-    if (id) {
-      try {
-        const known = await api.metadata(id);
-        if (known.smiles === state.smiles) {
-          return known;
-        }
-      } catch {
-        // fall through to making one
-      }
-    }
-  }
-  const created = await api.createMolecule(state.smiles);
-  return api.metadata(created.id);
-}
-
-/** The session's atom or bond id as an index into the metadata, which numbers from zero. */
-function indexOf(id: string, prefix: "a" | "b"): number | null {
-  if (!id.startsWith(prefix)) {
-    return null;
-  }
-  const number = Number(id.slice(1));
-  return Number.isInteger(number) && number >= 1 ? number - 1 : null;
-}
 
 function highlights(bond: Span[] | undefined, members: (Span | null)[], firstColour: number): Highlight[] {
   return [
@@ -54,7 +26,7 @@ function hull(...groups: (Span | null)[][]): Span[] {
 }
 
 /** Mounts a DOM element built outside React. */
-function Mount({element}: { element: HTMLElement }) {
+export function Mount({element}: { element: HTMLElement }) {
   const host = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     host.current?.replaceChildren(element);
@@ -104,26 +76,9 @@ interface MoleculeDetailsProps {
 
 /** The molecule's SMILES, canonical SMILES and formulae, which mark what is hovered and centre the camera on what is clicked. */
 export function MoleculeDetails({state, models, children}: MoleculeDetailsProps) {
-  const [metadata, setMetadata] = useState<MoleculeMetadata | null>(null);
-  const [failed, setFailed] = useState(false);
+  const {chemistry, failed} = models.chemistry;
+  const metadata = chemistry?.metadata ?? null;
   const item = useObservable(models.hover);
-
-  useEffect(() => {
-    let current = true;
-    setMetadata(null);
-    setFailed(false);
-    metadataOf(state)
-      .then((found) => current && setMetadata(found))
-      .catch((error) => {
-        console.warn("Could not load the molecule's metadata", error);
-        if (current) {
-          setFailed(true);
-        }
-      });
-    return () => {
-      current = false;
-    };
-  }, [state.smiles, state.saved_molecule_id, state.source_molecule_id]);
 
   const note = (text: string) => (
     <dd className="note-row"><p className="panel-empty">{text}</p></dd>
@@ -238,6 +193,15 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
           }
         }
       }
+    } else if (item?.kind === "ring") {
+      const ring = models.chemistry.chemistry?.ring(item.id);
+      if (ring) {
+        const bonds = ring.info.bonds.flatMap((index) => metadata.bonds[index] ?? []);
+        const members = ring.info.atoms.flatMap((index) => metadata.atoms[index] ?? []);
+        bondSpans = [...bonds.flatMap((bond) => bond.spans), ...members.flatMap((atom) => atom.span ?? [])];
+        canonicalSpans = [...bonds.flatMap((bond) => bond.canonical_spans), ...members.flatMap((atom) => atom.canonical_span ?? [])];
+        fragment = members[0]?.fragment ?? null;
+      }
     } else if (item?.kind === "molecule") {
       const members = state.fragments.find((candidate) => candidate.key === item.id)?.atoms ?? [];
       const atoms = members.flatMap((id) => {
@@ -254,7 +218,7 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
     smiles.highlight(highlights(bondSpans, ends.map((atom) => atom.span), firstColour));
     canonical.highlight(highlights(canonicalSpans, ends.map((atom) => atom.canonical_span), firstColour));
     formula.highlightFragment(ends[0]?.fragment ?? fragment);
-  }, [item, metadata, state, smiles, canonical, formula]);
+  }, [item, metadata, state, models, smiles, canonical, formula]);
 
   return (
     <>

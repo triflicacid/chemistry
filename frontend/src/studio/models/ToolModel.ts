@@ -56,6 +56,8 @@ export interface ToolState {
   torsion: TorsionView | null;
   /** The angle the Inspector is showing for the selected atom, which the viewport marks, or null for none. */
   angle: AngleView | null;
+  /** The pi systems marked in the viewport: the label of the ring the Inspector shows, and the clouds the user turned on, which stay until turned off. */
+  system: { label: string | null; clouds: readonly string[] };
   /** Which atom of a bond stays where it is when the bond is lengthened or turned, by the Inspector or by dragging a handle. */
   hold: Hold;
 }
@@ -63,7 +65,7 @@ export interface ToolState {
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, hold: "first" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, strain: false, carryHydrogens: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first" });
   }
 
   /**
@@ -175,6 +177,32 @@ export class ToolModel extends Observable<ToolState> {
     const was = this.get().angle;
     if (was?.centre !== angle?.centre || was?.from !== angle?.from || was?.to !== angle?.to) {
       this.set({ ...this.get(), angle });
+    }
+  }
+
+  /**
+   * Says whose pi system the viewport labels, which is the ring the Inspector shows.
+   *
+   * @param ring the identifier of a ring in the system, or null for none
+   */
+  showSystem(ring: string | null): void {
+    const { system } = this.get();
+    if (system.label !== ring) {
+      this.set({ ...this.get(), system: { ...system, label: ring } });
+    }
+  }
+
+  /**
+   * Turns the cloud of a ring's pi system on or off. It stays drawn whatever is selected.
+   *
+   * @param ring the identifier of a ring in the system
+   * @param on whether the cloud is drawn
+   */
+  showCloud(ring: string, on: boolean): void {
+    const { system } = this.get();
+    if (system.clouds.includes(ring) !== on) {
+      const clouds = on ? [...system.clouds, ring] : system.clouds.filter((each) => each !== ring);
+      this.set({ ...this.get(), system: { ...system, clouds } });
     }
   }
 

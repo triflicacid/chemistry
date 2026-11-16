@@ -10,6 +10,7 @@ import type {Hold} from "../geometry/bondLength";
 import {heaviestFirst} from "../geometry/torsion";
 import {angleAt, angleMovers, choosePair} from "../geometry/angle";
 import {Links, Property, signed} from "./paneParts";
+import {RingMemberships} from "./RingMemberships";
 import {StrainDetails} from "./StrainDetails";
 
 interface AtomPaneProps {
@@ -71,6 +72,8 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
       </dl>
 
       <AngleRows centre={atom.id} index={index} models={models} />
+
+      <RingMemberships kind="atom" id={atom.id} atoms={[atom.id]} models={models} />
 
       <h4 className="pane-subtitle">Bonded to</h4>
       <Links

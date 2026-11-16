@@ -7,6 +7,7 @@ import {AtomPane} from "./AtomPane";
 import {BondPane} from "./BondPane";
 import {CameraPane} from "./CameraPane";
 import {MoleculePane} from "./MoleculePane";
+import {RingPane} from "./RingPane";
 import {Property} from "./paneParts";
 import {SessionPane} from "./SessionPane";
 
@@ -69,7 +70,7 @@ interface ItemPaneProps {
   models: Models;
 }
 
-/** Picks the pane for a selected atom, bond or molecule. */
+/** Picks the pane for a selected atom, bond, ring or molecule. */
 function ItemPane({ item, index, geometry, models }: ItemPaneProps) {
   switch (item.kind) {
     case "atom": {
@@ -79,6 +80,10 @@ function ItemPane({ item, index, geometry, models }: ItemPaneProps) {
     case "bond": {
       const bond = index.bonds.get(item.id);
       return bond ? <BondPane key={bond.id} bond={bond} index={index} geometry={geometry} models={models} /> : null;
+    }
+    case "ring": {
+      const ring = models.chemistry.chemistry?.ring(item.id);
+      return ring ? <RingPane key={ring.id} ring={ring} index={index} models={models} /> : null;
     }
     default:
       return <MoleculePane id={item.id} index={index} models={models} />;
@@ -101,6 +106,7 @@ function MixedPane({ items, active, index }: MixedPaneProps) {
         <Property name="Molecules" value={String(count("molecule"))} />
         <Property name="Atoms" value={String(count("atom"))} />
         <Property name="Bonds" value={String(count("bond"))} />
+        <Property name="Rings" value={String(count("ring"))} />
         <Property name="Active" value={describe(active, index)} />
       </dl>
     </>
@@ -116,6 +122,8 @@ function describe(item: Item, index: StateIndex): string {
       const bond = index.bonds.get(item.id);
       return bond ? index.bondLabel(bond) : "?";
     }
+    case "ring":
+      return `ring ${item.id.slice(1)}`;
     default:
       return index.fragments.get(item.id)?.name ?? "?";
   }

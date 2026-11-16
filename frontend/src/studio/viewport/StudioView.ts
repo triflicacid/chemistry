@@ -24,6 +24,7 @@ import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
 import type {Emphasis} from "../models/items";
+import type {SystemView} from "../geometry/conjugation";
 import {ReferenceLayer} from "./scene/ReferenceLayer";
 import type {StudioViewListener} from "./StudioViewListener";
 import type {GeometryResult, SessionState} from "../session/messages";
@@ -211,6 +212,7 @@ export class StudioView {
     this.scene.clear();
     this.annotations.forget();
     this.scene.build(state);
+    this.annotations.drawSystem();
     this.scene.refreshLocks();
     this.reference.refreshGuide();
     if (this.framedSession !== state.session_id) {
@@ -270,6 +272,7 @@ export class StudioView {
     }
 
     this.annotations.drawLengths();
+    this.annotations.drawSystem();
     this.bonds.place();
     this.reference.placeGuide();
     this.molecule.followAtoms();
@@ -328,6 +331,15 @@ export class StudioView {
    */
   setAngle(angle: AngleView | null): void {
     this.annotations.setAngle(angle);
+  }
+
+  /**
+   * Shows pi systems as the viewer does.
+   *
+   * @param systems the systems to show
+   */
+  setSystems(systems: readonly SystemView[]): void {
+    this.annotations.setSystems(systems);
   }
 
   /**

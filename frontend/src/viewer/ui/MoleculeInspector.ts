@@ -1,7 +1,8 @@
-import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, SystemInfo } from "../../api/types/metadata";
+import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo } from "../../api/types/metadata";
 import type { Span } from "../../api/types/span";
 import { FormulaView } from "../../notation/FormulaView";
 import { SmilesText } from "../../notation/SmilesText";
+import { electronsOf, notationOf, spanIn } from "../../notation/ringText";
 import type { Highlight } from "../../notation/SmilesText";
 import type { Selection } from "../store";
 import type { MoleculeView, PartRef as Target, Point } from "../view/MoleculeView";
@@ -205,16 +206,16 @@ export class MoleculeInspector {
     line.append(`${ring.formula} `);
     const text = new SmilesText(ring.smiles);
     text.highlight(atoms.map((atom, position) => ({
-      span: MoleculeInspector.spanIn(ring, atom.index),
+      span: spanIn(ring, atom.index),
       colour: firstColour + position,
     })));
     line.append(text.element);
     plaque.append(line);
 
     const system = ring.system === null ? undefined : this.metadata.systems[ring.system];
-    const rows: [string, string][] = [["Written", MoleculeInspector.notationOf(ring)]];
+    const rows: [string, string][] = [["Written", notationOf(ring)]];
     if (system) {
-      rows.push(["Aromaticity", system.aromaticity], ["Pi electrons", MoleculeInspector.electronsOf(system)]);
+      rows.push(["Aromaticity", system.aromaticity], ["Pi electrons", electronsOf(system)]);
     } else {
       rows.push(["Aromaticity", "none (its atoms cannot all join a π system)"]);
     }
@@ -222,34 +223,11 @@ export class MoleculeInspector {
     return plaque;
   }
 
-  /** How a ring's bonds are written, which is not what the ring is: benzene reads the same either way. */
-  private static notationOf(ring: RingInfo): string {
-    if (ring.notation === "aromatic") {
-      return "aromatic";
-    }
-    if (ring.notation === "mixed") {
-      return "mixed (some bonds aromatic, some not)";
-    }
-    // a ring written without aromatic bonds is a Kekulé structure only where it is a pi system at all
-    return ring.system === null ? "plain" : "Kekulé";
-  }
-
-  /** A system's electrons, saying where they are shared with the rings it is fused with. */
-  private static electronsOf(system: SystemInfo): string {
-    return system.ring_count > 1
-      ? `${system.pi_electrons} over a system of ${system.ring_count} fused rings`
-      : String(system.pi_electrons);
-  }
-
   private static highlights(bond: Span[] | undefined, members: (Span | null)[], firstColour: number): Highlight[] {
     return [
       ...(bond ?? []).map((span) => ({ span, colour: 0 })),
       ...members.map((span, position) => ({ span, colour: firstColour + position })),
     ];
-  }
-
-  private static spanIn(ring: RingInfo, atom: number): Span | null {
-    return ring.spans[ring.atoms.indexOf(atom)] ?? null;
   }
 
   private static details(rows: [string, string][]): HTMLElement {
