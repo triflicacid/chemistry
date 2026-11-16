@@ -2,7 +2,7 @@ import type {Vector3} from "three";
 import type {Tool} from "../../../models/ToolModel";
 import type {Binding} from "../../../keys/binding";
 import type {PartItem} from "../../../models/items";
-import type {ScreenPoint} from "../../StudioViewListener";
+import type {ScreenPoint, ScreenRect} from "../../StudioViewListener";
 import {CLICK_SLOP, DOUBLE_CLICK_MS} from "../constants";
 import type {ModeHost, ModeOptions, ToolMode} from "./ToolMode";
 
@@ -10,8 +10,11 @@ export class SelectMode implements ToolMode {
   readonly swallows = false;
 
   get dragging(): boolean {
-    return false;
+    return this.boxing;
   }
+
+  /** The rectangle Shift and a left-drag draws, from where it began, or null while there is none. It has not begun until it is `active`, which is once the pointer has moved. */
+  private box: { from: ScreenPoint; active: boolean } | null = null;
 
   /** Where the left button was pressed. */
   protected down: ScreenPoint | null = null;
@@ -40,9 +43,21 @@ export class SelectMode implements ToolMode {
     return true;
   }
 
+  /** Whether Shift and a left-drag draws a rectangle that selects the atoms inside it, which only the select tool does. */
+  protected get marquees(): boolean {
+    return this.tool === "select";
+  }
+
+  /** Whether a rectangle is being drawn. */
+  protected get boxing(): boolean {
+    return this.box?.active ?? false;
+  }
+
   enter(): void {}
 
-  exit(): void {}
+  exit(): void {
+    this.abandonBox();
+  }
 
   configure(_options: ModeOptions): void {}
 
@@ -56,7 +71,9 @@ export class SelectMode implements ToolMode {
     return [];
   }
 
-  cancelDrag(): void {}
+  cancelDrag(): void {
+    this.abandonBox();
+  }
 
   resting(): string {
     return "";
@@ -69,10 +86,36 @@ export class SelectMode implements ToolMode {
   press(event: PointerEvent): boolean {
     this.down = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
     this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
+
+    if (event.button === 0 && event.shiftKey && this.marquees) {
+      this.box = { from: { x: event.clientX, y: event.clientY }, active: false };
+      // the camera must not pan while the rectangle is drawn, which is what Shift and a drag do to it otherwise
+      this.host.lock.hold("marquee");
+      this.host.stage.canvas.setPointerCapture(event.pointerId);
+    }
     return true;
   }
 
+  move(event: PointerEvent): void {
+    const box = this.box;
+    if (!box) {
+      return;
+    }
+
+    if (!box.active) {
+      if (Math.hypot(event.clientX - box.from.x, event.clientY - box.from.y) <= CLICK_SLOP) {
+        return;
+      }
+      box.active = true;
+      this.host.stage.canvas.style.cursor = "crosshair";
+    }
+    this.host.emit((listener) => listener.marquee?.(this.rectTo(box.from, event)));
+  }
+
   release(event: PointerEvent): void {
+    if (this.finishBox(event)) {
+      return;
+    }
     this.click(event);
     this.rightClick(event);
   }
@@ -98,6 +141,79 @@ export class SelectMode implements ToolMode {
     if (this.picks) {
       this.host.emit((listener) => listener.hover?.(null, { x: 0, y: 0 }));
     }
+  }
+
+  /**
+   * Ends a rectangle, selecting what is inside it if it was drawn, which is only now, so that nothing is chosen while it is
+   * still being sized.
+   *
+   * @param event the release
+   * @returns whether a rectangle was drawn; a Shift-click that never became one is left to be the click it is
+   */
+  private finishBox(event: PointerEvent): boolean {
+    const box = this.box;
+    if (!box) {
+      return false;
+    }
+
+    this.putAwayBox();
+    if (!box.active) {
+      return false;
+    }
+
+    // the release that ends a rectangle must not also be a click
+    this.down = null;
+    const rect = this.rectTo(box.from, event);
+    const canvas = this.host.stage.canvas.getBoundingClientRect();
+    const inside = this.host.scene.atoms.filter((node) => {
+      const at = this.screenOf(node.at);
+      const x = at.x - canvas.left;
+      const y = at.y - canvas.top;
+      return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+    });
+    this.host.emit((listener) => listener.box?.(inside.map((node) => node.atom.id)));
+    return true;
+  }
+
+  /** Gives up a rectangle without selecting anything. */
+  protected abandonBox(): void {
+    if (this.box) {
+      this.putAwayBox();
+    }
+  }
+
+  /** Takes the rectangle away and gives the camera back. */
+  private putAwayBox(): void {
+    this.box = null;
+    this.host.lock.release("marquee");
+    this.host.stage.canvas.style.cursor = this.resting();
+    this.host.emit((listener) => listener.marquee?.(null));
+  }
+
+  /**
+   * @param from where the rectangle began
+   * @param event where the pointer is now
+   * @returns the rectangle between them, in pixels from the canvas's top left corner
+   */
+  private rectTo(from: ScreenPoint, event: PointerEvent): ScreenRect {
+    const canvas = this.host.stage.canvas.getBoundingClientRect();
+    return {
+      x: Math.min(from.x, event.clientX) - canvas.left,
+      y: Math.min(from.y, event.clientY) - canvas.top,
+      width: Math.abs(event.clientX - from.x),
+      height: Math.abs(event.clientY - from.y),
+    };
+  }
+
+  /**
+   * @param local a place in the molecule's own frame
+   * @returns where it is on the screen, in the same pixels as a pointer event
+   */
+  protected screenOf(local: Vector3): ScreenPoint {
+    const { stage, scene } = this.host;
+    const ndc = scene.content.localToWorld(local.clone()).project(stage.camera);
+    const box = stage.canvas.getBoundingClientRect();
+    return { x: box.left + ((ndc.x + 1) / 2) * box.width, y: box.top + ((1 - ndc.y) / 2) * box.height };
   }
 
   private click(event: PointerEvent): void {

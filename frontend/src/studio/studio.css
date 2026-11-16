@@ -1070,3 +1070,11 @@ body.resizing {
   font-size: 0.8rem;
   color: var(--ink-soft);
 }
+
+/* the rectangle dragged to select the atoms inside it */
+.marquee {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: var(--selected-fill);
+}

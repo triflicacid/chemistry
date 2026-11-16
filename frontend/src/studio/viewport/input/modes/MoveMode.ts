@@ -193,9 +193,10 @@ export class MoveMode extends SelectMode {
     return super.press(event);
   }
 
-  move(event: PointerEvent): void {
+  override move(event: PointerEvent): void {
     const grab = this.grab;
     if (!grab) {
+      super.move(event);
       return;
     }
 

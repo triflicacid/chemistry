@@ -11,6 +11,7 @@ import type {SessionPhase} from "../session/types";
 import {useSessionContext} from "../session/SessionContext";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
+import type {ScreenRect} from "../viewport/StudioViewListener";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
 import {useStructureActions} from "./useStructureActions";
@@ -48,6 +49,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [gridPlane, setGridPlane] = useState<GridPlaneChoice>("xz");
   const [debug, setDebug] = useState(false);
   const [look, setLook] = useState(false);
+  // the rectangle being dragged to select what is inside it, which selects nothing until it is let go of
+  const [marquee, setMarquee] = useState<ScreenRect | null>(null);
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
@@ -263,6 +266,13 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
           selection.clear();
         }
       },
+      marquee: setMarquee,
+      box: (atoms) => {
+        // the bonds between the atoms inside go with them
+        const inside = new Set(atoms);
+        const bonds = [...index.bonds.values()].filter((bond) => inside.has(bond.first) && inside.has(bond.second));
+        selection.addAll([...atoms.map((id): Item => ({ kind: "atom", id })), ...bonds.map((bond): Item => ({ kind: "bond", id: bond.id }))]);
+      },
       place: async (placement) => {
         const { element, bondOrder: order } = tools.get();
         const result = await addAtom(element, placement, order);
@@ -322,6 +332,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   return (
     <section className="viewport" aria-label="3D viewport">
       <canvas ref={canvasRef} className="viewport-canvas" />
+      {marquee && <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }} aria-hidden="true" />}
       {state && (
         <>
           <DisplayTools

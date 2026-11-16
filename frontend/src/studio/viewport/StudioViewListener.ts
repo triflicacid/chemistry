@@ -9,6 +9,14 @@ export interface ScreenPoint {
   y: number;
 }
 
+/** A rectangle on the screen, in pixels from the canvas's top left corner. */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface StudioViewListener {
   /** The pointer moved over `pick`, or over nothing if it is null. Not called while a button is held. */
   hover?(pick: PartItem | null, at: ScreenPoint): void;
@@ -23,6 +31,10 @@ export interface StudioViewListener {
   bond?(first: string, second: string): Promise<void>;
   /** The edit tool's ring has been given another size, by the scroll wheel. */
   ringSize?(size: number): void;
+  /** A rectangle is being dragged to select the atoms inside it, and is at `rect`, or has gone if it is null. */
+  marquee?(rect: ScreenRect | null): void;
+  /** A rectangle was let go of, and the atoms whose centres were inside it are `atoms`. */
+  box?(atoms: string[]): void;
   /** An atom has been picked up by the move tool and has begun to move, along with the rest of the selection if it is in it. */
   dragStart?(id: string): void;
   /** The dragged atoms are at `moves`' positions. `done` is true for the last report, when the pointer is released. */

@@ -88,6 +88,15 @@ export class EditMode extends MoveMode {
     return this.editClick === "add";
   }
 
+  // while a click selects, the select tool's rectangle works too
+  protected override get marquees(): boolean {
+    return this.editClick === "select";
+  }
+
+  override get dragging(): boolean {
+    return super.dragging || this.boxing;
+  }
+
   override enter(): void {
     super.enter();
     this.host.stage.canvas.addEventListener("wheel", this.onWheel, { capture: true, passive: false });
@@ -98,6 +107,7 @@ export class EditMode extends MoveMode {
     this.dismiss();
     this.letGo();
     this.dropAim();
+    this.abandonBox();
     super.exit();
   }
 
@@ -180,6 +190,7 @@ export class EditMode extends MoveMode {
   override cancelDrag(): void {
     super.cancelDrag();
     this.dropAim();
+    this.abandonBox();
     this.letGo();
   }
 
@@ -487,17 +498,6 @@ export class EditMode extends MoveMode {
       }
     });
     return nearest;
-  }
-
-  /**
-   * @param local a place in the molecule's own frame
-   * @returns where it is on the screen, in the same pixels as a pointer event
-   */
-  private screenOf(local: Vector3): ScreenPoint {
-    const { stage, scene } = this.host;
-    const ndc = scene.content.localToWorld(local.clone()).project(stage.camera);
-    const box = stage.canvas.getBoundingClientRect();
-    return { x: box.left + ((ndc.x + 1) / 2) * box.width, y: box.top + ((1 - ndc.y) / 2) * box.height };
   }
 
   /** @returns the view's directions in the molecule's own frame: rightwards, upwards, and at right angles to the screen */
