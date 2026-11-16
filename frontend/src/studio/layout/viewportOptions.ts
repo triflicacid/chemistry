@@ -51,5 +51,11 @@ export const BOND_ORDERS: Segment<BondOrder>[] = [
 
 export const EDIT_CLICKS: Segment<EditClick>[] = [
   { value: "add", label: "Add", title: "Clicking an atom adds an atom bonded to it, clicking empty space adds one on its own, and dragging an atom moves it. Shift-click, or a click on a bond, still selects (Tab)" },
+  {
+    value: "ring",
+    label: "Ring",
+    title:
+      "Click an atom to draw a ring on it. Drag from the atom to turn the ring, scroll to change how many atoms it has, then click the ghost atoms in turn to place them. The last one closes the ring, and Esc puts the ring away, leaving the atoms (Tab)",
+  },
   { value: "select", label: "Select", title: "Clicking selects atoms and bonds, and dragging turns the camera, as with the select tool, so they can be bonded or deleted (Tab)" },
 ];

@@ -189,8 +189,11 @@ export interface AtomChange {
 /** A bond's order. */
 export type BondOrder = "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE" | "AROMATIC";
 
-/** Where a new atom goes: bonded to an atom or free at a position in the molecule's own frame. */
-export type AtomPlacement = { attach: string } | { position: Vec3 };
+/**
+ * Where a new atom goes: bonded to an atom, which the session places it for unless a position is given, or free at a
+ * position in the molecule's own frame.
+ */
+export type AtomPlacement = { attach: string; position?: Vec3 } | { position: Vec3 };
 
 export interface GraphEditAck extends ServerEnvelope {
   type: "atom.set.ack" | "atom.add.ack" | "atom.delete.ack" | "bond.add.ack" | "bond.delete.ack" | "bond.order.ack";

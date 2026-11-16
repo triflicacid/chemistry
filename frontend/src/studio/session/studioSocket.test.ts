@@ -438,6 +438,25 @@ describe("the Studio socket", () => {
     await expect(socket.deleteAtoms(opened.session_id, again.version, ["a999"], false)).rejects.toMatchObject({ code: "UNKNOWN_ID" });
   });
 
+  it("places an attached atom where it is told, bonded to its neighbour, as one edit", async () => {
+    const stored = await store("CCO");
+    const socket = await connected();
+    const opened = await socket.openSession(stored.id);
+    const carbon = opened.atoms[0]!;
+
+    const placed = await socket.addAtom(opened.session_id, opened.version, "C", { attach: carbon.id, position: { x: 9, y: 8, z: 7 } }, "AROMATIC");
+    expect(placed.type).toBe("atom.add.ack");
+    if (placed.type !== "atom.add.ack") {
+      return;
+    }
+    const [added] = placed.added_atoms as [string];
+    expect(placed.state.atoms.find((atom) => atom.id === added)?.position).toEqual({ x: 9, y: 8, z: 7 });
+    expect(placed.state.bonds.find((bond) => bond.id === placed.added_bonds[0])).toMatchObject({ first: carbon.id, second: added, order: "AROMATIC" });
+
+    const undone = await socket.step("undo", opened.session_id, placed.version);
+    expect(undone.type === "edit.applied" && undone.state?.atoms.map((atom) => atom.id)).not.toContain(added);
+  });
+
   it("answers a patch made on a stale version with a conflict, and refuses an unknown atom", async () => {
     const stored = await store("CCO");
     const socket = await connected();

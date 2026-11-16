@@ -167,7 +167,7 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
           if (reply.version !== base.version) {
             note(message);
           }
-          return { kind: "applied" };
+          return { kind: "applied", added: { atoms: reply.added_atoms, bonds: reply.added_bonds } };
         } catch (cause) {
           note(reason(cause), true);
           return { kind: "refused", message: reason(cause) };

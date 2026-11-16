@@ -1,5 +1,6 @@
 import type {Vec3} from "../../api/types/structure";
 import type {Hold} from "../geometry/bondLength";
+import {clampRing} from "../geometry/ring";
 import type {BondOrder} from "../session/messages";
 import type {Constraint} from "../viewport/handles/dragPlane";
 import {Observable} from "./observable";
@@ -19,8 +20,8 @@ export const TOOL_ORDER: readonly Tool[] = ["select", "move", "rotate", "edit", 
  */
 export type RotateTarget = "molecule" | "internal";
 
-/** What a click does with the edit tool: adds an atom, or selects what is clicked as the select tool does. */
-export type EditClick = "add" | "select";
+/** What a click does with the edit tool: adds an atom, grows a ring from an atom, or selects what is clicked as the select tool does. */
+export type EditClick = "add" | "ring" | "select";
 
 /** Which axes a constraint, and the molecule's handles, are measured along: the scene's or the molecule's own. */
 export type Space = "world" | "local";
@@ -73,6 +74,8 @@ export interface ToolState {
   hold: Hold;
   /** What a click does with the edit tool. */
   editClick: EditClick;
+  /** How many atoms the ring the edit tool grows has. */
+  ringSize: number;
   /** The element the edit tool adds. */
   element: string;
   /** The order of the bond the edit tool makes, whether adding an atom or bonding two. */
@@ -82,7 +85,7 @@ export interface ToolState {
 /** Which tool is in use. The toolbar and the viewport share it, and neither writes to the other. */
 export class ToolModel extends Observable<ToolState> {
   constructor() {
-    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, axis: null, strain: false, carryHydrogens: false, snap: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first", editClick: "add", element: "C", bondOrder: "SINGLE" });
+    super({ tool: "select", constraint: "free", space: "world", pivot: "anchor", rotateTarget: "molecule", point: { x: 0, y: 0, z: 0 }, axis: null, strain: false, carryHydrogens: false, snap: false, torsion: null, angle: null, system: { label: null, clouds: [] }, hold: "first", editClick: "add", ringSize: 6, element: "C", bondOrder: "SINGLE" });
   }
 
   /**
@@ -203,6 +206,18 @@ export class ToolModel extends Observable<ToolState> {
   clickTo(editClick: EditClick): void {
     if (this.get().editClick !== editClick) {
       this.set({ ...this.get(), editClick });
+    }
+  }
+
+  /**
+   * Chooses how many atoms the ring the edit tool grows has.
+   *
+   * @param ringSize the number of atoms, which is held to the sizes a ring can be drawn with
+   */
+  ringSizeTo(ringSize: number): void {
+    const size = clampRing(ringSize);
+    if (this.get().ringSize !== size) {
+      this.set({ ...this.get(), ringSize: size });
     }
   }
 

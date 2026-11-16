@@ -1057,6 +1057,25 @@ class StudioSessionTest
     }
 
     @Test
+    void should_put_an_attached_atom_where_it_is_told_and_bond_it_in_one_edit()
+    {
+        StudioSession session = open("CCO");
+        String carbon = ids(session).get(0);
+        Vec3 where = new Vec3(8, 1, 2);
+
+        StudioSession.Created created = session.addAtom("C", carbon, BondOrder.AROMATIC, where);
+
+        assertThat(session.positionOf(created.atoms().getFirst())).isEqualTo(where);
+        assertThat(created.bonds()).hasSize(1);
+        assertThat(session.molecule().bonds().getLast().order()).isEqualTo(BondOrder.AROMATIC);
+
+        session.undo();
+        assertThat(ids(session)).doesNotContain(created.atoms().getFirst());
+        assertThat(session.canUndo()).isFalse();
+        assertThat(code(() -> session.addAtom("C", carbon, null, new Vec3(Double.NaN, 0, 0)))).isEqualTo("INVALID_MESSAGE");
+    }
+
+    @Test
     void should_never_use_a_name_twice_even_after_an_undo()
     {
         StudioSession session = open("CCO");

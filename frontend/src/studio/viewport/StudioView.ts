@@ -25,6 +25,7 @@ import {RollRingInteraction} from "./input/RollRingInteraction";
 import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
 import {PanGuide} from "./scene/PanGuide";
+import {RingGuide} from "./scene/RingGuide";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
 import type {Emphasis} from "../models/items";
 import type {SystemView} from "../geometry/conjugation";
@@ -59,6 +60,8 @@ export class StudioView {
   private readonly reference: ReferenceLayer;
   /** What debugging shows while the view is panned. */
   private readonly panGuide: PanGuide;
+  /** The ring the edit tool draws to grow an atom into a ring. */
+  private readonly ringGuide: RingGuide;
   /** Flies the camera, with the keys or the stick on the camera HUD. */
   private readonly fly: CameraFly;
   /** The handles on the molecule as a whole. */
@@ -94,6 +97,7 @@ export class StudioView {
       },
     });
     this.panGuide = new PanGuide(this.stage);
+    this.ringGuide = new RingGuide(this.stage);
     this.scene = new MoleculeScene(this.stage, this.kit);
     this.lock = new CameraLock(this.stage);
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
@@ -149,6 +153,21 @@ export class StudioView {
       setPlain: (plain) => this.setPlain(plain),
       setMeasured: (measured) => this.setMeasured(measured),
       emit,
+      place: async (placement) => {
+        for (const listener of this.listeners) {
+          const made = await listener.place?.(placement);
+          if (made !== undefined) {
+            return made;
+          }
+        }
+        return null;
+      },
+      join: async (first, second) => {
+        for (const listener of this.listeners) {
+          await listener.bond?.(first, second);
+        }
+      },
+      ringGuide: this.ringGuide,
     };
     this.modes = { select: new SelectMode(host), move: new MoveMode(host), rotate: new RotateMode(host), edit: new EditMode(host), pan: new PanMode(host) };
     this.active = new ActiveMode(this.modes.select);
@@ -536,6 +555,7 @@ export class StudioView {
     this.ring.dispose();
     this.cameraHud.dispose();
     this.panGuide.dispose();
+    this.ringGuide.dispose();
     this.fly.dispose();
     this.reference.dispose();
     this.kit.dispose();
@@ -558,6 +578,9 @@ export class StudioView {
           // the key abandons the drag and goes no further, so it does not also clear the selection
           event.stopPropagation();
           this.mode.cancelDrag();
+        } else if (this.mode.dismiss?.()) {
+          // putting away what the tool is showing is all the key does then, and leaves the selection as it is
+          event.stopPropagation();
         }
       },
     },

@@ -742,10 +742,11 @@ public final class StudioSession
      * Adds an atom as one edit that can be undone. No hydrogen is added or removed to suit it.
      *
      * @param element the new atom's element symbol
-     * @param attachToId the atom to bond it to, which places it a bond length away in a direction that suits that atom's
-     *     neighbours; or {@code null} to place it free at {@code position}
+     * @param attachToId the atom to bond it to, or {@code null} for a free atom; unless {@code position} says where, it is
+     *     placed a bond length away in a direction that suits that atom's neighbours
      * @param order the order of the bond to {@code attachToId}, or {@code null} for single
-     * @param position where to put a free atom, in angstroms in the molecule's own frame; unused when attaching
+     * @param position where to put the atom, in angstroms in the molecule's own frame, which is required for a free atom
+     *     and otherwise replaces the place the session would have chosen
      * @return the edit, and the names of the atom and bond it made
      * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, {@code LOCKED} if the
      *     atom to attach to is locked, {@code BUSY} if an edit is in progress, {@code INVALID_EDIT} if the element is
@@ -760,20 +761,28 @@ public final class StudioSession
         }
 
         Atom target = null;
-        Vec3 where;
         if (attachToId != null)
         {
             target = atomNamed(attachToId);
             requireUnlocked(List.of(attachToId));
+        }
+
+        Vec3 where;
+        if (position != null)
+        {
+            if (!Double.isFinite(position.x()) || !Double.isFinite(position.y()) || !Double.isFinite(position.z()))
+            {
+                throw new StudioEditException("INVALID_MESSAGE", "The position of the new atom is not a finite number");
+            }
+            where = position;
+        }
+        else if (target != null)
+        {
             where = placementFor(target, element);
         }
         else
         {
-            if (position == null || !Double.isFinite(position.x()) || !Double.isFinite(position.y()) || !Double.isFinite(position.z()))
-            {
-                throw new StudioEditException("INVALID_MESSAGE", "A free atom needs a finite position");
-            }
-            where = position;
+            throw new StudioEditException("INVALID_MESSAGE", "A free atom needs a position");
         }
 
         Draft draft = new Draft();

@@ -82,7 +82,7 @@ export function App() {
           shared.tools.rotateTarget(rotateTarget === "molecule" ? "internal" : "molecule");
         } else if (tool === "edit") {
           event.preventDefault();
-          shared.tools.clickTo(editClick === "add" ? "select" : "add");
+          shared.tools.clickTo(editClick === "add" ? "ring" : editClick === "ring" ? "select" : "add");
         }
       },
     },

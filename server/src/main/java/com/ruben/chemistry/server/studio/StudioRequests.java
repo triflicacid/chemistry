@@ -179,9 +179,9 @@ public final class StudioRequests
      * @param sessionId the session to edit
      * @param baseVersion the version the client was looking at when it composed the change
      * @param element the new atom's element symbol
-     * @param attach the atom to bond it to (optional; with it the server places the new atom, and without it {@code position} is required)
+     * @param attach the atom to bond it to (optional; without {@code position} the server places the new atom, and without it {@code position} is required)
      * @param order the order of the bond to {@code attach} (optional, default single)
-     * @param position where to put a free atom, in angstroms in the molecule's own frame (optional; unused when attaching)
+     * @param position where to put the atom, in angstroms in the molecule's own frame (optional with {@code attach}, required without)
      */
     public record AtomAddRequest(String sessionId, Long baseVersion, String element, String attach, BondOrder order, Vec3 position)
     {

@@ -870,9 +870,9 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        if (request.element() == null || (request.attach() == null) == (request.position() == null))
+        if (request.element() == null || (request.attach() == null && request.position() == null))
         {
-            context.error("atom.add", sequence, "INVALID_MESSAGE", "element is required, and either attach or position, but not both");
+            context.error("atom.add", sequence, "INVALID_MESSAGE", "element is required, and attach, position or both");
             return;
         }
 

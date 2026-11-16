@@ -2,6 +2,7 @@ import type {Vec3} from "../../../../api/types/structure";
 import type {Stage} from "../../../../render/stage";
 import type {Binding} from "../../../keys/binding";
 import type {Hold} from "../../../geometry/bondLength";
+import type {AtomPlacement, BondOrder} from "../../../session/messages";
 import type {Item} from "../../../models/items";
 import type {StateIndex} from "../../../geometry/StateIndex";
 import type {AngleView, EditClick, RotateTarget, Space, Tool, TorsionView} from "../../../models/ToolModel";
@@ -15,6 +16,7 @@ import type {Annotations} from "../../scene/Annotations";
 import type {MoleculeScene} from "../../scene/MoleculeScene";
 import type {PanGuide} from "../../scene/PanGuide";
 import type {ReferenceLayer} from "../../scene/ReferenceLayer";
+import type {RingGuide} from "../../scene/RingGuide";
 import type {StudioViewListener} from "../../StudioViewListener";
 import type {InteractionHandler} from "../PointerRouter";
 
@@ -29,6 +31,10 @@ export interface ModeOptions {
   rotateTarget: RotateTarget;
   /** What a click does with the edit tool. */
   editClick: EditClick;
+  /** How many atoms the edit tool's ring has. */
+  ringSize: number;
+  /** The order of the bonds the edit tool makes. */
+  bondOrder: BondOrder;
   /** What is selected. */
   selection: readonly Item[];
   /** What the session's structure holds, or null before it is known. */
@@ -67,6 +73,12 @@ export interface ModeHost {
   setMeasured(measured: boolean): void;
   /** Tells every listener something. */
   emit(tell: (listener: StudioViewListener) => void): void;
+  /** Adds an atom, which answers with its name or null if none was made. */
+  place(placement: AtomPlacement): Promise<string | null>;
+  /** Bonds two atoms. */
+  join(first: string, second: string): Promise<void>;
+  /** The ring the edit tool draws, which grows an atom into a ring. */
+  readonly ringGuide: RingGuide;
 }
 
 /** How the viewport answers the pointer and the keyboard while one {@link Tool} is chosen. */
@@ -88,6 +100,8 @@ export interface ToolMode extends InteractionHandler {
   held(): string[];
   /** Abandons a drag in progress, putting the atoms back where they were picked up. */
   cancelDrag(): void;
+  /** Puts away what the mode is showing that is not a drag, which Escape does. Returns whether there was anything to put away. */
+  dismiss?(): boolean;
   /** The cursor over the viewport when nothing is under the pointer. */
   resting(): string;
 }
