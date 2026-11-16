@@ -5,6 +5,17 @@ import type {Primitives} from "./primitives";
 /** How atoms and bonds are drawn. */
 export type Style = "ball_and_stick" | "sticks" | "wireframe" | "spacefill";
 
+/** The styles, in the order they are offered. */
+export const STYLES: readonly Style[] = ["ball_and_stick", "sticks", "wireframe", "spacefill"];
+
+/**
+ * @param value anything, such as what was stored on an earlier visit
+ * @returns it if it is a style, and otherwise the default, which is ball and stick
+ */
+export function asStyle(value: unknown): Style {
+  return STYLES.find((style) => style === value) ?? "ball_and_stick";
+}
+
 /** What is needed of a bond to draw it: the two atoms it joins, by index, and its order. */
 export type BondEnds = Pick<Connection3D, "first" | "second" | "order">;
 

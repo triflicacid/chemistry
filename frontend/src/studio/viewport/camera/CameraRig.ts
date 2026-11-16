@@ -1,9 +1,8 @@
 import {Box3, type Quaternion, Vector3} from "three";
 import type {Vec3} from "../../../api/types/structure";
-import {ballRadius} from "../../../render/bonds";
 import {FIELD_OF_VIEW, type Stage} from "../../../render/stage";
 import {type CameraEdit, type CameraState, edited, orbitOf} from "../../models/CameraModel";
-import {type MoleculeScene, STYLE} from "../scene/MoleculeScene";
+import type {MoleculeScene} from "../scene/MoleculeScene";
 
 /** How far, in radians, the camera may have turned since a triad click and still count as not having moved. */
 export const SAME_VIEW = 1e-3;
@@ -158,7 +157,7 @@ export class CameraRig {
     const centre = box.getCenter(new Vector3());
     let radius = 1;
     for (const node of nodes) {
-      radius = Math.max(radius, this.scene.worldOf(node).distanceTo(centre) + Math.max(ballRadius(node.atom.radius, STYLE, true), 0.3));
+      radius = Math.max(radius, this.scene.worldOf(node).distanceTo(centre) + Math.max(this.scene.radiusOf(node), 0.3));
     }
     this.stage.frame(centre, radius + 0.5);
     this.anchorOn(centre);

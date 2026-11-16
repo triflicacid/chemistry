@@ -1,8 +1,9 @@
+import type {Style} from "../../render/bonds";
 import type {Models} from "../models/models";
 import {DEFAULT_BRIGHTNESS, MAX_BRIGHTNESS, MIN_BRIGHTNESS} from "../models/RenderModel";
 import {useObservable} from "../models/observable";
 import {Segmented} from "../controls/Segmented";
-import {FINISH_OPTIONS} from "../layout/viewportOptions";
+import {FINISH_OPTIONS, STYLE_OPTIONS} from "../layout/viewportOptions";
 
 /**
  * How the molecule is drawn, in a section that folds down to its title at the foot of the Outliner. Closing it leaves the
@@ -10,7 +11,7 @@ import {FINISH_OPTIONS} from "../layout/viewportOptions";
  */
 export function RenderOptions({ models }: { models: Models }) {
   const { render } = models;
-  const { finish, brightness, open } = useObservable(render);
+  const { style, finish, brightness, open } = useObservable(render);
 
   return (
     <section className="render-options" aria-label="Render options">
@@ -20,6 +21,16 @@ export function RenderOptions({ models }: { models: Models }) {
       </button>
       {open && (
         <dl className="properties render-body">
+          <dt>Style</dt>
+          <dd>
+            <select value={style} aria-label="How atoms and bonds are drawn" onChange={(event) => render.styleWith(event.target.value as Style)}>
+              {STYLE_OPTIONS.map(({ value, label, title }) => (
+                <option key={value} value={value} title={title}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </dd>
           <dt>Finish</dt>
           <dd>
             <Segmented label="Finish" value={finish} options={FINISH_OPTIONS} onChange={(next) => render.finishWith(next)} />

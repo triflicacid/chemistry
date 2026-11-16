@@ -1,3 +1,4 @@
+import {asStyle, type Style} from "../../render/bonds";
 import {asFinish, type Finish} from "../../render/finish";
 import {Observable} from "./observable";
 
@@ -13,6 +14,8 @@ export const DEFAULT_BRIGHTNESS = 1;
 
 /** How the molecule is drawn, which the viewport shows and the Render options section changes. */
 export interface RenderState {
+  /** How atoms and bonds are drawn: as balls and sticks, sticks alone, lines, or spheres. */
+  style: Style;
   finish: Finish;
   /** A multiple of the scene's usual lighting. */
   brightness: number;
@@ -32,6 +35,17 @@ export function clampBrightness(brightness: number): number {
 export class RenderModel extends Observable<RenderState> {
   constructor() {
     super(RenderModel.read());
+  }
+
+  /**
+   * Chooses how atoms and bonds are drawn.
+   *
+   * @param style the style
+   */
+  styleWith(style: Style): void {
+    if (this.get().style !== style) {
+      this.change({ ...this.get(), style });
+    }
   }
 
   /**
@@ -79,7 +93,7 @@ export class RenderModel extends Observable<RenderState> {
 
   /** Reads back what was stored, filling in anything missing or unusable from the defaults. */
   private static read(): RenderState {
-    const defaults: RenderState = { finish: "matte", brightness: DEFAULT_BRIGHTNESS, open: false };
+    const defaults: RenderState = { style: "ball_and_stick", finish: "matte", brightness: DEFAULT_BRIGHTNESS, open: false };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(RENDER_KEY) ?? "null");
@@ -92,6 +106,7 @@ export class RenderModel extends Observable<RenderState> {
       return defaults;
     }
     return {
+      style: asStyle(held.style),
       finish: asFinish(held.finish),
       brightness: typeof held.brightness === "number" ? clampBrightness(held.brightness) : defaults.brightness,
       open: typeof held.open === "boolean" ? held.open : defaults.open,

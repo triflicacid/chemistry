@@ -1,14 +1,14 @@
 import {
-  CylinderGeometry,
-  DoubleSide,
-  Group,
-  IcosahedronGeometry,
-  Mesh,
-  MeshBasicMaterial,
-  type Object3D,
-  Quaternion,
-  SphereGeometry,
-  Vector3,
+    CylinderGeometry,
+    DoubleSide,
+    Group,
+    IcosahedronGeometry,
+    Mesh,
+    MeshBasicMaterial,
+    type Object3D,
+    Quaternion,
+    SphereGeometry,
+    Vector3,
 } from "three";
 import type {Stage} from "../../../render/stage";
 import type {RingLayout} from "../../geometry/ring";
@@ -129,6 +129,19 @@ export class RingGuide {
     }
 
     this.root.visible = true;
+    this.stage.requestRender();
+  }
+
+  /**
+   * Draws the ring over what is in front of it, or behind it again. Atoms drawn at their full size cover the places beside
+   * them, which would hide a ring on them.
+   *
+   * @param through whether to draw it over everything
+   */
+  seeThrough(through: boolean): void {
+    for (const material of [...Object.values(this.bodies), ...Object.values(this.shells)]) {
+      material.depthTest = !through;
+    }
     this.stage.requestRender();
   }
 

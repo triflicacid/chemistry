@@ -1,5 +1,6 @@
 import {Mesh, MeshStandardMaterial} from "three";
 import type {Vec3} from "../../api/types/structure";
+import type {Style} from "../../render/bonds";
 import {type Finish, roughnessOf} from "../../render/finish";
 import {Primitives} from "../../render/primitives";
 import {Stage} from "../../render/stage";
@@ -75,6 +76,9 @@ export class StudioView {
   /** Holds the mode in use, which is the one for the tool chosen, and gives the router it, whichever it is. */
   private readonly active: ActiveMode;
   private readonly listeners = new Set<StudioViewListener>();
+
+  /** The state last shown, which a change of style draws again. */
+  private shown: SessionState | null = null;
 
   /** The session the camera was last framed on, so a new session is framed and an edit to the same one is not. */
   private framedSession: string | null = null;
@@ -230,6 +234,7 @@ export class StudioView {
    * @param state the state to show; the camera is framed on it the first time a session is shown
    */
   setState(state: SessionState): void {
+    this.shown = state;
     const structureKey = structureKeyOf(state);
     this.scene.locked = new Set(state.locked);
 
@@ -506,6 +511,26 @@ export class StudioView {
    */
   setAxes(visible: boolean): void {
     this.reference.setAxes(visible);
+  }
+
+  /**
+   * Chooses how atoms and bonds are drawn, which draws what is shown afresh.
+   *
+   * @param style balls and sticks, sticks alone, lines, or spheres
+   */
+  setStyle(style: Style): void {
+    if (this.scene.style === style) {
+      return;
+    }
+
+    this.scene.style = style;
+    // spheres at their full size cover the places beside them, which would hide the ring guide on them
+    this.ringGuide.seeThrough(style === "spacefill");
+    if (this.shown) {
+      // the structure is the same, so only forgetting what it looked like makes it be drawn again
+      this.scene.structureKey = "";
+      this.setState(this.shown);
+    }
   }
 
   /**

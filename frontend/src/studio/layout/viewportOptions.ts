@@ -1,3 +1,4 @@
+import type {Style} from "../../render/bonds";
 import type {Finish} from "../../render/finish";
 import type {BondOrder} from "../session/messages";
 import type {EditClick, RotateTarget, Space} from "../models/ToolModel";
@@ -64,4 +65,11 @@ export const EDIT_CLICKS: Segment<EditClick>[] = [
 export const FINISH_OPTIONS: Segment<Finish>[] = [
   { value: "matte", label: "Matte", title: "Draw atoms and bonds flat, as chalk" },
   { value: "glossy", label: "Glossy", title: "Draw atoms and bonds smooth and reflecting a studio-like room, as glossy plastic" },
+];
+
+export const STYLE_OPTIONS: { value: Style; label: string; title: string }[] = [
+  { value: "ball_and_stick", label: "Ball and stick", title: "Atoms as small balls joined by sticks" },
+  { value: "sticks", label: "Sticks", title: "Bonds as thick sticks, joined round at each atom" },
+  { value: "wireframe", label: "Wireframe", title: "Bonds as thin lines, with a bead only where an atom is hovered or selected" },
+  { value: "spacefill", label: "Spacefill", title: "Each atom as a sphere of its full size, which hides its bonds, so they cannot be hovered or selected" },
 ];
