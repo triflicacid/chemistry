@@ -15,6 +15,13 @@ interface Shown {
   units: UnitInfo[];
 }
 
+/** What reacts to the pointer on a fragmented formula, each told the fragments the unit under it stands for. */
+export interface FormulaHandlers {
+  /** The pointer is over a unit, or null when it is over none. */
+  hover: (fragments: readonly number[] | null) => void;
+  pick: (fragments: readonly number[]) => void;
+}
+
 export class FormulaView {
   readonly element = document.createElement("div");
   private readonly fragmented: Shown[] = [];
@@ -37,6 +44,28 @@ export class FormulaView {
         this.fragmented.push({ text, units: row.units });
       }
     }
+  }
+
+  /**
+   * Makes the units of the fragmented formulae respond to the pointer.
+   *
+   * @param handlers the handler called on hover and click
+   * @returns how to stop listening
+   */
+  listen(handlers: FormulaHandlers): () => void {
+    const stops = this.fragmented.map((shown) => {
+      const unitAt = (offset: number) => shown.units.find((unit) => offset >= unit.span.start && offset < unit.span.end);
+      return shown.text.listen({
+        hover: (offset) => handlers.hover((offset === null ? undefined : unitAt(offset))?.fragments ?? null),
+        pick: (offset) => {
+          const unit = unitAt(offset);
+          if (unit) {
+            handlers.pick(unit.fragments);
+          }
+        },
+      });
+    });
+    return () => stops.forEach((stop) => stop());
   }
 
   highlightFragment(fragment: number | null): void {

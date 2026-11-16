@@ -26,3 +26,7 @@
   font-family: inherit;
   overflow-wrap: anywhere;
 }
+
+.pickable {
+  cursor: pointer;
+}

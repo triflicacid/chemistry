@@ -5,7 +5,7 @@ import type {AtomInfo, MoleculeMetadata} from "../../api/types/metadata";
 import {FormulaView} from "../../notation/FormulaView";
 import {type Highlight, SmilesText} from "../../notation/SmilesText";
 import type {Item} from "../models/items";
-import type {HoverModel} from "../models/HoverModel";
+import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {SessionState} from "../session/messages";
 
@@ -64,14 +64,14 @@ function Mount({element}: { element: HTMLElement }) {
 
 interface MoleculeDetailsProps {
   state: SessionState;
-  hover: HoverModel;
+  models: Models;
 }
 
-/** The molecule's SMILES, canonical SMILES and formulae. */
-export function MoleculeDetails({state, hover}: MoleculeDetailsProps) {
+/** The molecule's SMILES, canonical SMILES and formulae, which mark what is hovered and centre the camera on what is clicked. */
+export function MoleculeDetails({state, models}: MoleculeDetailsProps) {
   const [metadata, setMetadata] = useState<MoleculeMetadata | null>(null);
   const [failed, setFailed] = useState(false);
-  const item = useObservable(hover);
+  const item = useObservable(models.hover);
 
   useEffect(() => {
     let current = true;
@@ -96,19 +96,79 @@ export function MoleculeDetails({state, hover}: MoleculeDetailsProps) {
   if (!metadata) {
     return <p className="panel-empty">Reading the molecule…</p>;
   }
-  return <Loaded state={state} metadata={metadata} item={item}/>;
+  return <Loaded state={state} metadata={metadata} item={item} models={models}/>;
 }
 
 interface LoadedProps {
   state: SessionState;
   metadata: MoleculeMetadata;
   item: Item | null;
+  models: Models;
 }
 
-function Loaded({state, metadata, item}: LoadedProps) {
+function Loaded({state, metadata, item, models}: LoadedProps) {
   const smiles = useMemo(() => new SmilesText(metadata.smiles), [metadata]);
   const canonical = useMemo(() => new SmilesText(metadata.canonical_smiles), [metadata]);
   const formula = useMemo(() => new FormulaView(metadata.formula, metadata.fragments.length), [metadata]);
+
+  useEffect(() => {
+    const {hover, focus} = models;
+    let hovering = false;
+    const setHover = (next: Item | null) => {
+      hovering = next !== null;
+      hover.hover(next);
+    };
+
+    // an atom the SMILES does not write, such as a hydrogen the session counted, has no place in the text
+    const atomAt = (offset: number, key: "span" | "canonical_span"): string | null => {
+      const atom = metadata.atoms.find((candidate) => {
+        const span = candidate[key];
+        return span !== null && offset >= span.start && offset < span.end;
+      });
+      const id = atom && `a${atom.index + 1}`;
+      return id && state.atoms.some((candidate) => candidate.id === id && candidate.element === atom.element) ? id : null;
+    };
+    const atomListener = (key: "span" | "canonical_span") => ({
+      hover: (offset: number | null) => {
+        const id = offset === null ? null : atomAt(offset, key);
+        setHover(id === null ? null : {kind: "atom", id});
+      },
+      pick: (offset: number) => {
+        const id = atomAt(offset, key);
+        if (id !== null) {
+          focus.focus([id]);
+        }
+      },
+    });
+
+    // the session's molecules are the metadata's fragments, found through the atoms they share
+    const moleculesOf = (fragments: readonly number[]) =>
+      state.fragments.filter((molecule) =>
+        molecule.atoms.some((id) => {
+          const index = indexOf(id, "a");
+          const atom = index === null ? undefined : metadata.atoms[index];
+          return atom !== undefined && fragments.includes(atom.fragment);
+        }),
+      );
+
+    const stops = [
+      smiles.listen(atomListener("span")),
+      canonical.listen(atomListener("canonical_span")),
+      formula.listen({
+        hover: (fragments) => {
+          const [first] = fragments ? moleculesOf(fragments) : [];
+          setHover(first ? {kind: "molecule", id: first.key} : null);
+        },
+        pick: (fragments) => focus.focus(moleculesOf(fragments).flatMap((molecule) => molecule.atoms)),
+      }),
+    ];
+    return () => {
+      stops.forEach((stop) => stop());
+      if (hovering) {
+        hover.hover(null);
+      }
+    };
+  }, [metadata, state, models, smiles, canonical, formula]);
 
   useEffect(() => {
     const ends: AtomInfo[] = [];

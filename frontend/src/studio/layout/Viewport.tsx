@@ -208,6 +208,13 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     });
   }, [view, index, picking, selection, hover, tools, dragAtoms, dropAtoms, cancelDrag, dragMolecule, dropMolecule, cancelMoleculeDrag, dragBond, dropBond, cancelBondDrag]);
 
+  useEffect(() => {
+    if (!view) {
+      return;
+    }
+    return models.focus.subscribe((atoms) => view.frameAtoms(atoms));
+  }, [view, models.focus]);
+
   const frame = () => {
     if (!view || !index) {
       return;

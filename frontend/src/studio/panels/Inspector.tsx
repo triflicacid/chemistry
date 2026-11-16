@@ -50,7 +50,7 @@ export function Inspector({ state, geometry, models }: InspectorProps) {
         <p className="panel-empty">Nothing selected.</p>
         <SessionPane state={state} geometry={geometry} />
         <hr className="pane-divider" />
-        <MoleculeDetails state={state} hover={models.hover} />
+        <MoleculeDetails state={state} models={models} />
       </>
     );
   }
