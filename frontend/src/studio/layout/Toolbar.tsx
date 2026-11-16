@@ -17,8 +17,8 @@ const TOOLS: Segment<Tool>[] = [
   { value: "rotate", label: "Rotate", title: "Turn the whole molecule about a pivot, or choose Bonds & angles to turn about a bond or change an angle" },
   {
     value: "pan",
-    label: "Pan",
-    title: "Dragging pans the view and right-dragging orbits it. Scrolling zooms towards the pointer. Double-click an atom to centre the view on it",
+    label: "Camera",
+    title: "Dragging pans the view and right-dragging orbits it. Scrolling zooms towards the pointer. W, A, S, D fly the camera forward, left, back and right, and E and Q up and down (hold Shift to go faster), as does the fly stick in the corner. Double-click an atom to centre the view on it",
   },
 ];
 

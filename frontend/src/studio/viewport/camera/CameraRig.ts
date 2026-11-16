@@ -108,6 +108,22 @@ export class CameraRig {
     this.stage.pivotOn(to);
   }
 
+  /**
+   * Flies the camera: moves it, and what it looks at with it, along its own axes, so the view keeps its angle.
+   *
+   * @param right how far to the right, in scene units
+   * @param up how far up the screen
+   * @param forward how far the way the camera looks
+   */
+  moveBy(right: number, up: number, forward: number): void {
+    const { camera, controls } = this.stage;
+    const to = controls.target.clone();
+    to.addScaledVector(new Vector3(1, 0, 0).applyQuaternion(camera.quaternion), right);
+    to.addScaledVector(new Vector3(0, 1, 0).applyQuaternion(camera.quaternion), up);
+    to.addScaledVector(new Vector3(0, 0, -1).applyQuaternion(camera.quaternion), forward);
+    this.stage.pivotOn(to);
+  }
+
   /** Puts the camera at the defaults. */
   resetCamera(): void {
     // framing works out how far back to stand from the field of view, so that comes first

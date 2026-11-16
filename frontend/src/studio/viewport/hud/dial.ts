@@ -3,7 +3,7 @@ import {Mesh, MeshBasicMaterial, type PerspectiveCamera, Scene, Shape, ShapeGeom
 import {ARROW_AT} from "./constants";
 
 /** What a press on the camera HUD takes hold of. */
-export type HudHandle = "orbit" | "yaw" | "pitch" | "pan" | "pan-x" | "pan-y" | "fov" | "cone";
+export type HudHandle = "orbit" | "yaw" | "pitch" | "fly" | "fov" | "cone";
 
 /** A point or offset in a dial's own pixels, from its centre, with x to the right and y up. */
 export interface HudPoint {

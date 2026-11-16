@@ -2,13 +2,13 @@ import {OrthographicCamera, type PerspectiveCamera, type Scene, Vector2, type We
 
 import {HUD_GAP, HUD_MARGIN, HUD_SIZE} from "./constants";
 import {FovDial, fovOfSliderOffset} from "./fovDial";
+import {FlyDial} from "./flyDial";
 import {OrbitDial} from "./orbitDial";
-import {PanDial} from "./panDial";
 import {ACTIVE, type HudHandle, type HudPoint, HOVERED, type Look, RESTING} from "./dial";
 
 /**
  * Three dials in the lower right corner of the canvas to move the camera with, drawn like the triad and the roll ring: an
- * orbit sphere, a pan sphere and a field-of-view cone. They are in a row, the orbit sphere on the right.
+ * orbit sphere, a fly stick and a field-of-view cone. They are in a row, the orbit sphere on the right.
  */
 export class CameraHud {
   /** Whether to draw them, and take presses. */
@@ -22,16 +22,16 @@ export class CameraHud {
 
   private readonly camera = new OrthographicCamera(-HUD_SIZE / 2, HUD_SIZE / 2, HUD_SIZE / 2, -HUD_SIZE / 2, -200, 200);
   private readonly orbit = new OrbitDial();
-  private readonly pan = new PanDial();
+ private readonly fly = new FlyDial();
   private readonly fov = new FovDial();
 
-  /** Where the pan ball is, from its centre, in pixels with y up, which the view sets as it pans. */
-  get ball(): HudPoint {
-    return this.pan.ball;
+  /** Where the fly stick's ball is, from its centre, in pixels with y up, which the view sets as it is pulled. */
+  get stick(): HudPoint {
+    return this.fly.ball;
   }
 
-  set ball(point: HudPoint) {
-    this.pan.ball = point;
+  set stick(point: HudPoint) {
+    this.fly.ball = point;
   }
 
   /**
@@ -67,9 +67,9 @@ export class CameraHud {
       return null;
     }
     const orbit = this.offsetFrom(canvas, x, y, this.orbitCentre(canvas.width));
-    const pan = this.offsetFrom(canvas, x, y, this.panCentre(canvas.width));
+   const fly = this.offsetFrom(canvas, x, y, this.flyCentre(canvas.width));
     const fov = this.offsetFrom(canvas, x, y, this.fovCentre(canvas.width));
-    return this.orbit.hit(orbit.x, orbit.y) ?? this.pan.hit(pan.x, pan.y) ?? this.fov.hit(fov.x, fov.y);
+    return this.orbit.hit(orbit.x, orbit.y) ?? this.fly.hit(fly.x, fly.y) ?? this.fov.hit(fov.x, fov.y);
   }
 
   /** The distance between the dials' centres, which are in a row. */
@@ -81,12 +81,12 @@ export class CameraHud {
     return width - HUD_MARGIN - HUD_SIZE / 2;
   }
 
-  private panCentre(width: number): number {
+  private flyCentre(width: number): number {
     return this.orbitCentre(width) - this.spacing;
   }
 
   private fovCentre(width: number): number {
-    return this.panCentre(width) - this.spacing;
+    return this.flyCentre(width) - this.spacing;
   }
 
   private offsetFrom(canvas: DOMRect, x: number, y: number, centreX: number): HudPoint {
@@ -108,7 +108,7 @@ export class CameraHud {
       return;
     }
 
-    [this.orbit, this.pan, this.fov].forEach((widget) => {
+    [this.orbit, this.fly, this.fov].forEach((widget) => {
       widget.update(from);
       widget.paint(this.look);
     });
@@ -118,7 +118,7 @@ export class CameraHud {
     renderer.autoClear = false;
     renderer.setScissorTest(true);
     this.render(renderer, this.orbit.scene, this.orbitCentre(whole.x) - HUD_SIZE / 2);
-    this.render(renderer, this.pan.scene, this.panCentre(whole.x) - HUD_SIZE / 2);
+   this.render(renderer, this.fly.scene, this.flyCentre(whole.x) - HUD_SIZE / 2);
     this.render(renderer, this.fov.scene, this.fovCentre(whole.x) - HUD_SIZE / 2);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, whole.x, whole.y);
@@ -134,6 +134,6 @@ export class CameraHud {
 
   /** Frees what they are drawn from. */
   dispose(): void {
-    [this.orbit, this.pan, this.fov].forEach((widget) => widget.dispose());
+    [this.orbit, this.fly, this.fov].forEach((widget) => widget.dispose());
   }
 }
