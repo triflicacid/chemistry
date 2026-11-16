@@ -1,8 +1,8 @@
 import type { AtomInfo, BondInfo, MoleculeMetadata, RingInfo, SystemInfo } from "../../api/types/metadata";
 import type { Span } from "../../api/types/span";
-import { FormulaView } from "./FormulaView";
-import { SmilesText } from "./SmilesText";
-import type { Highlight } from "./SmilesText";
+import { FormulaView } from "../../notation/FormulaView";
+import { SmilesText } from "../../notation/SmilesText";
+import type { Highlight } from "../../notation/SmilesText";
 import type { Selection } from "../store";
 import type { MoleculeView, PartRef as Target, Point } from "../view/MoleculeView";
 

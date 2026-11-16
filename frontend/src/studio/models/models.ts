@@ -1,4 +1,5 @@
 import {CameraModel} from "./CameraModel";
+import {FocusModel} from "./FocusModel";
 import {HoverModel} from "./HoverModel";
 import type {StateIndex} from "../geometry/StateIndex";
 import {SelectionModel} from "./SelectionModel";
@@ -15,6 +16,8 @@ export interface Models {
   tools: ToolModel;
   /** Where the camera is, which the viewport reports and the Inspector can change. */
   camera: CameraModel;
+  /** Asks the viewport to centre the camera on atoms. */
+  focus: FocusModel;
   /** Looks identifiers up in the state the surfaces are showing; null until a session opens. */
   index: StateIndex | null;
 }
@@ -25,6 +28,6 @@ export interface Models {
  * @returns a selection and a hover model, with nothing selected, a tool model on the select tool, and a camera model
  *     that knows nothing until a viewport reports
  */
-export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera"> {
-  return { selection: new SelectionModel(), hover: new HoverModel(), tools: new ToolModel(), camera: new CameraModel() };
+export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus"> {
+  return { selection: new SelectionModel(), hover: new HoverModel(), tools: new ToolModel(), camera: new CameraModel(), focus: new FocusModel() };
 }

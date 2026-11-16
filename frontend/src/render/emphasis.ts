@@ -10,6 +10,9 @@ export const SELECTED_TINT = new Color("#58a6ff");
 /** The tint of the item that is active among those selected. */
 export const ACTIVE_TINT = SELECTED_TINT.clone().lerp(new Color("#ffffff"), 0.45);
 
+/** The tints of the two ends of a hovered bond, which are the colours of the matching marks in the SMILES. */
+export const END_TINTS = [new Color("#79c0ff"), new Color("#ffa657")] as const;
+
 /** How strongly a tint glows against the part's own colour. */
 const TINT_INTENSITY = 0.55;
 

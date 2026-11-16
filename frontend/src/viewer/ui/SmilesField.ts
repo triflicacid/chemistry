@@ -1,4 +1,4 @@
-import type { SmilesText } from "./SmilesText";
+import type { SmilesText } from "../../notation/SmilesText";
 
 /** A SMILES string shown as text, which turns into an input when clicked. */
 export class SmilesField {

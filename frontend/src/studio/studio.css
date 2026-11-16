@@ -727,6 +727,46 @@ body.resizing {
   margin-bottom: 0;
 }
 
+.properties dd.wrap {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  margin-left: 0.3rem;
+  vertical-align: middle;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  background: var(--selected-fill);
+  color: var(--ink);
+}
+
+.pane-divider {
+  margin: 0.6rem 0;
+  border: 0;
+  border-top: 1px solid var(--edge);
+  opacity: 0.6;
+}
+
+.formulae {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .properties dd.position {
   display: flex;
   align-items: center;
