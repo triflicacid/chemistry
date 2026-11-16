@@ -12,6 +12,7 @@ import {
   STANDARD_BASIS
 } from "../../handles/dragPlane";
 import {withTerminalHydrogens} from "../../hydrogens";
+import {selectsEveryMolecule} from "../../../models/items";
 import type {AtomNode} from "../../scene/MoleculeScene";
 import type {ScreenPoint} from "../../StudioViewListener";
 import {toVec3} from "../../vec";
@@ -107,6 +108,8 @@ export class MoveMode extends SelectMode {
     }
 
     this.arrange(options);
+    // the handles may have gone somewhere else, and the guide goes where they are
+    reference.refreshGuide();
   }
 
   /**
@@ -148,10 +151,12 @@ export class MoveMode extends SelectMode {
   protected arrange(options: ModeOptions): void {
     const { molecule, bonds, scene } = this.host;
 
-    // the whole molecule is moved with handles while one is selected, and selected atoms with handles of their own
+    // everything is moved with handles that move the one pose it is all drawn in, and anything less, a molecule among several
+    // included, with handles on the selected atoms, which sit in their middle and leave the rest where it is
     const moleculeSelected = options.selection.some((item) => item.kind === "molecule");
     const atomsSelected = options.selection.some((item) => item.kind === "atom");
-    const handleMode = moleculeSelected ? "translate" : atomsSelected ? "atoms" : null;
+    const everything = moleculeSelected && selectsEveryMolecule(options.selection, options.index?.state.fragments.length ?? 1);
+    const handleMode = everything ? "translate" : moleculeSelected || atomsSelected ? "atoms" : null;
     if (handleMode !== this.handleMode) {
       this.handleMode = handleMode;
       molecule.setMode(handleMode);
@@ -282,14 +287,21 @@ export class MoveMode extends SelectMode {
     return this.withCarried(scene.emphasis.selected.atoms).some((id) => scene.locked.has(id));
   }
 
-  /** The atom the move guide is drawn on: the one in hand, or else the active one. */
-  guideTarget(): AtomNode | null {
-    if (this.grab?.dragging) {
-      return this.grab.members[0]!.node;
+  /**
+   * Where the move guide is drawn, in the scene: where the handles are while they are shown, so that the guide and the
+   * handles agree, and otherwise on the atom in hand or else the active one.
+   */
+  guideTarget(): Vector3 | null {
+    const { scene, molecule } = this.host;
+    const handles = molecule.position;
+    if (handles) {
+      return handles;
     }
-    const { scene } = this.host;
+
+    const held = this.grab?.dragging ? this.grab.members[0]!.node : null;
     const [active] = scene.emphasis.active.atoms;
-    return active === undefined ? null : (scene.atomById.get(active) ?? null);
+    const node = held ?? (active === undefined ? null : (scene.atomById.get(active) ?? null));
+    return node && scene.worldOf(node);
   }
 
   /** Whether the guide for a move is to be drawn. */

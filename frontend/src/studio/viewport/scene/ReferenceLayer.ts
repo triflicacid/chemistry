@@ -1,4 +1,13 @@
-import {type LineBasicMaterial, type LineSegments, Group, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector3} from "three";
+import {
+    Group,
+    type LineBasicMaterial,
+    type LineSegments,
+    Mesh,
+    MeshBasicMaterial,
+    Quaternion,
+    SphereGeometry,
+    Vector3
+} from "three";
 import {makeAxes} from "../../../render/axes";
 import {disposeMaterials} from "../../../render/dispose";
 import type {Stage} from "../../../render/stage";
@@ -6,7 +15,7 @@ import type {Space} from "../../models/ToolModel";
 import {type Constraint} from "../handles/dragPlane";
 import {type Guide, makeGuide} from "../handles/moveGuides";
 import {buildGrid, type GridKind, type GridPlaneChoice, snapToGrid} from "../grid";
-import type {AtomNode, MoleculeScene} from "./MoleculeScene";
+import type {MoleculeScene} from "./MoleculeScene";
 
 export interface ReferenceHost {
   /** Whether constraints, and the molecule's handles, follow the scene's axes or the molecule's. */
@@ -15,8 +24,8 @@ export interface ReferenceHost {
   constraint(): Constraint;
   /** The point the view was last anchored on, in the molecule's own frame. */
   anchor(): Vector3;
-  /** The atom the move guide is drawn on, or null for none. */
-  guideTarget(): AtomNode | null;
+  /** Where the move guide is drawn, in the scene, or null for nowhere. */
+  guideTarget(): Vector3 | null;
   /** Whether a guide is wanted at all: debugging is on, atoms can be moved, and there is something to move. */
   guideWanted(): boolean;
 }
@@ -186,7 +195,7 @@ export class ReferenceLayer {
     this.stage.requestRender();
   }
 
-  /** Moves the guide onto its atom, and turns a camera-facing one to face the camera. */
+  /** Moves the guide to where it is drawn, and turns a camera-facing one to face the camera. */
   placeGuide(): void {
     const target = this.host.guideTarget();
     if (!this.guide || !target) {
@@ -195,7 +204,7 @@ export class ReferenceLayer {
 
     // the guide is drawn in the frame the constraint is measured in:
     // the camera's for free movement, otherwise the molecule's own axes or the scene's
-    this.guideFrame.position.copy(this.scene.worldOf(target));
+    this.guideFrame.position.copy(target);
     if (this.guide.facesCamera) {
       this.guideFrame.quaternion.copy(this.stage.camera.quaternion);
     } else if (this.host.space() === "local") {

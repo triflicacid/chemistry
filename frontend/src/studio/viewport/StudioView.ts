@@ -240,8 +240,8 @@ export class StudioView {
       const held = new Set([...this.mode.held(), ...this.molecule.shifted]);
       this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
       this.scene.refreshLocks();
-      this.reference.refreshGuide();
       this.molecule.sync();
+      this.reference.refreshGuide();
       this.bonds.place();
       return;
     }
@@ -322,8 +322,9 @@ export class StudioView {
     this.annotations.drawLengths();
     this.annotations.drawSystem();
     this.bonds.place();
-    this.reference.placeGuide();
+    // the guide goes where the handles are, so the handles must have followed the atoms first
     this.molecule.followAtoms();
+    this.reference.placeGuide();
   }
 
   /**
@@ -335,8 +336,8 @@ export class StudioView {
     this.scene.emphasis = emphasis;
     this.scene.refreshEmphasis();
     this.annotations.drawLengths();
-    this.reference.refreshGuide();
     this.molecule.sync();
+    this.reference.refreshGuide();
   }
 
   /**

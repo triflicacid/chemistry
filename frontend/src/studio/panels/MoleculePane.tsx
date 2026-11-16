@@ -111,7 +111,6 @@ export function MoleculePane({ id, index, geometry, models }: MoleculePaneProps)
           </>
         )}
       </dl>
-      {index.state.fragments.length > 1 && <p className="panel-note">The session holds one molecule, so moving this part moves all of them together.</p>}
     </>
   );
 }

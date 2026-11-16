@@ -42,6 +42,18 @@ export interface Emphasis {
 }
 
 /**
+ * Whether a selection stands for every molecule of the session, which is the only time the session's one pose is what moves
+ * it. A selection of some of them leaves the others where they are, so it can only be moved by moving its atoms.
+ *
+ * @param items what is selected
+ * @param molecules how many molecules the session holds
+ * @returns true if every molecule is selected
+ */
+export function selectsEveryMolecule(items: readonly Item[], molecules: number): boolean {
+  return new Set(items.filter((item) => item.kind === "molecule").map((item) => item.id)).size >= Math.max(1, molecules);
+}
+
+/**
  * Names an item as a single string, for use as a map key or a React key.
  *
  * @param item the item

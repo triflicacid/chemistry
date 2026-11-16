@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import type {SystemView} from "../geometry/conjugation";
-import type {Item, PartItem} from "../models/items";
+import {type Item, type PartItem, selectsEveryMolecule} from "../models/items";
 import type {Models, PickScope} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {StateIndex} from "../geometry/StateIndex";
@@ -195,7 +195,9 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.setAxis(turning && axis !== null ? (index?.bonds.get(axis) ?? null) : null);
   }, [view, index, tools, turning, axis]);
 
-  const moleculeSelected = selected.items.some((item) => item.kind === "molecule");
+  // the move tool moves a molecule among several by its atoms, so what it needs to know is whether everything is selected
+  const anyMolecule = selected.items.some((item) => item.kind === "molecule");
+  const moleculeSelected = tool === "move" ? anyMolecule && selectsEveryMolecule(selected.items, state?.fragments.length ?? 1) : anyMolecule;
 
   // a selected bond has a handle: an arrow along it with the move tool, which slides to change its length, and a ring about
   // it with the rotate tool, which turns to change its torsion. There is none where an atom it would move is locked
@@ -284,9 +286,9 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       ringSize: (size) => tools.ringSizeTo(size),
       // picking an atom up selects it, so the Inspector shows where it is while it moves
       dragStart: (id) => {
-        const item: Item = { kind: "atom", id };
-        if (!selection.get().items.some((each) => each.kind === "atom" && each.id === id)) {
-          selection.select(item);
+        // an atom of what is selected already, such as a molecule or a ring, is carried with it and does not take its place
+        if (!index.members(selection.get().items).atoms.has(id)) {
+          selection.select({ kind: "atom", id });
         }
       },
       drag: (moves, done) => (done ? void dropAtoms(moves) : dragAtoms(moves)),

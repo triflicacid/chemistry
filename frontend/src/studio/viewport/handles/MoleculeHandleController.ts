@@ -88,6 +88,11 @@ export class MoleculeHandleController {
     return this.handles.hovered;
   }
 
+  /** Where the handles are in the scene, or null while they are not shown. */
+  get position(): Vector3 | null {
+    return this.handles.position;
+  }
+
   /** Whether a handle is being dragged. */
   get dragging(): boolean {
     return this.handles.dragging;
