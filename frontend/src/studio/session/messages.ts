@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -71,6 +71,21 @@ export interface SessionFragment {
   key: string;
   name: string;
   atoms: string[];
+  /** The part as a chemist would write it, with hydrogens counted. */
+  smiles: string;
+  /** The part in canonical form, or null if it could not be written. */
+  canonical_smiles: string | null;
+  formula: SessionFormula;
+}
+
+/** One part's formulae, each in Unicode. */
+export interface SessionFormula {
+  /** Every atom counted together, e.g. `C₂H₆O`. */
+  molecular: string;
+  /** The molecular formula in its simplest whole-number ratio, e.g. `CH₂O` for glucose. */
+  empirical: string;
+  /** The condensed structural formula, e.g. `CH₃CH₂OH`, or null if it could not be written. */
+  condensed: string | null;
 }
 
 /** Remember the viewer's camera. */

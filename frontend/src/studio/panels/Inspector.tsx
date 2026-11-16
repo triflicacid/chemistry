@@ -86,7 +86,7 @@ function ItemPane({ item, index, geometry, models }: ItemPaneProps) {
       return ring ? <RingPane key={ring.id} ring={ring} index={index} models={models} /> : null;
     }
     default:
-      return <MoleculePane id={item.id} index={index} models={models} />;
+      return <MoleculePane id={item.id} index={index} geometry={geometry} models={models} />;
   }
 }
 

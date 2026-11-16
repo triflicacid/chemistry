@@ -1,5 +1,5 @@
 import "./notation.css";
-import type { Span } from "../api/types/span";
+import type {Span} from "../api/types/span";
 
 /** A range to highlight, and which of the stylesheet's colours to give it. */
 export interface Highlight {
@@ -14,15 +14,26 @@ export interface TextHandlers {
   pick: (offset: number) => void;
 }
 
+/**
+ * SMILES text that the pointer can mark and click, which may be one part of a longer text, such as one molecule of several
+ * written between dots. Everything it is told and tells is in the longer text's offsets, so a part reacts exactly as it does
+ * in the whole.
+ */
 export class SmilesText {
   /** How many highlight colours the stylesheet defines (.smiles-highlight-0 ...). */
   private static readonly COLOURS = 3;
 
   readonly element = document.createElement("code");
 
+  /**
+   * @param text the text shown
+   * @param className the stylesheet class to give it
+   * @param origin where `text` begins in the longer text it is part of, or 0 if it is the whole
+   */
   constructor(
     private readonly text: string,
     className = "smiles",
+    private readonly origin = 0,
   ) {
     this.element.className = className;
     this.highlight([]);
@@ -40,12 +51,15 @@ export class SmilesText {
    * @returns how to stop listening
    */
   listen(handlers: TextHandlers): () => void {
-    const move = (event: PointerEvent) => handlers.hover(this.offsetAt(event.clientX, event.clientY));
+    const move = (event: PointerEvent) => {
+      const offset = this.offsetAt(event.clientX, event.clientY);
+      handlers.hover(offset === null ? null : offset + this.origin);
+    };
     const leave = () => handlers.hover(null);
     const click = (event: MouseEvent) => {
       const offset = this.offsetAt(event.clientX, event.clientY);
       if (offset !== null) {
-        handlers.pick(offset);
+        handlers.pick(offset + this.origin);
       }
     };
     this.element.classList.add("pickable");
@@ -85,6 +99,19 @@ export class SmilesText {
     return null;
   }
 
+  /**
+   * @param span a range in the longer text's offsets
+   * @returns the part of it that is in this text, in this text's offsets, or null if none is
+   */
+  private within(span: Span | null): Span | null {
+    if (span === null) {
+      return null;
+    }
+    const start = Math.max(0, span.start - this.origin);
+    const end = Math.min(this.text.length, span.end - this.origin);
+    return end > start ? { start, end } : null;
+  }
+
   private covers(offset: number, x: number, y: number): boolean {
     const walker = document.createTreeWalker(this.element, NodeFilter.SHOW_TEXT);
     let start = 0;
@@ -108,6 +135,7 @@ export class SmilesText {
    */
   highlight(highlights: readonly Highlight[]): void {
     const ordered = highlights
+      .map((entry) => ({ span: this.within(entry.span), colour: entry.colour }))
       .filter((entry): entry is { span: Span; colour: number } => entry.span !== null)
       .sort((a, b) => a.span.start - b.span.start);
     const nodes: Node[] = [];

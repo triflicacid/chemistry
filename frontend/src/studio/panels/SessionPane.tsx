@@ -1,6 +1,6 @@
 import type {Models} from "../models/models";
 import type {GeometryResult, SessionState} from "../session/messages";
-import {isCurrent} from "../layout/findings";
+import {describeStrain} from "../layout/findings";
 import {MoleculeDetails} from "./MoleculeDetails";
 import {Property} from "./paneParts";
 
@@ -13,7 +13,7 @@ export function SessionPane({ state, geometry, models }: { state: SessionState; 
         <Property name="Atoms" value={String(state.atoms.length)} />
         <Property name="Bonds" value={String(state.bonds.length)} />
         <Property name="Molecules" value={String(state.fragments.length)} />
-        <Property name="Strain" value={strainOf(state, geometry)} />
+        <Property name="Strain" value={describeStrain(state, geometry)} />
       </MoleculeDetails>
       <hr className="pane-divider" />
       <h3 className="pane-title">Session</h3>
@@ -24,22 +24,4 @@ export function SessionPane({ state, geometry, models }: { state: SessionState; 
       </dl>
     </>
   );
-}
-
-/**
- * Says how strained the molecule is as a whole.
- *
- * @param state the session
- * @param geometry what the server last said of its geometry
- */
-function strainOf(state: SessionState, geometry: GeometryResult | null): string {
-  if (!geometry) {
-    return "not examined yet";
-  }
-  if (geometry.status === "failed" || geometry.strain === null) {
-    return "unavailable";
-  }
-
-  const wait = isCurrent(geometry, state) ? "" : " (updating…)";
-  return `${geometry.strain.toFixed(2)} · ${geometry.findings.length === 0 ? "happy" : "strained"}${wait}`;
 }

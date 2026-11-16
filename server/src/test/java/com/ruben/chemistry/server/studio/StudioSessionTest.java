@@ -1076,6 +1076,41 @@ class StudioSessionTest
     }
 
     @Test
+    void should_describe_each_part_of_the_molecule_by_its_own_smiles_and_formula_in_the_state()
+    {
+        StudioSession session = open("OC(=O)c1ccccc1.CCO");
+
+        List<StudioState.FragmentState> parts = StudioState.of(session, null).fragments();
+
+        assertThat(parts).hasSize(2);
+        // each is written as the whole is, from its own atoms, with hydrogens counted
+        assertThat(parts.get(0).smiles()).isEqualTo("OC(=O)c1ccccc1");
+        assertThat(parts.get(1).smiles()).isEqualTo("CCO");
+        assertThat(parts.get(0).canonicalSmiles()).isNotBlank().doesNotContain(".");
+        assertThat(parts.get(0).formula().molecular()).isEqualTo("C\u2087H\u2086O\u2082");
+        // ethanol's formulae, which are all different from one another
+        assertThat(parts.get(1).formula().molecular()).isEqualTo("C\u2082H\u2086O");
+        assertThat(parts.get(1).formula().empirical()).isEqualTo("C\u2082H\u2086O");
+        assertThat(parts.get(1).formula().condensed()).isEqualTo("CH\u2083CH\u2082OH");
+        // an alkane shows the empirical formula is the simplest ratio and not the molecular one
+        assertThat(StudioState.of(open("CCCC"), null).fragments().getFirst().formula().empirical()).isEqualTo("C\u2082H\u2085");
+        assertThat(parts.get(1).canonicalSmiles()).isEqualTo(new com.ruben.chemistry.smiles.SmilesWriter(parseOne("CCO"))
+                .setRanker(new com.ruben.chemistry.canonical.CanonicalRanker()).write());
+    }
+
+    @Test
+    void should_keep_a_parts_smiles_in_step_with_an_edit_that_changes_it()
+    {
+        StudioSession session = open("CC.O");
+        String carbon = ids(session).get(0);
+
+        session.addAtom("N", carbon, null, null);
+
+        assertThat(StudioState.of(session, null).fragments().get(0).smiles()).contains("N");
+        assertThat(StudioState.of(session, null).fragments().get(1).smiles()).isEqualTo("O");
+    }
+
+    @Test
     void should_never_use_a_name_twice_even_after_an_undo()
     {
         StudioSession session = open("CCO");
@@ -1593,6 +1628,11 @@ class StudioSessionTest
     private static List<String> ids(StudioSession session)
     {
         return session.molecule().atoms().stream().map(session::atomId).toList();
+    }
+
+    private com.ruben.chemistry.core.Molecule parseOne(String smiles)
+    {
+        return parser.parse(smiles).molecule();
     }
 
     /**

@@ -1,13 +1,15 @@
-import {useEffect, useMemo, useRef, useState, type ReactNode} from "react";
+import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import type {Span} from "../../api/types/span";
 import type {AtomInfo, MoleculeMetadata} from "../../api/types/metadata";
+import type {FormulaInfo} from "../../api/types/formula";
 import {FormulaView} from "../../notation/FormulaView";
 import {type Highlight, SmilesText} from "../../notation/SmilesText";
 import {indexOfId as indexOf} from "../chemistry/Chemistry";
 import type {Item} from "../models/items";
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
-import type {SessionState} from "../session/messages";
+import type {SessionFragment, SessionState} from "../session/messages";
+import {startOf} from "./pieces";
 
 function highlights(bond: Span[] | undefined, members: (Span | null)[], firstColour: number): Highlight[] {
   return [
@@ -35,7 +37,7 @@ export function Mount({element}: { element: HTMLElement }) {
 }
 
 /** A tiny button that puts text on the clipboard. */
-function CopyButton({text, label}: { text: string; label: string }) {
+export function CopyButton({text, label}: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -67,15 +69,65 @@ function CopyButton({text, label}: { text: string; label: string }) {
   );
 }
 
+/**
+ * A molecule's formulae in the form the whole's are shown in, so that a part and the whole are laid out and chosen from alike.
+ *
+ * @param fragment the molecule
+ * @returns its formulae, with no units, since it is one molecule
+ */
+function formulaOf(fragment: SessionFragment): FormulaInfo {
+  const none = {text: "", units: []};
+  return {
+    molecular: fragment.formula.molecular,
+    empirical: fragment.formula.empirical,
+    condensed: fragment.formula.condensed ?? "",
+    components: none,
+    neutral_units: none,
+  };
+}
+
+/** A molecule's formulae, shown as the whole's are. */
+function FragmentFormula({fragment}: { fragment: SessionFragment }) {
+  const view = useMemo(() => new FormulaView(formulaOf(fragment), 1), [fragment]);
+  return (
+    <>
+      <dt>Formula</dt>
+      <dd className="wrap"><Mount element={view.element}/></dd>
+    </>
+  );
+}
+
+/** A molecule's SMILES, as the session writes them, for as long as there are no marks to put on them. */
+function PlainFragment({fragment}: { fragment: SessionFragment }) {
+  return (
+    <>
+      <dt>SMILES</dt>
+      <dd className="wrap mono">{fragment.smiles}<CopyButton text={fragment.smiles} label="Copy SMILES"/></dd>
+      {fragment.canonical_smiles !== null && (
+        <>
+          <dt>Canonical</dt>
+          <dd className="wrap mono">{fragment.canonical_smiles}<CopyButton text={fragment.canonical_smiles} label="Copy canonical SMILES"/></dd>
+        </>
+      )}
+      <FragmentFormula fragment={fragment}/>
+    </>
+  );
+}
+
 interface MoleculeDetailsProps {
   state: SessionState;
   models: Models;
+  /** The one molecule to describe, or undefined for the whole of it. */
+  fragment?: SessionFragment;
   /** Further rows of the same list, which show at once while the rest loads. */
   children?: ReactNode;
 }
 
-/** The molecule's SMILES, canonical SMILES and formulae, which mark what is hovered and centre the camera on what is clicked. */
-export function MoleculeDetails({state, models, children}: MoleculeDetailsProps) {
+/**
+ * The SMILES, canonical SMILES and formulae of the molecule, or of one of its parts, which mark what is hovered and centre
+ * the camera on what is clicked.
+ */
+export function MoleculeDetails({state, models, fragment, children}: MoleculeDetailsProps) {
   const {chemistry, failed} = models.chemistry;
   const metadata = chemistry?.metadata ?? null;
   const item = useObservable(models.hover);
@@ -85,8 +137,8 @@ export function MoleculeDetails({state, models, children}: MoleculeDetailsProps)
   );
   return (
     <dl className="properties">
-      {failed ? note("The molecule's formulae could not be loaded.") : !metadata ? note("Reading the molecule…") : (
-        <Loaded state={state} metadata={metadata} item={item} models={models}/>
+      {fragment && (failed || !metadata) ? <PlainFragment fragment={fragment}/> : failed ? note("The molecule's formulae could not be loaded.") : !metadata ? note("Reading the molecule…") : (
+        <Loaded state={state} metadata={metadata} item={item} models={models} fragment={fragment}/>
       )}
       {children}
     </dl>
@@ -98,12 +150,33 @@ interface LoadedProps {
   metadata: MoleculeMetadata;
   item: Item | null;
   models: Models;
+  fragment?: SessionFragment;
 }
 
-function Loaded({state, metadata, item, models}: LoadedProps) {
-  const smiles = useMemo(() => new SmilesText(metadata.smiles), [metadata]);
-  const canonical = useMemo(() => new SmilesText(metadata.canonical_smiles), [metadata]);
-  const formula = useMemo(() => new FormulaView(metadata.formula, metadata.fragments.length), [metadata]);
+function Loaded({state, metadata, item, models, fragment}: LoadedProps) {
+  // a molecule is the piece of the whole's text it is written as, so that it marks and answers the pointer as the whole does;
+  // where the whole does not hold it, which an edit can do before the metadata is read again, it is shown as plain text
+  const earlier = useMemo(() => (fragment ? state.fragments.slice(0, state.fragments.indexOf(fragment)) : []), [state, fragment]);
+  const smilesStart = useMemo(
+    () => (fragment ? startOf(metadata.smiles, fragment.smiles, earlier.map((each) => each.smiles)) : 0),
+    [metadata, fragment, earlier],
+  );
+  const canonicalStart = useMemo(
+    () => (fragment ? startOf(metadata.canonical_smiles, fragment.canonical_smiles, earlier.map((each) => each.canonical_smiles)) : 0),
+    [metadata, fragment, earlier],
+  );
+  const smiles = useMemo(
+    () => (fragment ? new SmilesText(fragment.smiles, "smiles", smilesStart ?? 0) : new SmilesText(metadata.smiles)),
+    [metadata, fragment, smilesStart],
+  );
+  const canonical = useMemo(
+    () => (fragment ? new SmilesText(fragment.canonical_smiles ?? "", "smiles", canonicalStart ?? 0) : new SmilesText(metadata.canonical_smiles)),
+    [metadata, fragment, canonicalStart],
+  );
+  const formula = useMemo(
+    () => (fragment ? new FormulaView(formulaOf(fragment), 1) : new FormulaView(metadata.formula, metadata.fragments.length)),
+    [metadata, fragment],
+  );
 
   useEffect(() => {
     const {hover, focus} = models;
@@ -146,8 +219,8 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
       );
 
     const stops = [
-      smiles.listen(atomListener("span")),
-      canonical.listen(atomListener("canonical_span")),
+      ...(smilesStart === null ? [] : [smiles.listen(atomListener("span"))]),
+      ...(canonicalStart === null ? [] : [canonical.listen(atomListener("canonical_span"))]),
       formula.listen({
         hover: (fragments) => {
           const [first] = fragments ? moleculesOf(fragments) : [];
@@ -162,14 +235,14 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
         hover.hover(null);
       }
     };
-  }, [metadata, state, models, smiles, canonical, formula]);
+  }, [metadata, state, models, smiles, canonical, formula, smilesStart, canonicalStart]);
 
   useEffect(() => {
     const ends: AtomInfo[] = [];
     let bondSpans: Span[] | undefined;
     let canonicalSpans: Span[] | undefined;
     let firstColour = 0;
-    let fragment: number | null = null;
+    let ringOrMolecule: number | null = null;
 
     if (item?.kind === "atom") {
       const index = indexOf(item.id, "a");
@@ -200,7 +273,7 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
         const members = ring.info.atoms.flatMap((index) => metadata.atoms[index] ?? []);
         bondSpans = [...bonds.flatMap((bond) => bond.spans), ...members.flatMap((atom) => atom.span ?? [])];
         canonicalSpans = [...bonds.flatMap((bond) => bond.canonical_spans), ...members.flatMap((atom) => atom.canonical_span ?? [])];
-        fragment = members[0]?.fragment ?? null;
+        ringOrMolecule = members[0]?.fragment ?? null;
       }
     } else if (item?.kind === "molecule") {
       const members = state.fragments.find((candidate) => candidate.key === item.id)?.atoms ?? [];
@@ -209,23 +282,32 @@ function Loaded({state, metadata, item, models}: LoadedProps) {
         return index === null ? [] : (metadata.atoms[index] ?? []);
       });
       const bonds = metadata.bonds.filter((bond) => atoms.some((atom) => atom.index === bond.first));
-      fragment = atoms[0]?.fragment ?? null;
+      ringOrMolecule = atoms[0]?.fragment ?? null;
       // a fragment is the text between dots, so it runs from its first atom or bond to its last
       bondSpans = hull(atoms.map((atom) => atom.span), bonds.flatMap((bond) => bond.spans));
       canonicalSpans = hull(atoms.map((atom) => atom.canonical_span), bonds.flatMap((bond) => bond.canonical_spans));
     }
 
-    smiles.highlight(highlights(bondSpans, ends.map((atom) => atom.span), firstColour));
-    canonical.highlight(highlights(canonicalSpans, ends.map((atom) => atom.canonical_span), firstColour));
-    formula.highlightFragment(ends[0]?.fragment ?? fragment);
-  }, [item, metadata, state, models, smiles, canonical, formula]);
+    // text that is only shown has no place in the whole's, so there is nothing of it to mark
+    if (smilesStart !== null) {
+      smiles.highlight(highlights(bondSpans, ends.map((atom) => atom.span), firstColour));
+    }
+    if (canonicalStart !== null) {
+      canonical.highlight(highlights(canonicalSpans, ends.map((atom) => atom.canonical_span), firstColour));
+    }
+    formula.highlightFragment(ends[0]?.fragment ?? ringOrMolecule);
+  }, [item, metadata, state, models, smiles, canonical, formula, smilesStart, canonicalStart]);
 
   return (
     <>
       <dt>SMILES</dt>
-      <dd className="wrap mono"><Mount element={smiles.element}/><CopyButton text={metadata.smiles} label="Copy SMILES"/></dd>
-      <dt>Canonical</dt>
-      <dd className="wrap mono"><Mount element={canonical.element}/><CopyButton text={metadata.canonical_smiles} label="Copy canonical SMILES"/></dd>
+      <dd className="wrap mono"><Mount element={smiles.element}/><CopyButton text={fragment?.smiles ?? metadata.smiles} label="Copy SMILES"/></dd>
+      {(!fragment || fragment.canonical_smiles !== null) && (
+        <>
+          <dt>Canonical</dt>
+          <dd className="wrap mono"><Mount element={canonical.element}/><CopyButton text={fragment?.canonical_smiles ?? metadata.canonical_smiles} label="Copy canonical SMILES"/></dd>
+        </>
+      )}
       <dt>Formula</dt>
       <dd className="wrap"><Mount element={formula.element}/></dd>
     </>
