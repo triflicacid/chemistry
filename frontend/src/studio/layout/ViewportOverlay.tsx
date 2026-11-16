@@ -65,10 +65,6 @@ export interface ActionToolsProps {
   state: ToolState;
   /** Whether a molecule is selected. */
   moleculeSelected: boolean;
-  /** Whether a single bond or atom is selected, which is what turning inside a molecule needs. */
-  internalTarget: boolean;
-  /** Whether turning inside a molecule is on, which picks single atoms and bonds. */
-  internal: boolean;
   /** Whether the selection has a locked atom in it. */
   blocked: boolean;
   picking: PickScope;
@@ -79,7 +75,7 @@ export interface ActionToolsProps {
 }
 
 /** The buttons at the top right of the viewport. */
-export function ActionTools({ tools, state, moleculeSelected, internalTarget, internal, blocked, picking, onPickScope, onFrame, onCentre, onReset }: ActionToolsProps) {
+export function ActionTools({ tools, state, moleculeSelected, blocked, picking, onPickScope, onFrame, onCentre, onReset }: ActionToolsProps) {
   const { tool, constraint, space, rotateTarget, carryHydrogens } = state;
   return (
     <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
@@ -98,8 +94,6 @@ export function ActionTools({ tools, state, moleculeSelected, internalTarget, in
           Carry H
         </button>
       )}
-      {tool === "rotate" && rotateTarget === "molecule" && !moleculeSelected && <span className="viewport-hint">Select a molecule, or click an atom, to turn it</span>}
-      {internal && !internalTarget && <span className="viewport-hint">Click a bond to turn about it, or an atom to change an angle</span>}
       {tool === "move" && !moleculeSelected && (
         <Segmented
           label="Move constraint"
@@ -115,32 +109,37 @@ export function ActionTools({ tools, state, moleculeSelected, internalTarget, in
       <button type="button" className="tool" title="Centre the camera on the selection, or on everything if nothing is selected" onClick={onFrame}>
         Frame selection
       </button>
-      <button
-        type="button"
-        className="tool"
-        title="Bring the middle of the molecule to the middle of the view, keeping the angle and distance the camera has"
-        onClick={onCentre}
-      >
-        Centre camera
-      </button>
-      <button
-        type="button"
-        className="tool"
-        title="Put the camera at the built-in defaults, not at how it was when the session opened: level, at the default angle and field of view, framing the whole molecule"
-        onClick={onReset}
-      >
-        Reset camera
-      </button>
-      <button
-        type="button"
-        className="tool"
-        aria-pressed={picking === "molecule"}
-        disabled={internal}
-        title={internal ? "Turning a bond or an angle picks single atoms and bonds" : "When on, clicking or hovering an atom or bond picks the whole molecule it belongs to"}
-        onClick={onPickScope}
-      >
-        Pick whole molecule
-      </button>
+      {tool === "pan" && (
+        <>
+          <button
+            type="button"
+            className="tool"
+            title="Bring the middle of the molecule to the middle of the view, keeping the angle and distance the camera has"
+            onClick={onCentre}
+          >
+            Centre camera
+          </button>
+          <button
+            type="button"
+            className="tool"
+            title="Put the camera at the built-in defaults, not at how it was when the session opened: level, at the default angle and field of view, framing the whole molecule"
+            onClick={onReset}
+          >
+            Reset camera
+          </button>
+        </>
+      )}
+      {(tool === "select" || tool === "move") && (
+        <button
+          type="button"
+          className="tool"
+          aria-pressed={picking === "molecule"}
+          title="When on, clicking or hovering an atom or bond picks the whole molecule it belongs to"
+          onClick={onPickScope}
+        >
+          Pick whole molecule
+        </button>
+      )}
     </div>
   );
 }

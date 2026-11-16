@@ -136,9 +136,6 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
 
   // a selected bond has a handle: an arrow along it with the move tool, which slides to change its length, and a ring about
   // it with the rotate tool, which turns to change its torsion. There is none where an atom it would move is locked
-  const bondItem = selected.items.length === 1 ? selected.items[0] : undefined;
-  const bondId = bondItem?.kind === "bond" ? bondItem.id : null;
-  const atomId = bondItem?.kind === "atom" ? bondItem.id : null;
   const locked = state?.locked;
 
   // what the viewport does with the pointer and the keyboard, and the handles it offers, follows the tool and the selection.
@@ -253,8 +250,6 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
             tools={tools}
             state={toolState}
             moleculeSelected={moleculeSelected}
-            internalTarget={bondId !== null || atomId !== null}
-            internal={internal}
             blocked={blocked}
             picking={picking}
             onPickScope={() => setMode(mode === "molecule" ? "item" : "molecule")}

@@ -55,7 +55,7 @@ times a second.
 |---|---|
 | **Move** tool, drag an arrow or a square on the handles | Carry the molecule along that axis, or within that plane |
 | **Rotate** tool, **Molecule** (the choice that Rotate starts on), click an atom | Select its molecule, anchor the view on that atom and make the anchor the pivot, so the rings turn the molecule about that atom. Clicking another atom moves the pivot there |
-| **Rotate** tool, **Bonds & angles** | Turns something inside the molecule instead, and picks single atoms and bonds whatever **Pick whole molecule** says (the button is off while it is chosen). Click a bond to turn about it (its torsion), or an atom to change an angle at it; see *Inspector* below. The choice is a lozenge in the viewport's right-hand buttons, shown with Rotate. It is the only thing that decides what an atom click means, so it does not matter in what order you pick a tool and an atom |
+| **Rotate** tool, **Bonds & angles** | Turns something inside the molecule instead, and picks single atoms and bonds. Click a bond to turn about it (its torsion), or an atom to change an angle at it; see *Inspector* below. The choice is a lozenge in the viewport's right-hand buttons, shown with Rotate. It is the only thing that decides what an atom click means, so it does not matter in what order you pick a tool and an atom |
 | **Rotate** tool, drag a ring | Turn the molecule about the pivot, around that axis. The outer ring turns it about the view direction |
 | Esc during a drag | Abandon it; the molecule goes back where it was picked up |
 | Release | Drop it. The whole drag is one undo step |
@@ -90,7 +90,7 @@ The buttons over the viewport are in two groups. The **left** group sets what is
 | Button | Action |
 |---|---|
 | Frame selection | Centre the camera on the selection, or on everything if nothing is selected |
-| Pick whole molecule | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
+| Pick whole molecule (Select and Move tools only) | When on, clicking or hovering an atom or bond picks the whole molecule it belongs to |
 
 ## Outliner
 
