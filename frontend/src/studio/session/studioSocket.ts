@@ -322,7 +322,7 @@ export class StudioSocket {
   }
 
   /**
-   * Changes an atom's element, charge or isotope. The server applies it as asked, without checking the chemistry.
+   * Updates an atom's properties (non-geometric.)
    *
    * @param sessionId the session to edit
    * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
@@ -335,8 +335,6 @@ export class StudioSocket {
   }
 
   /**
-   * Adds an atom. Attached to an atom, the server places it a bond length away; otherwise it goes where it is put.
-   *
    * @param sessionId the session to edit
    * @param baseVersion the version the caller was looking at
    * @param element the new atom's element symbol
@@ -408,7 +406,7 @@ export class StudioSocket {
   }
 
   /**
-   * Makes an edit of the graph, which the session answers with the whole state.
+   * Makes an edit of the graph.
    *
    * @param type the edit's message type; the answer is this followed by `.ack`
    * @param sessionId the session to edit

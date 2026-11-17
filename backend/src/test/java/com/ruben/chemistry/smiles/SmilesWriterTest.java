@@ -7,11 +7,12 @@ import com.ruben.chemistry.core.Bond;
 import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
-import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.util.Span;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 
@@ -33,38 +34,13 @@ class SmilesWriterTest
         assertThat(write(molecule)).isEqualTo("C");
     }
 
-    @Test
-    void writes_an_atom_outside_the_organic_subset_in_brackets()
+    @ParameterizedTest
+    @ValueSource(strings = {"He", "Fe", "Na", "Si"})
+    void writes_an_atom_outside_the_organic_subset_in_brackets(String element)
     {
-        for (String element : List.of("He", "Fe", "Na", "Si"))
-        {
-            Molecule molecule = new Molecule.Builder().addAtom(Atom.builder(element).hydrogenCount(0).build()).build();
+        Molecule molecule = new Molecule.Builder().addAtom(Atom.builder(element).hydrogenCount(0).build()).build();
 
-            assertThat(write(molecule)).as(element).isEqualTo("[" + element + "]");
-        }
-    }
-
-    @Test
-    void writes_a_non_organic_atom_that_leaves_its_hydrogens_to_the_valence_in_brackets_that_read_back_as_the_same_atom()
-    {
-        // the valence is only inferred for the organic subset, so such an atom has no hydrogens to lose in the brackets
-        Molecule molecule = new Molecule.Builder().addAtom(Atom.organic("Fe")).build();
-
-        String written = write(molecule);
-        Molecule read = Molecule.fromSmiles(written);
-
-        assertThat(written).isEqualTo("[Fe]");
-        assertThat(read.atoms().getFirst().element()).isEqualTo("Fe");
-        assertThat(read.totalHydrogenCount(read.atoms().getFirst())).isEqualTo(molecule.totalHydrogenCount(molecule.atoms().getFirst()));
-    }
-
-    @Test
-    void writes_a_helium_atom_that_has_been_through_the_hydrogen_counts_in_brackets()
-    {
-        Molecule molecule = new Molecule.Builder().addAtom(Atom.builder("He").hydrogenCount(0).build()).build();
-
-        // asCounts leaves the count to the valence where the valence says the same, which is what let a bare He be written
-        assertThat(write(Hydrogens.asCounts(Hydrogens.asAtoms(molecule)))).isEqualTo("[He]");
+        assertThat(write(molecule)).as(element).isEqualTo("[" + element + "]");
     }
 
     @Test

@@ -49,8 +49,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [gridPlane, setGridPlane] = useState<GridPlaneChoice>("xz");
   const [debug, setDebug] = useState(false);
   const [look, setLook] = useState(false);
-  // the rectangle being dragged to select what is inside it, which selects nothing until it is let go of
-  const [marquee, setMarquee] = useState<ScreenRect | null>(null);
+  const [selectionArea, setSelectionArea] = useState<ScreenRect | null>(null);
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
@@ -85,7 +84,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.setAxes(axes);
   }, [view, axes]);
 
-  // how the molecule is drawn is set in the Render options section, and is shown here
+  // render options
   const { style, finish, brightness } = useObservable(models.render);
   useEffect(() => {
     view?.setStyle(style);
@@ -209,7 +208,6 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.setAxis(turning && axis !== null ? (index?.bonds.get(axis) ?? null) : null);
   }, [view, index, tools, turning, axis]);
 
-  // the move tool moves a molecule among several by its atoms, so what it needs to know is whether everything is selected
   const anyMolecule = selected.items.some((item) => item.kind === "molecule");
   const moleculeSelected = tool === "move" ? anyMolecule && selectsEveryMolecule(selected.items, state?.fragments.length ?? 1) : anyMolecule;
 
@@ -282,8 +280,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
           selection.clear();
         }
       },
-      marquee: setMarquee,
-      box: (all) => {
+      updateSelectionArea: setSelectionArea,
+      releaseSelectionArea: (all) => {
         // the rectangle selects from one molecule, the one of the first thing in it, and leaves what is behind that in others
         const [first] = all;
         if (first === undefined) {
@@ -356,7 +354,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   return (
     <section className="viewport" aria-label="3D viewport">
       <canvas ref={canvasRef} className="viewport-canvas" />
-      {marquee && <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }} aria-hidden="true" />}
+      {selectionArea && <div className="marquee" style={{ left: selectionArea.x, top: selectionArea.y, width: selectionArea.width, height: selectionArea.height }} aria-hidden="true" />}
       {state && (
         <>
           <DisplayTools

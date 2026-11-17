@@ -218,7 +218,7 @@ export class StudioView {
     this.fly.enabled = tool === "pan";
   }
 
-  /** The mode that moves atoms, which is the edit tool's while it is in use and the move tool's otherwise. */
+  /** The mode that moves atoms. */
   private get mover(): MoveMode {
     return this.mode.tool === "edit" ? this.modes.edit : this.modes.move;
   }
@@ -329,7 +329,6 @@ export class StudioView {
     this.annotations.drawLengths();
     this.annotations.drawSystem();
     this.bonds.place();
-    // the guide goes where the handles are, so the handles must have followed the atoms first
     this.molecule.followAtoms();
     this.reference.placeGuide();
   }
@@ -505,8 +504,6 @@ export class StudioView {
   }
 
   /**
-   * Shows or hides the scene axes, the arrows at the orbit anchor. The small triad in the corner is always shown.
-   *
    * @param visible whether to show them
    */
   setAxes(visible: boolean): void {
@@ -524,7 +521,6 @@ export class StudioView {
     }
 
     this.scene.style = style;
-    // spheres at their full size cover the places beside them, which would hide the ring guide on them
     this.ringGuide.seeThrough(style === "spacefill");
     if (this.shown) {
       // the structure is the same, so only forgetting what it looked like makes it be drawn again
@@ -534,7 +530,7 @@ export class StudioView {
   }
 
   /**
-   * Chooses how shiny the atoms and bonds are drawn. What is drawn already is changed, and what is drawn after is made with it.
+   * Chooses how shiny the atoms and bonds are drawn, which draws what is shown afresh.
    *
    * @param finish matte, or glossy, which also lets them reflect a studio-like room
    */
@@ -554,19 +550,12 @@ export class StudioView {
   /**
    * Makes the scene brighter or dimmer.
    *
-   * @param factor a multiple of the usual lighting: 1 leaves it as it is
+   * @param factor a multiple of the usual lighting
    */
   setBrightness(factor: number): void {
     this.stage.setBrightness(factor);
   }
 
-  /**
-   * Turns the debugging overlays on or off. These are the guide for a move: arrows along the axis, or a faint
-   * plane, that the atom being moved is held to; and the guide for a pan: the orbit point, the plane it moves in and
-   * the path it has taken.
-   *
-   * @param enabled whether to draw them
-   */
   /**
    * Turns the camera where it stands, rather than orbiting, when the left button is dragged.
    *
@@ -580,6 +569,7 @@ export class StudioView {
     }
   }
 
+  /** Turn debug mode on/off. */
   setDebug(enabled: boolean): void {
     this.annotations.debug = enabled;
     this.panGuide.show(enabled && this.mode.tool === "pan");

@@ -5,13 +5,9 @@ import type {BondOrder} from "../session/messages";
 import type {Constraint} from "../viewport/handles/dragPlane";
 import {Observable} from "./observable";
 
-/**
- * What a left-drag does: select, move atoms or the whole molecule, rotate the whole molecule, or pan the view, in which
- * case a right-drag orbits it instead. Editing changes the structure, and a click, not a drag, is what does it.
- */
 export type Tool = "select" | "move" | "rotate" | "edit" | "pan";
 
-/** The tools in the order the toolbar lists them, which is the order of the number keys that choose them. */
+/** The tools in the order the toolbar lists them. */
 export const TOOL_ORDER: readonly Tool[] = ["select", "move", "rotate", "edit", "pan"];
 
 /**
@@ -20,16 +16,13 @@ export const TOOL_ORDER: readonly Tool[] = ["select", "move", "rotate", "edit", 
  */
 export type RotateTarget = "molecule" | "internal";
 
-/** What a click does with the edit tool: adds an atom, grows a ring from an atom, or selects what is clicked as the select tool does. */
+/** What a click does with the edit tool. */
 export type EditClick = "add" | "ring" | "select";
 
 /** Which axes a constraint, and the molecule's handles, are measured along: the scene's or the molecule's own. */
 export type Space = "world" | "local";
 
-/**
- * The point a molecule turns about, and where its handles sit: the point the view orbits (which a right-click on an atom
- * moves onto that atom), the middle of its atoms, its own origin, or a point given.
- */
+/** The point a molecule turns about, and where its handles sit. */
 export type Pivot = "anchor" | "centre" | "origin" | "point";
 
 /** A torsion being shown: the bond it is about, and the atom at each end it is measured from. */

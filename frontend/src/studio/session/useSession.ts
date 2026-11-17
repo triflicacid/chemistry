@@ -41,48 +41,33 @@ export interface Session {
   submitSmiles: (smiles: string) => Promise<SubmitResult>;
   /** Puts an atom at a position, as one edit that can be undone. */
   moveAtom: (id: string, position: Vec3) => Promise<EditResult>;
-  /**
-   * Changes an atom's element, charge or isotope, as one edit that can be undone. Zero takes a charge or an isotope
-   * away. The server applies it as asked and never refuses it for being chemically odd.
-   */
+  /** Changes an atom's non-geometric properties. */
   setAtom: (id: string, change: AtomChange) => Promise<EditResult>;
   /** Adds an atom, bonded to an atom (which the server places it for, a bond length away) or free at a position, as one edit that can be undone. */
   addAtom: (element: string, placement: AtomPlacement, order: BondOrder) => Promise<EditResult>;
   /** Bonds two atoms where they stand, as one edit that can be undone. */
   addBond: (first: string, second: string, order: BondOrder) => Promise<EditResult>;
-  /** Gives bonds an order, as one edit that can be undone however many there are. */
+  /** Gives a list of bonds an order. */
   setBondOrder: (bonds: string[], order: BondOrder) => Promise<EditResult>;
   /** Deletes atoms and their bonds, with the hydrogens bonded only to them if asked, as one edit that can be undone. */
   deleteAtoms: (ids: string[], hydrogens: boolean) => Promise<EditResult>;
-  /**
-   * Gives atoms the hydrogens that fill their valence, as one edit that can be undone. The server works out how many and
-   * where to put them, and leaves alone any atom whose valence it does not know.
-   */
+  /** Gives atoms the hydrogens that fill their valence. */
   fillValences: (ids: string[]) => Promise<EditResult>;
   /** Deletes bonds and leaves their atoms, as one edit that can be undone. */
   deleteBonds: (ids: string[]) => Promise<EditResult>;
-  /**
-   * Gives a bond a length, as one edit that can be undone. The server works out which atoms move: the far side comes
-   * along unless the bond is in a ring.
-   */
+  /** Gives a bond a length. */
   setBondLength: (bond: string, length: number, hold: string | null) => Promise<EditResult>;
   /** Gives a bond a torsion by turning one side of it, as one edit that can be undone. The server refuses ring bonds. */
   setBondTorsion: (bond: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
   /** Gives an atom's two bonds an angle by swinging one of them, as one edit that can be undone. The server refuses ring bonds. */
   setAngle: (centre: string, from: string, to: string, angle: number, hold: string | null) => Promise<EditResult>;
-  /**
-   * Reports where a handle dragging a bond has got to. Sends at most one change per {@link DRAG_INTERVAL_MS}, of the
-   * latest, none of which is yet an edit to undo.
-   */
+  /** Reports where a handle dragging a bond has got to. */
   dragBond: (edit: BondEdit) => void;
   /** Ends a drag of a bond at a value, as one edit that can be undone however many changes the drag sent. */
   dropBond: (edit: BondEdit) => Promise<EditResult>;
   /** Abandons a drag of a bond, putting every atom the drag moved back where it was picked up. */
   cancelBondDrag: () => Promise<EditResult>;
-  /**
-   * Reports where dragged atoms have got to. Sends at most one patch per {@link DRAG_INTERVAL_MS}, of the latest
-   * positions, none of which is yet an edit to undo.
-   */
+  /** Reports where dragged atoms have got to. */
   dragAtoms: (moves: AtomMove[]) => void;
   /** Ends a drag at positions, as one edit that can be undone however many patches the drag sent. */
   dropAtoms: (moves: AtomMove[]) => Promise<EditResult>;

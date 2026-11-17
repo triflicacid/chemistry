@@ -15,7 +15,7 @@ export class RotateMode extends SelectMode {
   }
 
   override exit(): void {
-    this.abandonBox();
+    this.abandonSelectionBox();
     this.handleMode = null;
     this.host.molecule.setMode(null);
     this.host.bonds.set(null);

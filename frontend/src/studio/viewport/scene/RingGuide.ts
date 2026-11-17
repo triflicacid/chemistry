@@ -1,14 +1,14 @@
 import {
-    CylinderGeometry,
-    DoubleSide,
-    Group,
-    IcosahedronGeometry,
-    Mesh,
-    MeshBasicMaterial,
-    type Object3D,
-    Quaternion,
-    SphereGeometry,
-    Vector3,
+  CylinderGeometry,
+  DoubleSide,
+  Group,
+  IcosahedronGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  type Object3D,
+  Quaternion,
+  SphereGeometry,
+  Vector3,
 } from "three";
 import type {Stage} from "../../../render/stage";
 import type {RingLayout} from "../../geometry/ring";
@@ -25,7 +25,7 @@ const BOND_RADIUS = 0.08;
 /** The way a cylinder of three.js points before it is turned. */
 const ALONG = new Vector3(0, 1, 0);
 
-/** What a place on the ring is, which says how it is drawn. */
+/** What a place on the ring is. */
 export type Ghost =
   /** Where the next atom can go. */
   | "next"
@@ -43,10 +43,7 @@ interface GhostAtom {
   shell: Mesh;
 }
 
-/**
- * The ring the edit tool draws to grow an atom into a ring: a polygon of ghost atoms and ghost bonds, each a translucent
- * three-dimensional shape in the molecule's own space, at every place an atom could go.
- */
+/** A polygon of ghost atoms to aid in building a ring structure. */
 export class RingGuide {
   private readonly root = new Group();
   private readonly sphere = new SphereGeometry(GHOST_RADIUS, 20, 14);
@@ -108,7 +105,7 @@ export class RingGuide {
       const to = ghosts[after] ?? "taken";
       bond.visible = from !== "taken" || to !== "taken";
 
-      // the bond the next atom would make, between an atom that is there and the place it can go, is the one drawn most solid
+      // the bond the next atom would make is more solid then the others
       const making = (from === "taken" && to === "next") || (from === "next" && to === "taken");
       bond.material = this.bodies[making ? "next" : "later"];
 
@@ -133,8 +130,7 @@ export class RingGuide {
   }
 
   /**
-   * Draws the ring over what is in front of it, or behind it again. Atoms drawn at their full size cover the places beside
-   * them, which would hide a ring on them.
+   * Draws the ring over what is in front of it, or behind it again.
    *
    * @param through whether to draw it over everything
    */

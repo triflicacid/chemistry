@@ -5,16 +5,13 @@ import {Observable} from "./observable";
 /** localStorage key. */
 const RENDER_KEY = "studio.render";
 
-/** How dim and how bright the scene can be made, as a multiple of its usual lighting. */
 export const MIN_BRIGHTNESS = 0.3;
 export const MAX_BRIGHTNESS = 2;
-
-/** The usual lighting. */
 export const DEFAULT_BRIGHTNESS = 1;
 
-/** How the molecule is drawn, which the viewport shows and the Render options section changes. */
+/** How the molecule is drawn. */
 export interface RenderState {
-  /** How atoms and bonds are drawn: as balls and sticks, sticks alone, lines, or spheres. */
+  /** How atoms and bonds are drawn. */
   style: Style;
   finish: Finish;
   /** A multiple of the scene's usual lighting. */
@@ -24,7 +21,7 @@ export interface RenderState {
 }
 
 /**
- * @param brightness a multiple of the usual lighting, which may be out of range or not a number
+ * @param brightness a multiple of the usual lighting
  * @returns the nearest brightness the scene can have
  */
 export function clampBrightness(brightness: number): number {
@@ -38,8 +35,6 @@ export class RenderModel extends Observable<RenderState> {
   }
 
   /**
-   * Chooses how atoms and bonds are drawn.
-   *
    * @param style the style
    */
   styleWith(style: Style): void {
@@ -49,8 +44,6 @@ export class RenderModel extends Observable<RenderState> {
   }
 
   /**
-   * Chooses how shiny atoms and bonds are.
-   *
    * @param finish matte or glossy
    */
   finishWith(finish: Finish): void {
@@ -60,9 +53,7 @@ export class RenderModel extends Observable<RenderState> {
   }
 
   /**
-   * Chooses how bright the scene is.
-   *
-   * @param brightness a multiple of the usual lighting, which is held to the range the scene can have
+   * @param brightness a multiple of the usual lighting
    */
   brightnessTo(brightness: number): void {
     const next = clampBrightness(brightness);

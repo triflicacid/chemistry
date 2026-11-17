@@ -19,8 +19,6 @@ export function describeFinding(finding: GeometryFinding, label: (id: string) =>
 }
 
 /**
- * Says how strained a molecule is, in a few words.
- *
  * @param state the session
  * @param geometry what the server last said of its geometry
  * @param atoms the atoms of the part to describe, or undefined for the whole molecule

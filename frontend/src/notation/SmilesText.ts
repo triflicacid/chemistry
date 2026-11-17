@@ -14,11 +14,7 @@ export interface TextHandlers {
   pick: (offset: number) => void;
 }
 
-/**
- * SMILES text that the pointer can mark and click, which may be one part of a longer text, such as one molecule of several
- * written between dots. Everything it is told and tells is in the longer text's offsets, so a part reacts exactly as it does
- * in the whole.
- */
+/** SMILES text that the pointer can mark and click, which may be one part of a longer text. */
 export class SmilesText {
   /** How many highlight colours the stylesheet defines (.smiles-highlight-0 ...). */
   private static readonly COLOURS = 3;

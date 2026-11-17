@@ -13,8 +13,8 @@ export class SelectMode implements ToolMode {
     return this.boxing;
   }
 
-  /** The rectangle Shift and a left-drag draws, from where it began, or null while there is none. It has not begun until it is `active`, which is once the pointer has moved. */
-  private box: { from: ScreenPoint; active: boolean } | null = null;
+  /** The rectangle Shift and a left-drag draws. */
+  private selectionBox: { from: ScreenPoint; active: boolean } | null = null;
 
   /** Where the left button was pressed. */
   protected down: ScreenPoint | null = null;
@@ -38,28 +38,24 @@ export class SelectMode implements ToolMode {
     return true;
   }
 
-  /** Whether two quick clicks centre the view on what is under the pointer, which a mode that clicks to do something does not want. */
   protected get centresOnDoubleClick(): boolean {
     return true;
   }
 
-  /**
-   * Whether Shift and a left-drag draws a rectangle that selects the atoms inside it, which the tools that select and then act
-   * on a selection do: select, move and rotate. The camera tool, whose drag is the camera's, does not.
-   */
-  protected get marquees(): boolean {
+  /** Is the shift+click select rectangle enabled? */
+  protected get selectArea(): boolean {
     return this.tool === "select" || this.tool === "move" || this.tool === "rotate";
   }
 
   /** Whether a rectangle is being drawn. */
   protected get boxing(): boolean {
-    return this.box?.active ?? false;
+    return this.selectionBox?.active ?? false;
   }
 
   enter(): void {}
 
   exit(): void {
-    this.abandonBox();
+    this.abandonSelectionBox();
   }
 
   configure(_options: ModeOptions): void {}
@@ -75,7 +71,7 @@ export class SelectMode implements ToolMode {
   }
 
   cancelDrag(): void {
-    this.abandonBox();
+    this.abandonSelectionBox();
   }
 
   resting(): string {
@@ -90,9 +86,9 @@ export class SelectMode implements ToolMode {
     this.down = event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
     this.rightDown = event.button === 2 ? { x: event.clientX, y: event.clientY } : null;
 
-    if (event.button === 0 && event.shiftKey && this.marquees) {
-      this.box = { from: { x: event.clientX, y: event.clientY }, active: false };
-      // the camera must not pan while the rectangle is drawn, which is what Shift and a drag do to it otherwise
+    if (event.button === 0 && event.shiftKey && this.selectArea) {
+      this.selectionBox = { from: { x: event.clientX, y: event.clientY }, active: false };
+      // we don't want to pan the camera
       this.host.lock.hold("marquee");
       this.host.stage.canvas.setPointerCapture(event.pointerId);
     }
@@ -100,7 +96,7 @@ export class SelectMode implements ToolMode {
   }
 
   move(event: PointerEvent): void {
-    const box = this.box;
+    const box = this.selectionBox;
     if (!box) {
       return;
     }
@@ -112,11 +108,11 @@ export class SelectMode implements ToolMode {
       box.active = true;
       this.host.stage.canvas.style.cursor = "crosshair";
     }
-    this.host.emit((listener) => listener.marquee?.(this.rectTo(box.from, event)));
+    this.host.emit((listener) => listener.updateSelectionArea?.(this.rectTo(box.from, event)));
   }
 
   release(event: PointerEvent): void {
-    if (this.finishBox(event)) {
+    if (this.finishSelectionBox(event)) {
       return;
     }
     this.click(event);
@@ -146,20 +142,13 @@ export class SelectMode implements ToolMode {
     }
   }
 
-  /**
-   * Ends a rectangle, selecting what is inside it if it was drawn, which is only now, so that nothing is chosen while it is
-   * still being sized.
-   *
-   * @param event the release
-   * @returns whether a rectangle was drawn; a Shift-click that never became one is left to be the click it is
-   */
-  private finishBox(event: PointerEvent): boolean {
-    const box = this.box;
+  private finishSelectionBox(event: PointerEvent): boolean {
+    const box = this.selectionBox;
     if (!box) {
       return false;
     }
 
-    this.putAwayBox();
+    this.putAwaySelectionBox();
     if (!box.active) {
       return false;
     }
@@ -181,23 +170,23 @@ export class SelectMode implements ToolMode {
     const forward = stage.camera.getWorldDirection(new Vector3());
     const depthOf = (node: (typeof inside)[number]) => scene.worldOf(node).sub(stage.camera.position).dot(forward);
     const nearestFirst = [...inside].sort((a, b) => depthOf(a) - depthOf(b));
-    this.host.emit((listener) => listener.box?.(nearestFirst.map((node) => node.atom.id)));
+    this.host.emit((listener) => listener.releaseSelectionArea?.(nearestFirst.map((node) => node.atom.id)));
     return true;
   }
 
   /** Gives up a rectangle without selecting anything. */
-  protected abandonBox(): void {
-    if (this.box) {
-      this.putAwayBox();
+  protected abandonSelectionBox(): void {
+    if (this.selectionBox) {
+      this.putAwaySelectionBox();
     }
   }
 
   /** Takes the rectangle away and gives the camera back. */
-  private putAwayBox(): void {
-    this.box = null;
+  private putAwaySelectionBox(): void {
+    this.selectionBox = null;
     this.host.lock.release("marquee");
     this.host.stage.canvas.style.cursor = this.resting();
-    this.host.emit((listener) => listener.marquee?.(null));
+    this.host.emit((listener) => listener.updateSelectionArea?.(null));
   }
 
   /**
@@ -249,12 +238,7 @@ export class SelectMode implements ToolMode {
     }
   }
 
-  /**
-   * Answers a left click that was not a camera drag, which by default selects what was clicked.
-   *
-   * @param event the click
-   * @param pick what is under the pointer, or null for nothing
-   */
+  /** Answers a left click that was not a camera drag. */
   protected clicked(event: PointerEvent, pick: PartItem | null): void {
     this.host.emit((listener) => listener.click?.(pick, event.shiftKey || event.ctrlKey || event.metaKey));
   }

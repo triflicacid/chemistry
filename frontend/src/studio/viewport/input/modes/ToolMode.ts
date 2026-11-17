@@ -100,7 +100,7 @@ export interface ToolMode extends InteractionHandler {
   held(): string[];
   /** Abandons a drag in progress, putting the atoms back where they were picked up. */
   cancelDrag(): void;
-  /** Puts away what the mode is showing that is not a drag, which Escape does. Returns whether there was anything to put away. */
+  /** Puts away what the mode is showing that is not a drag, returning if anything was dismissed. */
   dismiss?(): boolean;
   /** The cursor over the viewport when nothing is under the pointer. */
   resting(): string;

@@ -32,12 +32,9 @@ export interface StudioViewListener {
   /** The edit tool's ring has been given another size, by the scroll wheel. */
   ringSize?(size: number): void;
   /** A rectangle is being dragged to select the atoms inside it, and is at `rect`, or has gone if it is null. */
-  marquee?(rect: ScreenRect | null): void;
-  /**
-   * A rectangle was let go of, and the atoms whose centres were inside it are `atoms`, nearest the camera first, so that the
-   * first is the first thing a ray through the rectangle meets.
-   */
-  box?(atoms: string[]): void;
+  updateSelectionArea?(rect: ScreenRect | null): void;
+  /** The selection rectangle was released with `atoms` inside it. */
+  releaseSelectionArea?(atoms: string[]): void;
   /** An atom has been picked up by the move tool and has begun to move, along with the rest of the selection if it is in it. */
   dragStart?(id: string): void;
   /** The dragged atoms are at `moves`' positions. `done` is true for the last report, when the pointer is released. */

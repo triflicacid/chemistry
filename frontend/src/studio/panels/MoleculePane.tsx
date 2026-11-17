@@ -13,7 +13,7 @@ import {Property, signed} from "./paneParts";
 interface MoleculePaneProps {
   id: string;
   index: StateIndex;
-  /** What the server last said about the geometry, from which this molecule's strain is worked out. */
+  /** What the server last said about the geometry. */
   geometry: GeometryResult | null;
   models: Models;
 }

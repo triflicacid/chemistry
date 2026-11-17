@@ -23,9 +23,9 @@ export interface AtomNode {
   /** Where the atom is. The ball and the charge badge both read this, so moving it moves them. */
   at: Vector3;
   ball: Mesh;
-  /** The radius the ball is drawn with when nothing is tinted, which is zero for an atom the style draws no ball for. */
+  /** The radius the ball is drawn with when nothing is tinted. */
   radius: number;
-  /** What the atom is picked by where the style draws it too small to point at, which draws nothing; null otherwise. */
+  /** Pick target of an atom if the radius is too small. */
   pick: Mesh | null;
   badge: Sprite | null;
   /** The indices of the atoms bonded to this one. */
@@ -122,8 +122,7 @@ export class MoleculeScene {
     this.registry.add("atom", null, { element: atom.element }, ball, atom.id);
     this.content.add(ball);
 
-    // a ball too small to point at, or none, is picked by an unseen sphere about the atom, which is the atom as far as the
-    // pointer is concerned
+    // a ball too small to point at so use an imaginary sphere instead
     let pick: Mesh | null = null;
     if (isThin(this.style)) {
       pick = new Mesh(this.kit.sphereGeometry, new MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
@@ -141,11 +140,6 @@ export class MoleculeScene {
     return { atom, index, at, ball, radius, pick, badge, neighbours: [] };
   }
 
-  /**
-   * @param node a drawn atom
-   * @returns how big the ball drawn for it is, or the bead that marks it where the style draws none, for placing what hangs
-   *     off it
-   */
   radiusOf(node: AtomNode): number {
     return Math.max(node.radius, isThin(this.style) ? BEAD : 0);
   }
@@ -171,7 +165,7 @@ export class MoleculeScene {
     if (!group) {
       return;
     }
-    // a bond too thin to point at is picked by an unseen cylinder along it, as a part of the same bond
+    // a bond too thin to point at is picked by an unseen cylinder along it
     if (isThin(this.style)) {
       const proxy = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
       group.add(this.kit.cylinder(this.point(bond.link.first), this.point(bond.link.second), PICK_BOND, proxy));
@@ -274,7 +268,7 @@ export class MoleculeScene {
     }
     applyTints(this.registry.parts, tints);
 
-    // where the style draws an atom small or not at all, hovering or selecting it swells a bead there, so that it shows
+    // where the style draws an atom small or not at all, hovering or selecting it swells a bead there
     if (isThin(this.style)) {
       for (const node of this.atoms) {
         const tinted = tints.has(node.ball);

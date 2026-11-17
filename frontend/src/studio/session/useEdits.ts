@@ -138,12 +138,7 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
 
   const moveAtom = useCallback((id: string, position: Vec3) => send([{ id, position }], true), [send]);
 
-  /**
-   * Makes an edit of the graph, which the session answers with the whole state.
-   *
-   * @param ask makes the request, given the socket and the state it is made on
-   * @param message what to say in the log when it is done, given what the reply says changed
-   */
+  /** Makes an edit of the graph. */
   const graph = useCallback(
     (ask: (socket: StudioSocket, base: SessionState) => Promise<GraphEditAck | SessionConflict>, message: string): Promise<EditResult> =>
       serially(async () => {

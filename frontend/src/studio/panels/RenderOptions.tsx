@@ -5,10 +5,7 @@ import {useObservable} from "../models/observable";
 import {Segmented} from "../controls/Segmented";
 import {FINISH_OPTIONS, STYLE_OPTIONS} from "../layout/viewportOptions";
 
-/**
- * How the molecule is drawn, in a section that folds down to its title at the foot of the Outliner. Closing it leaves the
- * settings as they are.
- */
+/** Settings for how the molecule is drawn. */
 export function RenderOptions({ models }: { models: Models }) {
   const { render } = models;
   const { style, finish, brightness, open } = useObservable(render);

@@ -24,11 +24,8 @@ export const DEFAULT_PITCH = 20;
 
 const suppress = (event: Event): void => event.preventDefault();
 
-/** How strong the lights are before the brightness scales them. */
 const AMBIENT_LIGHT = 0.75;
 const KEY_LIGHT = 1.1;
-
-/** How strongly a room that surfaces reflect lights them, held back so that colours do not wash out. */
 const ENVIRONMENT_LIGHT = 0.7;
 
 /** Where a stage is drawn, and what to tell when the view moves. */
@@ -52,14 +49,16 @@ export class Stage {
   readonly renderer: WebGLRenderer;
   readonly controls: OrbitControls;
 
-  /** The light that reaches everything, and the one that comes from over the camera's shoulder, at their usual strengths. */
-  private readonly ambient = new AmbientLight(0xffffff, AMBIENT_LIGHT);
+  /** The light that reaches everything. */
   private readonly key = new DirectionalLight(0xffffff, KEY_LIGHT);
+
+  /** The light coming from the camera. */
+  private readonly ambient = new AmbientLight(0xffffff, AMBIENT_LIGHT);
 
   private readonly resizer: ResizeObserver;
   private readonly overlays = new Set<(renderer: WebGLRenderer, camera: PerspectiveCamera, capturing: boolean) => void>();
   private pending = 0;
-  /** What shiny surfaces reflect, made the first time it is wanted and kept, so that turning it on again is instant. */
+  /** What shiny surfaces reflect. */
   private environment: Texture | null = null;
   /** Where the camera stood when a look-around drag began, while one is under way. */
   private eye: Vector3 | null = null;
@@ -104,7 +103,7 @@ export class Stage {
   }
 
   /**
-   * Lets surfaces reflect a studio-like room, which is what makes a smooth surface look glossy: a highlight alone is only a dot.
+   * Lets surfaces reflect a studio-like room.
    *
    * @param on whether surfaces reflect it
    */
@@ -119,7 +118,7 @@ export class Stage {
   }
 
   /**
-   * Makes the scene brighter or dimmer, the lamps and the reflected room together.
+   * Makes the scene brighter or dimmer.
    *
    * @param factor a multiple of the usual strength: 1 leaves the lighting as it is
    */

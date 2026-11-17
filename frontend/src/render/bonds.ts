@@ -4,13 +4,11 @@ import type {Primitives} from "./primitives";
 
 /** How atoms and bonds are drawn. */
 export type Style = "ball_and_stick" | "sticks" | "wireframe" | "spacefill";
-
-/** The styles, in the order they are offered. */
 export const STYLES: readonly Style[] = ["ball_and_stick", "sticks", "wireframe", "spacefill"];
 
 /**
- * @param value anything, such as what was stored on an earlier visit
- * @returns it if it is a style, and otherwise the default, which is ball and stick
+ * @param value anything
+ * @returns it if it is a style, and otherwise the default
  */
 export function asStyle(value: unknown): Style {
   return STYLES.find((style) => style === value) ?? "ball_and_stick";

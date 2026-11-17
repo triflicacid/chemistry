@@ -42,8 +42,7 @@ export interface Emphasis {
 }
 
 /**
- * Whether a selection stands for every molecule of the session, which is the only time the session's one pose is what moves
- * it. A selection of some of them leaves the others where they are, so it can only be moved by moving its atoms.
+ * Whether a selection stands for every molecule of the session.
  *
  * @param items what is selected
  * @param molecules how many molecules the session holds

@@ -70,10 +70,8 @@ export function CopyButton({text, label}: { text: string; label: string }) {
 }
 
 /**
- * A molecule's formulae in the form the whole's are shown in, so that a part and the whole are laid out and chosen from alike.
- *
  * @param fragment the molecule
- * @returns its formulae, with no units, since it is one molecule
+ * @returns its formulae
  */
 function formulaOf(fragment: SessionFragment): FormulaInfo {
   const none = {text: "", units: []};
@@ -86,7 +84,6 @@ function formulaOf(fragment: SessionFragment): FormulaInfo {
   };
 }
 
-/** A molecule's formulae, shown as the whole's are. */
 function FragmentFormula({fragment}: { fragment: SessionFragment }) {
   const view = useMemo(() => new FormulaView(formulaOf(fragment), 1), [fragment]);
   return (
@@ -97,7 +94,7 @@ function FragmentFormula({fragment}: { fragment: SessionFragment }) {
   );
 }
 
-/** A molecule's SMILES, as the session writes them, for as long as there are no marks to put on them. */
+/** A molecule's SMILES. */
 function PlainFragment({fragment}: { fragment: SessionFragment }) {
   return (
     <>
@@ -119,14 +116,10 @@ interface MoleculeDetailsProps {
   models: Models;
   /** The one molecule to describe, or undefined for the whole of it. */
   fragment?: SessionFragment;
-  /** Further rows of the same list, which show at once while the rest loads. */
   children?: ReactNode;
 }
 
-/**
- * The SMILES, canonical SMILES and formulae of the molecule, or of one of its parts, which mark what is hovered and centre
- * the camera on what is clicked.
- */
+/** The SMILES, canonical SMILES and formulae of the molecule, or of one of its parts. */
 export function MoleculeDetails({state, models, fragment, children}: MoleculeDetailsProps) {
   const {chemistry, failed} = models.chemistry;
   const metadata = chemistry?.metadata ?? null;
@@ -154,8 +147,7 @@ interface LoadedProps {
 }
 
 function Loaded({state, metadata, item, models, fragment}: LoadedProps) {
-  // a molecule is the piece of the whole's text it is written as, so that it marks and answers the pointer as the whole does;
-  // where the whole does not hold it, which an edit can do before the metadata is read again, it is shown as plain text
+  // a molecule is the piece of the whole's text it is written as
   const earlier = useMemo(() => (fragment ? state.fragments.slice(0, state.fragments.indexOf(fragment)) : []), [state, fragment]);
   const smilesStart = useMemo(
     () => (fragment ? startOf(metadata.smiles, fragment.smiles, earlier.map((each) => each.smiles)) : 0),
@@ -288,7 +280,6 @@ function Loaded({state, metadata, item, models, fragment}: LoadedProps) {
       canonicalSpans = hull(atoms.map((atom) => atom.canonical_span), bonds.flatMap((bond) => bond.canonical_spans));
     }
 
-    // text that is only shown has no place in the whole's, so there is nothing of it to mark
     if (smilesStart !== null) {
       smiles.highlight(highlights(bondSpans, ends.map((atom) => atom.span), firstColour));
     }

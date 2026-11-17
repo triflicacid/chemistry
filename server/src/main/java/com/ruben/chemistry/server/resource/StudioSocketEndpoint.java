@@ -1044,8 +1044,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
-     * Makes an edit of the graph, and answers with the full state, since the graph's atoms, bonds and SMILES are no
-     * longer what the client holds, and with the names of what the edit added.
+     * Makes an edit of the graph.
      *
      * @param context the connection that asked
      * @param type the type of the message, for the reply, which is this followed by {@code .ack}
@@ -1096,7 +1095,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
-     * Makes an edit the session works out the atoms' new positions for, and answers with where they went.
+     * Makes an edit the session works out the atoms' new positions for.
      *
      * @param context the connection that asked
      * @param type the type of the message, for the reply, which is this followed by {@code .ack}

@@ -86,7 +86,7 @@ export class MoveMode extends SelectMode {
   override exit(): void {
     this.active = false;
     this.cancelDrag();
-    this.abandonBox();
+    this.abandonSelectionBox();
     this.host.stage.canvas.style.cursor = "";
     this.host.reference.refreshGuide();
     this.handleMode = null;
@@ -109,7 +109,6 @@ export class MoveMode extends SelectMode {
     }
 
     this.arrange(options);
-    // the handles may have gone somewhere else, and the guide goes where they are
     reference.refreshGuide();
   }
 
@@ -145,7 +144,7 @@ export class MoveMode extends SelectMode {
   }
 
   /**
-   * Shows the handles the selection calls for: the molecule's, or those of the selected atoms, and a bond's length handle.
+   * Shows the handles the selection calls for.
    *
    * @param options the tool's settings and the selection
    */
@@ -251,7 +250,7 @@ export class MoveMode extends SelectMode {
   }
 
   override cancelDrag(): void {
-    this.abandonBox();
+    this.abandonSelectionBox();
     const grab = this.grab;
     if (!grab) {
       return;
@@ -289,10 +288,7 @@ export class MoveMode extends SelectMode {
     return this.withCarried(scene.emphasis.selected.atoms).some((id) => scene.locked.has(id));
   }
 
-  /**
-   * Where the move guide is drawn, in the scene: where the handles are while they are shown, so that the guide and the
-   * handles agree, and otherwise on the atom in hand or else the active one.
-   */
+  /** Where the move guide is drawn in the scene. */
   guideTarget(): Vector3 | null {
     const { scene, molecule } = this.host;
     const handles = molecule.position;
@@ -396,8 +392,7 @@ export class MoveMode extends SelectMode {
 
   /** Takes hold of an atom pressed on, which becomes a drag once the pointer has moved. */
   private startGrab(event: PointerEvent): void {
-    // Shift and a drag draws a rectangle, wherever it starts, and so does not pick an atom up
-    if (event.button !== 0 || !this.grabs || (event.shiftKey && this.marquees)) {
+    if (event.button !== 0 || !this.grabs || (event.shiftKey && this.selectArea)) {
       return;
     }
 

@@ -71,14 +71,12 @@ export interface SessionFragment {
   key: string;
   name: string;
   atoms: string[];
-  /** The part as a chemist would write it, with hydrogens counted. */
   smiles: string;
-  /** The part in canonical form, or null if it could not be written. */
   canonical_smiles: string | null;
   formula: SessionFormula;
 }
 
-/** One part's formulae, each in Unicode. */
+/** One part's formulae. */
 export interface SessionFormula {
   /** Every atom counted together, e.g. `C₂H₆O`. */
   molecular: string;
@@ -215,9 +213,7 @@ export interface GraphEditAck extends ServerEnvelope {
   /** The version the session is at after the change, which is the one before it if nothing needed to change. */
   version: number;
   status: "applied";
-  /** The atoms the edit added. */
   added_atoms: string[];
-  /** The bonds the edit added. */
   added_bonds: string[];
   state: SessionState;
 }

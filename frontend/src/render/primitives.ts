@@ -24,7 +24,7 @@ export class Primitives {
 
   readonly labels = new LabelFactory();
 
-  /** How shiny the surfaces this kit makes are, which a view changes and then updates what it has already drawn. */
+  /** How shiny the surfaces this kit makes are. */
   finish: Finish = "matte";
 
   /**

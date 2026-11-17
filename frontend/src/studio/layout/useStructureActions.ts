@@ -16,10 +16,7 @@ export interface StructureActions {
   canDelete: boolean;
   /** Whether an atom is selected whose hydrogens can be filled in. */
   canFill: boolean;
-  /**
-   * The order the order control shows: that of the selected bonds if they all have one, which the tool is then set to, and
-   * otherwise the order the tool makes bonds with.
-   */
+  /** The order shown. */
   order: BondOrder;
   /** Bonds the two selected atoms, in the order they were selected, with the chosen order. */
   addBond: () => void;
@@ -32,7 +29,7 @@ export interface StructureActions {
 }
 
 /**
- * Offers the edit tool's actions on the selection, and listens for their keys while the edit tool is in use.
+ * Offers the edit tool's actions on the selection.
  *
  * @param models what is selected and which tool is in use
  * @returns the actions, and whether each can be done now
@@ -48,7 +45,7 @@ export function useStructureActions({ selection, hover, tools, index }: Models):
     return atoms.length === 2 && items.length === 2 ? (atoms as [string, string]) : null;
   }, [items]);
 
-  // only bonds that are selected themselves count: a molecule or a ring that is selected is not a request to reorder every bond in it
+  // only bonds that are selected themselves count
   const bondIds = useMemo(() => items.flatMap((item) => (item.kind === "bond" ? [item.id] : [])), [items]);
   const selectedOrder = useMemo((): BondOrder | null => {
     if (!index || bondIds.length === 0) {
@@ -60,7 +57,7 @@ export function useStructureActions({ selection, hover, tools, index }: Models):
   }, [index, bondIds]);
   const order = selectedOrder ?? bondOrder;
 
-  // selecting bonds that share an order picks that order up, so what is made next is made with it
+  // selecting bonds that share an order picks that order up
   useEffect(() => {
     if (tool === "edit" && selectedOrder !== null && selectedOrder !== bondOrder) {
       tools.bondWith(selectedOrder);
@@ -85,7 +82,7 @@ export function useStructureActions({ selection, hover, tools, index }: Models):
   const canAddBond = pair !== null && index !== null && !index.bondsOf(pair[0]).some((each) => each.first === pair[1] || each.second === pair[1]);
   const canDelete = covered !== null && (covered.atoms.size > 0 || covered.bonds.size > 0);
 
-  // the atoms the button is for: those of the selection that the server knows the valence of
+  // the atoms that can be filled with Hs
   const fillable = useMemo(() => {
     if (!index || !covered) {
       return [];
@@ -117,8 +114,6 @@ export function useStructureActions({ selection, hover, tools, index }: Models):
     }
   }, [covered, deleteAtoms, deleteBonds, carryHydrogens]);
 
-  // the atom or bond under the pointer is what the key is for, unless it is part of the selection, in which case the key is for
-  // the selection as a whole, as it is in any editor
   const deleteUnderPointer = useCallback((): boolean => {
     if (!covered || (hovered?.kind !== "atom" && hovered?.kind !== "bond")) {
       return false;
@@ -139,7 +134,7 @@ export function useStructureActions({ selection, hover, tools, index }: Models):
     tool === "edit"
       ? [
           { ...KEYS.addBond, run: addBond },
-          // H fills the valence of what is selected, and with nothing to fill it is the Carry H switch it is for the move tool
+          // H fills the valence of what is selected, and with nothing to fill it is the Carry H switch
           { ...KEYS.toggleCarry, run: () => (canFill ? fill() : tools.carry(!carryHydrogens)) },
           {
             ...KEYS.deleteSelection,

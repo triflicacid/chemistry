@@ -17,7 +17,7 @@ import type {ModeHost, ModeOptions} from "./ToolMode";
 /** How near the pointer must be to a ghost atom, in pixels, for a click to mean it. */
 const GHOST_PICK_PX = 26;
 
-/** How soon after one turn of the wheel another is ignored, so that a trackpad's flick is one step and not several. */
+/** How soon after one turn of the wheel another is ignored. */
 const WHEEL_MS = 90;
 
 /** A ring being grown from an atom. */
@@ -36,7 +36,7 @@ interface Ring {
   indices: number[];
   /** Which way round the ring the atoms are being placed, or 0 until the first has been. */
   direction: 0 | 1 | -1;
-  /** Whether an atom is being placed, so that a second click waits for it. */
+  /** Whether an atom is being placed. */
   busy: boolean;
 }
 
@@ -47,17 +47,7 @@ interface Aim {
   dragging: boolean;
 }
 
-/**
- * Changing the structure by clicking, and moving atoms by dragging them, which is the move tool's drag.
- * <p>
- * While a click adds, one on an atom adds an atom bonded to it and one on empty space adds a free atom. While it grows a
- * ring, a click on an atom draws a ring on it, which a drag aims, the wheel resizes, and clicks on its ghost atoms fill in.
- * While it selects, every click does, and a drag turns the camera. A click on a bond, or with shift or control held, selects
- * whichever it is.
- * <p>
- * It has no handles and no constraint buttons. X, Y and Z hold a drag to an axis or plane as they do for the move tool, but
- * only for the drag after the key, which shows the axis or plane while it is in hand.
- */
+/** A mode for editing the structure: adding/removing bonds/atoms, etc. */
 export class EditMode extends MoveMode {
   /** What a click does. */
   private editClick: EditClick = "add";
@@ -90,8 +80,7 @@ export class EditMode extends MoveMode {
     return this.editClick === "add";
   }
 
-  // while a click selects, the select tool's rectangle works too
-  protected override get marquees(): boolean {
+  protected override get selectArea(): boolean {
     return this.editClick === "select";
   }
 
@@ -109,7 +98,7 @@ export class EditMode extends MoveMode {
     this.dismiss();
     this.letGo();
     this.dropAim();
-    this.abandonBox();
+    this.abandonSelectionBox();
     super.exit();
   }
 
@@ -137,8 +126,6 @@ export class EditMode extends MoveMode {
   // there are no handles on the molecule, atoms or bonds
   protected override arrange(_options: ModeOptions): void {}
 
-  // H is the edit tool's own: it fills the valence of a selected atom, and only otherwise toggles Carry H, which is decided with
-  // the selection where the tool's buttons are, so the move tool's key for it is not taken here
   override keys(): Binding[] {
     return super.keys().filter((binding) => binding.key !== KEYS.toggleCarry.key);
   }
@@ -198,7 +185,7 @@ export class EditMode extends MoveMode {
   override cancelDrag(): void {
     super.cancelDrag();
     this.dropAim();
-    this.abandonBox();
+    this.abandonSelectionBox();
     this.letGo();
   }
 
@@ -231,7 +218,7 @@ export class EditMode extends MoveMode {
   }
 
   /**
-   * Puts the ring away, which leaves the atoms placed on it where they are.
+   * Puts the ring away, leaving any atoms placed on it.
    *
    * @returns whether there was a ring
    */
@@ -300,12 +287,6 @@ export class EditMode extends MoveMode {
     }
   };
 
-  /**
-   * Answers a click while a ring is being grown.
-   *
-   * @param event the click
-   * @param pick what is under the pointer
-   */
   private async clickRing(event: PointerEvent, pick: PartItem | null): Promise<void> {
     const ring = this.ring;
     if (!ring) {
@@ -458,7 +439,7 @@ export class EditMode extends MoveMode {
 
   /**
    * @param ring the ring
-   * @returns what each of its places is: where the next atom can go, where one will be able to, or where there is one
+   * @returns what each of its places is
    */
   private ghostsOf(ring: Ring): Ghost[] {
     const ghosts: Ghost[] = [];
@@ -471,8 +452,7 @@ export class EditMode extends MoveMode {
   /**
    * @param ring the ring
    * @param place a place on it
-   * @returns whether the next atom can go there: either side of the source before one is placed, and after that the place
-   *     after the last one round the way the atoms are going
+   * @returns whether the next atom can go there
    */
   private next(ring: Ring, place: number): boolean {
     if (ring.direction === 0) {
@@ -521,7 +501,7 @@ export class EditMode extends MoveMode {
 
   /**
    * Finds where a free atom goes for a click on empty space: where the pointer's ray meets the plane that faces the camera
-   * and passes through the middle of the molecule, so that it lands beside the molecule at its depth.
+   * and passes through the middle of the molecule.
    *
    * @param event the click
    * @returns the place, in the molecule's own frame

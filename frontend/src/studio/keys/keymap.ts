@@ -4,7 +4,7 @@ import type {Trigger} from "./binding";
 export const KEYS = {
   /** Chooses the tool in that place in the toolbar's order: 1 is the first. */
   chooseTool: { key: ["1", "2", "3", "4", "5"], mod: false, alt: false, shift: false },
-  /** Flips what the tool is set to between its two choices: molecule or bonds and angles for rotate, add, ring or select for edit. */
+  /** Flips what the tool is set to between its choices. */
   switchChoice: { key: "Tab", mod: false, alt: false, shift: false },
   /** Clears the selection, unless Escape is leaving a text field. */
   clearSelection: { key: "Escape" },

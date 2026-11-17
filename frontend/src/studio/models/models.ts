@@ -23,7 +23,7 @@ export interface Models {
   focus: FocusModel;
   /** Asks the Outliner to open to an item and mark it. */
   reveal: RevealModel;
-  /** How the molecule is drawn, which the Render options section changes and the viewport shows. */
+  /** How the molecule is drawn. */
   render: RenderModel;
   /** Looks identifiers up in the state the surfaces are showing; null until a session opens. */
   index: StateIndex | null;
