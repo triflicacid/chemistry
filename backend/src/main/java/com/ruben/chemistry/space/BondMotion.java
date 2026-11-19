@@ -18,10 +18,10 @@ import java.util.function.Function;
  */
 public final class BondMotion
 {
-    /** The shortest a bond may be made, in angstroms, whichever way round: at no length it has no direction. */
+    /** The shortest a bond may be made, in angstroms. */
     public static final double MIN_LENGTH = 0.1;
 
-    /** The longest a bond may be made, in angstroms, whichever way round. */
+    /** The longest a bond may be made, in angstroms. */
     public static final double MAX_LENGTH = 10;
 
     /** How close, in angstroms, two atoms may be before there is no line between them to move them along. */
@@ -32,7 +32,7 @@ public final class BondMotion
     }
 
     /**
-     * Finds the atoms on one side of a bond: those reached from an atom of it without crossing it.
+     * Finds the atoms on one side of a bond.
      *
      * @param molecule the molecule
      * @param bond a bond of {@code molecule}, by reference
@@ -71,19 +71,13 @@ public final class BondMotion
 
     /**
      * Works out where atoms go to give a bond a length.
-     * <p>
-     * The atoms move along the line between the bond's two atoms. The held atom stays where it is; with none held, each
-     * end moves half the change, so the bond keeps its midpoint. Everything on the side of an atom that moves goes with
-     * it, unless the bond is in a ring, when only the atom moves.
      *
      * @param molecule the molecule
      * @param bond a bond of {@code molecule}, by reference
      * @param positions where each atom of {@code molecule} is
-     * @param length the length to give it, in angstroms, measured along the bond from its first atom towards its second
-     *     as it is in {@code positions}. A negative length puts the moving side on the far side of the held atom, passing
-     *     through it, which reverses the bond's direction; the distance between the two atoms is then its size
+     * @param length the length to give it, in angstroms
      * @param held an atom of the bond to leave where it is, or {@code null} to hold neither
-     * @return where each atom that moves goes, keyed by reference because atoms with the same element and charge are equal
+     * @return where each atom that moves goes
      * @throws IllegalArgumentException if the length is not finite or its size is outside {@link #MIN_LENGTH} to
      *     {@link #MAX_LENGTH}, {@code held} is not an atom of the bond, or the bond's atoms are at the same place
      */
@@ -149,11 +143,7 @@ public final class BondMotion
     }
 
     /**
-     * Works out where atoms go to give a bond a torsion, by turning one side of it about the bond.
-     * <p>
-     * The torsion is measured between an atom bonded to each end of the bond, as {@link Vec3#torsion} measures it. The
-     * side of the held atom stays and the other side turns, taking the shorter way round; with none held, each side turns
-     * half the change, in opposite directions.
+     * Works out where atoms go to give a bond a torsion by turning one side of it about the bond.
      *
      * @param molecule the molecule
      * @param bond a bond of {@code molecule}, by reference
@@ -162,7 +152,7 @@ public final class BondMotion
      * @param positions where each atom of {@code molecule} is
      * @param degrees the torsion to give it, in degrees
      * @param held an atom of the bond whose side stays, or {@code null} to hold neither
-     * @return where each atom that moves goes, keyed by reference because atoms with the same element and charge are equal
+     * @return where each atom that moves goes
      * @throws IllegalArgumentException if the angle is not finite, the bond is in a ring, {@code held} is not an atom of
      *     the bond, {@code from} or {@code to} is not bonded to the right end, or the bond's atoms are at the same place
      */
@@ -217,12 +207,7 @@ public final class BondMotion
     }
 
     /**
-     * Works out where atoms go to give an atom's two bonds an angle, by swinging one bond and everything beyond it, about the atom.
-     * <p>
-     * The angle is at {@code centre}, between its bonds to {@code from} and to {@code to}.
-     * The swing is in the plane of the three atoms, about the line through {@code centre} perpendicular to that plane.
-     * The side of the held atom stays and the other turns; with none held, each side turns half the change, in opposite directions.
-     * If the three atoms are in a line there is no plane, and the swing is about any line perpendicular to it.
+     * Works out where atoms go to give an atom's two bonds an angle by swinging one bond and everything beyond it about the atom.
      *
      * @param molecule the molecule
      * @param centre the atom the angle is at
@@ -230,11 +215,7 @@ public final class BondMotion
      * @param to another atom bonded to {@code centre}
      * @param positions where each atom of {@code molecule} is
      * @param degrees the angle to give it, in degrees, measured from the arm to {@code from} to the arm to {@code to}
-     *     about the normal of their plane as it is in {@code positions}, which is {@code from} crossed with {@code to}.
-     *     That is a full turn rather than the angle between two lines: 0 puts the arms on top of each other and 180 in a
-     *     line, and an angle past 180 or below 0 swings the arm through that straight line to the far side of the plane,
-     *     so 361 is 1 and -1 is 359 when an atom is held. With neither held, each arm turns half the change, so a whole
-     *     turn more or less turns each arm half a turn and gives a different result
+     *     about the normal of their plane as it is in {@code positions}
      * @param held {@code from} or {@code to}, whose side stays where it is, or {@code null} to hold neither
      * @return where each atom that moves goes
      * @throws IllegalArgumentException if the angle is not finite, {@code from} and {@code to} are not two different
