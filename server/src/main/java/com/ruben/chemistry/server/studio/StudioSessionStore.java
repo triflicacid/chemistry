@@ -7,13 +7,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
-/**
- * The editing sessions this server is holding open, each outliving the connection that held it
- * by a grace window. Safe to use from several connections at once.
- */
 public final class StudioSessionStore
 {
     /** How long a session survives the connection that was holding it. */
@@ -35,14 +30,13 @@ public final class StudioSessionStore
      */
     public StudioSessionStore(Duration grace, Clock clock)
     {
-        Objects.requireNonNull(grace, "grace");
         if (grace.isNegative())
         {
             throw new IllegalArgumentException("grace cannot be negative, but was " + grace);
         }
 
         this.grace = grace;
-        this.clock = Objects.requireNonNull(clock, "clock");
+        this.clock = clock;
     }
 
     /**
@@ -54,9 +48,6 @@ public final class StudioSessionStore
      */
     public void add(StudioSession session, String holder)
     {
-        Objects.requireNonNull(session, "session");
-        Objects.requireNonNull(holder, "holder");
-
         synchronized (sessions)
         {
             sweep();
@@ -77,8 +68,6 @@ public final class StudioSessionStore
      */
     public void replace(StudioSession session)
     {
-        Objects.requireNonNull(session, "session");
-
         synchronized (sessions)
         {
             sweep();
@@ -114,8 +103,6 @@ public final class StudioSessionStore
      */
     public void attach(String sessionId, String holder)
     {
-        Objects.requireNonNull(holder, "holder");
-
         synchronized (sessions)
         {
             Entry entry = sessions.get(sessionId);
