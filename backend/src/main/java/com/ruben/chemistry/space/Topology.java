@@ -15,6 +15,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * A molecule restated for embedding.
@@ -201,7 +202,7 @@ final class Topology
 
         for (Molecule ring : molecule.rings())
         {
-            Set<Integer> nodes = new java.util.TreeSet<>();
+            Set<Integer> nodes = new TreeSet<>();
             boolean flat = true;
             for (Atom atom : ring.atoms())
             {

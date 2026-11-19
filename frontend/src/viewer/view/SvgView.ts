@@ -1,5 +1,5 @@
 import type { Scene, SceneAttributes, SceneElement, ScenePoint } from "../../api/types/scene";
-import type { FaultState, Highlights, MoleculeView, Pick, SelectionState, ViewListener } from "./MoleculeView";
+import type { FaultState, Highlights, MoleculeView, PartRef, SelectionState, ViewListener } from "./MoleculeView";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -31,7 +31,7 @@ export class SvgView implements MoleculeView {
   private y = 0;
   private dragging: Drag | null = null;
   private suppressClick = false;
-  private current: Pick | null = null;
+  private current: PartRef | null = null;
   private readonly listeners = new Set<ViewListener>();
   private readonly abort = new AbortController();
 
@@ -129,12 +129,12 @@ export class SvgView implements MoleculeView {
     this.listeners.forEach((listener) => listener.click?.(target, event.shiftKey));
   }
 
-  private emitHover(target: Pick | null, at: MouseEvent | null): void {
+  private emitHover(target: PartRef | null, at: MouseEvent | null): void {
     const point = { x: at?.clientX ?? 0, y: at?.clientY ?? 0 };
     this.listeners.forEach((listener) => listener.hover?.(target, point));
   }
 
-  private pick(target: EventTarget | null): Pick | null {
+  private pick(target: EventTarget | null): PartRef | null {
     const element = (target as Element | null)?.closest?.<SVGElement>(".atom, .bond");
     if (!element || !this.element.contains(element)) {
       return null;

@@ -5,10 +5,9 @@ import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.notation.Notation;
 import com.ruben.chemistry.server.render.Render2d;
 import com.ruben.chemistry.smiles.SmilesWriter;
-import com.ruben.chemistry.space.Structure3D;
+import com.ruben.chemistry.util.CachedValue;
 import com.ruben.chemistry.validate.MoleculeValidator;
 
-import java.util.Map;
 import java.util.Optional;
 
 public final class StoredMolecule
@@ -18,21 +17,26 @@ public final class StoredMolecule
 
     private final String id;
     private final Notation source;
-    private final Notation canonical;
+    private final CachedValue<Notation> canonical;
     private final Molecule molecule;
     private volatile Render2d latest2d;
-    private volatile MoleculeMetadata metadata;
-    private volatile ValidationReport validation;
-    private volatile Structure3D latestStructure3d;
+    private final CachedValue<MoleculeMetadata> metadata;
+    private final CachedValue<ValidationReport> validation;
+    private volatile StudioSnapshot studio = StudioSnapshot.EMPTY;
 
     StoredMolecule(String id, ParsedMolecule parsed)
     {
         this.id = id;
         this.source = parsed.source();
         this.molecule = parsed.molecule();
-        SmilesWriter writer = new SmilesWriter(molecule).setRanker(new CanonicalRanker());
-        String written = writer.write();
-        this.canonical = new Notation(written, writer.atomSpans(), writer.bondSpans());
+        this.canonical = new CachedValue<>(() ->
+        {
+            SmilesWriter writer = new SmilesWriter(molecule).setRanker(new CanonicalRanker());
+            String written = writer.write();
+            return new Notation(written, writer.atomSpans(), writer.bondSpans());
+        });
+        this.metadata = new CachedValue<>(() -> MoleculeMetadata.of(molecule, source, canonical.get()));
+        this.validation = new CachedValue<>(() -> ValidationReport.of(molecule, VALIDATOR, source));
     }
 
     public String id()
@@ -47,7 +51,7 @@ public final class StoredMolecule
 
     public String canonicalSmiles()
     {
-        return canonical.smiles();
+        return canonical.get().smiles();
     }
 
     public Molecule molecule()
@@ -57,13 +61,7 @@ public final class StoredMolecule
 
     public MoleculeMetadata metadata()
     {
-        MoleculeMetadata result = metadata;
-        if (result == null)
-        {
-            result = MoleculeMetadata.of(molecule, source, canonical);
-            metadata = result;
-        }
-        return result;
+        return metadata.get();
     }
 
     /**
@@ -71,13 +69,7 @@ public final class StoredMolecule
      */
     public ValidationReport validation()
     {
-        ValidationReport result = validation;
-        if (result == null)
-        {
-            result = ValidationReport.of(molecule, VALIDATOR, source);
-            validation = result;
-        }
-        return result;
+        return validation.get();
     }
 
     public Optional<Render2d> latest()
@@ -90,14 +82,19 @@ public final class StoredMolecule
         this.latest2d = render;
     }
 
-    /** The most recently generated 3D structure, if any. */
-    public Optional<Structure3D> latestStructure3d()
+    /**
+     * @return what an editing session saved with this molecule, which is {@link StudioSnapshot#EMPTY} if none did
+     */
+    public StudioSnapshot studio()
     {
-        return Optional.ofNullable(latestStructure3d);
+        return studio;
     }
 
-    public void setLatestStructure3d(Structure3D structure)
+    /**
+     * @param snapshot the scene to keep with this molecule, replacing what was kept
+     */
+    public void setStudio(StudioSnapshot snapshot)
     {
-        this.latestStructure3d = structure;
+        this.studio = snapshot;
     }
 }

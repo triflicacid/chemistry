@@ -1,10 +1,10 @@
 package com.ruben.chemistry.cli;
 
 import com.ruben.chemistry.core.Molecule;
-import com.ruben.chemistry.render.three.SceneRenderer3D;
+import com.ruben.chemistry.render.svg.SvgWriter;
 import com.ruben.chemistry.render.three.CameraInfo;
 import com.ruben.chemistry.render.three.RenderStyle3D;
-import com.ruben.chemistry.render.svg.SvgWriter;
+import com.ruben.chemistry.render.three.SceneRenderer3D;
 import com.ruben.chemistry.space.Camera;
 import com.ruben.chemistry.space.Diagnostics;
 import com.ruben.chemistry.space.Embedder;
@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -357,7 +358,7 @@ final class Render3d
 
     private static List<CliOption<?>> allDefinitions()
     {
-        List<CliOption<?>> all = new java.util.ArrayList<>(OPTIONS);
+        List<CliOption<?>> all = new ArrayList<>(OPTIONS);
         all.add(CommandOptions.HELP);
         all.add(CommandOptions.BACKGROUND);
         all.add(CommandOptions.MARGIN);

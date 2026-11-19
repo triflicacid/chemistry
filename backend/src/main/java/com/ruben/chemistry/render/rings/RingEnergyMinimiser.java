@@ -6,6 +6,7 @@ import com.ruben.chemistry.space.BondConstraints;
 import com.ruben.chemistry.space.StructureProjector;
 import com.ruben.chemistry.space.Vectors;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -484,7 +485,7 @@ final class RingEnergyMinimiser
             int[] distance = new int[count];
             Arrays.fill(distance, -1);
             distance[from] = 0;
-            java.util.ArrayDeque<Integer> queue = new java.util.ArrayDeque<>();
+            java.util.ArrayDeque<Integer> queue = new ArrayDeque<>();
             queue.add(from);
             while (!queue.isEmpty())
             {

@@ -1,23 +1,17 @@
+import type { PartRef } from "../../render/parts";
+
+export type { PartRef };
+
 /** A position on screen, in client pixels. */
 export interface Point {
   x: number;
   y: number;
 }
 
-/** An atom or bond under the pointer. `index` is null for parts the drawing added, such as inferred bonds. */
-export interface Pick {
-  kind: "atom" | "bond";
-  index: number | null;
-  /** What the drawing recorded about the part, such as `element` or `order` for ones it added. */
-  data: Readonly<Record<string, string>>;
-  /** Identifies the part to the view that made it; equal for the same part. Not for callers to look inside. */
-  handle: unknown;
-}
-
 /** Transient emphasis, such as for what the pointer is over. */
 export interface Highlights {
   /** The part to emphasise, as the view reported it. */
-  hover: Pick | null;
+  hover: PartRef | null;
   /** Atoms to tint; `colour` is 1 or 2. */
   ends: { atom: number; colour: number }[];
 }
@@ -37,8 +31,8 @@ export interface SelectionState {
 }
 
 export interface ViewListener {
-  hover?(target: Pick | null, at: Point): void;
-  click?(target: Pick | null, additive: boolean): void;
+  hover?(target: PartRef | null, at: Point): void;
+  click?(target: PartRef | null, additive: boolean): void;
 }
 
 export interface MoleculeView {
@@ -58,7 +52,7 @@ export interface MoleculeView {
   setFaults(faults: FaultState | null): void;
 
   /** Rows for the hover plaque about what the view knows and the molecule's metadata does not. */
-  describe(target: Pick): [string, string][];
+  describe(target: PartRef): [string, string][];
 
   /** The file type of `exportImage`. */
   readonly imageExtension: "svg" | "png";

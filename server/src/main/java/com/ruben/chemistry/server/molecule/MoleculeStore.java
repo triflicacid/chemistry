@@ -54,6 +54,30 @@ public final class MoleculeStore
     }
 
     /**
+     * Gives a stored molecule a different structure, keeping its ID and what an editing session saved with it.
+     *
+     * @param id the ID of a stored molecule
+     * @param parsed the molecule that is to be stored as {@code id} from now on
+     * @return the molecule now stored as {@code id}, or empty if none was, in which case nothing is stored
+     */
+    public Optional<StoredMolecule> replace(String id, ParsedMolecule parsed)
+    {
+        synchronized (molecules)
+        {
+            StoredMolecule old = molecules.get(id);
+            if (old == null)
+            {
+                return Optional.empty();
+            }
+
+            StoredMolecule stored = new StoredMolecule(id, parsed);
+            stored.setStudio(old.studio());
+            molecules.put(id, stored);
+            return Optional.of(stored);
+        }
+    }
+
+    /**
      * @param id a molecule's ID
      */
     public void remove(String id)

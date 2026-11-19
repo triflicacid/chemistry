@@ -42,6 +42,26 @@ public final class NotationSymbols
     }
 
     /**
+     * Says whether an atom may be written outside brackets.
+     *
+     * @param element the atom's canonical element symbol, or {@code *}
+     * @param aromatic whether the atom is aromatic
+     * @return {@code true} if the atom can be written without brackets
+     */
+    public static boolean isOrganicSubset(String element, boolean aromatic)
+    {
+        if (element.equals("*"))
+        {
+            return true;
+        }
+        if (aromatic)
+        {
+            return element.length() == 1 && AROMATIC_ORGANIC_ATOMS.indexOf(Character.toLowerCase(element.charAt(0))) >= 0;
+        }
+        return TWO_CHAR_ORGANIC_ATOMS.contains(element) || (element.length() == 1 && SINGLE_CHAR_ORGANIC_ATOMS.indexOf(element.charAt(0)) >= 0);
+    }
+
+    /**
      * @param ch a candidate character
      * @return {@code true} if {@code ch} alone is an organic-subset atom symbol, aliphatic or aromatic
      */

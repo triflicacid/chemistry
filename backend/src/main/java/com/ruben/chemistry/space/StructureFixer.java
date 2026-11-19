@@ -187,6 +187,22 @@ public final class StructureFixer
     }
 
     /**
+     * Told how relaxing a conformer is getting on, and able to stop it.
+     */
+    @FunctionalInterface
+    public interface Progress
+    {
+        /**
+         * @param iteration how many steps of the relaxation have been taken; it starts again from zero if a conformer
+         *     is relaxed more than once, as when a structure of the wrong handedness is turned over and tried again
+         * @param energy the strain plus the hold on each atom to where it began, which has no unit
+         * @return {@code true} to carry on, {@code false} to stop with what has been reached, which a caller that stops
+         *     a relaxation should discard because it may be half done
+         */
+        boolean continues(int iteration, double energy);
+    }
+
+    /**
      * @param structure the structure to fix
      * @return it with every conformer relaxed
      */
@@ -203,6 +219,19 @@ public final class StructureFixer
      * @throws IllegalArgumentException if the structure has no conformers
      */
     public static Fixed fix(Structure3D structure, Constraints constraints, Options options)
+    {
+        return fix(structure, constraints, options, (iteration, energy) -> true);
+    }
+
+    /**
+     * @param structure the structure to fix
+     * @param constraints what to impose, release and hold
+     * @param options how hard to try
+     * @param progress told how each relaxation is getting on, and able to stop it
+     * @return it with every conformer relaxed, or as far as it got if {@code progress} stopped it
+     * @throws IllegalArgumentException if the structure has no conformers
+     */
+    public static Fixed fix(Structure3D structure, Constraints constraints, Options options, Progress progress)
     {
         if (structure.conformers().isEmpty())
         {
@@ -233,7 +262,7 @@ public final class StructureFixer
             double[] start = mapping.toNodes(conformer.positions());
             keepConfigurations(topology, start);
 
-            Result result = relax(topology, start, stiffness, options);
+            Result result = relax(topology, start, stiffness, options, progress);
             Outcome outcome = result.outcome;
             Structure3D.Conformer out = outcome == Outcome.FIXED
                 ? new Structure3D.Conformer(result.after, mapping.toSites(result.positions))
@@ -255,7 +284,7 @@ public final class StructureFixer
     {
     }
 
-    private static Result relax(Topology topology, double[] start, double[] stiffness, Options options)
+    private static Result relax(Topology topology, double[] start, double[] stiffness, Options options, Progress progress)
     {
         Bounds bounds = Bounds.of(topology, new Random(0));
         Strain strain = new Strain(topology, bounds, 3, 0);
@@ -272,7 +301,7 @@ public final class StructureFixer
             {
                 turnOver(topology, trial, stiffness, options.restraint(), variant);
             }
-            Minimiser.minimise(new Restrained(strain, trial.clone(), stiffness), trial, options.maximumIterations());
+            Minimiser.minimise(new Restrained(strain, trial.clone(), stiffness), trial, options.maximumIterations(), progress::continues);
             if (Embedder.respectsStereochemistry(topology, vectors(trial)))
             {
                 x = trial;

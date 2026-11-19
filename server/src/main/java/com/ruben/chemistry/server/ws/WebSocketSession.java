@@ -160,26 +160,29 @@ public final class WebSocketSession implements WebSocketContext
     @Override
     public void error(String code, String message) throws IOException
     {
-        error(code, message, null);
+        error(null, null, code, message);
     }
 
     @Override
-    public void error(String code, String message, WebSocketMessage answering) throws IOException
+    public void error(String type, Long sequence, String code, String message) throws IOException
     {
-        Map<String, Object> error = new LinkedHashMap<>();
-        error.put("code", code);
-        error.put("message", message);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("code", code);
+        details.put("message", message);
 
         Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("type", "error");
 
-        if (answering != null)
+        if (type != null)
         {
-            answering.string("type").ifPresent(type -> envelope.put("answering", type));
-            answering.integer("sequence").ifPresent(sequence -> envelope.put("sequence", sequence));
+            envelope.put("answering", type);
+        }
+        if (sequence != null)
+        {
+            envelope.put("sequence", sequence);
         }
 
-        envelope.put("error", error);
+        envelope.put("error", details);
         sendJson(envelope);
     }
 

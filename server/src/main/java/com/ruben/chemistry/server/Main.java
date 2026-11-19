@@ -2,6 +2,7 @@ package com.ruben.chemistry.server;
 
 import com.ruben.chemistry.server.http.EndpointFactory;
 import com.ruben.chemistry.server.http.Server;
+import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.resource.HealthEndpoint;
 import com.ruben.chemistry.server.resource.MoleculeEndpoint;
 import com.ruben.chemistry.server.resource.MoleculeLibraryEndpoint;
@@ -30,18 +31,6 @@ public final class Main
     private static final int DEFAULT_PORT = 8080;
     private static final int THREADS = 8;
 
-    private static final List<EndpointFactory> httpEndpoints = List.of(
-            HealthEndpoint::new,
-            MoleculeEndpoint::new,
-            MoleculeLibraryEndpoint::new,
-            OptionsEndpoint::new,
-            QueryLibraryEndpoint::new
-    );
-
-    private static final List<SocketEndpointFactory> socketEndpoints = List.of(
-            StudioSocketEndpoint::new
-    );
-
     private Main()
     {
     }
@@ -50,6 +39,22 @@ public final class Main
     {
         ExecutorService executor = Executors.newFixedThreadPool(THREADS);
         int httpPort = port(args);
+
+        // the molecules the HTTP API stores are the ones an editing session opens, so both
+        // servers are given the same store
+        MoleculeStore molecules = new MoleculeStore();
+
+        List<EndpointFactory> httpEndpoints = List.of(
+                HealthEndpoint::new,
+                () -> new MoleculeEndpoint(molecules),
+                MoleculeLibraryEndpoint::new,
+                OptionsEndpoint::new,
+                QueryLibraryEndpoint::new
+        );
+
+        List<SocketEndpointFactory> socketEndpoints = List.of(
+                () -> new StudioSocketEndpoint(molecules)
+        );
 
         Server server = new Server(httpPort, executor);
         httpEndpoints.forEach(server::add);
