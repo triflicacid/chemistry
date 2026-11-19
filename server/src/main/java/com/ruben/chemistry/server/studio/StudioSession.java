@@ -28,9 +28,6 @@ import java.util.function.Supplier;
 
 /**
  * One open Molecular Studio workspace.
- * <p>
- * The session holds the state of the workspace and the lock that guards it. Working out a change of the graph is
- * {@link GraphEditor}'s, keeping the edits is {@link EditHistory}'s, and the session makes the change and files it.
  */
 public final class StudioSession
 {
