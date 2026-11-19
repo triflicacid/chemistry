@@ -1,7 +1,7 @@
 import type {Stage} from "../../../render/stage";
 
 /** Who may be keeping the camera's own controls from answering the pointer. */
-export type CameraHolder = "cameraHud" | "rollRing" | "transformHandle" | "moleculeHandles" | "bondHandles" | "atomDrag";
+export type CameraHolder = "cameraHud" | "rollRing" | "transformHandle" | "moleculeHandles" | "bondHandles" | "atomDrag" | "ringAim" | "marquee";
 
 /** Keeps the camera's controls off while anything else has hold of the pointer. */
 export class CameraLock {

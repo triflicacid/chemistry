@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.net.http.WebSocket;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
@@ -26,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StudioSocketEndpointTest
 {
     /** The start of every message, naming the protocol the client is written for. */
-    private static final String PROTOCOL = "\"protocol_version\": 12, ";
+    private static final String PROTOCOL = "\"protocol_version\": 14, ";
 
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
@@ -46,7 +47,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 12L);
+        assertThat(ready).containsEntry("protocol_version", 14L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -97,7 +98,7 @@ class StudioSocketEndpointTest
         assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
         assertThat((String) error(stale).get("message")).contains("out of date");
 
-        socket.sendText("{\"protocol_version\": 13, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        socket.sendText("{\"protocol_version\": 15, \"type\": \"session.open\", \"sequence\": 2}", true).join();
         assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
 
         // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
@@ -697,6 +698,43 @@ class StudioSocketEndpointTest
     }
 
     @Test
+    void should_build_by_adding_atoms_and_bonds_and_keep_the_stored_molecule_in_step_with_each_edit() throws Exception
+    {
+        StoredMolecule stored = store("C");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText(open(stored.id(), 1), true).join();
+        Map<String, Object> opened = collector.nextJson();
+        String sessionId = (String) opened.get("session_id");
+        String carbon = (String) list(opened, "atoms").getFirst().get("id");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.add\", \"sequence\": 2, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 1, \"element\": \"O\", \"attach\": \"" + carbon + "\", \"order\": \"DOUBLE\"}", true).join();
+        Map<String, Object> added = collector.nextJson();
+        assertThat(added).containsEntry("type", "atom.add.ack").containsEntry("version", 2L);
+        assertThat((List<?>) added.get("added_atoms")).hasSize(1);
+        assertThat((List<?>) added.get("added_bonds")).hasSize(1);
+        Map<String, Object> state = map(added, "state");
+        String savedId = (String) state.get("saved_molecule_id");
+        assertThat(savedId).isNotNull();
+        assertThat(molecules.find(savedId).orElseThrow().molecule().atoms().stream().map(Atom::element)).contains("O");
+
+        // a second edit keeps the one stored id and stores the new graph under it
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.delete\", \"sequence\": 3, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 2, \"atoms\": [\"" + ((List<?>) added.get("added_atoms")).getFirst() + "\"], \"hydrogens\": false}", true).join();
+        Map<String, Object> deleted = collector.nextJson();
+        assertThat(deleted).containsEntry("type", "atom.delete.ack");
+        assertThat(map(deleted, "state")).containsEntry("saved_molecule_id", savedId);
+        assertThat(molecules.find(savedId).orElseThrow().molecule().atoms().stream().map(Atom::element)).doesNotContain("O");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"atom.add\", \"sequence\": 4, \"session_id\": \"" + sessionId
+                + "\", \"base_version\": 3, \"element\": \"N\"}", true).join();
+        assertThat(error(collector.nextJson())).containsEntry("code", "INVALID_MESSAGE");
+    }
+
+    @Test
     void should_refuse_an_atom_change_it_cannot_make_and_leave_the_session_as_it_was() throws Exception
     {
         StoredMolecule stored = store("CCO");
@@ -1011,7 +1049,7 @@ class StudioSocketEndpointTest
         collector.nextJson();
 
         socket.sendText(optimise(sessionId, 2, 3), true).join();
-        List<Map<String, Object>> reports = new java.util.ArrayList<>();
+        List<Map<String, Object>> reports = new ArrayList<>();
         Map<String, Object> message;
         do
         {

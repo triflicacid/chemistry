@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {Workspace} from "./layout/Workspace";
 import {createModels} from "./models/models";
+import {TOOL_ORDER} from "./models/ToolModel";
 import {useObservable} from "./models/observable";
 import {StateIndex} from "./geometry/StateIndex";
 import {useChemistry} from "./chemistry/useChemistry";
@@ -66,7 +67,25 @@ export function App() {
     }
   }, [chosen, allLocked, lockAtoms]);
 
+  const { tool, rotateTarget, editClick } = useObservable(shared.tools);
   useHotkeys([
+    { ...KEYS.chooseTool, run: (event) => shared.tools.use(TOOL_ORDER[Number(event.key) - 1] ?? tool) },
+    {
+      ...KEYS.switchChoice,
+      run: (event) => {
+        // Tab on a button or a field is moving the focus about, and is left to do it
+        if (event.target instanceof HTMLElement && event.target !== document.body && event.target.tagName !== "CANVAS") {
+          return;
+        }
+        if (tool === "rotate") {
+          event.preventDefault();
+          shared.tools.rotateTarget(rotateTarget === "molecule" ? "internal" : "molecule");
+        } else if (tool === "edit") {
+          event.preventDefault();
+          shared.tools.clickTo(editClick === "add" ? "ring" : editClick === "ring" ? "select" : "add");
+        }
+      },
+    },
     { ...KEYS.clearSelection, run: () => shared.selection.clear() },
     {
       ...KEYS.undo,

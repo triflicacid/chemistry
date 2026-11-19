@@ -1,11 +1,13 @@
 import type {Vec3} from "../../api/types/structure";
 import {
   type AtomChange,
-  type AtomSetAck,
+  type AtomPlacement,
   type BondEditAck,
+  type BondOrder,
   type CameraAck,
   type EditApplied,
   type EditHistory,
+  type GraphEditAck,
   type LockAck,
   type OptimiseCancelAck,
   type OptimiseStarted,
@@ -320,7 +322,7 @@ export class StudioSocket {
   }
 
   /**
-   * Changes an atom's element, charge or isotope. The server applies it as asked, without checking the chemistry.
+   * Updates an atom's properties (non-geometric.)
    *
    * @param sessionId the session to edit
    * @param baseVersion the version the caller was looking at; a session that has moved on answers with a conflict
@@ -328,12 +330,91 @@ export class StudioSocket {
    * @param change the fields to change; the others stay as they are
    * @returns the acknowledgement with the new state, or a conflict carrying the state the session is actually in
    */
-  setAtom(sessionId: string, baseVersion: number, atom: string, change: AtomChange): Promise<AtomSetAck | SessionConflict> {
-    return this.request<AtomSetAck | SessionConflict>(
-      "atom.set",
-      { session_id: sessionId, base_version: baseVersion, atom, ...change },
-      ["atom.set.ack", "conflict"],
-    );
+  setAtom(sessionId: string, baseVersion: number, atom: string, change: AtomChange): Promise<GraphEditAck | SessionConflict> {
+    return this.graphEdit("atom.set", sessionId, baseVersion, { atom, ...change });
+  }
+
+  /**
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at
+   * @param element the new atom's element symbol
+   * @param placement the atom to attach it to, or where to put it free, in the molecule's own frame
+   * @param order the order of the bond to the atom it is attached to
+   * @returns the acknowledgement, naming the atom and bond it added, or a conflict
+   */
+  addAtom(sessionId: string, baseVersion: number, element: string, placement: AtomPlacement, order: BondOrder): Promise<GraphEditAck | SessionConflict> {
+    return this.graphEdit("atom.add", sessionId, baseVersion, { element, order, ...placement });
+  }
+
+  /**
+   * Deletes atoms and the bonds they are in.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at
+   * @param atoms the atoms to delete
+   * @param hydrogens whether to delete too each hydrogen bonded only to a deleted atom
+   */
+  deleteAtoms(sessionId: string, baseVersion: number, atoms: string[], hydrogens: boolean): Promise<GraphEditAck | SessionConflict> {
+    return this.graphEdit("atom.delete", sessionId, baseVersion, { atoms, hydrogens });
+  }
+
+  /**
+   * Gives atoms the hydrogens that fill their valence.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at
+   * @param atoms the atoms to fill; those whose valence the server does not know are left alone
+   */
+  fillValences(sessionId: string, baseVersion: number, atoms: string[]): Promise<GraphEditAck | SessionConflict> {
+    return this.graphEdit("atom.fill", sessionId, baseVersion, { atoms });
+  }
+
+  /**
+   * Bonds two atoms where they are.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at
+   * @param first one atom
+   * @param second the other
+   * @param order the bond's order
+   */
+  addBond(sessionId: string, baseVersion: number, first: string, second: string, order: BondOrder): Promise<GraphEditAck | SessionConflict> {
+    return this.graphEdit("bond.add", sessionId, baseVersion, { first, second, order });
+  }
+
+  /**
+   * Deletes bonds, leaving their atoms.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at
+   * @param bonds the bonds to delete
+   */
+  deleteBonds(sessionId: string, baseVersion: number, bonds: string[]): Promise<GraphEditAck | SessionConflict> {
+    return this.graphEdit("bond.delete", sessionId, baseVersion, { bonds });
+  }
+
+  /**
+   * Gives bonds an order, all in one edit.
+   *
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at
+   * @param bonds the bonds to change; one that has the order already is left alone
+   * @param order their new order
+   */
+  setBondOrder(sessionId: string, baseVersion: number, bonds: string[], order: BondOrder): Promise<GraphEditAck | SessionConflict> {
+    return this.graphEdit("bond.order", sessionId, baseVersion, { bonds, order });
+  }
+
+  /**
+   * Makes an edit of the graph.
+   *
+   * @param type the edit's message type; the answer is this followed by `.ack`
+   * @param sessionId the session to edit
+   * @param baseVersion the version the caller was looking at
+   * @param fields the rest of the message
+   */
+  private graphEdit(type: "atom.set" | "atom.add" | "atom.delete" | "atom.fill" | "bond.add" | "bond.delete" | "bond.order", sessionId: string, baseVersion: number, fields: Record<string, unknown>): Promise<GraphEditAck | SessionConflict> {
+    return this.request<GraphEditAck | SessionConflict>(type, { session_id: sessionId, base_version: baseVersion, ...fields }, [`${type}.ack`, "conflict"]);
   }
 
   /**

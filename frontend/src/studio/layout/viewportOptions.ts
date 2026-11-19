@@ -1,4 +1,7 @@
-import type {RotateTarget, Space} from "../models/ToolModel";
+import type {Style} from "../../render/bonds";
+import type {Finish} from "../../render/finish";
+import type {BondOrder} from "../session/messages";
+import type {EditClick, RotateTarget, Space} from "../models/ToolModel";
 import type {Constraint} from "../viewport/handles/dragPlane";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import type {Segment} from "../controls/Segmented";
@@ -17,8 +20,8 @@ export const GRID_PLANES: Segment<GridPlaneChoice>[] = [
 ];
 
 export const ROTATE_TARGETS: Segment<RotateTarget>[] = [
-  { value: "molecule", label: "Molecule", title: "Click an atom to turn the whole molecule about it, with rings that turn it about the pivot" },
-  { value: "internal", label: "Bonds & angles", title: "Click a bond to turn one side of it about the bond (its torsion), or an atom to change an angle between two of its bonds" },
+  { value: "molecule", label: "Molecule", title: "Click an atom to turn the whole molecule about it, with rings that turn it about the pivot (Tab)" },
+  { value: "internal", label: "Bonds & angles", title: "Click a bond to turn one side of it about the bond (its torsion), or an atom to change an angle between two of its bonds (Tab)" },
 ];
 
 export const DRAGS: Segment<"pan" | "look">[] = [
@@ -39,4 +42,34 @@ export const CONSTRAINTS: { value: Constraint; label: string; title: string }[] 
   { value: "yz", label: "YZ", title: "Move in the yz plane (Shift+X)" },
   { value: "xz", label: "XZ", title: "Move in the xz plane (Shift+Y)" },
   { value: "xy", label: "XY", title: "Move in the xy plane (Shift+Z)" },
+];
+
+export const BOND_ORDERS: Segment<BondOrder>[] = [
+  { value: "SINGLE", label: "Single", title: "Make single bonds" },
+  { value: "DOUBLE", label: "Double", title: "Make double bonds" },
+  { value: "TRIPLE", label: "Triple", title: "Make triple bonds" },
+  { value: "AROMATIC", label: "Aromatic", title: "Make aromatic bonds" },
+];
+
+export const EDIT_CLICKS: Segment<EditClick>[] = [
+  { value: "add", label: "Add", title: "Clicking an atom adds an atom bonded to it, clicking empty space adds one on its own, and dragging an atom moves it. Shift-click, or a click on a bond, still selects (Tab)" },
+  {
+    value: "ring",
+    label: "Ring",
+    title:
+      "Click an atom to draw a ring on it. Drag from the atom to turn the ring, scroll to change how many atoms it has, then click the ghost atoms in turn to place them. The last one closes the ring, and Esc puts the ring away, leaving the atoms (Tab)",
+  },
+  { value: "select", label: "Select", title: "Clicking selects atoms and bonds, and dragging turns the camera, as with the select tool, so they can be bonded or deleted (Tab)" },
+];
+
+export const FINISH_OPTIONS: Segment<Finish>[] = [
+  { value: "matte", label: "Matte", title: "Draw atoms and bonds flat, as chalk" },
+  { value: "glossy", label: "Glossy", title: "Draw atoms and bonds smooth and reflecting a studio-like room, as glossy plastic" },
+];
+
+export const STYLE_OPTIONS: { value: Style; label: string; title: string }[] = [
+  { value: "ball_and_stick", label: "Ball and stick", title: "Atoms as small balls joined by sticks" },
+  { value: "sticks", label: "Sticks", title: "Bonds as thick sticks, joined round at each atom" },
+  { value: "wireframe", label: "Wireframe", title: "Bonds as thin lines, with a bead only where an atom is hovered or selected" },
+  { value: "spacefill", label: "Spacefill", title: "Each atom as a sphere of its full size, which hides its bonds, so they cannot be hovered or selected" },
 ];

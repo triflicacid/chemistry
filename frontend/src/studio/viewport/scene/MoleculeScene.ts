@@ -1,7 +1,7 @@
-import {Box3, Color, Group, Mesh, MeshStandardMaterial, type Object3D, Ray, Raycaster, type Sprite, Vector3} from "three";
+import {Box3, Color, Group, Mesh, MeshBasicMaterial, type Object3D, Ray, Raycaster, type Sprite, Vector3} from "three";
 import type {Vec3} from "../../../api/types/structure";
 import {aromaticCentres} from "../../../render/aromatic";
-import {ballRadius, type BondEnds, buildBond, type Style} from "../../../render/bonds";
+import {type BondEnds, buildBond, type Style} from "../../../render/bonds";
 import {disposeMaterials} from "../../../render/dispose";
 import {ACTIVE_TINT, applyTints, END_TINTS, HELD_TINT, HOVER_TINT, SELECTED_TINT} from "../../../render/emphasis";
 import {type Part, PartRegistry} from "../../../render/parts";
@@ -10,10 +10,7 @@ import type {Stage} from "../../../render/stage";
 import type {SessionAtom, SessionBond, SessionState} from "../../session/messages";
 import type {ItemSet, PartItem} from "../../models/items";
 import {type Emphasis, NO_ITEMS} from "../../models/items";
-
-
-/** How the molecule is drawn. */
-export const STYLE: Style = "ball_and_stick";
+import {atomRadius, BEAD, isThin, PICK_ATOM, PICK_BOND} from "./styles";
 
 /** A bond as the drawing holds it: which atoms it joins by position in the atom list, so the shared drawing code can take it. */
 export interface Link extends BondEnds {
@@ -26,6 +23,10 @@ export interface AtomNode {
   /** Where the atom is. The ball and the charge badge both read this, so moving it moves them. */
   at: Vector3;
   ball: Mesh;
+  /** The radius the ball is drawn with when nothing is tinted. */
+  radius: number;
+  /** Pick target of an atom if the radius is too small. */
+  pick: Mesh | null;
   badge: Sprite | null;
   /** The indices of the atoms bonded to this one. */
   neighbours: number[];
@@ -57,6 +58,8 @@ export class MoleculeScene {
   locked: ReadonlySet<string> = new Set();
   /** A fingerprint of everything about the structure except where its atoms are. */
   structureKey = "";
+  /** How atoms and bonds are drawn. A change is shown by drawing the state afresh. */
+  style: Style = "ball_and_stick";
 
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
@@ -78,7 +81,9 @@ export class MoleculeScene {
   /** Draws a state afresh. What was drawn must have been cleared. */
   build(state: SessionState): void {
     const index = new Map(state.atoms.map((atom, i) => [atom.id, i]));
-    this.atoms = state.atoms.map((atom, i) => this.drawAtom(atom, i));
+    // a style that draws bonded atoms small or not at all still draws one with nothing bonded to it
+    const bonded = new Set(state.bonds.flatMap((bond) => [bond.first, bond.second]));
+    this.atoms = state.atoms.map((atom, i) => this.drawAtom(atom, i, bonded.has(atom.id)));
     this.atomById = new Map(this.atoms.map((node) => [node.atom.id, node]));
 
     const links: Link[] = [];
@@ -107,21 +112,36 @@ export class MoleculeScene {
     this.refreshEmphasis();
   }
 
-  private drawAtom(atom: SessionAtom, index: number): AtomNode {
+  private drawAtom(atom: SessionAtom, index: number, bonded: boolean): AtomNode {
     const at = new Vector3(atom.position.x, atom.position.y, atom.position.z);
-    const radius = ballRadius(atom.radius, STYLE, true);
-    const ball = new Mesh(this.kit.sphereGeometry, new MeshStandardMaterial({ color: new Color(atom.colour), roughness: 0.5 }));
+    const radius = atomRadius(atom.radius, this.style, bonded);
+    const ball = new Mesh(this.kit.sphereGeometry, this.kit.solid(new Color(atom.colour)));
     ball.position.copy(at);
     ball.scale.setScalar(radius);
+    ball.visible = radius > 0;
     this.registry.add("atom", null, { element: atom.element }, ball, atom.id);
     this.content.add(ball);
 
+    // a ball too small to point at so use an imaginary sphere instead
+    let pick: Mesh | null = null;
+    if (isThin(this.style)) {
+      pick = new Mesh(this.kit.sphereGeometry, new MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+      pick.position.copy(at);
+      pick.scale.setScalar(PICK_ATOM);
+      this.registry.add("atom", null, { element: atom.element }, pick, atom.id);
+      this.content.add(pick);
+    }
+
     let badge: Sprite | null = null;
     if (atom.charge !== 0) {
-      badge = this.kit.labels.chargeBadge(this.content, atom.charge, at, radius);
+      badge = this.kit.labels.chargeBadge(this.content, atom.charge, at, Math.max(radius, BEAD));
       this.content.add(badge);
     }
-    return { atom, index, at, ball, badge, neighbours: [] };
+    return { atom, index, at, ball, radius, pick, badge, neighbours: [] };
+  }
+
+  radiusOf(node: AtomNode): number {
+    return Math.max(node.radius, isThin(this.style) ? BEAD : 0);
   }
 
   /** Draws a bond afresh from where its atoms are now, replacing what was drawn. */
@@ -137,13 +157,18 @@ export class MoleculeScene {
       this.kit,
       bond.link,
       this.atoms.map((node) => node.atom),
-      STYLE,
+      this.style,
       this.point,
       this.neighbourMap,
       this.ringCentres.get(bond.link),
     );
     if (!group) {
       return;
+    }
+    // a bond too thin to point at is picked by an unseen cylinder along it
+    if (isThin(this.style)) {
+      const proxy = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+      group.add(this.kit.cylinder(this.point(bond.link.first), this.point(bond.link.second), PICK_BOND, proxy));
     }
     const part = this.registry.add("bond", null, { order: bond.link.order.toLowerCase() }, group, bond.link.bond.id);
     this.registry.claimChildren(part);
@@ -178,6 +203,7 @@ export class MoleculeScene {
       if (node && (node.at.x !== position.x || node.at.y !== position.y || node.at.z !== position.z)) {
         node.at.set(position.x, position.y, position.z);
         node.ball.position.copy(node.at);
+        node.pick?.position.copy(node.at);
         moved.add(node);
       }
     }
@@ -215,7 +241,7 @@ export class MoleculeScene {
     for (const id of this.locked) {
       const node = this.atomById.get(id);
       if (node && !this.lockBadges.has(id)) {
-        const badge = this.kit.labels.lockBadge(this.content, node.at, ballRadius(node.atom.radius, STYLE, true));
+        const badge = this.kit.labels.lockBadge(this.content, node.at, Math.max(node.radius, BEAD));
         this.content.add(badge);
         this.lockBadges.set(id, badge);
       }
@@ -241,6 +267,16 @@ export class MoleculeScene {
       }
     }
     applyTints(this.registry.parts, tints);
+
+    // where the style draws an atom small or not at all, hovering or selecting it swells a bead there
+    if (isThin(this.style)) {
+      for (const node of this.atoms) {
+        const tinted = tints.has(node.ball);
+        const radius = tinted ? Math.max(node.radius, BEAD) : node.radius;
+        node.ball.scale.setScalar(radius);
+        node.ball.visible = radius > 0;
+      }
+    }
     this.stage.requestRender();
   }
 

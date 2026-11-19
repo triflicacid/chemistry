@@ -1,8 +1,19 @@
 import type {PickScope} from "../models/models";
 import type {ToolModel, ToolState} from "../models/ToolModel";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
-import {CONSTRAINTS, DRAGS, GRID_PLANES, GRIDS, ROTATE_TARGETS, SPACES} from "./viewportOptions";
+import {
+    BOND_ORDERS,
+    CONSTRAINTS,
+    DRAGS,
+    EDIT_CLICKS,
+    GRID_PLANES,
+    GRIDS,
+    ROTATE_TARGETS,
+    SPACES
+} from "./viewportOptions";
+import {ElementPicker} from "../controls/ElementPicker";
 import {Segmented} from "../controls/Segmented";
+import type {StructureActions} from "./useStructureActions";
 
 export interface DisplayToolsProps {
   axes: boolean;
@@ -73,14 +84,16 @@ export interface ActionToolsProps {
   onLook: (on: boolean) => void;
   picking: PickScope;
   onPickScope: () => void;
+  /** What the edit tool's buttons do to the selection. */
+  structure: StructureActions;
   onFrame: () => void;
   onCentre: () => void;
   onReset: () => void;
 }
 
 /** The buttons at the top right of the viewport. */
-export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked, look, onLook, picking, onPickScope, onFrame, onCentre, onReset }: ActionToolsProps) {
-  const { tool, constraint, space, rotateTarget, carryHydrogens, snap } = state;
+export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked, look, onLook, picking, onPickScope, structure, onFrame, onCentre, onReset }: ActionToolsProps) {
+  const { tool, constraint, space, rotateTarget, carryHydrogens, snap, editClick, element } = state;
   return (
     <div className="viewport-tools viewport-tools-right" role="group" aria-label="Actions">
       {tool === "pan" && (
@@ -94,15 +107,63 @@ export function ActionTools({ tools, state, gridShown, moleculeSelected, blocked
       {(tool === "move" || (tool === "rotate" && rotateTarget === "molecule" && moleculeSelected)) && (
         <Segmented label="Space" value={space} options={SPACES} onChange={(next) => tools.useSpace(next)} />
       )}
-      {tool === "move" && (
+      {tool === "edit" && (
+        <>
+          <span className="segmented-captioned">
+            <span className="segmented-caption">Click</span>
+            <Segmented label="What a click does" value={editClick} options={EDIT_CLICKS} onChange={(next) => tools.clickTo(next)} />
+          </span>
+          <span className="segmented-captioned">
+            <span className="segmented-caption">Element</span>
+            <ElementPicker label="Element to add" value={element} onPick={(next) => tools.addElement(next)} />
+          </span>
+          <span className="segmented-captioned">
+            <span className="segmented-caption">Bond</span>
+            <Segmented label="Order of the bonds made, and of the selected bonds" value={structure.order} options={BOND_ORDERS} onChange={structure.chooseOrder} />
+          </span>
+          <button
+            type="button"
+            className="tool"
+            disabled={!structure.canAddBond}
+            title="Bond the two selected atoms where they are, with the chosen order (B). Shift-click two atoms to select them"
+            onClick={structure.addBond}
+          >
+            Add bond
+          </button>
+          <button
+            type="button"
+            className="tool"
+            disabled={!structure.canDelete}
+            title="Delete the selected atoms with their bonds, or the selected bonds. The Delete key deletes the atom or bond under the pointer instead, unless it is selected. Nothing else is adjusted, and one undo takes it back"
+            onClick={structure.deleteSelection}
+          >
+            Delete
+          </button>
+        </>
+      )}
+      {(tool === "move" || tool === "edit") && (
         <button
           type="button"
           className="tool"
           aria-pressed={carryHydrogens}
-          title="When on, moving an atom carries the hydrogens bonded to it by the same amount, so their bonds keep their lengths and angles (H). Nothing is locked"
+          title={
+            tool === "edit"
+              ? "When on, deleting an atom deletes the hydrogens bonded only to it too (H, when no atom that can be filled is selected)"
+              : "When on, moving an atom carries the hydrogens bonded to it by the same amount, so their bonds keep their lengths and angles (H). Nothing is locked"
+          }
           onClick={() => tools.carry(!carryHydrogens)}
         >
           Carry H
+        </button>
+      )}
+      {tool === "edit" && structure.canFill && (
+        <button
+          type="button"
+          className="tool"
+          title="Add the hydrogens that fill the valence of the selected atoms whose valence is known, each placed in the direction the atom's geometry leaves (H). One undo takes it back"
+          onClick={structure.fill}
+        >
+          Fill valence
         </button>
       )}
       {tool === "move" && gridShown && (

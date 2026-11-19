@@ -2,14 +2,18 @@ package com.ruben.chemistry.server.studio;
 
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.core.Bond;
+import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Elements;
 import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.ValenceTable;
+import com.ruben.chemistry.core.Valences;
 import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.molecule.StudioSnapshot;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.BondMotion;
+import com.ruben.chemistry.space.ElementData;
 import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Structure3D;
@@ -88,8 +92,32 @@ public final class StudioSession
      * @param molecule the working graph
      * @param atomIds what each of its atoms is called
      * @param bondIds what each of its bonds is called, by the pair of its atoms' names
+     * @param geometry where each atom is, so that an atom added or deleted comes back or goes with the graph
      */
-    private record Graph(Molecule molecule, Map<Atom, String> atomIds, Map<Set<String>, String> bondIds)
+    private record Graph(Molecule molecule, Map<Atom, String> atomIds, Map<Set<String>, String> bondIds, Map<String, Vec3> geometry)
+    {
+    }
+
+    /**
+     * What an edit that added atoms or bonds made.
+     *
+     * @param applied the edit, as for any other
+     * @param atoms the atoms it added, by name
+     * @param bonds the bonds it added, by name
+     */
+    public record Created(Applied applied, List<String> atoms, List<String> bonds)
+    {
+    }
+
+    /**
+     * A bond while a graph is being rebuilt: its ends as the rebuilt graph will hold them.
+     *
+     * @param first one end
+     * @param second the other end
+     * @param order its order
+     * @param original the bond of the graph being replaced that this is, or {@code null} for one that is new
+     */
+    private record Joint(Atom first, Atom second, BondOrder order, Bond original)
     {
     }
 
@@ -216,6 +244,10 @@ public final class StudioSession
 
     /** Where the client's camera is, or null if it has never said. It is not part of the version, and is never undone. */
     private Camera camera;
+
+    /** How many atom and bond names the session has handed out, so that a name is never used twice. */
+    private int atomCounter;
+    private int bondCounter;
 
     private long version = 1;
     private String smiles;
@@ -347,6 +379,8 @@ public final class StudioSession
         }
 
         StudioSession session = new StudioSession(sessionId, sourceMoleculeId, working, atomIds, bondIds, geometry, wasImplicit, conformer.strain());
+        session.atomCounter = atoms.size();
+        session.bondCounter = bonds.size();
 
         // a site's atom is named by its position, as every atom is above
         lockedSites.stream().filter(site -> site >= 0 && site < atoms.size()).sorted().forEach(site -> session.locked.add("a" + (site + 1)));
@@ -667,7 +701,7 @@ public final class StudioSession
         Molecule rebuilt = replacing(atom, replacement);
         Map<Atom, String> renamed = new IdentityHashMap<>(atomIds);
         renamed.put(replacement, renamed.remove(atom));
-        restore(new Graph(rebuilt, renamed, bondIds));
+        restore(new Graph(rebuilt, renamed, bondIds, new LinkedHashMap<>(geometry)));
 
         file(new Edit(Map.of(), Map.of(), null, null, before, graph(), Set.of(atomId), "Change atom " + atomId, System.currentTimeMillis()));
         return new Applied(++version, Map.of(), null, true);
@@ -704,6 +738,642 @@ public final class StudioSession
             molecule.doubleBondStereoOf(bond).ifPresent(stereo -> builder.setDoubleBondStereo(swapped.get(bond.first()), swapped.get(bond.second()), stereo));
         }
         return builder.build();
+    }
+
+    /**
+     * Adds an atom as one edit that can be undone. No hydrogen is added or removed to suit it.
+     *
+     * @param element the new atom's element symbol
+     * @param attachToId the atom to bond it to, or {@code null} for a free atom; unless {@code position} says where, it is
+     *     placed a bond length away in a direction that suits that atom's neighbours
+     * @param order the order of the bond to {@code attachToId}, or {@code null} for single
+     * @param position where to put the atom, in angstroms in the molecule's own frame, which is required for a free atom
+     *     and otherwise replaces the place the session would have chosen
+     * @return the edit, and the names of the atom and bond it made
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, {@code LOCKED} if the
+     *     atom to attach to is locked, {@code BUSY} if an edit is in progress, {@code INVALID_EDIT} if the element is
+     *     not one, and {@code INVALID_MESSAGE} if a free atom has no finite position
+     */
+    public synchronized Created addAtom(String element, String attachToId, BondOrder order, Vec3 position)
+    {
+        requireIdle();
+        if (element == null || !Elements.isSymbol(element))
+        {
+            throw new StudioEditException("INVALID_EDIT", "'" + element + "' is not an element symbol");
+        }
+
+        Atom target = null;
+        if (attachToId != null)
+        {
+            target = atomNamed(attachToId);
+            requireUnlocked(List.of(attachToId));
+        }
+
+        Vec3 where;
+        if (position != null)
+        {
+            if (!Double.isFinite(position.x()) || !Double.isFinite(position.y()) || !Double.isFinite(position.z()))
+            {
+                throw new StudioEditException("INVALID_MESSAGE", "The position of the new atom is not a finite number");
+            }
+            where = position;
+        }
+        else if (target != null)
+        {
+            where = placementFor(target, element);
+        }
+        else
+        {
+            throw new StudioEditException("INVALID_MESSAGE", "A free atom needs a position");
+        }
+
+        Draft draft = new Draft();
+        Atom fresh = Atom.builder(element).hydrogenCount(0).build();
+        String freshId = draft.add(fresh, where);
+        List<String> bonds = new ArrayList<>();
+        List<String> touched = new ArrayList<>(List.of(freshId));
+        if (target != null)
+        {
+            bonds.add(draft.join(target, fresh, order == null ? BondOrder.SINGLE : order));
+            touched.add(attachToId);
+        }
+
+        return new Created(commit(draft, "Add atom", touched), List.of(freshId), bonds);
+    }
+
+    /**
+     * Bonds two atoms, as one edit that can be undone. The atoms stay where they are.
+     *
+     * @param firstId one atom
+     * @param secondId the other
+     * @param order the bond's order, or {@code null} for single
+     * @return the edit, and the name of the bond it made
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, {@code LOCKED} if either
+     *     is locked, {@code BUSY} if an edit is in progress, and {@code INVALID_EDIT} if they are one atom or already bonded
+     */
+    public synchronized Created addBond(String firstId, String secondId, BondOrder order)
+    {
+        requireIdle();
+        Atom first = atomNamed(firstId);
+        Atom second = atomNamed(secondId);
+        if (first == second)
+        {
+            throw new StudioEditException("INVALID_EDIT", "An atom cannot be bonded to itself");
+        }
+        if (molecule.bondBetween(first, second).isPresent())
+        {
+            throw new StudioEditException("INVALID_EDIT", "Atoms " + firstId + " and " + secondId + " are already bonded");
+        }
+        requireUnlocked(List.of(firstId, secondId));
+
+        Draft draft = new Draft();
+        String bond = draft.join(first, second, order == null ? BondOrder.SINGLE : order);
+        return new Created(commit(draft, "Add bond", List.of(firstId, secondId)), List.of(), List.of(bond));
+    }
+
+    /**
+     * Gives a bond an order, as one edit that can be undone. A double bond's declared stereo goes if it stops being double.
+     *
+     * @param bondId the bond to change
+     * @param order its new order
+     * @return what changed and the version after it, which is the version the session was at if the bond already had that order
+     * @throws StudioEditException as {@link #setBondOrders}
+     */
+    public synchronized Applied setBondOrder(String bondId, BondOrder order)
+    {
+        return setBondOrders(List.of(bondId), order);
+    }
+
+    /**
+     * Gives bonds an order, as one edit that can be undone however many there are. A bond that has that order already is left
+     * alone, and a double bond's declared stereo goes if it stops being double.
+     *
+     * @param bondIds the bonds to change
+     * @param order their new order
+     * @return what changed and the version after it, which is the version the session was at if every bond had that order
+     * @throws StudioEditException with {@code UNKNOWN_ID} for a bond this session does not hold, {@code LOCKED} if an atom of
+     *     a bond that would change is locked, {@code BUSY} if an edit is in progress, {@code INVALID_EDIT} if no bond is named,
+     *     and {@code INVALID_MESSAGE} if there is no order
+     */
+    public synchronized Applied setBondOrders(Collection<String> bondIds, BondOrder order)
+    {
+        requireIdle();
+        if (order == null)
+        {
+            throw new StudioEditException("INVALID_MESSAGE", "An order is required");
+        }
+        if (bondIds.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "No bond was named to change");
+        }
+
+        List<Bond> changing = bondIds.stream().distinct().map(this::bondNamed).filter(bond -> bond.order() != order).toList();
+        if (changing.isEmpty())
+        {
+            return new Applied(version, Map.of(), null);
+        }
+
+        Set<String> ends = new LinkedHashSet<>();
+        changing.forEach(bond ->
+        {
+            ends.add(atomIds.get(bond.first()));
+            ends.add(atomIds.get(bond.second()));
+        });
+        requireUnlocked(ends);
+
+        Draft draft = new Draft();
+        changing.forEach(bond -> draft.reorder(draft.jointOf(bond), order));
+        return commit(draft, changing.size() == 1 ? "Set bond order" : "Set bond orders", ends);
+    }
+
+    /**
+     * Deletes atoms and the bonds they are in.
+     *
+     * @param ids the atoms to delete
+     * @param hydrogens whether to also delete each hydrogen that is bonded only to a deleted atom
+     * @return what changed and the version after it
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, {@code LOCKED} if any
+     *     atom that would go is locked, {@code BUSY} if an edit is in progress, and {@code INVALID_EDIT} if none is named
+     */
+    public synchronized Applied deleteAtoms(Collection<String> ids, boolean hydrogens)
+    {
+        requireIdle();
+        if (ids.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "No atom was named to delete");
+        }
+
+        Set<Atom> going = IdentitySet.of();
+        ids.forEach(id -> going.add(atomNamed(id)));
+        if (hydrogens)
+        {
+            for (Atom atom : List.copyOf(going))
+            {
+                for (Atom neighbour : molecule.neighboursOf(atom))
+                {
+                    if (neighbour.element().equals("H") && molecule.bondsOf(neighbour).size() == 1)
+                    {
+                        going.add(neighbour);
+                    }
+                }
+            }
+        }
+
+        List<String> names = going.stream().map(atomIds::get).sorted().toList();
+        requireUnlocked(names);
+
+        Draft draft = new Draft();
+        going.forEach(draft::remove);
+        return commit(draft, going.size() == 1 ? "Delete atom" : "Delete atoms", names);
+    }
+
+    /**
+     * Deletes multiple bonmds.
+     *
+     * @param ids the bonds to delete
+     * @return what changed and the version after it
+     * @throws StudioEditException with {@code UNKNOWN_ID} for a bond this session does not hold, {@code LOCKED} if an atom
+     *     of any of them is locked, {@code BUSY} if an edit is in progress, and {@code INVALID_EDIT} if none is named
+     */
+    public synchronized Applied deleteBonds(Collection<String> ids)
+    {
+        requireIdle();
+        if (ids.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "No bond was named to delete");
+        }
+
+        List<Bond> going = ids.stream().distinct().map(this::bondNamed).toList();
+        Set<String> ends = new LinkedHashSet<>();
+        going.forEach(bond ->
+        {
+            ends.add(atomIds.get(bond.first()));
+            ends.add(atomIds.get(bond.second()));
+        });
+        requireUnlocked(ends);
+
+        Draft draft = new Draft();
+        going.forEach(bond -> draft.remove(draft.jointOf(bond)));
+        return commit(draft, going.size() == 1 ? "Delete bond" : "Delete bonds", ends);
+    }
+
+    /**
+     * @throws StudioEditException with {@code BUSY} if an edit of positions is in progress, which a change of the graph would be filed with
+     */
+    private void requireIdle()
+    {
+        if (!uncommitted.isEmpty() || uncommittedPose != null)
+        {
+            throw new StudioEditException("BUSY", "An edit is still in progress, so the structure cannot be changed yet");
+        }
+    }
+
+    /**
+     * Makes a rebuilt graph the working one and files the change as one edit.
+     *
+     * @param draft the rebuilt graph
+     * @param label what the edit is called in the history
+     * @param touched the atoms the edit changed, which refuse it being undone or redone if locked since
+     * @return the edit, which changed the graph
+     */
+    private Applied commit(Draft draft, String label, Collection<String> touched)
+    {
+        Graph before = graph();
+        restore(new Graph(draft.build(), draft.ids, draft.jointIds, draft.positions));
+        file(new Edit(Map.of(), Map.of(), null, null, before, graph(), new LinkedHashSet<>(touched), label, System.currentTimeMillis()));
+        return new Applied(++version, Map.of(), null, true);
+    }
+
+    /**
+     * Gives atoms the hydrogens that fill their valence.
+     *
+     * @param ids the atoms to fill
+     * @return the edit and the hydrogens and bonds it made, which is nothing, and does not raise the version, if every atom was full already
+     * @throws StudioEditException with {@code UNKNOWN_ID} for an atom this session does not hold, {@code LOCKED} if an atom
+     *     that would take a hydrogen is locked, {@code BUSY} if an edit is in progress, and {@code INVALID_EDIT} if none is
+     *     named or none is an atom whose valence is known
+     */
+    public synchronized Created fillValences(Collection<String> ids)
+    {
+        requireIdle();
+        if (ids.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "No atom was named to fill");
+        }
+
+        List<Atom> named = ids.stream().distinct().map(this::atomNamed).toList();
+        List<Atom> known = named.stream().filter(atom -> Valences.areKnownFor(atom.element())).toList();
+        if (known.isEmpty())
+        {
+            throw new StudioEditException("INVALID_EDIT", "None of the atoms is one whose valence is known, which only the organic subset is");
+        }
+
+        Map<Atom, Integer> wanting = new IdentityHashMap<>();
+        List<Atom> order = new ArrayList<>();
+        for (Atom atom : known)
+        {
+            int missing = hydrogensMissing(atom);
+            if (missing > 0)
+            {
+                wanting.put(atom, missing);
+                order.add(atom);
+            }
+        }
+        if (order.isEmpty())
+        {
+            return new Created(new Applied(version, Map.of(), null), List.of(), List.of());
+        }
+        requireUnlocked(order.stream().map(atomIds::get).toList());
+
+        Draft draft = new Draft();
+        List<String> atoms = new ArrayList<>();
+        List<String> bonds = new ArrayList<>();
+        List<String> touched = new ArrayList<>();
+        for (Atom atom : order)
+        {
+            touched.add(atomIds.get(atom));
+            Vec3 centre = positionOfAtom(atom);
+            double length = ElementData.covalentRadius(ElementData.numberOf(atom.element())) + ElementData.covalentRadius(1);
+
+            List<Vec3> arms = new ArrayList<>();
+            for (Atom neighbour : molecule.neighboursOf(atom))
+            {
+                Vec3 arm = positionOfAtom(neighbour).minus(centre);
+                if (arm.length() > 1e-6)
+                {
+                    arms.add(arm.normalised());
+                }
+            }
+
+            for (int each = 0; each < wanting.get(atom); each++)
+            {
+                Vec3 direction = hydrogenDirection(atom, arms);
+                arms.add(direction);
+                Atom hydrogen = Atom.builder("H").hydrogenCount(0).build();
+                String hydrogenId = draft.add(hydrogen, centre.plus(direction.times(length)));
+                atoms.add(hydrogenId);
+                touched.add(hydrogenId);
+                bonds.add(draft.join(atom, hydrogen, BondOrder.SINGLE));
+            }
+        }
+
+        return new Created(commit(draft, "Fill valences", touched), atoms, bonds);
+    }
+
+    /**
+     * @param atom an atom of the working graph whose valence is known
+     * @return how many hydrogens it takes to fill the smallest valence its charge allows that its bonds do not exceed
+     */
+    private int hydrogensMissing(Atom atom)
+    {
+        int spent = 0;
+        int aromatic = 0;
+        for (Bond bond : molecule.bondsOf(atom))
+        {
+            switch (bond.order())
+            {
+                case SINGLE -> spent += 1;
+                case DOUBLE -> spent += 2;
+                case TRIPLE -> spent += 3;
+                case QUADRUPLE -> spent += 4;
+                case AROMATIC -> aromatic++;
+            }
+        }
+        // aromatic bonds are worth one and a half each, as the molecule counts them
+        spent += Math.round(1.5f * aromatic);
+
+        int required = spent;
+        OptionalInt valence = ValenceTable.allowedFor(atom.element(), atom.charge()).stream().mapToInt(Integer::intValue).filter(each -> each >= required).findFirst();
+        if (valence.isEmpty())
+        {
+            valence = Valences.toFill(atom.element(), required);
+        }
+        return valence.isPresent() ? Math.max(0, valence.getAsInt() - spent) : 0;
+    }
+
+    /**
+     * Chooses where the next hydrogen of an atom goes: where its neighbours, and the hydrogens already placed on it, leave
+     * room, which for an atom with a double bond and nothing else is in the plane of what is beyond that bond.
+     *
+     * @param atom the atom
+     * @param arms unit vectors from the atom to each of its neighbours and the hydrogens already placed
+     * @return a unit vector for the new bond
+     */
+    private Vec3 hydrogenDirection(Atom atom, List<Vec3> arms)
+    {
+        // the one arm is a bond of the atom's own, and not a hydrogen placed a moment ago on an atom with none
+        if (arms.size() == 1 && molecule.bondsOf(atom).size() == 1)
+        {
+            Vec3 along = arms.getFirst();
+            BondOrder order = molecule.bondsOf(atom).getFirst().order();
+            if (order == BondOrder.TRIPLE)
+            {
+                return along.times(-1);
+            }
+            if (order == BondOrder.DOUBLE)
+            {
+                Vec3 across = acrossDoubleBond(atom, along);
+                return along.times(-0.5).plus(across.times(Math.sqrt(3) / 2));
+            }
+        }
+        return freeDirection(arms);
+    }
+
+    /**
+     * @param atom an atom with one double bond and no other bond
+     * @param along the unit vector from it along that bond
+     * @return a unit vector at right angles to the bond, in the plane of what is bonded beyond it and on the side away from
+     *     it, so that the atom's hydrogens and the other end's substituents lie in one plane; any at right angles if the
+     *     other end has no other bond
+     */
+    private Vec3 acrossDoubleBond(Atom atom, Vec3 along)
+    {
+        Atom other = molecule.neighboursOf(atom).getFirst();
+        for (Atom beyond : molecule.neighboursOf(other))
+        {
+            if (beyond != atom)
+            {
+                Vec3 toBeyond = positionOfAtom(beyond).minus(positionOfAtom(other));
+                Vec3 flat = toBeyond.minus(along.times(toBeyond.dot(along)));
+                if (flat.length() > 1e-6)
+                {
+                    return flat.normalised().times(-1);
+                }
+            }
+        }
+        return perpendicularTo(along);
+    }
+
+    /**
+     * Chooses where to put a new atom bonded to an existing one: a bond length away, where the atom's neighbours leave
+     * the most room. Up to three neighbours it takes the position of the next ideal tetrahedral or trigonal arm; more
+     * than that it takes the direction furthest from them all.
+     *
+     * @param target the atom to attach to
+     * @param element the new atom's element symbol
+     * @return where to put it, in the molecule's own frame
+     */
+    private Vec3 placementFor(Atom target, String element)
+    {
+        Vec3 centre = positionOfAtom(target);
+        List<Vec3> arms = new ArrayList<>();
+        for (Atom neighbour : molecule.neighboursOf(target))
+        {
+            Vec3 arm = positionOfAtom(neighbour).minus(centre);
+            if (arm.length() > 1e-6)
+            {
+                arms.add(arm.normalised());
+            }
+        }
+
+        double length = ElementData.covalentRadius(ElementData.numberOf(target.element())) + ElementData.covalentRadius(ElementData.numberOf(element));
+        return centre.plus(freeDirection(arms).times(length));
+    }
+
+    /**
+     * @param arms unit vectors from an atom to each of its neighbours
+     * @return a unit vector for a new bond from it
+     */
+    private static Vec3 freeDirection(List<Vec3> arms)
+    {
+        if (arms.isEmpty())
+        {
+            return new Vec3(1, 0, 0);
+        }
+
+        Vec3 first = arms.getFirst();
+        if (arms.size() == 1)
+        {
+            // a tetrahedral angle from the one bond, which is cos 109.47 = -1/3
+            return first.times(-1.0 / 3).plus(perpendicularTo(first).times(Math.sqrt(8.0) / 3));
+        }
+
+        Vec3 second = arms.get(1);
+        Vec3 normal = first.cross(second);
+        if (arms.size() == 2)
+        {
+            Vec3 back = first.plus(second).times(-1);
+            if (normal.length() < 1e-6 || back.length() < 1e-6)
+            {
+                return perpendicularTo(first);
+            }
+            // arms wide apart are trigonal and leave the third place in their plane; closer ones are tetrahedral and leave two, one on each side
+            if (first.dot(second) < -0.4)
+            {
+                return back.normalised();
+            }
+            return back.normalised().times(Math.sqrt(1.0 / 3)).plus(normal.normalised().times(Math.sqrt(2.0 / 3)));
+        }
+
+        if (arms.size() == 3)
+        {
+            Vec3 sum = first.plus(second).plus(arms.get(2));
+            if (sum.length() > 0.1)
+            {
+                return sum.times(-1).normalised();
+            }
+            // three arms in a plane leave only the two directions at right angles to it
+            return normal.length() < 1e-6 ? perpendicularTo(first) : normal.normalised();
+        }
+
+        // crowded: of many evenly spread directions, the one whose nearest arm is furthest away
+        int samples = 256;
+        Vec3 best = perpendicularTo(first);
+        double bestRoom = -2;
+        for (int sample = 0; sample < samples; sample++)
+        {
+            double y = 1 - 2 * (sample + 0.5) / samples;
+            double radius = Math.sqrt(1 - y * y);
+            double turn = sample * Math.PI * (3 - Math.sqrt(5));
+            Vec3 candidate = new Vec3(Math.cos(turn) * radius, y, Math.sin(turn) * radius);
+            double nearest = -2;
+            for (Vec3 arm : arms)
+            {
+                nearest = Math.max(nearest, candidate.dot(arm));
+            }
+            if (-nearest > bestRoom)
+            {
+                bestRoom = -nearest;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * @param vector a unit vector
+     * @return a unit vector at right angles to it
+     */
+    private static Vec3 perpendicularTo(Vec3 vector)
+    {
+        Vec3 axis = Math.abs(vector.x()) <= Math.abs(vector.y()) && Math.abs(vector.x()) <= Math.abs(vector.z())
+                ? new Vec3(1, 0, 0)
+                : Math.abs(vector.y()) <= Math.abs(vector.z()) ? new Vec3(0, 1, 0) : new Vec3(0, 0, 1);
+        return vector.cross(axis).normalised();
+    }
+
+    /**
+     * A copy of the working graph being changed, which becomes the working graph if the change is made. Declared
+     * stereochemistry is kept only where nothing around it changed, because a declaration is relative to the order of an
+     * atom's bonds, and it means nothing once one is added or taken away.
+     */
+    private final class Draft
+    {
+        private final Molecule source = molecule;
+        private final List<Atom> atoms = new ArrayList<>(source.atoms());
+        private final Map<Atom, String> ids = new IdentityHashMap<>(atomIds);
+        private final Map<String, Vec3> positions = new LinkedHashMap<>(geometry);
+        private final Map<Set<String>, String> jointIds = new LinkedHashMap<>(bondIds);
+        private final List<Joint> joints = new ArrayList<>();
+        private final Set<Atom> disturbed = IdentitySet.of();
+
+        private Draft()
+        {
+            source.bonds().forEach(bond -> joints.add(new Joint(bond.first(), bond.second(), bond.order(), bond)));
+        }
+
+        /**
+         * @param atom the atom to add
+         * @param where where to put it
+         * @return the name it was given, which is never one the session has used
+         */
+        String add(Atom atom, Vec3 where)
+        {
+            String id = "a" + (++atomCounter);
+            atoms.add(atom);
+            ids.put(atom, id);
+            positions.put(id, where);
+            return id;
+        }
+
+        /**
+         * @param first one atom
+         * @param second the other
+         * @param order the bond's order
+         * @return the name the bond was given, which is never one the session has used
+         */
+        String join(Atom first, Atom second, BondOrder order)
+        {
+            String id = "b" + (++bondCounter);
+            joints.add(new Joint(first, second, order, null));
+            jointIds.put(Set.of(ids.get(first), ids.get(second)), id);
+            disturbed.add(first);
+            disturbed.add(second);
+            return id;
+        }
+
+        /**
+         * @param bond a bond of the graph being changed
+         * @return what it is in the rebuilt graph
+         */
+        Joint jointOf(Bond bond)
+        {
+            return joints.stream().filter(joint -> joint.original() == bond).findFirst().orElseThrow();
+        }
+
+        /**
+         * @param joint the bond to give a different order
+         * @param order its new order
+         */
+        void reorder(Joint joint, BondOrder order)
+        {
+            joints.replaceAll(each -> each == joint ? new Joint(joint.first(), joint.second(), order, joint.original()) : each);
+        }
+
+        /**
+         * @param joint the bond to take away
+         */
+        void remove(Joint joint)
+        {
+            joints.removeIf(each -> each == joint);
+            jointIds.remove(Set.of(ids.get(joint.first()), ids.get(joint.second())));
+            disturbed.add(joint.first());
+            disturbed.add(joint.second());
+        }
+
+        /**
+         * @param atom the atom to take away, with its bonds
+         */
+        void remove(Atom atom)
+        {
+            for (Joint joint : List.copyOf(joints))
+            {
+                if (joint.first() == atom || joint.second() == atom)
+                {
+                    remove(joint);
+                }
+            }
+            atoms.removeIf(each -> each == atom);
+            positions.remove(ids.remove(atom));
+        }
+
+        /**
+         * @return the molecule these changes make
+         */
+        Molecule build()
+        {
+            Molecule.Builder builder = new Molecule.Builder();
+            atoms.forEach(builder::addAtom);
+            joints.forEach(joint -> builder.addBond(joint.first(), joint.second(), joint.order()));
+
+            for (Atom atom : atoms)
+            {
+                if (!disturbed.contains(atom) && source.containsAtom(atom))
+                {
+                    source.chiralityOf(atom).ifPresent(chirality -> builder.setChirality(atom, chirality));
+                }
+            }
+            for (Joint joint : joints)
+            {
+                Bond was = joint.original();
+                if (was != null && was.order() == BondOrder.DOUBLE && joint.order() == BondOrder.DOUBLE
+                        && !disturbed.contains(joint.first()) && !disturbed.contains(joint.second()))
+                {
+                    source.doubleBondStereoOf(was).ifPresent(stereo -> builder.setDoubleBondStereo(joint.first(), joint.second(), stereo));
+                }
+            }
+            return builder.build();
+        }
     }
 
     /**
@@ -1158,7 +1828,7 @@ public final class StudioSession
      */
     private Graph graph()
     {
-        return new Graph(molecule, new IdentityHashMap<>(atomIds), new LinkedHashMap<>(bondIds));
+        return new Graph(molecule, new IdentityHashMap<>(atomIds), new LinkedHashMap<>(bondIds), new LinkedHashMap<>(geometry));
     }
 
     /**
@@ -1171,6 +1841,10 @@ public final class StudioSession
         molecule = graph.molecule();
         atomIds = new IdentityHashMap<>(graph.atomIds());
         bondIds = new LinkedHashMap<>(graph.bondIds());
+        geometry.clear();
+        geometry.putAll(graph.geometry());
+        // a lock on an atom that is gone has nothing left to refuse
+        locked.retainAll(geometry.keySet());
         collapsed = null;
         structureShape = null;
         nodeAtoms = null;

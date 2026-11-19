@@ -1,13 +1,15 @@
 import {
-  CylinderGeometry,
-  Mesh,
-  MeshBasicMaterial,
-  MeshStandardMaterial,
-  Quaternion,
-  SphereGeometry,
-  Vector3,
+    type ColorRepresentation,
+    CylinderGeometry,
+    Mesh,
+    MeshBasicMaterial,
+    MeshStandardMaterial,
+    Quaternion,
+    SphereGeometry,
+    Vector3,
 } from "three";
-import { LabelFactory } from "./labels";
+import {type Finish, roughnessOf} from "./finish";
+import {LabelFactory} from "./labels";
 
 /** The direction a unit cylinder's axis lies along before it is turned. */
 export const UP = new Vector3(0, 1, 0);
@@ -21,6 +23,19 @@ export class Primitives {
   readonly sphereGeometry = new SphereGeometry(1, 24, 16);
 
   readonly labels = new LabelFactory();
+
+  /** How shiny the surfaces this kit makes are. */
+  finish: Finish = "matte";
+
+  /**
+   * Makes the material an atom or a bond is drawn with.
+   *
+   * @param colour its colour
+   * @returns a new opaque material with this kit's current finish
+   */
+  solid(colour: ColorRepresentation): MeshStandardMaterial {
+    return new MeshStandardMaterial({ color: colour, roughness: roughnessOf(this.finish) });
+  }
 
   /**
    * Makes a cylinder that runs from one point to another.

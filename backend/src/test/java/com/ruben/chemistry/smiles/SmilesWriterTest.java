@@ -9,10 +9,12 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.util.Span;
-
-import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.List;
 
 import static com.ruben.chemistry.smiles.SmilesWriter.write;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +32,30 @@ class SmilesWriterTest
             .build();
 
         assertThat(write(molecule)).isEqualTo("C");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"He", "Fe", "Na", "Si"})
+    void writes_an_atom_outside_the_organic_subset_in_brackets(String element)
+    {
+        Molecule molecule = new Molecule.Builder().addAtom(Atom.builder(element).hydrogenCount(0).build()).build();
+
+        assertThat(write(molecule)).as(element).isEqualTo("[" + element + "]");
+    }
+
+    @Test
+    void writes_a_chain_of_organic_atoms_around_a_metal_with_only_the_metal_in_brackets()
+    {
+        Atom c = Atom.organic("C");
+        Atom fe = Atom.builder("Fe").hydrogenCount(0).build();
+        Atom cl = Atom.organic("Cl");
+        Molecule molecule = new Molecule.Builder()
+            .addAtoms(c, fe, cl)
+            .addBond(c, fe, BondOrder.SINGLE)
+            .addBond(fe, cl, BondOrder.SINGLE)
+            .build();
+
+        assertThat(write(molecule)).isEqualTo("C[Fe]Cl");
     }
 
     @Test

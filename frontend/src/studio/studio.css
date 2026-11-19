@@ -730,7 +730,8 @@ body.resizing {
 }
 
 /* a choice from a list looks like the buttons beside it */
-.properties select {
+.properties select,
+.viewport-tools select {
   font: inherit;
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;
@@ -742,24 +743,29 @@ body.resizing {
   cursor: pointer;
 }
 
-.properties select:hover:not(:disabled) {
+.properties select:hover:not(:disabled),
+.viewport-tools select:hover:not(:disabled) {
   border-color: var(--hover);
   background-color: color-mix(in srgb, var(--hover) 25%, transparent);
 }
 
-.properties select:focus-visible {
+.properties select:focus-visible,
+.viewport-tools select:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 
-.properties select:disabled {
+.properties select:disabled,
+.viewport-tools select:disabled {
   color: var(--ink-soft);
   cursor: default;
 }
 
 /* the open list is drawn by the browser, so it needs a solid background that follows the theme */
 .properties select option,
-.properties select optgroup {
+.properties select optgroup,
+.viewport-tools select option,
+.viewport-tools select optgroup {
   color: var(--ink);
   background-color: var(--panel);
 }
@@ -1063,4 +1069,50 @@ body.resizing {
 .segmented-caption {
   font-size: 0.8rem;
   color: var(--ink-soft);
+}
+
+/* the rectangle dragged to select the atoms inside it */
+.marquee {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: var(--selected-fill);
+}
+
+/* the Render options section, pinned to the foot of the Outliner and folding down to its title */
+.render-options {
+  flex: none;
+  border-top: 1px solid var(--edge);
+  padding: 0.2rem 0.5rem 0.35rem;
+}
+
+.render-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.2rem 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.render-body {
+  margin: 0.15rem 0 0;
+}
+
+.render-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.render-value {
+  min-width: 2.6rem;
+  text-align: right;
 }

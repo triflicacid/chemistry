@@ -1,9 +1,18 @@
-import { Color, Group, MeshStandardMaterial, Vector3 } from "three";
-import type { Connection3D } from "../api/types/structure";
-import type { Primitives } from "./primitives";
+import {Color, Group, Vector3} from "three";
+import type {Connection3D} from "../api/types/structure";
+import type {Primitives} from "./primitives";
 
 /** How atoms and bonds are drawn. */
 export type Style = "ball_and_stick" | "sticks" | "wireframe" | "spacefill";
+export const STYLES: readonly Style[] = ["ball_and_stick", "sticks", "wireframe", "spacefill"];
+
+/**
+ * @param value anything
+ * @returns it if it is a style, and otherwise the default
+ */
+export function asStyle(value: unknown): Style {
+  return STYLES.find((style) => style === value) ?? "ball_and_stick";
+}
 
 /** What is needed of a bond to draw it: the two atoms it joins, by index, and its order. */
 export type BondEnds = Pick<Connection3D, "first" | "second" | "order">;
@@ -98,8 +107,8 @@ export function buildBond(
       addDashes(kit, group, a, b, line.width, first, second);
     } else {
       const middle = a.clone().add(b).multiplyScalar(0.5);
-      group.add(kit.cylinder(a, middle, line.width, new MeshStandardMaterial({ color: first, roughness: 0.5 })));
-      group.add(kit.cylinder(middle, b, line.width, new MeshStandardMaterial({ color: second, roughness: 0.5 })));
+      group.add(kit.cylinder(a, middle, line.width, kit.solid(first)));
+      group.add(kit.cylinder(middle, b, line.width, kit.solid(second)));
     }
   }
   return group;
@@ -161,6 +170,6 @@ function addDashes(kit: Primitives, group: Group, a: Vector3, b: Vector3, width:
     const start = a.clone().addScaledVector(direction, i * step + step * 0.15);
     const end = a.clone().addScaledVector(direction, i * step + step * 0.85);
     const colour = i < count / 2 ? first : second;
-    group.add(kit.cylinder(start, end, width, new MeshStandardMaterial({ color: colour, roughness: 0.5 })));
+    group.add(kit.cylinder(start, end, width, kit.solid(colour)));
   }
 }

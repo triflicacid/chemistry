@@ -41,7 +41,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 12;
+    private static final int PROTOCOL_VERSION = 14;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -845,7 +845,218 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        StudioSession session = current(context, "atom.set", sequence, request.sessionId(), request.baseVersion());
+        graphEdit(context, "atom.set", sequence, request.sessionId(), request.baseVersion(),
+                session -> noneCreated(session.setAtom(request.atom(), request.element(), request.charge(), request.isotope())));
+    }
+
+    /**
+     * Adds an atom, bonded to an existing one or free.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void addAtom(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.AtomAddRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.AtomAddRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("atom.add", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.element() == null || (request.attach() == null && request.position() == null))
+        {
+            context.error("atom.add", sequence, "INVALID_MESSAGE", "element is required, and attach, position or both");
+            return;
+        }
+
+        graphEdit(context, "atom.add", sequence, request.sessionId(), request.baseVersion(),
+                session -> session.addAtom(request.element(), request.attach(), request.order(), request.position()));
+    }
+
+    /**
+     * Deletes atoms, and the bonds they are in.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void deleteAtoms(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.AtomDeleteRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.AtomDeleteRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("atom.delete", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.atoms() == null || request.atoms().isEmpty() || request.atoms().contains(null))
+        {
+            context.error("atom.delete", sequence, "INVALID_MESSAGE", "atoms are required");
+            return;
+        }
+
+        graphEdit(context, "atom.delete", sequence, request.sessionId(), request.baseVersion(),
+                session -> noneCreated(session.deleteAtoms(request.atoms(), request.hydrogens() != null && request.hydrogens())));
+    }
+
+    /**
+     * Gives atoms the hydrogens that fill their valence.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void fillValences(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.AtomFillRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.AtomFillRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("atom.fill", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.atoms() == null || request.atoms().isEmpty() || request.atoms().contains(null))
+        {
+            context.error("atom.fill", sequence, "INVALID_MESSAGE", "atoms are required");
+            return;
+        }
+
+        graphEdit(context, "atom.fill", sequence, request.sessionId(), request.baseVersion(), session -> session.fillValences(request.atoms()));
+    }
+
+    /**
+     * Bonds two atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void addBond(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.BondAddRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.BondAddRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("bond.add", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.first() == null || request.second() == null)
+        {
+            context.error("bond.add", sequence, "INVALID_MESSAGE", "first and second are required");
+            return;
+        }
+
+        graphEdit(context, "bond.add", sequence, request.sessionId(), request.baseVersion(),
+                session -> session.addBond(request.first(), request.second(), request.order()));
+    }
+
+    /**
+     * Deletes bonds.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void deleteBonds(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.BondDeleteRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.BondDeleteRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("bond.delete", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.bonds() == null || request.bonds().isEmpty() || request.bonds().contains(null))
+        {
+            context.error("bond.delete", sequence, "INVALID_MESSAGE", "bonds are required");
+            return;
+        }
+
+        graphEdit(context, "bond.delete", sequence, request.sessionId(), request.baseVersion(),
+                session -> noneCreated(session.deleteBonds(request.bonds())));
+    }
+
+    /**
+     * Gives a bond an order.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void bondOrder(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.BondOrderRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.BondOrderRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("bond.order", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        if (request.named().isEmpty() || request.named().contains(null) || request.order() == null)
+        {
+            context.error("bond.order", sequence, "INVALID_MESSAGE", "bond or bonds, and order, are required");
+            return;
+        }
+
+        graphEdit(context, "bond.order", sequence, request.sessionId(), request.baseVersion(),
+                session -> noneCreated(session.setBondOrders(request.named(), request.order())));
+    }
+
+    /**
+     * @param applied an edit that made no atom or bond
+     * @return it, as an edit of the graph that created nothing
+     */
+    private static StudioSession.Created noneCreated(StudioSession.Applied applied)
+    {
+        return new StudioSession.Created(applied, List.of(), List.of());
+    }
+
+    /**
+     * Makes an edit of the graph.
+     *
+     * @param context the connection that asked
+     * @param type the type of the message, for the reply, which is this followed by {@code .ack}
+     * @param sequence the message's sequence number, if it had one
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at
+     * @param edit what to do to the session
+     * @throws IOException if the connection cannot be written
+     */
+    private void graphEdit(WebSocketContext context, String type, Long sequence, String sessionId, Long baseVersion, Function<StudioSession, StudioSession.Created> edit) throws IOException
+    {
+        StudioSession session = current(context, type, sequence, sessionId, baseVersion);
         if (session == null)
         {
             return;
@@ -854,35 +1065,37 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         synchronized (session)
         {
             long before = session.version();
-            StudioSession.Applied applied;
+            StudioSession.Created created;
             try
             {
-                applied = session.setAtom(request.atom(), request.element(), request.charge(), request.isotope());
+                created = edit.apply(session);
             }
             catch (StudioEditException refused)
             {
-                context.error("atom.set", sequence, refused.code(), refused.getMessage());
+                context.error(type, sequence, refused.code(), refused.getMessage());
                 return;
             }
 
-            if (applied.version() != before)
+            if (created.applied().version() != before)
             {
                 save(session);
                 recalculate(session);
             }
 
             Map<String, Object> reply = new LinkedHashMap<>();
-            reply.put("type", "atom.set.ack");
+            reply.put("type", type + ".ack");
             reply.put("sequence", sequence);
-            reply.put("version", applied.version());
+            reply.put("version", created.applied().version());
             reply.put("status", "applied");
+            reply.put("added_atoms", created.atoms());
+            reply.put("added_bonds", created.bonds());
             reply.put("state", StudioState.of(session, null));
             context.sendJson(reply);
         }
     }
 
     /**
-     * Makes an edit the session works out the atoms' new positions for, and answers with where they went.
+     * Makes an edit the session works out the atoms' new positions for.
      *
      * @param context the connection that asked
      * @param type the type of the message, for the reply, which is this followed by {@code .ack}
@@ -1268,6 +1481,12 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("bond.torsion", endpoint::bondTorsion),
                     Map.entry("atom.angle", endpoint::angle),
                     Map.entry("atom.set", endpoint::setAtom),
+                    Map.entry("atom.add", endpoint::addAtom),
+                    Map.entry("atom.delete", endpoint::deleteAtoms),
+                    Map.entry("atom.fill", endpoint::fillValences),
+                    Map.entry("bond.add", endpoint::addBond),
+                    Map.entry("bond.delete", endpoint::deleteBonds),
+                    Map.entry("bond.order", endpoint::bondOrder),
                     Map.entry("optimise.start", endpoint::optimise),
                     Map.entry("optimise.cancel", endpoint::cancelOptimise),
                     Map.entry("edit.undo", endpoint::undo),

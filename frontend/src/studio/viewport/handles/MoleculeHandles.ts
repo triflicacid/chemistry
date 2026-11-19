@@ -116,6 +116,11 @@ export class MoleculeHandles {
     return this.mode !== null && this.controls.axis !== null;
   }
 
+  /** Where the handles are in the scene, which is where a handle being dragged has got to, or null while they are not shown. */
+  get position(): Vector3 | null {
+    return this.mode === null ? null : this.proxy.position.clone();
+  }
+
   /** Whether a handle is held. */
   get dragging(): boolean {
     return this.start !== null;

@@ -1,15 +1,20 @@
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {StateIndex} from "../geometry/StateIndex";
+import {describeStrain} from "../layout/findings";
+import type {GeometryResult} from "../session/messages";
 import {eulerOf, withEuler} from "../session/pose";
 import {useSessionContext} from "../session/SessionContext";
 import type {Pivot} from "../models/ToolModel";
 import {NumberField} from "../controls/NumberField";
+import {MoleculeDetails} from "./MoleculeDetails";
 import {Property, signed} from "./paneParts";
 
 interface MoleculePaneProps {
   id: string;
   index: StateIndex;
+  /** What the server last said about the geometry. */
+  geometry: GeometryResult | null;
   models: Models;
 }
 
@@ -21,7 +26,7 @@ const PIVOTS: { value: Pivot; label: string }[] = [
 ];
 
 /** Detail about one molecule of the session. */
-export function MoleculePane({ id, index, models }: MoleculePaneProps) {
+export function MoleculePane({ id, index, geometry, models }: MoleculePaneProps) {
   const { moveMolecule } = useSessionContext();
   const { tools } = models;
   const { pivot, point } = useObservable(tools);
@@ -37,10 +42,18 @@ export function MoleculePane({ id, index, models }: MoleculePaneProps) {
       <h3 className="pane-title">Molecule</h3>
       <dl className="properties">
         <Property name="Name" value={fragment.name} />
-        <Property name="Formula" value={index.formula(id)} mono />
+      </dl>
+
+      <h4 className="pane-subtitle">Chemistry</h4>
+      <MoleculeDetails state={index.state} models={models} fragment={fragment}>
         <Property name="Atoms" value={String(fragment.atoms.length)} />
         <Property name="Bonds" value={String(index.bondsInFragment(id).length)} />
         <Property name="Charge" value={signed(charge)} />
+      </MoleculeDetails>
+
+      <h4 className="pane-subtitle">Geometry</h4>
+      <dl className="properties">
+        <Property name="Strain" value={describeStrain(index.state, geometry, new Set(fragment.atoms))} />
         <dt>Position</dt>
         <dd className="position">
           {(["x", "y", "z"] as const).map((axis) => (
@@ -98,7 +111,6 @@ export function MoleculePane({ id, index, models }: MoleculePaneProps) {
           </>
         )}
       </dl>
-      {index.state.fragments.length > 1 && <p className="panel-note">The session holds one molecule, so moving this part moves all of them together.</p>}
     </>
   );
 }

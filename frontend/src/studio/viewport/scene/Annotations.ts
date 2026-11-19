@@ -1,5 +1,4 @@
 import {Color, DoubleSide, Group, Mesh, MeshBasicMaterial, PlaneGeometry, Vector3} from "three";
-import {ballRadius} from "../../../render/bonds";
 import {disposeMaterials} from "../../../render/dispose";
 import type {Primitives} from "../../../render/primitives";
 import type {Stage} from "../../../render/stage";
@@ -9,7 +8,7 @@ import {torsion} from "../../geometry/torsion";
 import {angleAt, planeNormal} from "../../geometry/angle";
 import {conjugationOf, type SystemView} from "../../geometry/conjugation";
 import {piCloud, piLabel} from "../../../render/overlays";
-import {type AtomNode, type MoleculeScene, STYLE} from "./MoleculeScene";
+import {type AtomNode, type MoleculeScene} from "./MoleculeScene";
 import {NO_ITEMS} from "../../models/items";
 
 /** How many selected atoms there can be for the bonds on them to be labelled with their lengths. */
@@ -182,7 +181,7 @@ export class Annotations {
         // the name sits just above the atom, which is as far as the ball reaches plus a little
         const note = this.kit.labels.label(`${node.atom.element}${node.index + 1}`, "#222222", 0.26);
         note.position.copy(node.at);
-        note.position.y += ballRadius(node.atom.radius, STYLE, true) + 0.25;
+        note.position.y += this.scene.radiusOf(node) + 0.25;
         marks.add(note);
       }
     }
@@ -210,7 +209,7 @@ export class Annotations {
       return;
     }
 
-    const radius = ballRadius(node.atom.radius, STYLE, true);
+    const radius = this.scene.radiusOf(node);
     const halo = new Mesh(
       this.kit.sphereGeometry,
       new MeshBasicMaterial({ color: HELD_COLOUR, transparent: true, opacity: 0.35, depthWrite: false }),
@@ -246,7 +245,7 @@ export class Annotations {
     for (const node of [a, d]) {
       const name = this.kit.labels.label(`${node.atom.element}${node.index + 1}`, "#222222", 0.26);
       name.position.copy(node.at);
-      name.position.y += ballRadius(node.atom.radius, STYLE, true) + 0.25;
+      name.position.y += this.scene.radiusOf(node) + 0.25;
       marks.add(name);
     }
 
@@ -278,7 +277,7 @@ export class Annotations {
     for (const node of [from, to]) {
       const name = this.kit.labels.label(`${node.atom.element}${node.index + 1}`, "#222222", 0.26);
       name.position.copy(node.at);
-      name.position.y += ballRadius(node.atom.radius, STYLE, true) + 0.25;
+      name.position.y += this.scene.radiusOf(node) + 0.25;
       marks.add(name);
     }
 
@@ -345,7 +344,7 @@ export class Annotations {
           }),
         );
         halo.position.copy(node.at);
-        halo.scale.setScalar(ballRadius(node.atom.radius, STYLE, true) * (1.25 + 0.4 * amount));
+        halo.scale.setScalar(this.scene.radiusOf(node) * (1.25 + 0.4 * amount));
         halo.renderOrder = 5;
         marks.add(halo);
       }

@@ -22,7 +22,8 @@ export type SubmitResult =
   | { kind: "refused"; message: string };
 
 export type EditResult =
-  | { kind: "applied" }
+  /** `added` names what an edit of the graph made, when it made anything. */
+  | { kind: "applied"; added?: { atoms: string[]; bonds: string[] } }
   | { kind: "conflict" }
   | { kind: "refused"; message: string };
 

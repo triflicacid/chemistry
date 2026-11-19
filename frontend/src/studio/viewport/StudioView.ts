@@ -1,4 +1,7 @@
+import {Mesh, MeshStandardMaterial} from "three";
 import type {Vec3} from "../../api/types/structure";
+import type {Style} from "../../render/bonds";
+import {type Finish, roughnessOf} from "../../render/finish";
 import {Primitives} from "../../render/primitives";
 import {Stage} from "../../render/stage";
 import type {GridKind, GridPlaneChoice} from "./grid";
@@ -14,6 +17,7 @@ import {CameraLock} from "./camera/CameraLock";
 import {CameraHudInteraction} from "./input/CameraHudInteraction";
 import {TransformHandleInteraction} from "./input/TransformHandleInteraction";
 import {ActiveMode} from "./input/modes/ActiveMode";
+import {EditMode} from "./input/modes/EditMode";
 import {MoveMode} from "./input/modes/MoveMode";
 import {PanMode} from "./input/modes/PanMode";
 import {RotateMode} from "./input/modes/RotateMode";
@@ -24,6 +28,7 @@ import {RollRingInteraction} from "./input/RollRingInteraction";
 import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
 import {PanGuide} from "./scene/PanGuide";
+import {RingGuide} from "./scene/RingGuide";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
 import type {Emphasis} from "../models/items";
 import type {SystemView} from "../geometry/conjugation";
@@ -58,6 +63,8 @@ export class StudioView {
   private readonly reference: ReferenceLayer;
   /** What debugging shows while the view is panned. */
   private readonly panGuide: PanGuide;
+  /** The ring the edit tool draws to grow an atom into a ring. */
+  private readonly ringGuide: RingGuide;
   /** Flies the camera, with the keys or the stick on the camera HUD. */
   private readonly fly: CameraFly;
   /** The handles on the molecule as a whole. */
@@ -65,12 +72,14 @@ export class StudioView {
   /** The handle on a bond or an angle. */
   private readonly bonds: BondHandleController;
   /** What a press on the viewport does, one for each tool. */
-  private readonly modes: { select: SelectMode; move: MoveMode; rotate: RotateMode; pan: PanMode };
+  private readonly modes: { select: SelectMode; move: MoveMode; rotate: RotateMode; edit: EditMode; pan: PanMode };
   /** Holds the mode in use, which is the one for the tool chosen, and gives the router it, whichever it is. */
   private readonly active: ActiveMode;
   private readonly listeners = new Set<StudioViewListener>();
 
-  /** The session the camera was last framed on, so a new session is framed and an edit to the same one is not. */
+  /** The state last shown. */
+  private shown: SessionState | null = null;
+  /** The session the camera was last framed on. */
   private framedSession: string | null = null;
   /** Hears the canvas's pointer, and offers it to what is in the viewport in order of precedence. */
   private readonly router: PointerRouter;
@@ -93,6 +102,7 @@ export class StudioView {
       },
     });
     this.panGuide = new PanGuide(this.stage);
+    this.ringGuide = new RingGuide(this.stage);
     this.scene = new MoleculeScene(this.stage, this.kit);
     this.lock = new CameraLock(this.stage);
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
@@ -103,10 +113,10 @@ export class StudioView {
     this.fly = new CameraFly(this.stage, this.rig);
     this.reference = new ReferenceLayer(this.stage, this.scene, {
       space: () => this.space,
-      constraint: () => this.modes.move.constraint,
+      constraint: () => this.mover.constraint,
       anchor: () => this.rig.anchor,
-      guideTarget: () => this.modes.move.guideTarget(),
-      guideWanted: () => this.annotations.debug && this.modes.move.guideWanted(),
+      guideTarget: () => this.mover.guideTarget(),
+      guideWanted: () => this.mover.guideWanted(),
     });
     // scrolling goes towards what the pointer is over, which also moves the view, so a molecule can be brought closer
     // without a pan. It moves the point the view orbits, but not the anchor the molecule's handles sit on
@@ -148,8 +158,23 @@ export class StudioView {
       setPlain: (plain) => this.setPlain(plain),
       setMeasured: (measured) => this.setMeasured(measured),
       emit,
+      place: async (placement) => {
+        for (const listener of this.listeners) {
+          const made = await listener.place?.(placement);
+          if (made !== undefined) {
+            return made;
+          }
+        }
+        return null;
+      },
+      join: async (first, second) => {
+        for (const listener of this.listeners) {
+          await listener.bond?.(first, second);
+        }
+      },
+      ringGuide: this.ringGuide,
     };
-    this.modes = { select: new SelectMode(host), move: new MoveMode(host), rotate: new RotateMode(host), pan: new PanMode(host) };
+    this.modes = { select: new SelectMode(host), move: new MoveMode(host), rotate: new RotateMode(host), edit: new EditMode(host), pan: new PanMode(host) };
     this.active = new ActiveMode(this.modes.select);
 
     this.stage.addOverlay((renderer, camera, capturing) => {
@@ -192,6 +217,11 @@ export class StudioView {
     this.fly.enabled = tool === "pan";
   }
 
+  /** The mode that moves atoms. */
+  private get mover(): MoveMode {
+    return this.mode.tool === "edit" ? this.modes.edit : this.modes.move;
+  }
+
   /** The mode in use. */
   private get mode(): ToolMode {
     return this.active.mode;
@@ -203,6 +233,7 @@ export class StudioView {
    * @param state the state to show; the camera is framed on it the first time a session is shown
    */
   setState(state: SessionState): void {
+    this.shown = state;
     const structureKey = structureKeyOf(state);
     this.scene.locked = new Set(state.locked);
 
@@ -215,8 +246,8 @@ export class StudioView {
       const held = new Set([...this.mode.held(), ...this.molecule.shifted]);
       this.moveAtoms(state.atoms.filter((atom) => !held.has(atom.id)).map((atom) => [atom.id, atom.position]));
       this.scene.refreshLocks();
-      this.reference.refreshGuide();
       this.molecule.sync();
+      this.reference.refreshGuide();
       this.bonds.place();
       return;
     }
@@ -297,8 +328,8 @@ export class StudioView {
     this.annotations.drawLengths();
     this.annotations.drawSystem();
     this.bonds.place();
-    this.reference.placeGuide();
     this.molecule.followAtoms();
+    this.reference.placeGuide();
   }
 
   /**
@@ -310,8 +341,8 @@ export class StudioView {
     this.scene.emphasis = emphasis;
     this.scene.refreshEmphasis();
     this.annotations.drawLengths();
-    this.reference.refreshGuide();
     this.molecule.sync();
+    this.reference.refreshGuide();
   }
 
   /**
@@ -472,8 +503,6 @@ export class StudioView {
   }
 
   /**
-   * Shows or hides the scene axes, the arrows at the orbit anchor. The small triad in the corner is always shown.
-   *
    * @param visible whether to show them
    */
   setAxes(visible: boolean): void {
@@ -481,12 +510,47 @@ export class StudioView {
   }
 
   /**
-   * Turns the debugging overlays on or off. These are the guide for a move: arrows along the axis, or a faint
-   * plane, that the atom being moved is held to; and the guide for a pan: the orbit point, the plane it moves in and
-   * the path it has taken.
-   *
-   * @param enabled whether to draw them
+   * @param style atom/bond style
    */
+  setStyle(style: Style): void {
+    if (this.scene.style === style) {
+      return;
+    }
+
+    this.scene.style = style;
+    this.ringGuide.seeThrough(style === "spacefill");
+    if (this.shown) {
+      // the structure is the same, so only forgetting what it looked like makes it be drawn again
+      this.scene.structureKey = "";
+      this.setState(this.shown);
+    }
+  }
+
+  /**
+   * @param finish atom/bond finish
+   */
+  setFinish(finish: Finish): void {
+    this.kit.finish = finish;
+    this.stage.setEnvironment(finish === "glossy");
+
+    const roughness = roughnessOf(finish);
+    this.scene.content.traverse((object) => {
+      if (object instanceof Mesh && object.material instanceof MeshStandardMaterial) {
+        object.material.roughness = roughness;
+      }
+    });
+    this.stage.requestRender();
+  }
+
+  /**
+   * Makes the scene brighter or dimmer.
+   *
+   * @param factor a multiple of the usual lighting
+   */
+  setBrightness(factor: number): void {
+    this.stage.setBrightness(factor);
+  }
+
   /**
    * Turns the camera where it stands, rather than orbiting, when the left button is dragged.
    *
@@ -500,6 +564,7 @@ export class StudioView {
     }
   }
 
+  /** Turn debug mode on/off. */
   setDebug(enabled: boolean): void {
     this.annotations.debug = enabled;
     this.panGuide.show(enabled && this.mode.tool === "pan");
@@ -530,6 +595,7 @@ export class StudioView {
     this.ring.dispose();
     this.cameraHud.dispose();
     this.panGuide.dispose();
+    this.ringGuide.dispose();
     this.fly.dispose();
     this.reference.dispose();
     this.kit.dispose();
@@ -549,9 +615,10 @@ export class StudioView {
           event.stopPropagation();
           this.bonds.cancel();
         } else if (this.mode.dragging) {
-          // the key abandons the drag and goes no further, so it does not also clear the selection
           event.stopPropagation();
           this.mode.cancelDrag();
+        } else if (this.mode.dismiss?.()) {
+          event.stopPropagation();
         }
       },
     },

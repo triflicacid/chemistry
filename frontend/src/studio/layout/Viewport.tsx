@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import type {SystemView} from "../geometry/conjugation";
-import type {Item, PartItem} from "../models/items";
+import {type Item, type PartItem, selectsEveryMolecule} from "../models/items";
 import type {Models, PickScope} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {StateIndex} from "../geometry/StateIndex";
@@ -11,8 +11,10 @@ import type {SessionPhase} from "../session/types";
 import {useSessionContext} from "../session/SessionContext";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
+import type {ScreenRect} from "../viewport/StudioViewListener";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
+import {useStructureActions} from "./useStructureActions";
 import {ActionTools, DisplayTools} from "./ViewportOverlay";
 
 export interface ViewportProps {
@@ -37,6 +39,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     dragBond,
     dropBond,
     cancelBondDrag,
+    addAtom,
+    addBond,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -45,13 +49,15 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [gridPlane, setGridPlane] = useState<GridPlaneChoice>("xz");
   const [debug, setDebug] = useState(false);
   const [look, setLook] = useState(false);
+  const [selectionArea, setSelectionArea] = useState<ScreenRect | null>(null);
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
   const toolState = useObservable(tools);
-  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold, axis } = toolState;
+  const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold, axis, editClick, ringSize, bondOrder } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
   const internal = tool === "rotate" && rotateTarget === "internal";
-  const picking: PickScope = internal ? "item" : mode;
+  const picking: PickScope = internal || tool === "edit" ? "item" : mode;
+  const structure = useStructureActions(models);
   const selected = useObservable(selection);
   const hovered = useObservable(hover);
 
@@ -77,6 +83,20 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.setAxes(axes);
   }, [view, axes]);
+
+  // render options
+  const { style, finish, brightness } = useObservable(models.render);
+  useEffect(() => {
+    view?.setStyle(style);
+  }, [view, style]);
+
+  useEffect(() => {
+    view?.setFinish(finish);
+  }, [view, finish]);
+
+  useEffect(() => {
+    view?.setBrightness(brightness);
+  }, [view, brightness]);
 
   useEffect(() => {
     view?.setLookAround(look);
@@ -188,7 +208,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.setAxis(turning && axis !== null ? (index?.bonds.get(axis) ?? null) : null);
   }, [view, index, tools, turning, axis]);
 
-  const moleculeSelected = selected.items.some((item) => item.kind === "molecule");
+  const anyMolecule = selected.items.some((item) => item.kind === "molecule");
+  const moleculeSelected = tool === "move" ? anyMolecule && selectsEveryMolecule(selected.items, state?.fragments.length ?? 1) : anyMolecule;
 
   // a selected bond has a handle: an arrow along it with the move tool, which slides to change its length, and a ring about
   // it with the rotate tool, which turns to change its torsion. There is none where an atom it would move is locked
@@ -197,8 +218,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   // what the viewport does with the pointer and the keyboard, and the handles it offers, follows the tool and the selection.
   // It comes after the state is shown, so that it finds the atoms it is to put handles on
   useEffect(() => {
-    view?.setMode(tool, { constraint, carryHydrogens, snap, rotateTarget, selection: selected.items, index, hold, torsion, angle });
-  }, [view, state, locked, tool, constraint, carryHydrogens, snap, rotateTarget, selected, index, hold, torsion, angle]);
+    view?.setMode(tool, { constraint, carryHydrogens, snap, rotateTarget, editClick, ringSize, bondOrder, selection: selected.items, index, hold, torsion, angle });
+  }, [view, state, locked, tool, constraint, carryHydrogens, snap, rotateTarget, editClick, ringSize, bondOrder, selected, index, hold, torsion, angle]);
 
   // a selection with a locked atom in it cannot be moved, so there is nothing for a constraint to hold
   const blocked = state !== null && index !== null && [...index.members(selected.items).atoms].some((id) => state.locked.includes(id));
@@ -259,11 +280,35 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
           selection.clear();
         }
       },
+      updateSelectionArea: setSelectionArea,
+      releaseSelectionArea: (all) => {
+        // the rectangle selects from one molecule, the one of the first thing in it, and leaves what is behind that in others
+        const [first] = all;
+        if (first === undefined) {
+          return;
+        }
+        const fragment = index.fragmentOf({ kind: "atom", id: first });
+        const atoms = fragment === null ? [first] : all.filter((id) => index.fragmentOf({ kind: "atom", id }) === fragment);
+
+        // the bonds between the atoms inside go with them
+        const inside = new Set(atoms);
+        const bonds = [...index.bonds.values()].filter((bond) => inside.has(bond.first) && inside.has(bond.second));
+        selection.addAll([...atoms.map((id): Item => ({ kind: "atom", id })), ...bonds.map((bond): Item => ({ kind: "bond", id: bond.id }))]);
+      },
+      place: async (placement) => {
+        const { element, bondOrder: order } = tools.get();
+        const result = await addAtom(element, placement, order);
+        return result.kind === "applied" ? (result.added?.atoms[0] ?? null) : null;
+      },
+      bond: async (first, second) => {
+        await addBond(first, second, tools.get().bondOrder);
+      },
+      ringSize: (size) => tools.ringSizeTo(size),
       // picking an atom up selects it, so the Inspector shows where it is while it moves
       dragStart: (id) => {
-        const item: Item = { kind: "atom", id };
-        if (!selection.get().items.some((each) => each.kind === "atom" && each.id === id)) {
-          selection.select(item);
+        // an atom of what is selected already, such as a molecule or a ring, is carried with it and does not take its place
+        if (!index.members(selection.get().items).atoms.has(id)) {
+          selection.select({ kind: "atom", id });
         }
       },
       drag: (moves, done) => (done ? void dropAtoms(moves) : dragAtoms(moves)),
@@ -275,7 +320,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       bondDrag: (edit, done) => (done ? void dropBond(edit) : dragBond(edit)),
       bondDragCancel: () => void cancelBondDrag(),
     });
-  }, [view, index, picking, selection, hover, tools, dragAtoms, dropAtoms, cancelDrag, dragMolecule, dropMolecule, cancelMoleculeDrag, dragBond, dropBond, cancelBondDrag]);
+  }, [view, index, picking, selection, hover, tools, addAtom, addBond, dragAtoms, dropAtoms, cancelDrag, dragMolecule, dropMolecule, cancelMoleculeDrag, dragBond, dropBond, cancelBondDrag]);
 
   useEffect(() => {
     if (!view) {
@@ -309,6 +354,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   return (
     <section className="viewport" aria-label="3D viewport">
       <canvas ref={canvasRef} className="viewport-canvas" />
+      {selectionArea && <div className="marquee" style={{ left: selectionArea.x, top: selectionArea.y, width: selectionArea.width, height: selectionArea.height }} aria-hidden="true" />}
       {state && (
         <>
           <DisplayTools
@@ -335,6 +381,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
             onLook={setLook}
             picking={picking}
             onPickScope={() => setMode(mode === "molecule" ? "item" : "molecule")}
+            structure={structure}
             onFrame={frame}
             onCentre={() => view?.centreCamera()}
             onReset={() => view?.resetCamera()}

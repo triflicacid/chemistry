@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 14;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -62,7 +62,7 @@ export interface SessionBond {
   id: string;
   first: string;
   second: string;
-  order: "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE" | "AROMATIC";
+  order: BondOrder;
   aromatic: boolean;
 }
 
@@ -71,6 +71,19 @@ export interface SessionFragment {
   key: string;
   name: string;
   atoms: string[];
+  smiles: string;
+  canonical_smiles: string | null;
+  formula: SessionFormula;
+}
+
+/** One part's formulae. */
+export interface SessionFormula {
+  /** Every atom counted together, e.g. `C₂H₆O`. */
+  molecular: string;
+  /** The molecular formula in its simplest whole-number ratio, e.g. `CH₂O` for glucose. */
+  empirical: string;
+  /** The condensed structural formula, e.g. `CH₃CH₂OH`, or null if it could not be written. */
+  condensed: string | null;
 }
 
 /** Remember the viewer's camera. */
@@ -186,11 +199,22 @@ export interface AtomChange {
   isotope?: number;
 }
 
-export interface AtomSetAck extends ServerEnvelope {
-  type: "atom.set.ack";
+/** A bond's order. */
+export type BondOrder = "SINGLE" | "DOUBLE" | "TRIPLE" | "QUADRUPLE" | "AROMATIC";
+
+/**
+ * Where a new atom goes: bonded to an atom, which the session places it for unless a position is given, or free at a
+ * position in the molecule's own frame.
+ */
+export type AtomPlacement = { attach: string; position?: Vec3 } | { position: Vec3 };
+
+export interface GraphEditAck extends ServerEnvelope {
+  type: "atom.set.ack" | "atom.add.ack" | "atom.delete.ack" | "atom.fill.ack" | "bond.add.ack" | "bond.delete.ack" | "bond.order.ack";
   /** The version the session is at after the change, which is the one before it if nothing needed to change. */
   version: number;
   status: "applied";
+  added_atoms: string[];
+  added_bonds: string[];
   state: SessionState;
 }
 
@@ -398,7 +422,7 @@ export type ServerMessage =
   | PatchAck
   | TransformAck
   | BondEditAck
-  | AtomSetAck
+  | GraphEditAck
   | LockAck
   | CameraAck
   | EditApplied

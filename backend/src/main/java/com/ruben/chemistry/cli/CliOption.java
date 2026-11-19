@@ -1,6 +1,7 @@
 
 package com.ruben.chemistry.cli;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -120,7 +121,7 @@ public sealed interface CliOption<T>
         @Override
         public CliOption<T> withRequirement(Predicate<CliOptions> holds, String message)
         {
-            List<Requirement> more = new java.util.ArrayList<>(requirements);
+            List<Requirement> more = new ArrayList<>(requirements);
             more.add(new Requirement(holds, message));
             return new Choice<>(name, help, values, defaultValueSupplier, shownDefault, more);
         }
@@ -212,7 +213,7 @@ public sealed interface CliOption<T>
         @Override
         public CliOption<T> withRequirement(Predicate<CliOptions> holds, String message)
         {
-            List<Requirement> more = new java.util.ArrayList<>(requirements);
+            List<Requirement> more = new ArrayList<>(requirements);
             more.add(new Requirement(holds, message));
             return new Parsed<>(name, metavar, help, parser, defaultValueSupplier, flag, repeatable, shownDefault, more);
         }

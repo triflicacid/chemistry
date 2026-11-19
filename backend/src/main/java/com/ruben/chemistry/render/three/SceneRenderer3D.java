@@ -18,6 +18,7 @@ import com.ruben.chemistry.space.ElementData;
 import com.ruben.chemistry.space.Projection;
 import com.ruben.chemistry.space.Structure3D;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -602,7 +603,7 @@ public final class SceneRenderer3D
             // the shortest way round from one end to the other without crossing the bond itself
             Map<Integer, Integer> before = new HashMap<>();
             before.put(edge.first(), -1);
-            java.util.ArrayDeque<Integer> queue = new java.util.ArrayDeque<>(List.of(edge.first()));
+            java.util.ArrayDeque<Integer> queue = new ArrayDeque<>(List.of(edge.first()));
             while (!queue.isEmpty() && !before.containsKey(edge.second()))
             {
                 int node = queue.poll();

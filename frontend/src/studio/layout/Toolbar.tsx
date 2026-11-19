@@ -1,5 +1,5 @@
 import {useObservable} from "../models/observable";
-import type {Tool, ToolModel} from "../models/ToolModel";
+import {type Tool, TOOL_ORDER, type ToolModel} from "../models/ToolModel";
 import type {LayoutState, Panel} from "../layoutStore";
 import type {SessionPhase} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
@@ -15,6 +15,11 @@ const TOOLS: Segment<Tool>[] = [
     title: "Dragging an atom moves it, and with a molecule selected its handles move the whole molecule. Hold an atom to an axis or plane with X, Y and Z, or the buttons in the viewport",
   },
   { value: "rotate", label: "Rotate", title: "Turn the whole molecule about a pivot, or choose Bonds & angles to turn about a bond or change an angle" },
+  {
+    value: "edit",
+    label: "Edit",
+    title: "Add atoms and bonds, move atoms, or delete them. With Click set to Add, clicking an atom adds the chosen element bonded to it, empty space adds one on its own, and dragging an atom moves it (hold it to an axis or plane with X, Y and Z). Set Click to Select to choose atoms and bonds to bond them (B) or delete them (Delete)",
+  },
   {
     value: "pan",
     label: "Camera",
@@ -47,7 +52,7 @@ export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onTog
       <span className="brand">Molecular Studio</span>
 
       <div className="tool-group" role="group" aria-label="Tools">
-        <Segmented label="Tool" value={tool} options={TOOLS} onChange={(next) => tools.use(next)} />
+        <Segmented label="Tool" value={tool} options={TOOLS.map((each) => ({ ...each, title: `${each.title} (${TOOL_ORDER.indexOf(each.value) + 1})` }))} onChange={(next) => tools.use(next)} />
         <button
           type="button"
           className="tool"

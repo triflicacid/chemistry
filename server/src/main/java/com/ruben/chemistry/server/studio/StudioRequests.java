@@ -1,10 +1,12 @@
 package com.ruben.chemistry.server.studio;
 
+import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Quaternion;
 import com.ruben.chemistry.space.Vec3;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class StudioRequests
@@ -172,6 +174,84 @@ public final class StudioRequests
      */
     public record AtomSetRequest(String sessionId, Long baseVersion, String atom, String element, Integer charge, Integer isotope)
     {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param element the new atom's element symbol
+     * @param attach the atom to bond it to (optional; without {@code position} the server places the new atom, and without it {@code position} is required)
+     * @param order the order of the bond to {@code attach} (optional, default single)
+     * @param position where to put the atom, in angstroms in the molecule's own frame (optional with {@code attach}, required without)
+     */
+    public record AtomAddRequest(String sessionId, Long baseVersion, String element, String attach, BondOrder order, Vec3 position)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param atoms the atoms to delete
+     * @param hydrogens whether to delete too each hydrogen bonded only to a deleted atom (optional, default false)
+     */
+    public record AtomDeleteRequest(String sessionId, Long baseVersion, List<String> atoms, Boolean hydrogens)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param atoms the atoms to give the hydrogens that fill their valence
+     */
+    public record AtomFillRequest(String sessionId, Long baseVersion, List<String> atoms)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param first one atom to bond
+     * @param second the other
+     * @param order the bond's order (optional, default single)
+     */
+    public record BondAddRequest(String sessionId, Long baseVersion, String first, String second, BondOrder order)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param bonds the bonds to delete
+     */
+    public record BondDeleteRequest(String sessionId, Long baseVersion, List<String> bonds)
+    {
+    }
+
+    /**
+     * @param sessionId the session to edit
+     * @param baseVersion the version the client was looking at when it composed the change
+     * @param bond the bond to change (optional if {@code bonds} names them)
+     * @param bonds the bonds to change, all in one edit (optional if {@code bond} names one)
+     * @param order their new order
+     */
+    public record BondOrderRequest(String sessionId, Long baseVersion, String bond, List<String> bonds, BondOrder order)
+    {
+        /**
+         * @return every bond the request names, once each
+         */
+        public List<String> named()
+        {
+            List<String> all = new ArrayList<>();
+            if (bond != null)
+            {
+                all.add(bond);
+            }
+            if (bonds != null)
+            {
+                all.addAll(bonds);
+            }
+            return all.stream().distinct().toList();
+        }
     }
 
     /**

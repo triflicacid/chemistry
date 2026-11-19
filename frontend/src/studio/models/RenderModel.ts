@@ -1,0 +1,106 @@
+import {asStyle, type Style} from "../../render/bonds";
+import {asFinish, type Finish} from "../../render/finish";
+import {Observable} from "./observable";
+
+/** localStorage key. */
+const RENDER_KEY = "studio.render";
+
+export const MIN_BRIGHTNESS = 0.3;
+export const MAX_BRIGHTNESS = 2;
+export const DEFAULT_BRIGHTNESS = 1;
+
+/** How the molecule is drawn. */
+export interface RenderState {
+  /** How atoms and bonds are drawn. */
+  style: Style;
+  finish: Finish;
+  /** A multiple of the scene's usual lighting. */
+  brightness: number;
+  /** Whether the Render options section is open. */
+  open: boolean;
+}
+
+/**
+ * @param brightness a multiple of the usual lighting
+ * @returns the nearest brightness the scene can have
+ */
+export function clampBrightness(brightness: number): number {
+  return Number.isFinite(brightness) ? Math.min(MAX_BRIGHTNESS, Math.max(MIN_BRIGHTNESS, brightness)) : DEFAULT_BRIGHTNESS;
+}
+
+/** How the molecule is drawn, remembered between visits. */
+export class RenderModel extends Observable<RenderState> {
+  constructor() {
+    super(RenderModel.read());
+  }
+
+  /**
+   * @param style the style
+   */
+  styleWith(style: Style): void {
+    if (this.get().style !== style) {
+      this.change({ ...this.get(), style });
+    }
+  }
+
+  /**
+   * @param finish matte or glossy
+   */
+  finishWith(finish: Finish): void {
+    if (this.get().finish !== finish) {
+      this.change({ ...this.get(), finish });
+    }
+  }
+
+  /**
+   * @param brightness a multiple of the usual lighting
+   */
+  brightnessTo(brightness: number): void {
+    const next = clampBrightness(brightness);
+    if (this.get().brightness !== next) {
+      this.change({ ...this.get(), brightness: next });
+    }
+  }
+
+  /**
+   * Opens or closes the Render options section.
+   *
+   * @param open whether it is open
+   */
+  openTo(open: boolean): void {
+    if (this.get().open !== open) {
+      this.change({ ...this.get(), open });
+    }
+  }
+
+  private change(state: RenderState): void {
+    this.set(state);
+    try {
+      localStorage.setItem(RENDER_KEY, JSON.stringify(state));
+    } catch {
+      // a browser that refuses storage still gets the settings, just not remembered ones
+    }
+  }
+
+  /** Reads back what was stored, filling in anything missing or unusable from the defaults. */
+  private static read(): RenderState {
+    const defaults: RenderState = { style: "ball_and_stick", finish: "matte", brightness: DEFAULT_BRIGHTNESS, open: false };
+    let stored: unknown;
+    try {
+      stored = JSON.parse(localStorage.getItem(RENDER_KEY) ?? "null");
+    } catch {
+      return defaults;
+    }
+
+    const held = stored as Partial<RenderState> | null;
+    if (!held || typeof held !== "object") {
+      return defaults;
+    }
+    return {
+      style: asStyle(held.style),
+      finish: asFinish(held.finish),
+      brightness: typeof held.brightness === "number" ? clampBrightness(held.brightness) : defaults.brightness,
+      open: typeof held.open === "boolean" ? held.open : defaults.open,
+    };
+  }
+}

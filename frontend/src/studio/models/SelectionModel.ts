@@ -52,6 +52,19 @@ export class SelectionModel extends Observable<Selection> {
     }
   }
 
+  /**
+   * Adds items to the selection, leaving what is selected as it is and skipping any that already are.
+   *
+   * @param items what to add, in order; the last one added becomes the active one
+   */
+  addAll(items: readonly Item[]): void {
+    const { items: held, active } = this.get();
+    const added = items.filter((item, at) => !held.some((each) => sameItem(each, item)) && items.findIndex((other) => sameItem(other, item)) === at);
+    if (added.length > 0) {
+      this.set({ items: [...held, ...added], active: added[added.length - 1] ?? active });
+    }
+  }
+
   /** Selects nothing. */
   clear(): void {
     if (this.get().items.length > 0) {
