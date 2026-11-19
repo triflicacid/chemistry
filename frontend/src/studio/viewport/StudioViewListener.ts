@@ -22,10 +22,7 @@ export interface StudioViewListener {
   hover?(pick: PartItem | null, at: ScreenPoint): void;
   /** A left click that was not a camera drag. `additive` is whether shift, control or command was held. */
   click?(pick: PartItem | null, additive: boolean): void;
-  /**
-   * The edit tool wants an atom added: bonded to the atom clicked, free where the empty space clicked is, or at a place
-   * the tool has chosen. Answers with the name of the atom made, or null if none was.
-   */
+  /** An atom is requested to be placed at `placement`. */
   place?(placement: AtomPlacement): Promise<string | null>;
   /** The edit tool wants two atoms bonded, with the order it is set to. */
   bond?(first: string, second: string): Promise<void>;

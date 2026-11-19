@@ -77,10 +77,9 @@ export class StudioView {
   private readonly active: ActiveMode;
   private readonly listeners = new Set<StudioViewListener>();
 
-  /** The state last shown, which a change of style draws again. */
+  /** The state last shown. */
   private shown: SessionState | null = null;
-
-  /** The session the camera was last framed on, so a new session is framed and an edit to the same one is not. */
+  /** The session the camera was last framed on. */
   private framedSession: string | null = null;
   /** Hears the canvas's pointer, and offers it to what is in the viewport in order of precedence. */
   private readonly router: PointerRouter;
@@ -511,9 +510,7 @@ export class StudioView {
   }
 
   /**
-   * Chooses how atoms and bonds are drawn, which draws what is shown afresh.
-   *
-   * @param style balls and sticks, sticks alone, lines, or spheres
+   * @param style atom/bond style
    */
   setStyle(style: Style): void {
     if (this.scene.style === style) {
@@ -530,9 +527,7 @@ export class StudioView {
   }
 
   /**
-   * Chooses how shiny the atoms and bonds are drawn, which draws what is shown afresh.
-   *
-   * @param finish matte, or glossy, which also lets them reflect a studio-like room
+   * @param finish atom/bond finish
    */
   setFinish(finish: Finish): void {
     this.kit.finish = finish;
@@ -620,11 +615,9 @@ export class StudioView {
           event.stopPropagation();
           this.bonds.cancel();
         } else if (this.mode.dragging) {
-          // the key abandons the drag and goes no further, so it does not also clear the selection
           event.stopPropagation();
           this.mode.cancelDrag();
         } else if (this.mode.dismiss?.()) {
-          // putting away what the tool is showing is all the key does then, and leaves the selection as it is
           event.stopPropagation();
         }
       },

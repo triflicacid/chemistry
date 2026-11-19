@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.net.http.WebSocket;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
@@ -1048,7 +1049,7 @@ class StudioSocketEndpointTest
         collector.nextJson();
 
         socket.sendText(optimise(sessionId, 2, 3), true).join();
-        List<Map<String, Object>> reports = new java.util.ArrayList<>();
+        List<Map<String, Object>> reports = new ArrayList<>();
         Map<String, Object> message;
         do
         {

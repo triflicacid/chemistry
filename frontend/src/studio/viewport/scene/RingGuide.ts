@@ -34,10 +34,9 @@ export type Ghost =
   /** Where there is an atom already, which needs no ghost. */
   | "taken";
 
-/** How one ghost is drawn: more solid where the next atom can go, and amber under the pointer. */
+/** How one ghost is drawn. */
 type Look = "next" | "later" | "hover";
 
-/** A ghost atom: a translucent sphere in a thin wireframe shell, which is what makes it read as a hologram and not as an atom. */
 interface GhostAtom {
   body: Mesh;
   shell: Mesh;
@@ -130,8 +129,6 @@ export class RingGuide {
   }
 
   /**
-   * Draws the ring over what is in front of it, or behind it again.
-   *
    * @param through whether to draw it over everything
    */
   seeThrough(through: boolean): void {
@@ -149,7 +146,6 @@ export class RingGuide {
     }
   }
 
-  /** Releases what the guide made. */
   dispose(): void {
     this.root.removeFromParent();
     this.sphere.dispose();
@@ -158,7 +154,7 @@ export class RingGuide {
     [...Object.values(this.bodies), ...Object.values(this.shells)].forEach((material) => material.dispose());
   }
 
-  /** The ghost atom for one place on the ring, made the first time it is wanted. */
+  /** The ghost atom for one place on the ring. */
   private atomAt(place: number): GhostAtom {
     let ghost = this.atoms[place];
     if (!ghost) {
@@ -173,7 +169,7 @@ export class RingGuide {
     return ghost;
   }
 
-  /** The ghost bond for one side of the polygon, made the first time it is wanted. */
+  /** The ghost bond for one side of the polygon. */
   private bondAt(side: number): Mesh {
     let bond = this.bonds[side];
     if (!bond) {
@@ -185,12 +181,10 @@ export class RingGuide {
     return bond;
   }
 
-  /** A see-through fill that is seen from both sides, and that what is behind it is not hidden by. */
   private glass(colour: number, opacity: number): MeshBasicMaterial {
     return new MeshBasicMaterial({ color: colour, transparent: true, opacity, depthWrite: false, side: DoubleSide });
   }
 
-  /** The thin lines of a shell. */
   private wire(colour: number, opacity: number): MeshBasicMaterial {
     return new MeshBasicMaterial({ color: colour, transparent: true, opacity, wireframe: true, depthWrite: false });
   }

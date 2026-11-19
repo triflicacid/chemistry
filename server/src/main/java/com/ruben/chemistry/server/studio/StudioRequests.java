@@ -6,6 +6,7 @@ import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Quaternion;
 import com.ruben.chemistry.space.Vec3;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class StudioRequests
@@ -240,7 +241,7 @@ public final class StudioRequests
          */
         public List<String> named()
         {
-            List<String> all = new java.util.ArrayList<>();
+            List<String> all = new ArrayList<>();
             if (bond != null)
             {
                 all.add(bond);
