@@ -14,6 +14,8 @@ export interface Activity {
   at: number;
   message: string;
   failed: boolean;
+  /** Whether the message has line breaks and spacing that mean something, as a SMILES error's caret does. */
+  preformatted?: boolean;
 }
 
 export type SubmitResult =

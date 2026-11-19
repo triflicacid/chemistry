@@ -3,7 +3,6 @@ import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import type {StateIndex} from "../geometry/StateIndex";
 import type {BondOrder, GeometryResult, SessionBond} from "../session/messages";
-import type {EditResult} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
 import {NumberField} from "../controls/NumberField";
 import {type Segment, Segmented} from "../controls/Segmented";
@@ -36,7 +35,6 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
   // which atom stays is shared with the viewport's handle on the bond
   const { hold } = useObservable(tools);
   const setHold = (next: Hold) => tools.holding(next);
-  const [refusal, setRefusal] = useState<string | null>(null);
   const holds: Segment<Hold>[] = [
     { value: "first", label: index.label(bond.first), title: `Keep ${index.label(bond.first)} where it is and move ${index.label(bond.second)}` },
     { value: "second", label: index.label(bond.second), title: `Keep ${index.label(bond.second)} where it is and move ${index.label(bond.first)}` },
@@ -62,9 +60,8 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
     return () => tools.showTorsion(null);
   }, [tools, bond.id, markedFirst, markedSecond]);
 
-  // the session decides what an edit does and whether it is allowed; this only says why it was not
+  // the session decides what an edit does and whether it is allowed, and reports why it was not
   const heldAtom = hold === "first" ? bond.first : hold === "second" ? bond.second : null;
-  const told = (result: EditResult) => setRefusal(result.kind === "refused" ? result.message : null);
 
   // a locked atom refuses edits, and the bond to it is one
   const locked = index.state.locked.includes(bond.first) || index.state.locked.includes(bond.second);
@@ -99,7 +96,7 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
             disabled={locked}
             aria-label={`Order of ${index.bondLabel(bond)}`}
             title={locked ? "An atom of this bond is locked, so its order cannot be changed" : "Change the order of the bond. Nothing else is adjusted, and one undo takes it back"}
-            onChange={(event) => void setBondOrder([bond.id], event.target.value as BondOrder).then(told)}
+            onChange={(event) => void setBondOrder([bond.id], event.target.value as BondOrder)}
           >
             {ORDERS.map(({ value, label }) => (
               <option key={value} value={value}>
@@ -120,7 +117,7 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
               <NumberField
                 label={`Length of ${index.bondLabel(bond)}, in ångströms`}
                 value={length}
-                onCommit={(value) => void setBondLength(bond.id, value, heldAtom).then(told)}
+                onCommit={(value) => void setBondLength(bond.id, value, heldAtom)}
               />
               <span className="unit">Å</span>
             </dd>
@@ -138,7 +135,7 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
                     value={angle}
                     digits={1}
                     disabled={inRing}
-                    onCommit={(value) => void setBondTorsion(bond.id, reference.first, reference.second, value, heldAtom).then(told)}
+                    onCommit={(value) => void setBondTorsion(bond.id, reference.first, reference.second, value, heldAtom)}
                   />
                   <span className="unit">°</span>
                 </dd>
@@ -174,7 +171,6 @@ export function BondPane({ bond, index, geometry, models }: BondPaneProps) {
           )}
         </>
       )}
-      {refusal !== null && <p className="panel-note">{refusal}</p>}
 
       <RingMemberships kind="bond" id={bond.id} atoms={[bond.first, bond.second]} models={models} />
 

@@ -6,7 +6,8 @@ import type {Models} from "../models/models";
 import type {LayoutState, Panel} from "../layoutStore";
 import {AnalysisPanel} from "../panels/AnalysisPanel";
 import {Inspector} from "../panels/Inspector";
-import {OptimiseNotice} from "../panels/OptimiseNotice";
+import {ErrorToast} from "../panels/popups/ErrorToast";
+import {OptimiseNotice} from "../panels/popups/OptimiseNotice";
 import {RenderOptions} from "../panels/RenderOptions";
 import {Outliner} from "../panels/Outliner";
 import {SmilesBar} from "../controls/SmilesBar";
@@ -79,7 +80,10 @@ export function Workspace(props: WorkspaceProps) {
 
       <div className="viewport-cell">
         <Viewport phase={phase} state={state} geometry={geometry} models={models} />
-        <OptimiseNotice outcome={outcome} />
+        <div className="popups">
+          <OptimiseNotice outcome={outcome} />
+          <ErrorToast activity={activity} />
+        </div>
       </div>
 
       {!layout.inspectorCollapsed && (

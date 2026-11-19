@@ -22,7 +22,7 @@ export interface SessionLink {
   /** The latest state, which is ahead of `state` between a change and the render that shows it. */
   held: RefObject<SessionState | null>;
   adopt: (next: SessionState) => void;
-  note: (message: string, failed?: boolean) => void;
+  note: (message: string, failed?: boolean, preformatted?: boolean) => void;
 }
 
 export interface Socket extends SessionLink {
@@ -50,8 +50,8 @@ export function useSocket(api: ChemistryApi, events: RefObject<SocketEvents>): S
   const socketRef = useRef<StudioSocket | null>(null);
   const held = useRef<SessionState | null>(null);
 
-  const note = useCallback((message: string, failed = false) => {
-    setActivity((before) => [...before, { at: Date.now(), message, failed }].slice(-HISTORY));
+  const note = useCallback((message: string, failed = false, preformatted = false) => {
+    setActivity((before) => [...before, { at: Date.now(), message, failed, preformatted }].slice(-HISTORY));
   }, []);
 
   const adopt = useCallback(
@@ -85,7 +85,8 @@ export function useSocket(api: ChemistryApi, events: RefObject<SocketEvents>): S
       } catch (cause) {
         const message = reason(cause);
         setPhase(isUnknownMolecule(cause) ? { kind: "wanted", message } : { kind: "failed", message });
-        note(message, true);
+        // the server's SMILES errors point at the fault with a caret, which only lines up in a fixed-width font
+        note(message, true, true);
       }
     },
     [adopt, api, note],

@@ -1,6 +1,6 @@
-import { type FormEvent, type KeyboardEvent, useState } from "react";
-import type { SessionState } from "../session/messages";
-import type { SubmitResult } from "../session/useSession";
+import {type FormEvent, type KeyboardEvent, useState} from "react";
+import type {SessionState} from "../session/messages";
+import type {SubmitResult} from "../session/useSession";
 
 export interface SmilesBarProps {
   state: SessionState | null;
@@ -37,6 +37,7 @@ export function SmilesBar({ state, onSubmit }: SmilesBarProps) {
     const result = await onSubmit(shown.trim());
     setBusy(false);
 
+    // the reason is shown as an error over the viewport; the field only needs to know it was refused
     if (result.kind === "refused") {
       setRefusal(result.message);
     } else {
@@ -83,11 +84,6 @@ export function SmilesBar({ state, onSubmit }: SmilesBarProps) {
       >
         {busy ? "Rebuilding…" : "Rebuild structure"}
       </button>
-      {refusal && (
-        <span className="smiles-note failed" role="alert">
-          {refusal}
-        </span>
-      )}
       {!refusal && moved && (
         <span className="smiles-note" role="status">
           The structure has changed since you started editing.
