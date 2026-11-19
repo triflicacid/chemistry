@@ -156,7 +156,7 @@ public final class StudioSession
         @Override
         public void setPose(Pose to)
         {
-            pose = to;
+            drag.setPose(to);
         }
 
         @Override
@@ -172,17 +172,8 @@ public final class StudioSession
         }
     };
 
-    /** What the edit in progress is, or null to describe it by what it moved. */
-    private String pendingLabel;
-
-    /** Where each atom was before the uncommitted moves that have touched it, so a commit can say what it replaced. */
-    private final Map<String, Vec3> uncommitted = new LinkedHashMap<>();
-
-    /** Where the molecule sat before the uncommitted moves of it as a whole, or null if there have been none. */
-    private Pose uncommittedPose;
-
-    /** Where the molecule sits in the scene; its atoms' coordinates are in the molecule's own frame, not this one. */
-    private Pose pose = Pose.IDENTITY;
+    /** Where the atoms are, where the molecule sits, and the edit of them that is in progress. */
+    private final Drag drag;
 
     /** Where the client's camera is, or null if it has never said. It is not part of the version, and is never undone. */
     private Camera camera;
@@ -228,7 +219,7 @@ public final class StudioSession
         this.strain = strain;
         this.names = names;
         this.locked.addAll(locked);
-        this.pose = pose;
+        this.drag = new Drag(geometry, this.locked, pose);
         this.camera = camera;
         this.version = version;
     }
@@ -273,47 +264,8 @@ public final class StudioSession
      */
     public synchronized long move(List<Move> moves, boolean commit)
     {
-        for (Move move : moves)
-        {
-            if (!geometry.containsKey(move.atomId()))
-            {
-                throw new StudioEditException("UNKNOWN_ID", "This session holds no atom '" + move.atomId() + "'");
-            }
-            if (locked.contains(move.atomId()))
-            {
-                throw new StudioEditException("LOCKED", "Atom " + move.atomId() + " is locked against edits");
-            }
-
-            Vec3 to = move.position();
-            if (!Double.isFinite(to.x()) || !Double.isFinite(to.y()) || !Double.isFinite(to.z()))
-            {
-                throw new StudioEditException("INVALID_MESSAGE", "The position of atom " + move.atomId() + " is not a finite number");
-            }
-        }
-
-        boolean moved = false;
-        for (Move move : moves)
-        {
-            Vec3 from = geometry.get(move.atomId());
-            if (!from.equals(move.position()))
-            {
-                uncommitted.putIfAbsent(move.atomId(), from);
-                geometry.put(move.atomId(), move.position());
-                moved = true;
-            }
-        }
-
-        if (commit)
-        {
-            record();
-        }
-
-        if (moved)
-        {
-            version++;
-        }
-
-        return version;
+        boolean moved = drag.move(moves);
+        return finish(moved, commit);
     }
 
     /**
@@ -326,34 +278,22 @@ public final class StudioSession
      */
     public synchronized long transform(Pose to, boolean commit)
     {
-        if (!to.isFinite())
-        {
-            throw new StudioEditException("INVALID_MESSAGE", "The pose is not a finite number");
-        }
+        boolean moved = drag.transform(to);
+        return finish(moved, commit);
+    }
 
-        Pose unit;
-        try
-        {
-            unit = to.normalised();
-        }
-        catch (IllegalStateException noRotation)
-        {
-            throw new StudioEditException("INVALID_MESSAGE", "The rotation has no length, so it is not a rotation");
-        }
-
-        boolean moved = !unit.equals(pose);
-        if (moved)
-        {
-            if (uncommittedPose == null)
-            {
-                uncommittedPose = pose;
-            }
-            pose = unit;
-        }
-
+    /**
+     * Ends a change of positions: commits the drag if the change ends it, and counts the change as a version.
+     *
+     * @param moved whether the change moved anything
+     * @param commit whether the change ends the edit it belongs to
+     * @return the version after the change
+     */
+    private long finish(boolean moved, boolean commit)
+    {
         if (commit)
         {
-            record();
+            drag.commit().ifPresent(edits::file);
         }
 
         if (moved)
@@ -442,7 +382,7 @@ public final class StudioSession
             return Optional.of(new Applied(version, Map.of(), null));
         }
 
-        pendingLabel = "Optimise";
+        drag.label("Optimise");
         long next = move(moves, true);
         Map<String, Vec3> moved = new LinkedHashMap<>();
         moves.forEach(move -> moved.put(move.atomId(), move.position()));
@@ -656,7 +596,7 @@ public final class StudioSession
      */
     private boolean editing()
     {
-        return !uncommitted.isEmpty() || uncommittedPose != null;
+        return drag.active();
     }
 
     /**
@@ -747,7 +687,7 @@ public final class StudioSession
         {
             Vec3 baseline = baselineOf(atom);
             Vec3 to = placed.get(atom);
-            if (to == null && uncommitted.containsKey(atomIds.get(atom)))
+            if (to == null && drag.hasMoved(atomIds.get(atom)))
             {
                 to = baseline;
             }
@@ -762,7 +702,7 @@ public final class StudioSession
                 moves.add(new Move(atomIds.get(atom), to));
             }
         }
-        pendingLabel = label;
+        drag.label(label);
         long next = move(moves, commit);
         Map<String, Vec3> moved = new LinkedHashMap<>();
         moves.forEach(move -> moved.put(move.atomId(), move.position()));
@@ -775,9 +715,7 @@ public final class StudioSession
      */
     private Vec3 baselineOf(Atom atom)
     {
-        String id = atomIds.get(atom);
-        Vec3 original = uncommitted.get(id);
-        return original != null ? original : geometry.get(id);
+        return drag.baselineOf(atomIds.get(atom));
     }
 
     /**
@@ -834,19 +772,8 @@ public final class StudioSession
      */
     private Applied cancelEdit()
     {
-        requireUnlocked(uncommitted.keySet());
-        Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
-        geometry.putAll(restored);
-        uncommitted.clear();
-        pendingLabel = null;
-
-        Pose restoredPose = uncommittedPose;
-        if (restoredPose != null)
-        {
-            pose = restoredPose;
-            uncommittedPose = null;
-        }
-        return new Applied(++version, restored, restoredPose);
+        Drag.Cancelled cancelled = drag.cancel();
+        return new Applied(++version, cancelled.moved(), cancelled.pose());
     }
 
     /**
@@ -897,7 +824,7 @@ public final class StudioSession
         posed = rewound.pose() != null ? rewound.pose() : posed;
 
         moved.replaceAll((id, ignored) -> geometry.get(id));
-        return new Applied(version, moved, posed == null ? null : pose, rewound.graph());
+        return new Applied(version, moved, posed == null ? null : drag.pose(), rewound.graph());
     }
 
     /**
@@ -965,43 +892,6 @@ public final class StudioSession
     public synchronized boolean canRedo()
     {
         return edits.canRedo();
-    }
-
-    /**
-     * Files the moves since the last commit as one undoable edit.
-     */
-    private void record()
-    {
-        Map<String, Vec3> then = new LinkedHashMap<>();
-        Map<String, Vec3> now = new LinkedHashMap<>();
-        for (Map.Entry<String, Vec3> entry : uncommitted.entrySet())
-        {
-            Vec3 current = geometry.get(entry.getKey());
-            if (!current.equals(entry.getValue()))
-            {
-                then.put(entry.getKey(), entry.getValue());
-                now.put(entry.getKey(), current);
-            }
-        }
-
-        Pose poseThen = uncommittedPose;
-        boolean posed = poseThen != null && !poseThen.equals(pose);
-        uncommitted.clear();
-        uncommittedPose = null;
-
-        String label = pendingLabel;
-        pendingLabel = null;
-        if (then.isEmpty() && !posed)
-        {
-            return;
-        }
-
-        if (label == null)
-        {
-            label = then.isEmpty() ? "Move molecule" : then.size() == 1 ? "Move atom" : "Move atoms";
-        }
-
-        edits.file(new Edit(then, now, posed ? poseThen : null, posed ? pose : null, null, null, Set.of(), label, System.currentTimeMillis()));
     }
 
     /**
@@ -1082,7 +972,7 @@ public final class StudioSession
      */
     public synchronized Pose pose()
     {
-        return pose;
+        return drag.pose();
     }
 
     /**
