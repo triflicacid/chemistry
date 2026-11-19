@@ -7,15 +7,12 @@ import com.ruben.chemistry.core.Hydrogens;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.server.molecule.Camera;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
-import com.ruben.chemistry.server.molecule.StudioSnapshot;
 import com.ruben.chemistry.server.studio.EditHistory.Edit;
 import com.ruben.chemistry.smiles.SmilesWriter;
 import com.ruben.chemistry.space.BondMotion;
-import com.ruben.chemistry.space.Embedder;
 import com.ruben.chemistry.space.Pose;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.space.Vec3;
-import com.ruben.chemistry.util.IdentitySet;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -142,16 +139,38 @@ public final class StudioSession
     /** The molecule this session last saved, or null if it has saved none. */
     private String savedMoleculeId;
 
-    /** The working graph with its hydrogens counted, or null until saving first asks for it. */
-    private Molecule collapsed;
-
-    /** The structure of {@link #collapsed}, whose conformer is a placeholder, or null until saving first asks for it. */
-    private Structure3D structureShape;
-
-    /** The atom each node of {@link #collapsed}'s structure is, in node order. */
-    private List<String> nodeAtoms;
+    /** The graph as saving stores it, or null until saving first asks for it and after the graph changes. */
+    private StructureExport export;
 
     private final EditHistory edits = new EditHistory(MAX_UNDO);
+
+    /** What the history puts an edit's changes into. */
+    private final EditHistory.Target target = new EditHistory.Target()
+    {
+        @Override
+        public void putPositions(Map<String, Vec3> positions)
+        {
+            geometry.putAll(positions);
+        }
+
+        @Override
+        public void setPose(Pose to)
+        {
+            pose = to;
+        }
+
+        @Override
+        public void restoreGraph(Graph graph)
+        {
+            restore(graph);
+        }
+
+        @Override
+        public void requireUnlocked(Collection<String> atomIds)
+        {
+            StudioSession.this.requireUnlocked(atomIds);
+        }
+    };
 
     /** What the edit in progress is, or null to describe it by what it moved. */
     private String pendingLabel;
@@ -175,26 +194,43 @@ public final class StudioSession
     private String smiles;
     private long smilesVersion;
 
-    private StudioSession(
+    /**
+     * @param sessionId what to call the session
+     * @param sourceMoleculeId the stored molecule it is said to have come from
+     * @param graph the graph to start with, which the session takes over
+     * @param wasImplicit the atoms that are hydrogens the source molecule counted rather than wrote
+     * @param strain the strain of the shape the session starts with
+     * @param names where the names of atoms and bonds come from
+     * @param locked the atoms to start with locked
+     * @param pose where the molecule sits in the scene
+     * @param camera where the client's camera is, or {@code null} if it has never said
+     * @param version the version to start at
+     */
+    StudioSession(
             String sessionId,
             String sourceMoleculeId,
-            Molecule molecule,
-            Map<Atom, String> atomIds,
-            Map<Set<String>, String> bondIds,
-            Map<String, Vec3> geometry,
+            Graph graph,
             Set<String> wasImplicit,
             double strain,
-            Names names)
+            Names names,
+            Set<String> locked,
+            Pose pose,
+            Camera camera,
+            long version)
     {
         this.sessionId = sessionId;
         this.sourceMoleculeId = sourceMoleculeId;
-        this.molecule = molecule;
-        this.atomIds = atomIds;
-        this.bondIds = bondIds;
-        this.geometry = geometry;
+        this.molecule = graph.molecule();
+        this.atomIds = graph.atomIds();
+        this.bondIds = graph.bondIds();
+        this.geometry = graph.geometry();
         this.wasImplicit = wasImplicit;
         this.strain = strain;
         this.names = names;
+        this.locked.addAll(locked);
+        this.pose = pose;
+        this.camera = camera;
+        this.version = version;
     }
 
     /**
@@ -209,23 +245,7 @@ public final class StudioSession
      */
     public static StudioSession open(String sessionId, StoredMolecule source, int conformers)
     {
-        if (conformers < 1 || conformers > MAX_CONFORMERS)
-        {
-            throw new IllegalArgumentException("conformers must be 1 to " + MAX_CONFORMERS + ", but was " + conformers);
-        }
-
-        StudioSnapshot snapshot = source.studio();
-        Structure3D structure = snapshot.structure();
-        if (structure == null)
-        {
-            structure = Embedder.embed(source.molecule(), Embedder.Options.DEFAULT.withConformers(conformers));
-            source.setStudio(snapshot.withStructure(structure));
-        }
-
-        StudioSession session = build(sessionId, source.id(), source.molecule(), structure, snapshot.lockedSites());
-        session.pose = snapshot.pose();
-        session.camera = snapshot.camera();
-        return session;
+        return SessionFactory.open(sessionId, source, conformers);
     }
 
     /**
@@ -239,70 +259,7 @@ public final class StudioSession
      */
     public StudioSession rebuilt(Molecule molecule, int conformers)
     {
-        if (conformers < 1 || conformers > MAX_CONFORMERS)
-        {
-            throw new IllegalArgumentException("conformers must be 1 to " + MAX_CONFORMERS + ", but was " + conformers);
-        }
-
-        Structure3D structure = Embedder.embed(molecule, Embedder.Options.DEFAULT.withConformers(conformers));
-        StudioSession next = build(sessionId, sourceMoleculeId, molecule, structure, Set.of());
-        next.version = version + 1;
-        next.camera = camera;
-        return next;
-    }
-
-    /**
-     * @param sessionId what to call the session
-     * @param sourceMoleculeId the stored molecule it is said to have come from
-     * @param source the molecule to work on, whose hydrogens may still be counts
-     * @param structure a shape of {@code source}
-     * @param lockedSites the sites of {@code structure} to start with locked, by position; any past its end are ignored
-     * @return a session at version 1
-     * @throws IllegalStateException if the structure holds no conformer, or does not describe the molecule's atoms one for one
-     */
-    private static StudioSession build(String sessionId, String sourceMoleculeId, Molecule source, Structure3D structure, Set<Integer> lockedSites)
-    {
-        Molecule working = Hydrogens.asAtoms(source);
-        if (structure.conformers().isEmpty())
-        {
-            throw new IllegalStateException("The molecule's structure holds no conformer to open");
-        }
-
-        Structure3D.Conformer conformer = structure.conformers().getFirst();
-        List<Atom> atoms = working.atoms();
-        if (conformer.positions().size() != atoms.size())
-        {
-            throw new IllegalStateException("The structure describes " + conformer.positions().size() + " sites, but the molecule has " + atoms.size() + " atoms");
-        }
-
-        int written = source.atomCount();
-        Map<Atom, String> atomIds = new IdentityHashMap<>();
-        Map<String, Vec3> geometry = new LinkedHashMap<>();
-        Set<String> wasImplicit = new LinkedHashSet<>();
-        for (int atom = 0; atom < atoms.size(); atom++)
-        {
-            String id = "a" + (atom + 1);
-            atomIds.put(atoms.get(atom), id);
-            geometry.put(id, conformer.positions().get(atom));
-
-            if (atom >= written)
-            {
-                wasImplicit.add(id);
-            }
-        }
-
-        List<Bond> bonds = working.bonds();
-        Map<Set<String>, String> bondIds = new LinkedHashMap<>();
-        for (int bond = 0; bond < bonds.size(); bond++)
-        {
-            bondIds.put(Graph.endpoints(atomIds, bonds.get(bond)), "b" + (bond + 1));
-        }
-
-        StudioSession session = new StudioSession(sessionId, sourceMoleculeId, working, atomIds, bondIds, geometry, wasImplicit, conformer.strain(), new Names(atoms.size(), bonds.size()));
-
-        // a site's atom is named by its position, as every atom is above
-        lockedSites.stream().filter(site -> site >= 0 && site < atoms.size()).sorted().forEach(site -> session.locked.add("a" + (site + 1)));
-        return session;
+        return SessionFactory.rebuilt(this, molecule, conformers);
     }
 
     /**
@@ -452,8 +409,8 @@ public final class StudioSession
             throw new StudioEditException("BUSY", "An edit is still in progress, so the structure cannot be optimised yet");
         }
 
-        prepareStructure();
-        return new OptimisationInput(version, structure(), Set.copyOf(lockedSites()), List.copyOf(nodeAtoms));
+        StructureExport stored = export();
+        return new OptimisationInput(version, stored.structure(geometry), Set.copyOf(stored.lockedSites(locked)), List.copyOf(stored.sites()));
     }
 
     /**
@@ -849,39 +806,10 @@ public final class StudioSession
     {
         if (editing())
         {
-            requireUnlocked(uncommitted.keySet());
-            Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
-            geometry.putAll(restored);
-            uncommitted.clear();
-            pendingLabel = null;
-
-            Pose restoredPose = uncommittedPose;
-            if (restoredPose != null)
-            {
-                pose = restoredPose;
-                uncommittedPose = null;
-            }
-            return new Applied(++version, restored, restoredPose);
+            return cancelEdit();
         }
 
-        Edit edit = edits.lastDone();
-        if (edit == null)
-        {
-            throw new StudioEditException("NOTHING_TO_UNDO", "There is nothing to undo");
-        }
-        requireUnlocked(edit.touched(true));
-
-        edits.takeBack();
-
-        geometry.putAll(edit.before());
-        if (edit.poseBefore() != null)
-        {
-            pose = edit.poseBefore();
-        }
-        if (edit.graphBefore() != null)
-        {
-            restore(edit.graphBefore());
-        }
+        Edit edit = edits.undo(target);
         return new Applied(++version, edit.before(), edit.poseBefore(), edit.graphBefore() != null);
     }
 
@@ -894,25 +822,31 @@ public final class StudioSession
      */
     public synchronized Applied redo()
     {
-        Edit edit = edits.lastUndone();
-        if (edit == null)
-        {
-            throw new StudioEditException("NOTHING_TO_REDO", "There is nothing to redo");
-        }
-        requireUnlocked(edit.touched(false));
-
-        edits.makeAgain();
-
-        geometry.putAll(edit.after());
-        if (edit.poseAfter() != null)
-        {
-            pose = edit.poseAfter();
-        }
-        if (edit.graphAfter() != null)
-        {
-            restore(edit.graphAfter());
-        }
+        Edit edit = edits.redo(target);
         return new Applied(++version, edit.after(), edit.poseAfter(), edit.graphAfter() != null);
+    }
+
+    /**
+     * Puts back what the edit in progress has moved, and forgets it.
+     *
+     * @return the atoms it moved and the version after it
+     * @throws StudioEditException with {@code LOCKED} if an atom it moved has been locked since
+     */
+    private Applied cancelEdit()
+    {
+        requireUnlocked(uncommitted.keySet());
+        Map<String, Vec3> restored = new LinkedHashMap<>(uncommitted);
+        geometry.putAll(restored);
+        uncommitted.clear();
+        pendingLabel = null;
+
+        Pose restoredPose = uncommittedPose;
+        if (restoredPose != null)
+        {
+            pose = restoredPose;
+            uncommittedPose = null;
+        }
+        return new Applied(++version, restored, restoredPose);
     }
 
     /**
@@ -946,49 +880,24 @@ public final class StudioSession
      */
     public synchronized Applied rewind(int position, boolean discard)
     {
-        if (position < 0 || position > edits.size())
-        {
-            throw new StudioEditException("INVALID_EDIT", "There is no point " + position + " in a history of " + edits.size() + " edits");
-        }
-
-        boolean undoing = position < edits.position();
-        for (Edit edit : edits.crossedTo(position))
-        {
-            requireUnlocked(edit.touched(undoing));
-        }
+        edits.validate(position, target);
 
         Map<String, Vec3> moved = new LinkedHashMap<>();
         Pose posed = null;
-        boolean regraphed = false;
         if (editing())
         {
-            Applied cancelled = undo();
+            Applied cancelled = cancelEdit();
             moved.putAll(cancelled.moved());
             posed = cancelled.pose();
         }
 
-        while (edits.position() > position)
-        {
-            Applied step = undo();
-            moved.putAll(step.moved());
-            posed = step.pose() != null ? step.pose() : posed;
-            regraphed |= step.graph();
-        }
-        while (edits.position() < position)
-        {
-            Applied step = redo();
-            moved.putAll(step.moved());
-            posed = step.pose() != null ? step.pose() : posed;
-            regraphed |= step.graph();
-        }
-
-        if (discard)
-        {
-            edits.discardUndone();
-        }
+        EditHistory.Rewound rewound = edits.rewind(position, discard, target);
+        version += rewound.steps();
+        moved.putAll(rewound.moved());
+        posed = rewound.pose() != null ? rewound.pose() : posed;
 
         moved.replaceAll((id, ignored) -> geometry.get(id));
-        return new Applied(version, moved, posed == null ? null : pose, regraphed);
+        return new Applied(version, moved, posed == null ? null : pose, rewound.graph());
     }
 
     /**
@@ -996,8 +905,7 @@ public final class StudioSession
      */
     public synchronized Molecule collapsed()
     {
-        prepareStructure();
-        return collapsed;
+        return export().collapsed();
     }
 
     /**
@@ -1007,42 +915,7 @@ public final class StudioSession
      */
     public synchronized Structure3D structure()
     {
-        prepareStructure();
-
-        List<Vec3> positions = new ArrayList<>(nodeAtoms.size());
-        nodeAtoms.forEach(id -> positions.add(geometry.get(id)));
-
-        return new Structure3D(
-                structureShape.sites(),
-                structureShape.connections(),
-                List.of(new Structure3D.Conformer(strain, positions)));
-    }
-
-    /** Works out, the first time it is needed, what saving stores that does not change as atoms move. */
-    private void prepareStructure()
-    {
-        if (collapsed != null)
-        {
-            return;
-        }
-
-        Map<Atom, List<Atom>> absorbed = Hydrogens.absorbedBy(molecule);
-        Set<Atom> gone = IdentitySet.of();
-        absorbed.values().forEach(gone::addAll);
-        List<Atom> kept = molecule.atoms().stream().filter(atom -> !gone.contains(atom)).toList();
-
-        // the collapsed molecule lists the hydrogens it implies atom by atom, after every atom it holds
-        List<String> order = new ArrayList<>();
-        kept.forEach(atom -> order.add(atomIds.get(atom)));
-        for (Atom atom : kept)
-        {
-            absorbed.getOrDefault(atom, List.of()).forEach(hydrogen -> order.add(atomIds.get(hydrogen)));
-        }
-
-        Molecule counted = Hydrogens.asCounts(molecule);
-        structureShape = Embedder.placed(counted, order.stream().map(geometry::get).toList(), strain);
-        nodeAtoms = List.copyOf(order);
-        collapsed = counted;
+        return export().structure(geometry);
     }
 
     /**
@@ -1053,17 +926,19 @@ public final class StudioSession
      */
     public synchronized Set<Integer> lockedSites()
     {
-        prepareStructure();
-        Set<Integer> sites = new LinkedHashSet<>();
-        for (String id : locked)
+        return export().lockedSites(locked);
+    }
+
+    /**
+     * @return the graph as saving stores it, worked out the first time it is needed after the graph changes
+     */
+    private StructureExport export()
+    {
+        if (export == null)
         {
-            int site = nodeAtoms.indexOf(id);
-            if (site >= 0)
-            {
-                sites.add(site);
-            }
+            export = StructureExport.of(view(), strain);
         }
-        return sites;
+        return export;
     }
 
     /**
@@ -1151,9 +1026,7 @@ public final class StudioSession
         geometry.putAll(graph.geometry());
         // a lock on an atom that is gone has nothing left to refuse
         locked.retainAll(geometry.keySet());
-        collapsed = null;
-        structureShape = null;
-        nodeAtoms = null;
+        export = null;
     }
 
     /**
