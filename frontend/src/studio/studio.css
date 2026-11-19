@@ -497,10 +497,6 @@ body.resizing {
   color: var(--ink-soft);
 }
 
-.notice.failed {
-  color: var(--bad);
-}
-
 .open-molecule {
   display: flex;
   flex-direction: column;
@@ -962,15 +958,24 @@ body.resizing {
   opacity: 0.7;
 }
 
-.optimise-notice {
+/* what the viewport has to say stacks up in its bottom right corner, newest nearest the corner */
+.popups {
   position: absolute;
-  left: 50%;
+  right: 1rem;
   bottom: 1rem;
-  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 0.5rem;
+  max-width: min(34rem, 90%);
+  pointer-events: none;
+}
+
+.popup {
   display: flex;
   align-items: flex-start;
   gap: 0.6rem;
-  max-width: min(34rem, 90%);
   padding: 0.55rem 0.75rem;
   font-size: 0.85rem;
   background: var(--panel);
@@ -978,15 +983,39 @@ body.resizing {
   border-left-width: 4px;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+  pointer-events: auto;
 }
 
-.optimise-text {
+/* it holds at full strength for most of its time, then fades over the last of it */
+.popup-fades {
+  animation: popup-fade ease-in forwards;
+}
+
+@keyframes popup-fade {
+  0%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.popup-text {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  min-width: 0;
 }
 
-.optimise-text span,
+.popup-text pre {
+  margin: 0;
+  overflow-x: auto;
+  font: 0.8rem var(--mono, ui-monospace, monospace);
+  white-space: pre;
+}
+
+.popup-text span,
 .last-optimisation span {
   font-size: 0.78rem;
   color: var(--ink-soft);
@@ -1004,15 +1033,18 @@ body.resizing {
   border-radius: 6px;
 }
 
-.optimise-good {
+.optimise-good,
+.popup-good {
   border-left-color: #2da44e;
 }
 
-.optimise-neutral {
+.optimise-neutral,
+.popup-neutral {
   border-left-color: var(--accent);
 }
 
-.optimise-bad {
+.optimise-bad,
+.popup-bad {
   border-left-color: var(--bad);
 }
 

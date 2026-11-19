@@ -98,13 +98,11 @@ interface AttributeRowsProps {
 
 function AttributeRows({ atom, label, locked }: AttributeRowsProps) {
   const { setAtom } = useSessionContext();
-  const [refusal, setRefusal] = useState<string | null>(null);
   // an isotope has no sensible starting value, so adding one waits for a number to be typed
   const [addingIsotope, setAddingIsotope] = useState(false);
 
   const change = (what: AtomChange) =>
     void setAtom(atom.id, what).then((result) => {
-      setRefusal(result.kind === "refused" ? result.message : null);
       if (result.kind === "applied") {
         setAddingIsotope(false);
       }
@@ -169,11 +167,6 @@ function AttributeRows({ atom, label, locked }: AttributeRowsProps) {
           </>
         )}
       </dd>
-      {refusal !== null && (
-        <dd className="note-row">
-          <p className="panel-note">{refusal}</p>
-        </dd>
-      )}
     </dl>
   );
 }
@@ -190,7 +183,6 @@ function AngleRows({ centre, index, models }: AngleRowsProps) {
   const { tools } = models;
   const { hold } = useObservable(tools);
   const [chosen, setChosen] = useState<{ from?: string; to?: string }>({});
-  const [refusal, setRefusal] = useState<string | null>(null);
   const neighbours = heaviestFirst(index, index.neighboursOf(centre));
   const pair = choosePair(index, centre, chosen);
 
@@ -236,7 +228,7 @@ function AngleRows({ centre, index, models }: AngleRowsProps) {
           label={`Angle at ${index.label(centre)} between ${index.label(pair.from)} and ${index.label(pair.to)}, in degrees`}
           value={angleAt(a.position, b.position, c.position)}
           digits={1}
-          onCommit={(value) => void setAngle(centre, pair.from, pair.to, value, heldAtom).then((result) => setRefusal(result.kind === "refused" ? result.message : null))}
+          onCommit={(value) => void setAngle(centre, pair.from, pair.to, value, heldAtom)}
         />
         <span className="unit">°</span>
       </dd>
@@ -251,9 +243,6 @@ function AngleRows({ centre, index, models }: AngleRowsProps) {
       <dt>Hold</dt>
       <dd>
         <Segmented label="Which atom of the angle stays where it is" value={hold} options={holds} onChange={(next) => tools.holding(next)} />
-      </dd>
-      <dd className="note-row">
-        {refusal !== null && <p className="panel-note">{refusal}</p>}
       </dd>
       </dl>
     </>

@@ -393,10 +393,10 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
           <OpenMolecule message={phase.message} onOpen={openSmiles} />
         </div>
       ) : (
-        phase.kind !== "open" && (
+        (phase.kind === "connecting" || phase.kind === "opening") && (
           <div className="viewport-overlay">
-            <p className={phase.kind === "failed" ? "notice failed" : "notice"} role="status">
-              {notice(phase)}
+            <p className="notice" role="status">
+              {phase.kind === "connecting" ? "Connecting to the server…" : "Building the structure…"}
             </p>
           </div>
         )
@@ -409,17 +409,4 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
 function resolve(pick: PartItem, mode: PickScope, index: StateIndex): Item {
   const fragment = mode === "molecule" ? index.fragmentOf(pick) : null;
   return fragment !== null ? { kind: "molecule", id: fragment } : pick;
-}
-
-function notice(phase: SessionPhase): string {
-  switch (phase.kind) {
-    case "connecting":
-      return "Connecting to the server…";
-    case "opening":
-      return "Building the structure…";
-    case "failed":
-      return phase.message;
-    default:
-      return "";
-  }
 }

@@ -82,7 +82,7 @@ export function useEdits({ socketRef, held, adopt, note }: SessionLink): Edits {
         note(`Structure replaced: ${reply.smiles}`);
         return { kind: "replaced" };
       } catch (cause) {
-        note(reason(cause), true);
+        note(reason(cause), true, true);
         return { kind: "refused", message: reason(cause) };
       }
     },
