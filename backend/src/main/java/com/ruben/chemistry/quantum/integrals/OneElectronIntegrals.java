@@ -164,36 +164,15 @@ public final class OneElectronIntegrals
      */
     private static double nuclearAttractionPrimitive(ContractedGaussian a, int i, ContractedGaussian b, int j, List<PointCharge> nuclei)
     {
-        double exponentA = a.exponent(i);
-        double exponentB = b.exponent(j);
-        double p = exponentA + exponentB;
-        int[] powersA = powers(a);
-        int[] powersB = powers(b);
-        double[] separation = separation(a, b);
-
-        // the product of the two Gaussians is a sum of Hermite Gaussians about this point, one expansion per axis
-        double[] centre = {
-            (exponentA * a.centre().x() + exponentB * b.centre().x()) / p,
-            (exponentA * a.centre().y() + exponentB * b.centre().y()) / p,
-            (exponentA * a.centre().z() + exponentB * b.centre().z()) / p
-        };
-        double[][] expansion = new double[3][];
-        int maxOrder = 0;
-        for (int axis = 0; axis < 3; axis++)
-        {
-            int top = powersA[axis] + powersB[axis];
-            maxOrder += top;
-            expansion[axis] = new double[top + 1];
-            for (int t = 0; t <= top; t++)
-            {
-                expansion[axis][t] = HermiteExpansion.coefficient(powersA[axis], powersB[axis], t, separation[axis], exponentA, exponentB);
-            }
-        }
+        HermitePair pair = HermitePair.of(a, i, b, j);
+        double p = pair.exponent();
+        double[] centre = pair.centre();
+        double[][] expansion = pair.expansion();
 
         double sum = 0.0;
         for (PointCharge nucleus : nuclei)
         {
-            double[][][] coulomb = HermiteCoulomb.integrals(maxOrder, p, centre[0] - nucleus.position().x(), centre[1] - nucleus.position().y(), centre[2] - nucleus.position().z());
+            double[][][] coulomb = HermiteCoulomb.integrals(pair.order(), p, centre[0] - nucleus.position().x(), centre[1] - nucleus.position().y(), centre[2] - nucleus.position().z());
             double attraction = 0.0;
             for (int t = 0; t < expansion[0].length; t++)
             {
