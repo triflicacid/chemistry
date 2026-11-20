@@ -1,6 +1,8 @@
 package com.ruben.chemistry.quantum.scf;
 
 import com.ruben.chemistry.quantum.basis.ContractedGaussian;
+import com.ruben.chemistry.quantum.integrals.EcpCentre;
+import com.ruben.chemistry.quantum.integrals.EcpIntegrals;
 import com.ruben.chemistry.quantum.integrals.ElectronRepulsionIntegrals;
 import com.ruben.chemistry.quantum.integrals.ElectronRepulsionTensor;
 import com.ruben.chemistry.quantum.integrals.OneElectronIntegrals;
@@ -66,6 +68,20 @@ public final class ClosedShellScf
      */
     public static ScfResult run(List<ContractedGaussian> basis, List<PointCharge> nuclei, int electrons, ScfSettings settings)
     {
+        return run(basis, nuclei, List.of(), electrons, settings);
+    }
+
+    /**
+     * @param basis the basis functions, in bohr
+     * @param nuclei the point charges, which carry the effective nuclear charge when core electrons are replaced
+     * @param cores the effective core potentials added to the one-electron Hamiltonian, empty for an all-electron calculation
+     * @param electrons the number of electrons treated explicitly, which must be even and positive
+     * @param settings the convergence controls
+     * @return the energy, orbitals and density; {@code converged} is false if the iteration limit was reached
+     * @throws IllegalArgumentException if the electron count is odd or not positive, or too large for the basis
+     */
+    public static ScfResult run(List<ContractedGaussian> basis, List<PointCharge> nuclei, List<EcpCentre> cores, int electrons, ScfSettings settings)
+    {
         if (electrons <= 0 || electrons % 2 != 0)
         {
             throw new IllegalArgumentException("closed-shell needs a positive even electron count, was " + electrons);
@@ -74,6 +90,10 @@ public final class ClosedShellScf
 
         Matrix overlap = OneElectronIntegrals.overlapMatrix(basis);
         Matrix core = OneElectronIntegrals.coreHamiltonian(basis, nuclei);
+        if (!cores.isEmpty())
+        {
+            core = core.plus(EcpIntegrals.matrix(basis, cores));
+        }
         ElectronRepulsionTensor repulsion = ElectronRepulsionIntegrals.tensor(basis);
         double nuclear = nuclearRepulsion(nuclei);
 
