@@ -2,7 +2,7 @@ package com.ruben.chemistry.quantum.basis;
 
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.quantum.Units;
-import com.ruben.chemistry.quantum.integrals.OverlapIntegrals;
+import com.ruben.chemistry.quantum.integrals.OneElectronIntegrals;
 import com.ruben.chemistry.quantum.linalg.Matrix;
 import com.ruben.chemistry.quantum.linalg.SymmetricEigen;
 import com.ruben.chemistry.space.Embedder;
@@ -57,7 +57,7 @@ class BasisSetTest
     {
         BasisSet basis = BasisSet.build(water(), 0, BasisLibrary.cep31g());
 
-        Matrix overlap = OverlapIntegrals.matrix(basis.functions());
+        Matrix overlap = OneElectronIntegrals.overlapMatrix(basis.functions());
 
         assertThat(overlap.rows()).isEqualTo(12);
         assertThat(overlap.isSymmetric(1e-13)).isTrue();
