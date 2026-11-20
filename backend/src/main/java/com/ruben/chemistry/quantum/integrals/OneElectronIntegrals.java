@@ -66,6 +66,38 @@ public final class OneElectronIntegrals
         return matrix(OneElectronIntegrals::kineticPrimitive, basis);
     }
 
+    /**
+     * @param a one basis function
+     * @param b another basis function
+     * @param nuclei the point charges the electron is attracted to
+     * @return the integral of {@code a} times {@code b} times the Coulomb attraction to the nuclei, which is
+     *     negative for positive charges
+     */
+    public static double nuclearAttraction(ContractedGaussian a, ContractedGaussian b, List<PointCharge> nuclei)
+    {
+        return contract((first, i, second, j) -> nuclearAttractionPrimitive(first, i, second, j, nuclei), a, b);
+    }
+
+    /**
+     * @param basis the basis functions, in order
+     * @param nuclei the point charges the electron is attracted to
+     * @return the symmetric matrix of nuclear-attraction integrals between every pair
+     */
+    public static Matrix nuclearAttractionMatrix(List<ContractedGaussian> basis, List<PointCharge> nuclei)
+    {
+        return matrix((first, i, second, j) -> nuclearAttractionPrimitive(first, i, second, j, nuclei), basis);
+    }
+
+    /**
+     * @param basis the basis functions, in order
+     * @param nuclei the point charges the electron is attracted to
+     * @return the one-electron Hamiltonian, the kinetic-energy matrix plus the nuclear-attraction matrix
+     */
+    public static Matrix coreHamiltonian(List<ContractedGaussian> basis, List<PointCharge> nuclei)
+    {
+        return kineticMatrix(basis).plus(nuclearAttractionMatrix(basis, nuclei));
+    }
+
     private static double contract(PrimitiveIntegral integral, ContractedGaussian a, ContractedGaussian b)
     {
         double sum = 0.0;
@@ -125,6 +157,58 @@ public final class OneElectronIntegrals
 
         // the three-dimensional operator is a sum over axes, and each term only changes the factor on its own axis
         return kinetic[0] * overlap[1] * overlap[2] + overlap[0] * kinetic[1] * overlap[2] + overlap[0] * overlap[1] * kinetic[2];
+    }
+
+    /**
+     * @return the attraction to every nucleus between two unnormalised Cartesian primitives, one from each function
+     */
+    private static double nuclearAttractionPrimitive(ContractedGaussian a, int i, ContractedGaussian b, int j, List<PointCharge> nuclei)
+    {
+        double exponentA = a.exponent(i);
+        double exponentB = b.exponent(j);
+        double p = exponentA + exponentB;
+        int[] powersA = powers(a);
+        int[] powersB = powers(b);
+        double[] separation = separation(a, b);
+
+        // the product of the two Gaussians is a sum of Hermite Gaussians about this point, one expansion per axis
+        double[] centre = {
+            (exponentA * a.centre().x() + exponentB * b.centre().x()) / p,
+            (exponentA * a.centre().y() + exponentB * b.centre().y()) / p,
+            (exponentA * a.centre().z() + exponentB * b.centre().z()) / p
+        };
+        double[][] expansion = new double[3][];
+        int maxOrder = 0;
+        for (int axis = 0; axis < 3; axis++)
+        {
+            int top = powersA[axis] + powersB[axis];
+            maxOrder += top;
+            expansion[axis] = new double[top + 1];
+            for (int t = 0; t <= top; t++)
+            {
+                expansion[axis][t] = HermiteExpansion.coefficient(powersA[axis], powersB[axis], t, separation[axis], exponentA, exponentB);
+            }
+        }
+
+        double sum = 0.0;
+        for (PointCharge nucleus : nuclei)
+        {
+            double[][][] coulomb = HermiteCoulomb.integrals(maxOrder, p, centre[0] - nucleus.position().x(), centre[1] - nucleus.position().y(), centre[2] - nucleus.position().z());
+            double attraction = 0.0;
+            for (int t = 0; t < expansion[0].length; t++)
+            {
+                for (int u = 0; u < expansion[1].length; u++)
+                {
+                    for (int v = 0; v < expansion[2].length; v++)
+                    {
+                        attraction += expansion[0][t] * expansion[1][u] * expansion[2][v] * coulomb[t][u][v];
+                    }
+                }
+            }
+            // an electron is attracted to a positive charge, so each nucleus lowers the energy
+            sum -= nucleus.charge() * attraction;
+        }
+        return 2.0 * Math.PI / p * sum;
     }
 
     /**

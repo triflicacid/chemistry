@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 class OneElectronIntegralsTest
@@ -208,5 +209,139 @@ class OneElectronIntegralsTest
         assertThat(kinetic.rows()).isEqualTo(12);
         assertThat(kinetic.isSymmetric(1e-12)).isTrue();
         assertThat(SymmetricEigen.of(kinetic).values()[0]).isGreaterThan(0.0);
+    }
+
+    @Test
+    void should_match_the_closed_form_attraction_of_an_s_gaussian_to_a_nucleus_at_its_centre()
+    {
+        double exponent = 0.9;
+        double charge = 2.0;
+        ContractedGaussian s = single(Vec3.ZERO, new AngularMomentum(0, 0, 0), exponent);
+
+        double attraction = OneElectronIntegrals.nuclearAttraction(s, s, List.of(new PointCharge(Vec3.ZERO, charge)));
+
+        assertThat(attraction).isCloseTo(-charge * 2.0 * Math.sqrt(2.0 * exponent / Math.PI), within(1e-13));
+    }
+
+    @Test
+    void should_match_the_closed_form_attraction_of_a_p_gaussian_to_a_nucleus_at_its_centre()
+    {
+        double exponent = 0.9;
+        ContractedGaussian px = single(Vec3.ZERO, new AngularMomentum(1, 0, 0), exponent);
+
+        double attraction = OneElectronIntegrals.nuclearAttraction(px, px, List.of(new PointCharge(Vec3.ZERO, 1.0)));
+
+        assertThat(attraction).isCloseTo(-4.0 / 3.0 * Math.sqrt(2.0 * exponent / Math.PI), within(1e-13));
+    }
+
+    @Test
+    void should_approach_the_point_charge_limit_far_from_the_nucleus()
+    {
+        double distance = 100.0;
+        ContractedGaussian s = single(Vec3.ZERO, new AngularMomentum(0, 0, 0), 1.0);
+
+        double attraction = OneElectronIntegrals.nuclearAttraction(s, s, List.of(new PointCharge(new Vec3(0, 0, distance), 3.0)));
+
+        assertThat(attraction).isCloseTo(-3.0 / distance, within(1e-5));
+    }
+
+    @Test
+    void should_reproduce_the_sto_3g_hydrogen_molecule_attraction_and_core_hamiltonian()
+    {
+        ContractedGaussian first = sto3gHydrogen(Vec3.ZERO);
+        ContractedGaussian second = sto3gHydrogen(new Vec3(0, 0, 1.4));
+        PointCharge nucleusOne = new PointCharge(Vec3.ZERO, 1.0);
+        PointCharge nucleusTwo = new PointCharge(new Vec3(0, 0, 1.4), 1.0);
+
+        assertThat(OneElectronIntegrals.nuclearAttraction(first, first, List.of(nucleusOne))).isCloseTo(-1.2266, within(1e-4));
+        assertThat(OneElectronIntegrals.nuclearAttraction(first, first, List.of(nucleusTwo))).isCloseTo(-0.6538, within(1e-4));
+        assertThat(OneElectronIntegrals.nuclearAttraction(first, second, List.of(nucleusOne))).isCloseTo(-0.5974, within(1e-4));
+
+        Matrix core = OneElectronIntegrals.coreHamiltonian(List.of(first, second), List.of(nucleusOne, nucleusTwo));
+        assertThat(core.get(0, 0)).isCloseTo(-1.1204, within(2e-4));
+        assertThat(core.get(0, 1)).isCloseTo(-0.9584, within(2e-4));
+        assertThat(core.get(1, 1)).isCloseTo(-1.1204, within(2e-4));
+    }
+
+    @Test
+    void should_not_change_when_everything_is_translated_together()
+    {
+        Vec3 shift = new Vec3(1.1, -0.7, 2.3);
+        Vec3 centreA = new Vec3(0.2, 0.5, -0.3);
+        Vec3 centreB = new Vec3(-0.6, 0.1, 0.8);
+        Vec3 nucleus = new Vec3(0.4, -0.9, 0.3);
+
+        double original = OneElectronIntegrals.nuclearAttraction(
+                single(centreA, new AngularMomentum(1, 1, 0), 0.8), single(centreB, new AngularMomentum(0, 1, 0), 1.3), List.of(new PointCharge(nucleus, 1.5)));
+        double shifted = OneElectronIntegrals.nuclearAttraction(
+                single(centreA.plus(shift), new AngularMomentum(1, 1, 0), 0.8), single(centreB.plus(shift), new AngularMomentum(0, 1, 0), 1.3), List.of(new PointCharge(nucleus.plus(shift), 1.5)));
+
+        assertThat(shifted).isCloseTo(original, within(1e-12));
+    }
+
+    @Test
+    void should_map_px_to_py_and_py_to_minus_px_under_a_quarter_turn_about_z()
+    {
+        Vec3 centreA = new Vec3(0.3, 0.8, -0.2);
+        Vec3 centreB = new Vec3(-0.5, 0.2, 0.6);
+        Vec3 nucleus = new Vec3(0.7, -0.4, 0.5);
+        PointCharge before = new PointCharge(nucleus, 1.0);
+        PointCharge after = new PointCharge(turn(nucleus), 1.0);
+        ContractedGaussian sBefore = single(centreB, new AngularMomentum(0, 0, 0), 1.1);
+        ContractedGaussian sAfter = single(turn(centreB), new AngularMomentum(0, 0, 0), 1.1);
+
+        double px = OneElectronIntegrals.nuclearAttraction(single(centreA, new AngularMomentum(1, 0, 0), 0.9), sBefore, List.of(before));
+        double py = OneElectronIntegrals.nuclearAttraction(single(centreA, new AngularMomentum(0, 1, 0), 0.9), sBefore, List.of(before));
+        double pxTurned = OneElectronIntegrals.nuclearAttraction(single(turn(centreA), new AngularMomentum(1, 0, 0), 0.9), sAfter, List.of(after));
+        double pyTurned = OneElectronIntegrals.nuclearAttraction(single(turn(centreA), new AngularMomentum(0, 1, 0), 0.9), sAfter, List.of(after));
+
+        assertThat(pyTurned).isCloseTo(px, within(1e-12));
+        assertThat(pxTurned).isCloseTo(-py, within(1e-12));
+    }
+
+    /**
+     * @return the point turned a quarter of a turn about the z axis, so that x goes to y and y to minus x
+     */
+    private static Vec3 turn(Vec3 point)
+    {
+        return new Vec3(-point.y(), point.x(), point.z());
+    }
+
+    @Test
+    void should_add_the_attraction_of_each_nucleus()
+    {
+        ContractedGaussian s = single(Vec3.ZERO, new AngularMomentum(0, 0, 0), 0.9);
+        PointCharge one = new PointCharge(new Vec3(0, 0, 1.0), 1.0);
+        PointCharge two = new PointCharge(new Vec3(0.5, 0, -1.0), 2.0);
+
+        double both = OneElectronIntegrals.nuclearAttraction(s, s, List.of(one, two));
+
+        assertThat(both).isCloseTo(OneElectronIntegrals.nuclearAttraction(s, s, List.of(one)) + OneElectronIntegrals.nuclearAttraction(s, s, List.of(two)), within(1e-14));
+    }
+
+    @Test
+    void should_give_water_a_symmetric_attractive_nuclear_matrix_and_a_core_hamiltonian_equal_to_the_sum()
+    {
+        BasisSet basis = BasisSet.build(Embedder.embed(Molecule.fromSmiles("O")), 0, BasisLibrary.cep31g());
+        List<PointCharge> nuclei = List.of(
+                new PointCharge(new Vec3(0.0, 0.0, 0.0), 6.0),
+                new PointCharge(new Vec3(1.43, 0.0, 1.11), 1.0),
+                new PointCharge(new Vec3(-1.43, 0.0, 1.11), 1.0));
+
+        Matrix attraction = OneElectronIntegrals.nuclearAttractionMatrix(basis.functions(), nuclei);
+        Matrix core = OneElectronIntegrals.coreHamiltonian(basis.functions(), nuclei);
+
+        assertThat(attraction.isSymmetric(1e-12)).isTrue();
+        for (int i = 0; i < attraction.rows(); i++)
+        {
+            assertThat(attraction.get(i, i)).isNegative();
+        }
+        assertThat(core.minus(OneElectronIntegrals.kineticMatrix(basis.functions()).plus(attraction)).frobeniusNorm()).isLessThan(1e-14);
+    }
+
+    @Test
+    void should_reject_a_nonfinite_point_charge()
+    {
+        assertThatThrownBy(() -> new PointCharge(Vec3.ZERO, Double.NaN)).isInstanceOf(IllegalArgumentException.class);
     }
 }
