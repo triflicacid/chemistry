@@ -102,6 +102,26 @@ public final class ContractedGaussian
     }
 
     /**
+     * @param x the x coordinate of a point, in bohr
+     * @param y the y coordinate of the point, in bohr
+     * @param z the z coordinate of the point, in bohr
+     * @return the value of the function at the point
+     */
+    public double valueAt(double x, double y, double z)
+    {
+        double dx = x - centre.x();
+        double dy = y - centre.y();
+        double dz = z - centre.z();
+        double radialSquared = dx * dx + dy * dy + dz * dz;
+        double sum = 0.0;
+        for (int i = 0; i < exponents.length; i++)
+        {
+            sum += coefficients[i] * Math.exp(-exponents[i] * radialSquared);
+        }
+        return sum * Math.pow(dx, angular.lx()) * Math.pow(dy, angular.ly()) * Math.pow(dz, angular.lz());
+    }
+
+    /**
      * @param exponent the exponent of a primitive
      * @param angular its powers of x, y and z
      * @return the factor that makes the primitive {@code x^lx y^ly z^lz exp(-a r^2)} have unit self-overlap

@@ -31,6 +31,21 @@ class ContractedGaussianTest
     }
 
     @Test
+    void should_evaluate_an_off_centre_p_function_from_its_definition()
+    {
+        double exponent = 0.7;
+        Vec3 centre = new Vec3(0.5, -0.2, 0.3);
+        ContractedGaussian py = new ContractedGaussian(centre, new AngularMomentum(0, 1, 0), List.of(new GaussianPrimitive(exponent, 1.0)));
+
+        double dx = 0.4;
+        double dy = 0.9;
+        double dz = -0.6;
+        double expected = py.coefficient(0) * dy * Math.exp(-exponent * (dx * dx + dy * dy + dz * dz));
+        assertThat(py.valueAt(centre.x() + dx, centre.y() + dy, centre.z() + dz)).isCloseTo(expected, within(1e-14));
+        assertThat(py.valueAt(centre.x() + dx, centre.y(), centre.z() + dz)).isCloseTo(0.0, within(1e-15));
+    }
+
+    @Test
     void should_reject_a_contraction_that_cancels_to_nothing()
     {
         List<GaussianPrimitive> cancelling = List.of(new GaussianPrimitive(1.0, 1.0), new GaussianPrimitive(1.0, -1.0));
