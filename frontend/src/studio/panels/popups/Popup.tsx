@@ -1,6 +1,6 @@
 import {type ReactNode, useEffect, useState} from "react";
 
-export type Severity = "good" | "neutral" | "bad";
+export type Severity = "good" | "neutral" | "warn" | "bad";
 
 /** How long a popup that fades stays before it has gone. */
 const LINGER_MS = 5_000;

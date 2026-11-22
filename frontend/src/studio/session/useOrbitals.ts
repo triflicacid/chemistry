@@ -2,6 +2,7 @@ import {useCallback, useEffect, useState} from "react";
 import type {FieldResult, InteractionResult, OrbitalsResult, OrbitalTarget} from "./messages";
 import {reason} from "./errors";
 import type {SessionLink} from "./useSocket";
+import {useWarnOnce} from "./warnings";
 
 /** How many fields are kept. */
 const KEPT = 160;
@@ -51,7 +52,10 @@ function sameField(first: FieldResult, second: FieldResult): boolean {
  *
  * @param link the connection
  */
-export function useOrbitals({ socketRef, held, note }: SessionLink): Orbitals {
+export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbitals {
+  const warnLevels = useWarnOnce(warn);
+  const warnField = useWarnOnce(warn);
+  const warnInteraction = useWarnOnce(warn);
   const [orbitals, setOrbitals] = useState<OrbitalsResult | null>(null);
   const [orbitalsSince, setOrbitalsSince] = useState<number | null>(null);
   const [fields, setFields] = useState<readonly FieldResult[]>([]);
@@ -70,6 +74,7 @@ export function useOrbitals({ socketRef, held, note }: SessionLink): Orbitals {
         return;
       }
       setOrbitalsSince(null);
+      warnLevels(result.status === "complete" ? null : (result.message ?? "The orbitals could not be calculated."));
       setOrbitals(result);
     });
 
@@ -78,6 +83,7 @@ export function useOrbitals({ socketRef, held, note }: SessionLink): Orbitals {
         return;
       }
       setFieldsAsked(false);
+      warnField(result.status === "complete" ? null : (result.message ?? "An orbital could not be worked out."));
       // a field of an older version is no use beside one of a newer, and one of the same orbital is replaced by this
       setFields((before) =>
         [...before.filter((each) => each.session_id === result.session_id && each.version === result.version && !sameField(each, result)), result].slice(-KEPT),
@@ -89,6 +95,7 @@ export function useOrbitals({ socketRef, held, note }: SessionLink): Orbitals {
         return;
       }
       setInteractionSince(null);
+      warnInteraction(result.status === "complete" ? null : (result.message ?? "The diagram could not be made."));
       setInteraction(result);
     });
 
@@ -97,7 +104,7 @@ export function useOrbitals({ socketRef, held, note }: SessionLink): Orbitals {
       hearField();
       hearInteraction();
     };
-  }, [held, socketRef]);
+  }, [held, socketRef, warnLevels, warnField, warnInteraction]);
 
   const requestOrbitals = useCallback(
     (model: string, fragments: readonly string[]) => {

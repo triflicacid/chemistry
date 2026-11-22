@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -47,7 +48,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 26;
+    private static final int PROTOCOL_VERSION = 28;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -971,7 +972,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        orbitals.potential(session, request.model(), request.fragment(), report -> sendToHolder(session, report));
+        orbitals.potential(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report));
 
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "esp.request.ack");
@@ -990,6 +991,51 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     private void requestDensity(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
     {
+        densityRequest(context, body, sequence, "density.request",
+                (session, request) -> orbitals.density(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report)));
+    }
+
+    /**
+     * Asks for the spin density of a session, on a grid round its atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestSpin(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        densityRequest(context, body, sequence, "spin.request",
+                (session, request) -> orbitals.spin(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report)));
+    }
+
+    /**
+     * Asks for the difference density of a session, on a grid round its atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestDifference(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        densityRequest(context, body, sequence, "difference.request",
+                (session, request) -> orbitals.difference(session, request.model(), request.multiplicity(), report -> sendToHolder(session, report)));
+    }
+
+    /**
+     * Reads a request for some density.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @param requestType the type of the message, whose acknowledgement is the same with {@code .ack} after it
+     * @param schedule asks the scheduler for the density
+     * @throws IOException if the connection cannot be written
+     */
+    private void densityRequest(WebSocketContext context, Map<String, Object> body, Long sequence, String requestType,
+                                BiConsumer<StudioSession, StudioRequests.DensityRequest> schedule) throws IOException
+    {
         StudioRequests.DensityRequest request;
         try
         {
@@ -997,7 +1043,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
         catch (JsonException malformed)
         {
-            context.error("density.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            context.error(requestType, sequence, "INVALID_MESSAGE", malformed.getMessage());
             return;
         }
 
@@ -1006,15 +1052,15 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                 : sessions.find(request.sessionId()).orElse(null);
         if (session == null)
         {
-            context.error("density.request", sequence, "NO_SESSION",
+            context.error(requestType, sequence, "NO_SESSION",
                     "No session is open as '" + request.sessionId() + "'; open one on a molecule");
             return;
         }
 
-        orbitals.density(session, request.model(), request.fragment(), report -> sendToHolder(session, report));
+        schedule.accept(session, request);
 
         Map<String, Object> ack = new LinkedHashMap<>();
-        ack.put("type", "density.request.ack");
+        ack.put("type", requestType + ".ack");
         ack.put("sequence", sequence);
         context.sendJson(ack);
     }
@@ -1912,6 +1958,8 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("interaction.request", endpoint::requestInteraction),
                     Map.entry("esp.request", endpoint::requestEsp),
                     Map.entry("density.request", endpoint::requestDensity),
+                    Map.entry("spin.request", endpoint::requestSpin),
+                    Map.entry("difference.request", endpoint::requestDifference),
                     Map.entry("edit.undo", endpoint::undo),
                     Map.entry("edit.redo", endpoint::redo),
                     Map.entry("history.list", endpoint::history),

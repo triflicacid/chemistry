@@ -252,11 +252,7 @@ function ScanPlot({ state, models, debug }: PlotProps) {
       </div>
 
       {(!scan || scan.status !== "complete") && (
-        <p className="energy-note">
-          {scan && scan.status !== "complete"
-            ? (scan.message ?? "The scan could not be made.")
-            : "Draws one molecule away from another along a hydrogen bond. It needs at least two molecules, such as water twice (O.O)."}
-        </p>
+        <p className="energy-note">Draws one molecule away from another along a hydrogen bond. It needs at least two molecules, such as water twice (O.O).</p>
       )}
 
       {scan?.status === "complete" && bond && (
@@ -438,11 +434,7 @@ function BreakdownPlot({ state, models, debug }: PlotProps) {
       </div>
 
       {interactions.length === 0 ? (
-        <p className="energy-note">
-          {forces && forces.status !== "complete"
-            ? (forces.message ?? "The energies could not be calculated.")
-            : "Splits the energy between each pair of molecules into its parts. It needs at least two molecules, such as water twice (O.O)."}
-        </p>
+        <p className="energy-note">Splits the energy between each pair of molecules into its parts. It needs at least two molecules, such as water twice (O.O).</p>
       ) : (
         <>
           <p className="energy-note">

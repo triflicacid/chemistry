@@ -118,6 +118,33 @@ export function nearestAtomColours(surface: Surface, atoms: readonly SurfaceAtom
   return colours;
 }
 
+/** The positive and the negative part of a signed field. */
+export interface SignedSurfaces {
+  /** Where the field is above the level. */
+  positive: Surface;
+  /** Where it is below minus the level. */
+  negative: Surface;
+}
+
+/** The last surfaces made of each signed field, which are kept for as long as the isovalue they were made at is asked for. */
+const signedSurfaces = new WeakMap<DecodedDensity, { isovalue: number; made: SignedSurfaces }>();
+
+/**
+ * @param field a density that is positive in some places and negative in others, such as the spin density
+ * @param isovalue how far from zero the surfaces are, in electrons per cubic bohr
+ * @returns a surface round where it is above the isovalue and another round where it is below minus the isovalue
+ */
+export function signedDensitySurfaces(field: DecodedDensity, isovalue: number): SignedSurfaces {
+  const held = signedSurfaces.get(field);
+  if (held && held.isovalue === isovalue) {
+    return held.made;
+  }
+  // the negative part is the positive part of the field turned upside down
+  const made = { positive: isosurface(field.density, field.shape, isovalue), negative: isosurface(field.density.map((value) => -value), field.shape, isovalue) };
+  signedSurfaces.set(field, { isovalue, made });
+  return made;
+}
+
 /**
  * Reads a field at a point between the points of its grid.
  *

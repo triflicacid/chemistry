@@ -132,7 +132,7 @@ function ActivityLog({ activity }: { activity: Activity[] }) {
   return (
     <ol className="activity" ref={end}>
       {activity.map((line) => (
-        <li key={`${line.at}-${line.message}`} className={line.failed ? "failed" : undefined}>
+        <li key={`${line.at}-${line.message}`} className={line.failed ? "failed" : line.warning ? "warning" : undefined}>
           <time>{clock(line.at)}</time>
           <pre>{line.message}</pre>
         </li>

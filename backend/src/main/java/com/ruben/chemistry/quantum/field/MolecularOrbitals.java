@@ -117,6 +117,43 @@ public record MolecularOrbitals(BasisSet basis, Matrix overlap, Matrix density, 
     }
 
     /**
+     * @return the density matrix of the spin density, the electrons of spin up less those of spin down, over the basis functions; which is
+     *     zero throughout for a closed-shell calculation, and for a restricted open-shell one is made of the singly occupied orbitals alone
+     */
+    public Matrix spinDensity()
+    {
+        int size = density.rows();
+        Matrix spin = new Matrix(size, size);
+        for (Channel channel : channels)
+        {
+            for (int orbital = 0; orbital < channel.occupancy().length; orbital++)
+            {
+                int held = channel.occupancy()[orbital];
+                double weight = switch (channel.spin())
+                {
+                    case ALPHA -> held;
+                    case BETA -> -held;
+                    default -> held == 1 ? 1 : 0;
+                };
+                if (weight == 0.0)
+                {
+                    continue;
+                }
+
+                double[] column = channel.coefficients().column(orbital);
+                for (int row = 0; row < size; row++)
+                {
+                    for (int other = 0; other < size; other++)
+                    {
+                        spin.set(row, other, spin.get(row, other) + weight * column[row] * column[other]);
+                    }
+                }
+            }
+        }
+        return spin;
+    }
+
+    /**
      * @param spin which set of orbitals
      * @return that set, or {@code null} if there is no such set
      */

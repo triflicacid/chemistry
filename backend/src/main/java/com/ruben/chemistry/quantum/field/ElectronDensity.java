@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 /**
- * The electron density of a molecule and its electrostatic potential, evaluated on a grid.
+ * The electron density of a molecule, its spin density and its electrostatic potential, evaluated on a grid.
  */
 public final class ElectronDensity
 {
@@ -25,8 +25,23 @@ public final class ElectronDensity
      */
     public static float[] evaluate(MolecularOrbitals orbitals, FieldGrid grid, Runnable check)
     {
-        List<ContractedGaussian> functions = orbitals.basis().functions();
-        Matrix density = orbitals.density();
+        return evaluate(orbitals.basis().functions(), orbitals.density(), grid, check);
+    }
+
+    /**
+     * @param orbitals the calculation
+     * @param grid the points to evaluate it at, in ångström
+     * @param check called once for each slice of the grid, and able to stop the evaluation by throwing
+     * @return the spin density at each point, the electrons of spin up less those of spin down, in electrons per cubic bohr, running along x
+     *     fastest, then y, then z; which is positive where spin up is in excess and negative where spin down is
+     */
+    public static float[] spin(MolecularOrbitals orbitals, FieldGrid grid, Runnable check)
+    {
+        return evaluate(orbitals.basis().functions(), orbitals.spinDensity(), grid, check);
+    }
+
+    private static float[] evaluate(List<ContractedGaussian> functions, Matrix density, FieldGrid grid, Runnable check)
+    {
         int n = functions.size();
         double[][] p = new double[n][n];
         for (int row = 0; row < n; row++)

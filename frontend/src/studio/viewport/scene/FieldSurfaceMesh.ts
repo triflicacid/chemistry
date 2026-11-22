@@ -2,6 +2,7 @@ import {
   BufferGeometry,
   DoubleSide,
   Float32BufferAttribute,
+  Group,
   Mesh,
   MeshStandardMaterial,
   Raycaster,
@@ -11,19 +12,21 @@ import type {Surface} from "../../../render/isosurface";
 import type {Stage} from "../../../render/stage";
 import type {MoleculeScene} from "./MoleculeScene";
 
-/** How the surface is drawn. */
-export interface FieldSurfaceOptions {
-  /** How opaque the surface is. */
-  opacity: number;
+/** One surface of a field, with its colour. */
+export interface SurfacePart {
+  surface: Surface;
   /** The red, green and blue of each vertex, from 0 to 1, or null to draw the whole surface in {@link colour}. */
   colours: Float32Array | null;
   /** The colour of a surface with none for each vertex. */
   colour: string;
 }
 
-/** Draws a surface of a scalar field, in one colour or with a colour at each vertex. It sits in the molecule's group so that it moves with it. */
+/**
+ * Draws surfaces of a scalar field, each in one colour or with a colour at each vertex: one for a density, two for a field with a positive
+ * and a negative part. They sit in the molecule's group so that they move with it.
+ */
 export class FieldSurfaceMesh {
-  private mesh: Mesh | null = null;
+  private marks: Group | null = null;
   private readonly raycaster = new Raycaster();
 
   constructor(
@@ -31,59 +34,67 @@ export class FieldSurfaceMesh {
     private readonly scene: MoleculeScene,
   ) {}
 
+  /** Forgets the surfaces, which were taken away along with everything else drawn in the molecule's group. */
   forget(): void {
-    this.mesh = null;
+    this.marks = null;
   }
 
   /**
    * @param event where the pointer is
-   * @returns where the pointer's ray first meets the surface, in the molecule's own frame, or null if there is no surface or the ray misses it
+   * @returns where the pointer's ray first meets a surface, in the molecule's own frame, or null if there are none or the ray misses them
    */
   probe(event: { clientX: number; clientY: number }): Vector3 | null {
-    if (!this.mesh) {
+    if (!this.marks) {
       return null;
     }
     this.raycaster.setFromCamera(this.stage.pointer(event), this.stage.camera);
-    const hit = this.raycaster.intersectObject(this.mesh, false)[0];
+    const hit = this.raycaster.intersectObjects(this.marks.children, false)[0];
     return hit ? this.scene.content.worldToLocal(hit.point.clone()) : null;
   }
 
   /**
-   * Draws the surface afresh.
+   * Draws the surfaces afresh, taking away those drawn before.
    *
-   * @param surface the surface, or null to draw none
-   * @param options how to draw it
+   * @param parts the surfaces, or none to draw none
+   * @param opacity how opaque they are
    */
-  show(surface: Surface | null, options: FieldSurfaceOptions): void {
+  show(parts: readonly SurfacePart[], opacity: number): void {
     const { content } = this.scene;
-    if (this.mesh) {
-      content.remove(this.mesh);
-      this.mesh.geometry.dispose();
-      (this.mesh.material as MeshStandardMaterial).dispose();
-      this.mesh = null;
+    if (this.marks) {
+      content.remove(this.marks);
+      for (const mesh of this.marks.children as Mesh[]) {
+        mesh.geometry.dispose();
+        (mesh.material as MeshStandardMaterial).dispose();
+      }
+      this.marks = null;
     }
 
-    if (surface && surface.positions.length > 0) {
-      const geometry = new BufferGeometry();
-      geometry.setAttribute("position", new Float32BufferAttribute(surface.positions, 3));
-      geometry.setAttribute("normal", new Float32BufferAttribute(surface.normals, 3));
-      if (options.colours) {
-        geometry.setAttribute("color", new Float32BufferAttribute(options.colours, 3));
+    const drawn = parts.filter((part) => part.surface.positions.length > 0);
+    if (drawn.length > 0) {
+      const marks = new Group();
+      for (const { surface, colours, colour } of drawn) {
+        const geometry = new BufferGeometry();
+        geometry.setAttribute("position", new Float32BufferAttribute(surface.positions, 3));
+        geometry.setAttribute("normal", new Float32BufferAttribute(surface.normals, 3));
+        if (colours) {
+          geometry.setAttribute("color", new Float32BufferAttribute(colours, 3));
+        }
+        const mesh = new Mesh(
+          geometry,
+          new MeshStandardMaterial({
+            ...(colours ? { vertexColors: true } : { color: colour }),
+            roughness: 0.5,
+            side: DoubleSide,
+            transparent: opacity < 1,
+            opacity,
+            depthWrite: opacity >= 0.95,
+          }),
+        );
+        mesh.renderOrder = 3;
+        marks.add(mesh);
       }
-      const mesh = new Mesh(
-        geometry,
-        new MeshStandardMaterial({
-          ...(options.colours ? { vertexColors: true } : { color: options.colour }),
-          roughness: 0.5,
-          side: DoubleSide,
-          transparent: options.opacity < 1,
-          opacity: options.opacity,
-          depthWrite: options.opacity >= 0.95,
-        }),
-      );
-      mesh.renderOrder = 3;
-      content.add(mesh);
-      this.mesh = mesh;
+      content.add(marks);
+      this.marks = marks;
     }
     this.stage.requestRender();
   }

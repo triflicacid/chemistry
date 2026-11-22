@@ -7,6 +7,7 @@ import {
   type CameraAck,
   type ChargesRequestAck,
   type DensityRequestAck,
+  type DifferenceRequestAck,
   type EditApplied,
   type EditHistory,
   type EspRequestAck,
@@ -28,6 +29,7 @@ import {
   type SessionConflict,
   type SessionReady,
   type SessionState,
+  type SpinRequestAck,
   type TransformAck,
 } from "./messages";
 
@@ -575,9 +577,10 @@ export class StudioSocket {
    * @param sessionId the session to calculate for
    * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
    * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
    */
-  requestEsp(sessionId: string, model: string, fragment: string | null): Promise<EspRequestAck> {
-    return this.request<EspRequestAck>("esp.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}) }, "esp.request.ack");
+  requestEsp(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<EspRequestAck> {
+    return this.request<EspRequestAck>("esp.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "esp.request.ack");
   }
 
   /**
@@ -588,9 +591,37 @@ export class StudioSocket {
    * @param sessionId the session to calculate for
    * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
    * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
    */
-  requestDensity(sessionId: string, model: string, fragment: string | null): Promise<DensityRequestAck> {
-    return this.request<DensityRequestAck>("density.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}) }, "density.request.ack");
+  requestDensity(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<DensityRequestAck> {
+    return this.request<DensityRequestAck>("density.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "density.request.ack");
+  }
+
+  /**
+   * Asks for the spin density of a session, or of one of its molecules: the electrons of spin up less those of spin down. The answer says
+   * only that the request was understood: listen for `spin.result`, which says why there is none for a calculation whose electrons all pair up.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestSpin(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<SpinRequestAck> {
+    return this.request<SpinRequestAck>("spin.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "spin.request.ack");
+  }
+
+  /**
+   * Asks for the difference density of a session: the electron density of everything together less those of its molecules each on its
+   * own. The answer says only that the request was understood: listen for `difference.result`, which says why there is none for a session
+   * of one molecule.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment ignored by the server, since the difference is of the whole session
+   * @param multiplicity the spin multiplicity to calculate the whole at, or null for the lowest the electron count allows
+   */
+  requestDifference(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<DifferenceRequestAck> {
+    return this.request<DifferenceRequestAck>("difference.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "difference.request.ack");
   }
 
   /**

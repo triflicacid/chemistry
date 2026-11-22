@@ -2,6 +2,7 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import type {ChargesProgress, ChargesResult} from "./messages";
 import {reason} from "./errors";
 import type {SessionLink} from "./useSocket";
+import {useWarnOnce} from "./warnings";
 
 /** A calculation of charges that has been asked for and has not yet answered. */
 export interface Calculating {
@@ -32,7 +33,8 @@ export interface Charges {
  *
  * @param link the connection
  */
-export function useCharges({ socketRef, held, note }: SessionLink): Charges {
+export function useCharges({ socketRef, held, note, warn }: SessionLink): Charges {
+  const warnOnce = useWarnOnce(warn);
   const [charges, setCharges] = useState<ChargesResult | null>(null);
   const [calculating, setCalculating] = useState<Calculating | null>(null);
   const [progress, setProgress] = useState<ChargesProgress | null>(null);
@@ -59,6 +61,7 @@ export function useCharges({ socketRef, held, note }: SessionLink): Charges {
       }
       setCalculating(null);
       setProgress(null);
+      warnOnce(result.status === "complete" ? null : (result.message ?? "The charges could not be calculated."));
       // a result older than the one held is stale
       setCharges((before) => (before && before.session_id === result.session_id && before.version > result.version ? before : result));
     });
@@ -67,7 +70,7 @@ export function useCharges({ socketRef, held, note }: SessionLink): Charges {
       hearProgress();
       hearResult();
     };
-  }, [held, socketRef]);
+  }, [held, socketRef, warnOnce]);
 
   const requestCharges = useCallback(
     (model: string) => {

@@ -1,5 +1,6 @@
 import {type ReactNode, useEffect, useState} from "react";
 import type {Models} from "../models/models";
+import {ORBITAL_KINDS, type OrbitalKind} from "../models/OrbitalModel";
 import {
     CHARGE_MODELS,
     type ChargeModel,
@@ -14,6 +15,7 @@ import {
     MIN_POLAR_THRESHOLD,
     MIN_SURFACE_ISOVALUE,
     MIN_SURFACE_OPACITY,
+    MULTIPLICITIES,
     type PropertyGroup,
     type SurfaceKind,
 } from "../models/PropertiesModel";
@@ -25,6 +27,7 @@ import {chargeScale} from "../layout/chargeScale";
 import type {ChargesProgress} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
 import {ForceDebug} from "./ForceDebug";
+import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
 import {decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
 
 /** What the atoms can be coloured by, with what each means. */
@@ -37,8 +40,19 @@ const COLOUR_OPTIONS: { value: ColourBy; label: string; title: string }[] = [
 const SURFACE_OPTIONS: { value: SurfaceKind; label: string; title: string }[] = [
   { value: "none", label: "None", title: "Draw no surface" },
   { value: "density", label: "Electron density", title: "A surface where the electron density has a chosen value, from Hartree-Fock" },
+  { value: "spin", label: "Spin density", title: "Where the unpaired electrons are: blue where spin up is in excess, red where spin down is. A molecule whose electrons all pair up has none" },
+  { value: "difference", label: "Difference density", title: "The density of everything together less the densities of its molecules each on its own: blue where electrons gather as the molecules meet, red where they leave. Needs two or more molecules" },
   { value: "esp", label: "Potential on density", title: "The same surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive" },
 ];
+
+/** What is said while each surface is being worked out. */
+const WORKING: Record<SurfaceKind, string> = {
+  none: "",
+  density: "working out the density…",
+  esp: "working out the potential…",
+  spin: "working out the spin density…",
+  difference: "working out the difference density, which takes a calculation for each molecule…",
+};
 
 /** How often the running timer is redrawn. */
 const TICK_MS = 100;
@@ -49,7 +63,7 @@ const TICK_MS = 100;
  */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceIsovalue, surfaceOpacity, open, expanded } =
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceModel, multiplicity, surfaceIsovalue, surfaceOpacity, open, expanded } =
     useObservable(properties);
   const debug = useObservable(models.debug);
   const fold = (group: PropertyGroup) => ({ open: expanded[group], onToggle: () => properties.expandTo(group, !expanded[group]) });
@@ -176,6 +190,30 @@ export function PropertiesOptions({ models }: { models: Models }) {
             summary={surface !== "none" ? <SurfaceSummary kind={surface} isovalue={surfaceIsovalue} /> : null}
             details={
               <>
+                <dt>Calculation</dt>
+                <dd>
+                  <select value={surfaceModel} aria-label="The kind of Hartree-Fock calculation the surfaces come from" onChange={(event) => properties.surfaceModelTo(event.target.value as OrbitalKind)}>
+                    {ORBITAL_KINDS.map(({ value, label, title }) => (
+                      <option key={value} value={value} title={title}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </dd>
+                <dt>Spin</dt>
+                <dd>
+                  <select
+                    value={multiplicity === null ? "" : String(multiplicity)}
+                    aria-label="The spin multiplicity the surfaces are calculated at"
+                    onChange={(event) => properties.multiplicityTo(event.target.value === "" ? null : Number(event.target.value))}
+                  >
+                    {MULTIPLICITIES.map(({ value, label, title }) => (
+                      <option key={String(value)} value={value === null ? "" : String(value)} title={title}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </dd>
                 {surface === "density" && (
                   <>
                     <dt>Colour</dt>
@@ -191,7 +229,7 @@ export function PropertiesOptions({ models }: { models: Models }) {
                     </dd>
                   </>
                 )}
-                <dt>Density</dt>
+                <dt>{surface === "spin" || surface === "difference" ? "Level" : "Density"}</dt>
                 <dd className="position">
                   <input
                     type="range"
@@ -276,7 +314,6 @@ function ChargeSummary() {
   return (
     <>
       {calculatingCharges && <Running startedAt={calculatingCharges.startedAt} detail={describeProgress(chargesProgress)} />}
-      {!calculatingCharges && charges?.status === "failed" && <>{charges.message ?? "They could not be calculated."}</>}
       {scale && <Scale limit={scale.limit.toFixed(2)} unit="e" label={`From minus ${scale.limit.toFixed(2)} to plus ${scale.limit.toFixed(2)} elementary charges`} />}
     </>
   );
@@ -303,21 +340,32 @@ function ChargeDetails() {
 
 /** How the calculation behind a surface is getting on, and for the potential what the colours mean. */
 function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: number }) {
-  const { esp, espSince, density, densitySince, state } = useSessionContext();
-  const result = kind === "esp" ? esp : density;
-  const since = kind === "esp" ? espSince : densitySince;
+  const { esp, espSince, density, densitySince, spin, spinSince, difference, differenceSince, state } = useSessionContext();
+  const result = { esp, density, spin, difference, none: null }[kind];
+  const since = { esp: espSince, density: densitySince, spin: spinSince, difference: differenceSince, none: null }[kind];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = kind === "esp" && current && esp ? decodeEsp(esp) : null;
   const limit = decoded ? makeEspSurface(decoded, isovalue).limit : null;
 
   return (
     <>
-      {since !== null && <Running startedAt={since} detail={kind === "esp" ? "working out the potential…" : "working out the density…"} />}
-      {since === null && result?.status === "failed" && <>{result.message ?? "It could not be calculated."}</>}
+      {since !== null && <Running startedAt={since} detail={WORKING[kind]} />}
       {since === null && kind === "density" && density?.status === "complete" && (
         <>
           electrons per cubic bohr
           <Took milliseconds={density.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && (kind === "spin" || kind === "difference") && result?.status === "complete" && (
+        <>
+          <span className="legend-key">
+            <span style={{ color: POSITIVE_LOBE }}>●</span> {kind === "spin" ? "spin up" : "gained"}
+          </span>
+          <span className="legend-key">
+            <span style={{ color: NEGATIVE_LOBE }}>●</span> {kind === "spin" ? "spin down" : "lost"}
+          </span>
+          <Took milliseconds={result.elapsed_ms} />
           {current ? "" : " (updating…)"}
         </>
       )}
@@ -340,7 +388,6 @@ function ForceSummary() {
   return (
     <>
       {calculatingForcesSince !== null && <Running startedAt={calculatingForcesSince} detail="working out the forces…" />}
-      {calculatingForcesSince === null && forces && forces.status !== "complete" && <>{forces.message ?? "They could not be calculated."}</>}
       {calculatingForcesSince === null && forces?.status === "complete" && forces.energy !== null && (
         <>
           strongest {toKcalPerAngstrom(largest(forces).atom).toFixed(2)} kcal/mol/Å

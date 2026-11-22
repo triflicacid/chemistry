@@ -43,6 +43,9 @@ public final class OrbitalScheduler implements AutoCloseable
     /** The least density, in electrons per cubic bohr, at which the electrostatic potential is found, which is below any surface worth drawing. */
     public static final double POTENTIAL_FROM = 0.0005;
 
+    /** The spin density, in electrons per cubic bohr, below which a calculation is taken to have none anywhere. */
+    public static final double NO_SPIN = 1.0e-6;
+
     /** The greatest density at which it is found, which is above any surface worth drawing. */
     public static final double POTENTIAL_TO = 0.03;
 
@@ -61,11 +64,12 @@ public final class OrbitalScheduler implements AutoCloseable
         /**
          * @param model the kind of calculation: one of {@link #MODELS} other than {@link #AUTOMATIC}
          * @param structure the molecule, with positions in ångström
+         * @param multiplicity the spin multiplicity, or {@code null} for the lowest the electron count allows
          * @param listener told how it is getting on, and able to stop it
          * @return the orbitals
-         * @throws IllegalArgumentException if the kind of calculation cannot be made of this molecule
+         * @throws IllegalArgumentException if the kind of calculation cannot be made of this molecule, or not at this multiplicity
          */
-        MolecularOrbitals calculate(String model, Structure3D structure, ScfListener listener);
+        MolecularOrbitals calculate(String model, Structure3D structure, Integer multiplicity, ScfListener listener);
     }
 
     /**
@@ -89,6 +93,8 @@ public final class OrbitalScheduler implements AutoCloseable
     private final JobScheduler<InteractionReport> interactions;
     private final JobScheduler<EspReport> potentials;
     private final JobScheduler<DensityReport> densities;
+    private final JobScheduler<DensityReport> spins;
+    private final JobScheduler<DensityReport> differences;
     private final Wavefunctions wavefunctions;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
     private final Object lock = new Object();
@@ -114,6 +120,8 @@ public final class OrbitalScheduler implements AutoCloseable
         this.interactions = new JobScheduler<>(debounce);
         this.potentials = new JobScheduler<>(debounce);
         this.densities = new JobScheduler<>(debounce);
+        this.spins = new JobScheduler<>(debounce);
+        this.differences = new JobScheduler<>(debounce);
         this.wavefunctions = Objects.requireNonNull(wavefunctions, "wavefunctions");
     }
 
@@ -291,7 +299,7 @@ public final class OrbitalScheduler implements AutoCloseable
      * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
      * @param deliver told the result, from another thread, only if it is not out of date
      */
-    public void potential(StudioSession session, String requested, String fragment, Consumer<EspReport> deliver)
+    public void potential(StudioSession session, String requested, String fragment, Integer multiplicity, Consumer<EspReport> deliver)
     {
         String model = resolve(requested);
         potentials.schedule(session,
@@ -299,7 +307,7 @@ public final class OrbitalScheduler implements AutoCloseable
                 {
                     try
                     {
-                        Cached made = calculation(session, described, model, fragment, run);
+                        Cached made = calculation(session, described, model, fragment, multiplicity, run);
                         FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), MARGIN, LONGEST_SIDE, FINEST);
                         float[] density = ElectronDensity.evaluate(made.orbitals(), grid, run::check);
                         float[] potential = ElectronDensity.potential(made.orbitals(), grid, density, POTENTIAL_FROM, POTENTIAL_TO, run::check);
@@ -321,27 +329,133 @@ public final class OrbitalScheduler implements AutoCloseable
      * @param session the session
      * @param requested the kind of calculation, as {@link #resolve} reads it
      * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or {@code null} for the lowest the electron count allows
      * @param deliver told the result, from another thread, only if it is not out of date
      */
-    public void density(StudioSession session, String requested, String fragment, Consumer<DensityReport> deliver)
+    public void density(StudioSession session, String requested, String fragment, Integer multiplicity, Consumer<DensityReport> deliver)
     {
-        String model = resolve(requested);
-        densities.schedule(session,
+        schedule(densities, DensityReport.DENSITY, session, resolve(requested), fragment, deliver,
+                (described, model, run) ->
+                {
+                    Cached made = calculation(session, described, model, fragment, multiplicity, run);
+                    FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), MARGIN, LONGEST_SIDE, FINEST);
+                    return new Evaluated(grid, ElectronDensity.evaluate(made.orbitals(), grid, run::check));
+                });
+    }
+
+    /**
+     * Asks for the spin density on a grid around the atoms.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or {@code null} for the lowest the electron count allows
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void spin(StudioSession session, String requested, String fragment, Integer multiplicity, Consumer<DensityReport> deliver)
+    {
+        schedule(spins, DensityReport.SPIN, session, resolve(requested), fragment, deliver,
+                (described, model, run) ->
+                {
+                    Cached made = calculation(session, described, model, fragment, multiplicity, run);
+                    FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), MARGIN, LONGEST_SIDE, FINEST);
+                    float[] spin = ElectronDensity.spin(made.orbitals(), grid, run::check);
+                    float greatest = 0.0f;
+                    for (float value : spin)
+                    {
+                        greatest = Math.max(greatest, Math.abs(value));
+                    }
+                    if (greatest < NO_SPIN)
+                    {
+                        throw new IllegalArgumentException("This " + (fragment == null ? "system" : "molecule") + " has no unpaired electrons, so its spin density is zero."
+                                + " Try a radical, such as [CH3] or [O] (the oxygen atom)");
+                    }
+                    return new Evaluated(grid, spin);
+                });
+    }
+
+    /**
+     * Asks for the difference density on a grid around the atoms.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param multiplicity the spin multiplicity to calculate the whole at, or {@code null} for the lowest the electron count allows; the
+     *     molecules each on its own are calculated at the lowest
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void difference(StudioSession session, String requested, Integer multiplicity, Consumer<DensityReport> deliver)
+    {
+        schedule(differences, DensityReport.DIFFERENCE, session, resolve(requested), null, deliver,
+                (described, model, run) ->
+                {
+                    List<List<Integer>> parts = ForceReport.connectedParts(described.structure());
+                    if (parts.size() < 2)
+                    {
+                        throw new IllegalArgumentException("The difference density needs two or more molecules in the session");
+                    }
+
+                    Cached whole = calculation(session, described, model, null, multiplicity, run);
+                    FieldGrid grid = FieldGrid.around(positionsOf(whole.structure()), MARGIN, LONGEST_SIDE, FINEST);
+                    float[] difference = ElectronDensity.evaluate(whole.orbitals(), grid, run::check);
+                    for (List<Integer> part : parts)
+                    {
+                        Cached alone = calculation(session, described, model, described.sites().get(part.getFirst()), run);
+                        float[] density = ElectronDensity.evaluate(alone.orbitals(), grid, run::check);
+                        for (int at = 0; at < difference.length; at++)
+                        {
+                            difference[at] -= density[at];
+                        }
+                    }
+                    return new Evaluated(grid, difference);
+                });
+    }
+
+    /** Some density on a grid. */
+    private record Evaluated(FieldGrid grid, float[] values)
+    {
+    }
+
+    /** Works out a density, from calculations that it asks for. */
+    @FunctionalInterface
+    private interface Evaluation
+    {
+        /**
+         * @param described the geometry
+         * @param model the kind of calculation, already resolved
+         * @param run lets the work be stopped when it is out of date
+         * @return the density, on the grid it was worked out on
+         * @throws IllegalArgumentException if there is no such density to be had
+         */
+        Evaluated evaluate(StudioSession.Described described, String model, JobScheduler.Run run);
+    }
+
+    /**
+     * Schedules a density once the session has been left alone, answering with a report that says why if it cannot be had.
+     *
+     * @param scheduler the queue for this kind of density
+     * @param type what the density is
+     * @param session the session
+     * @param model the kind of calculation, already resolved
+     * @param fragment an atom of the molecule it is of, or {@code null} for the whole session
+     * @param deliver told the result, from another thread, only if it is not out of date
+     * @param evaluation works it out
+     */
+    private void schedule(JobScheduler<DensityReport> scheduler, String type, StudioSession session, String model, String fragment, Consumer<DensityReport> deliver, Evaluation evaluation)
+    {
+        scheduler.schedule(session,
                 (described, run) ->
                 {
                     try
                     {
-                        Cached made = calculation(session, described, model, fragment, run);
-                        FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), MARGIN, LONGEST_SIDE, FINEST);
-                        float[] density = ElectronDensity.evaluate(made.orbitals(), grid, run::check);
-                        return DensityReport.of(session, described.version(), fragment, grid, density).elapsed(run.elapsedMs());
+                        Evaluated made = evaluation.evaluate(described, model, run);
+                        return DensityReport.of(type, session, described.version(), fragment, made.grid(), made.values()).elapsed(run.elapsedMs());
                     }
                     catch (IllegalArgumentException unsuitable)
                     {
-                        return DensityReport.failed(session, described.version(), fragment, run.elapsedMs(), unsuitable.getMessage());
+                        return DensityReport.failed(type, session, described.version(), fragment, run.elapsedMs(), unsuitable.getMessage());
                     }
                 },
-                (described, elapsedMs, message) -> DensityReport.failed(session, described.version(), fragment, elapsedMs, message),
+                (described, elapsedMs, message) -> DensityReport.failed(type, session, described.version(), fragment, elapsedMs, message),
                 deliver);
     }
 
@@ -354,6 +468,8 @@ public final class OrbitalScheduler implements AutoCloseable
         interactions.close();
         potentials.close();
         densities.close();
+        spins.close();
+        differences.close();
     }
 
     /**
@@ -396,10 +512,25 @@ public final class OrbitalScheduler implements AutoCloseable
      */
     private Cached calculation(StudioSession session, StudioSession.Described described, String model, String fragment, JobScheduler.Run run)
     {
+        return calculation(session, described, model, fragment, null, run);
+    }
+
+    /**
+     * @param session the session
+     * @param described the geometry
+     * @param model the kind of calculation, already resolved
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param multiplicity the spin multiplicity, or {@code null} for the lowest the electron count allows
+     * @param run lets the calculation be stopped when it is out of date
+     * @return the calculation of that geometry, which is the one kept if it is of the same version
+     * @throws IllegalArgumentException if no molecule has the atom, or the electrons cannot have the multiplicity
+     */
+    private Cached calculation(StudioSession session, StudioSession.Described described, String model, String fragment, Integer multiplicity, JobScheduler.Run run)
+    {
         // one calculation at a time, so that a request for the levels and one for an orbital do not both run it
         synchronized (lock)
         {
-            String key = session.sessionId() + "|" + model + "|" + (fragment == null ? "" : fragment);
+            String key = session.sessionId() + "|" + model + "|" + (multiplicity == null ? "" : multiplicity) + "|" + (fragment == null ? "" : fragment);
             Cached held = cache.get(key);
             if (held != null && held.version() == described.version())
             {
@@ -409,7 +540,7 @@ public final class OrbitalScheduler implements AutoCloseable
             List<Integer> part = fragment == null ? null : partOf(described, fragment);
             Structure3D structure = part == null ? described.structure() : ForceReport.alone(described.structure(), part);
             List<String> atoms = part == null ? described.sites() : part.stream().map(described.sites()::get).toList();
-            MolecularOrbitals made = wavefunctions.calculate(model, structure, new ScfListener()
+            MolecularOrbitals made = wavefunctions.calculate(model, structure, multiplicity, new ScfListener()
             {
                 @Override
                 public void stage(String stage)
@@ -476,14 +607,27 @@ public final class OrbitalScheduler implements AutoCloseable
      *
      * @param model the kind of calculation, with {@link #AUTOMATIC} meaning closed-shell where the electrons pair up
      * @param structure the molecule
+     * @param requested the spin multiplicity, or {@code null} for the lowest the electron count allows
      * @param listener told how it is getting on
      * @return the orbitals
+     * @throws IllegalArgumentException if the electrons cannot have the multiplicity, or the kind of calculation cannot have it
      */
-    private static MolecularOrbitals hartreeFock(String model, Structure3D structure, ScfListener listener)
+    private static MolecularOrbitals hartreeFock(String model, Structure3D structure, Integer requested, ScfListener listener)
     {
         BasisLibrary library = BasisLibrary.cep31g();
         ScfSettings settings = ScfSettings.defaults().withListener(listener);
-        int multiplicity = ChargeModels.electrons(structure, library) % 2 == 0 ? 1 : 2;
+        int electrons = ChargeModels.electrons(structure, library);
+        int multiplicity = requested == null ? (electrons % 2 == 0 ? 1 : 2) : requested;
+        // the unpaired electrons are the multiplicity less one, and the rest pair up, so they must be as many fewer than the electrons as is even
+        if (multiplicity < 1 || multiplicity > electrons + 1 || (multiplicity - 1) % 2 != electrons % 2)
+        {
+            throw new IllegalArgumentException("A multiplicity of " + multiplicity + " is not possible with " + electrons + " electrons; it must be "
+                    + (electrons % 2 == 0 ? "odd: 1, 3, 5…" : "even: 2, 4, 6…"));
+        }
+        if (ChargeModels.RHF.equals(model) && multiplicity != 1)
+        {
+            throw new IllegalArgumentException("Closed-shell restricted Hartree-Fock can only be a singlet; choose unrestricted or restricted open-shell for a multiplicity of " + multiplicity);
+        }
         return switch (model)
         {
             case ChargeModels.RHF -> MolecularOrbitals.of(new RhfMullikenCharges(library, settings).run(structure, 0));
@@ -491,7 +635,7 @@ public final class OrbitalScheduler implements AutoCloseable
             case ChargeModels.ROHF -> MolecularOrbitals.of(new RohfMullikenCharges(library, multiplicity, settings).run(structure, 0));
             default -> multiplicity == 1
                     ? MolecularOrbitals.of(new RhfMullikenCharges(library, settings).run(structure, 0))
-                    : MolecularOrbitals.of(new UhfMullikenCharges(library, 2, settings).run(structure, 0));
+                    : MolecularOrbitals.of(new UhfMullikenCharges(library, multiplicity, settings).run(structure, 0));
         };
     }
 }

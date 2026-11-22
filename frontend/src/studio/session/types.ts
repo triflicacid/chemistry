@@ -14,6 +14,8 @@ export interface Activity {
   at: number;
   message: string;
   failed: boolean;
+  /** Whether it says that something asked for cannot be done, which is not an error: a surface of the difference density of one molecule, say. */
+  warning?: boolean;
   /** Whether the message has line breaks and spacing that mean something, as a SMILES error's caret does. */
   preformatted?: boolean;
 }

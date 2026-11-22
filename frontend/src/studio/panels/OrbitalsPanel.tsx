@@ -190,11 +190,7 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
       </div>
 
       {!complete && (
-        <p className="energy-note">
-          {matches && orbitals.status !== "complete"
-            ? (orbitals.message ?? "The orbitals could not be calculated.")
-            : "Draws the molecular orbitals from a Hartree-Fock calculation. Choose a level to see its orbital in the scene."}
-        </p>
+        <p className="energy-note">Draws the molecular orbitals from a Hartree-Fock calculation. Choose a level to see its orbital in the scene.</p>
       )}
 
       {complete && (
@@ -294,10 +290,6 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
           {selected !== null && targets.length > 0 && <OrbitalSites targets={targets} channels={channels} state={state} models={models} nameOfMolecule={nameOfMolecule} />}
           {selected !== null && targets.length > 0 && <Character targets={targets} channels={channels} nameOfMolecule={nameOfMolecule} />}
           {inside.length > 0 && <EnclosedShare shown={inside} isovalue={isovalue} onIsovalue={(value) => models.orbital.isovalueTo(value)} />}
-
-          {fields.some((field) => field.status === "failed" && state !== null && field.version === state.version) && selected !== null && (
-            <p className="energy-note">{fields.find((field) => field.status === "failed")?.message ?? "An orbital could not be worked out."}</p>
-          )}
 
           {debug && <OrbitalsDebug channels={drawn} nameOfMolecule={nameOfMolecule} />}
         </>
@@ -756,9 +748,7 @@ function InteractionSection({ state, kind, everything, nameOfMolecule }: Interac
       <p className="energy-note">
         {complete
           ? `The orbitals of everything together in the middle, and of each molecule on its own at the sides. A line joins an orbital of the whole to the molecule orbitals it is made of, and is thicker the more of it they are.${stale ? " The structure has changed since, so calculate again." : ""}`
-          : matches && interaction.status !== "complete"
-            ? (interaction.message ?? "The diagram could not be made.")
-            : "Shows how the orbitals of the molecules together are made of the orbitals each has on its own. Needs at least two molecules."}
+          : "Shows how the orbitals of the molecules together are made of the orbitals each has on its own. Needs at least two molecules."}
       </p>
       {complete && <InteractionDiagram report={interaction} spin={drawn} around={everything ? null : NEAR_GAP} nameOfMolecule={nameOfMolecule} />}
     </>

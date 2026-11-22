@@ -20,6 +20,7 @@ import {
   espSurface,
   nearestAtomColours,
   sampleGrid,
+  signedDensitySurfaces,
   toKcalPerCharge,
   vertexColours
 } from "./esp";
@@ -28,6 +29,8 @@ import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
 import {useStructureActions} from "./useStructureActions";
 import {ActionTools, DisplayTools} from "./ViewportOverlay";
+import type {SurfacePart} from "../viewport/scene/FieldSurfaceMesh";
+import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
 
 export interface ViewportProps {
   phase: SessionPhase;
@@ -62,6 +65,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     fields: orbitalFieldList,
     esp,
     density,
+    spin,
+    difference,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -152,20 +157,30 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const atVersion = (result: { session_id: string; version: number } | null) =>
     result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decodedEsp = useMemo(() => (surfaceKind === "esp" && esp && atVersion(esp) ? decodeEsp(esp) : null), [surfaceKind, esp, state]); // eslint-disable-line react-hooks/exhaustive-deps
-  const decodedDensity = useMemo(() => (surfaceKind === "density" && density && atVersion(density) ? decodeDensity(density) : null), [surfaceKind, density, state]); // eslint-disable-line react-hooks/exhaustive-deps
-  const drawn = useMemo(() => {
+  // the density alone, the spin and the difference each come in a message of their own, and are decoded the same way
+  const plain = surfaceKind === "density" ? density : surfaceKind === "spin" ? spin : surfaceKind === "difference" ? difference : null;
+  const decodedDensity = useMemo(() => (plain && atVersion(plain) ? decodeDensity(plain) : null), [plain, state]); // eslint-disable-line react-hooks/exhaustive-deps
+  const signed = surfaceKind === "spin" || surfaceKind === "difference";
+  const drawn = useMemo((): SurfacePart[] => {
     if (decodedEsp) {
       const made = espSurface(decodedEsp, surfaceIsovalue);
-      return { surface: made.surface, colours: vertexColours(made.values, made.limit) };
+      return [{ surface: made.surface, colours: vertexColours(made.values, made.limit), colour: DENSITY_COLOUR }];
     }
     if (!decodedDensity) {
-      return null;
+      return [];
+    }
+    if (signed) {
+      const { positive, negative } = signedDensitySurfaces(decodedDensity, surfaceIsovalue);
+      return [
+        { surface: positive, colours: null, colour: POSITIVE_LOBE },
+        { surface: negative, colours: null, colour: NEGATIVE_LOBE },
+      ];
     }
     const made = densitySurface(decodedDensity, surfaceIsovalue);
-    return { surface: made, colours: densityColour === "element" && state ? nearestAtomColours(made, state.atoms) : null };
-  }, [decodedEsp, decodedDensity, surfaceIsovalue, densityColour, state]);
+    return [{ surface: made, colours: densityColour === "element" && state ? nearestAtomColours(made, state.atoms) : null, colour: DENSITY_COLOUR }];
+  }, [decodedEsp, decodedDensity, signed, surfaceIsovalue, densityColour, state]);
   useEffect(() => {
-    view?.showFieldSurface(drawn?.surface ?? null, { opacity: surfaceOpacity, colours: drawn?.colours ?? null, colour: DENSITY_COLOUR });
+    view?.showFieldSurface(drawn, surfaceOpacity);
   }, [view, drawn, surfaceOpacity]);
 
   // with Debug on, the density, and the potential where there is one, are read where the pointer is on the surface
@@ -173,7 +188,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const probed = decodedEsp ?? decodedDensity;
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!view || !canvas || !debug || !probed || !drawn) {
+    if (!view || !canvas || !debug || !probed || drawn.length === 0) {
       setProbe(null);
       return;
     }
@@ -472,7 +487,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       <canvas ref={canvasRef} className="viewport-canvas" />
       {probe && (
         <div className="field-probe" style={{ left: probe.left + 14, top: probe.top + 14 }} aria-hidden="true">
-          density {probe.density.toFixed(4)} e/bohr³
+          {surfaceKind === "spin" ? "spin density" : surfaceKind === "difference" ? "difference" : "density"} {probe.density.toFixed(4)} e/bohr³
           {probe.potential !== null && (
             <>
               <br />

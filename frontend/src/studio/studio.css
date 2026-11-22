@@ -14,6 +14,7 @@
   --accent: #0969da;
   --hover: #d4a017;
   --bad: #b42318;
+  --warn: #b54708;
   --selected-fill: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
@@ -929,6 +930,10 @@ body.resizing {
   color: var(--bad);
 }
 
+.activity .warning {
+  color: var(--warn);
+}
+
 .analysis-tabs {
   margin-bottom: 0.4rem;
 }
@@ -1059,6 +1064,10 @@ body.resizing {
 .optimise-neutral,
 .popup-neutral {
   border-left-color: var(--accent);
+}
+
+.popup-warn {
+  border-left-color: var(--warn);
 }
 
 .optimise-bad,

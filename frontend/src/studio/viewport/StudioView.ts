@@ -30,8 +30,7 @@ import {Annotations} from "./scene/Annotations";
 import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
 import {HydrogenBondGuide} from "./scene/HydrogenBondGuide";
 import {MoleculeNumbers} from "./scene/MoleculeNumbers";
-import {FieldSurfaceMesh, type FieldSurfaceOptions} from "./scene/FieldSurfaceMesh";
-import type {Surface} from "../../render/isosurface";
+import {FieldSurfaceMesh, type SurfacePart} from "./scene/FieldSurfaceMesh";
 import {type OrbitalDrawn, type OrbitalOptions, OrbitalSurface} from "./scene/OrbitalSurface";
 import type {DrawnOrbital} from "../layout/orbitals";
 import type {NumberedMolecule} from "../models/MoleculeNumbersModel";
@@ -453,13 +452,13 @@ export class StudioView {
   }
 
   /**
-   * Draws a surface of the electron density, in one colour or coloured at each vertex by something such as the electrostatic potential.
+   * Draws surfaces of a density, each in one colour or coloured at each vertex by something such as the electrostatic potential.
    *
-   * @param surface the surface, in the structure's frame, which must be of the structure now shown, or null to show none
-   * @param options how to draw it
+   * @param parts the surfaces, in the structure's frame, which must be of the structure now shown, or none to show none
+   * @param opacity how opaque they are
    */
-  showFieldSurface(surface: Surface | null, options: FieldSurfaceOptions): void {
-    this.fieldSurface.show(surface, options);
+  showFieldSurface(parts: readonly SurfacePart[], opacity: number): void {
+    this.fieldSurface.show(parts, opacity);
   }
 
   /**

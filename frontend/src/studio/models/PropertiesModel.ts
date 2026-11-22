@@ -1,3 +1,4 @@
+import {ORBITAL_KINDS, type OrbitalKind} from "./OrbitalModel";
 import {Observable} from "./observable";
 
 /** localStorage key. */
@@ -47,8 +48,11 @@ export function clampForceScale(scale: number): number {
   return Number.isFinite(scale) ? Math.round(Math.min(MAX_FORCE_SCALE, Math.max(MIN_FORCE_SCALE, scale)) * 100) / 100 : 1;
 }
 
-/** What is drawn as a surface of the electron density: nothing, the density alone, or the density coloured by the electrostatic potential. */
-export type SurfaceKind = "none" | "density" | "esp";
+/**
+ * What is drawn as a surface: nothing, the electron density alone, the density coloured by the electrostatic potential, the spin density,
+ * or the difference density, which is what the molecules in the session do to one another's electrons.
+ */
+export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference";
 
 /** What colours a surface of the electron density alone: nothing, or the element of the atom each part of it is nearest. */
 export type DensityColour = "single" | "element";
@@ -59,6 +63,32 @@ export type DensityColour = "single" | "element";
  */
 export function asDensityColour(value: unknown): DensityColour {
   return value === "element" ? "element" : "single";
+}
+
+/** The spin multiplicities a surface can be calculated at, with the name of each and how many electrons are unpaired; null leaves the choice to the electron count. */
+export const MULTIPLICITIES: readonly { value: number | null; label: string; title: string }[] = [
+  { value: null, label: "Automatic", title: "The lowest the electrons allow: a singlet where they pair up, otherwise a doublet" },
+  { value: 1, label: "Singlet", title: "All the electrons paired" },
+  { value: 2, label: "Doublet", title: "One unpaired electron, as in a radical" },
+  { value: 3, label: "Triplet", title: "Two unpaired electrons, as in oxygen" },
+  { value: 4, label: "Quartet", title: "Three unpaired electrons" },
+  { value: 5, label: "Quintet", title: "Four unpaired electrons" },
+];
+
+/**
+ * @param value anything
+ * @returns it if it is one of the multiplicities offered, and null, which leaves the choice to the electron count, otherwise
+ */
+export function asMultiplicity(value: unknown): number | null {
+  return MULTIPLICITIES.find((each) => each.value === value)?.value ?? null;
+}
+
+/**
+ * @param value anything
+ * @returns it if it is a kind of calculation, and the automatic one otherwise
+ */
+export function asSurfaceModel(value: unknown): OrbitalKind {
+  return ORBITAL_KINDS.find((kind) => kind.value === value)?.value ?? "mulliken";
 }
 
 export const MIN_SURFACE_ISOVALUE = 0.001;
@@ -118,6 +148,10 @@ export interface PropertiesState {
   /** The density, in electrons per cubic bohr, that the surface is at. */
   /** What colours the density surface when it is not coloured by the potential. */
   densityColour: DensityColour;
+  /** The kind of Hartree-Fock calculation the surfaces come from. */
+  surfaceModel: OrbitalKind;
+  /** The spin multiplicity it is calculated at, or null for the lowest the electron count allows. */
+  multiplicity: number | null;
   surfaceIsovalue: number;
   /** How opaque the surface is. */
   surfaceOpacity: number;
@@ -226,6 +260,24 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   /**
+   * @param surfaceModel the kind of Hartree-Fock calculation the surfaces come from
+   */
+  surfaceModelTo(surfaceModel: OrbitalKind): void {
+    if (this.get().surfaceModel !== surfaceModel) {
+      this.change({ ...this.get(), surfaceModel });
+    }
+  }
+
+  /**
+   * @param multiplicity the spin multiplicity to calculate at, or null for the lowest the electron count allows
+   */
+  multiplicityTo(multiplicity: number | null): void {
+    if (this.get().multiplicity !== multiplicity) {
+      this.change({ ...this.get(), multiplicity });
+    }
+  }
+
+  /**
    * @param isovalue the density the surface is at, in electrons per cubic bohr
    */
   surfaceIsovalueTo(isovalue: number): void {
@@ -278,7 +330,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false } };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -300,6 +352,8 @@ export class PropertiesModel extends Observable<PropertiesState> {
       polarThreshold: typeof held.polarThreshold === "number" ? clampPolarThreshold(held.polarThreshold) : defaults.polarThreshold,
       surface: defaults.surface,
       densityColour: asDensityColour(held.densityColour),
+      surfaceModel: asSurfaceModel(held.surfaceModel),
+      multiplicity: asMultiplicity(held.multiplicity),
       surfaceIsovalue: typeof held.surfaceIsovalue === "number" ? clampSurfaceIsovalue(held.surfaceIsovalue) : defaults.surfaceIsovalue,
       surfaceOpacity: typeof held.surfaceOpacity === "number" ? clampSurfaceOpacity(held.surfaceOpacity) : defaults.surfaceOpacity,
       expanded: {

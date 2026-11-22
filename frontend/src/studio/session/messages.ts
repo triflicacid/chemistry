@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 26;
+export const PROTOCOL_VERSION = 28;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -756,9 +756,24 @@ export interface DensityRequestAck extends ServerEnvelope {
   type: "density.request.ack";
 }
 
-/** The electron density at every point of a grid, sent on the server's own initiative after a request. It describes the geometry at `version`. */
+/** The answer to a request for the spin density, which says only that the request was understood: it follows as a `spin.result`. */
+export interface SpinRequestAck extends ServerEnvelope {
+  type: "spin.request.ack";
+}
+
+/** The answer to a request for the difference density, which says only that the request was understood: it follows as a `difference.result`. */
+export interface DifferenceRequestAck extends ServerEnvelope {
+  type: "difference.request.ack";
+}
+
+/**
+ * A density at every point of a grid, sent on the server's own initiative after a request. It describes the geometry at `version`.
+ * A `density.result` is the electron density, which is never negative. A `spin.result` is the electrons of spin up less those of spin
+ * down, and a `difference.result` the density of everything together less those of its molecules each on its own, which are positive
+ * where there is more and negative where there is less.
+ */
 export interface DensityResult extends ServerEnvelope {
-  type: "density.result";
+  type: "density.result" | "spin.result" | "difference.result";
   session_id: string;
   version: number;
   status: "complete" | "failed";
@@ -896,6 +911,8 @@ export type ServerMessage =
   | EspRequestAck
   | EspResult
   | DensityRequestAck
+  | SpinRequestAck
+  | DifferenceRequestAck
   | DensityResult
   | SocketError
   | Pong;

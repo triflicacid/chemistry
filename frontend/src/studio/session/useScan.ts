@@ -2,6 +2,7 @@ import {useCallback, useEffect, useState} from "react";
 import type {ScanResult} from "./messages";
 import {reason} from "./errors";
 import type {SessionLink} from "./useSocket";
+import {useWarnOnce} from "./warnings";
 
 export interface Scan {
   /** The scan as the server last said, or null if it has not. It describes the version in `version`. */
@@ -17,7 +18,8 @@ export interface Scan {
  *
  * @param link the connection
  */
-export function useScan({ socketRef, held, note }: SessionLink): Scan {
+export function useScan({ socketRef, held, note, warn }: SessionLink): Scan {
+  const warnOnce = useWarnOnce(warn);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanningSince, setScanningSince] = useState<number | null>(null);
 
@@ -32,9 +34,10 @@ export function useScan({ socketRef, held, note }: SessionLink): Scan {
         return;
       }
       setScanningSince(null);
+      warnOnce(result.status === "complete" ? null : (result.message ?? "The scan could not be made."));
       setScan(result);
     });
-  }, [held, socketRef]);
+  }, [held, socketRef, warnOnce]);
 
   const requestScan = useCallback(() => {
     const socket = socketRef.current;

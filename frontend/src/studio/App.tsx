@@ -20,7 +20,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestDensity } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestDensity, requestSpin, requestDifference } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -40,7 +40,7 @@ export function App() {
 
   // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
   // The server waits for the session to be left alone, so a drag asks many times and is answered once
-  const { colourBy, chargeModel, forceArrows, surface } = useObservable(shared.properties);
+  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity } = useObservable(shared.properties);
   const version = state?.version;
   const sessionId = state?.session_id;
   useEffect(() => {
@@ -56,17 +56,27 @@ export function App() {
     }
   }, [forceArrows, sessionId, version, requestForces]);
 
-  // the density and the potential are likewise only worked out while a surface of them is shown, for the whole session with the automatic kind of calculation
+  // the density and the potential are likewise only worked out while a surface of them is shown, for the whole session, with the calculation and multiplicity chosen for surfaces
   useEffect(() => {
     if (surface === "esp" && sessionId !== undefined) {
-      requestEsp("mulliken", null);
+      requestEsp(surfaceModel, null, multiplicity);
     }
-  }, [surface, sessionId, version, requestEsp]);
+  }, [surface, surfaceModel, multiplicity, sessionId, version, requestEsp]);
   useEffect(() => {
     if (surface === "density" && sessionId !== undefined) {
-      requestDensity("mulliken", null);
+      requestDensity(surfaceModel, null, multiplicity);
     }
-  }, [surface, sessionId, version, requestDensity]);
+  }, [surface, surfaceModel, multiplicity, sessionId, version, requestDensity]);
+  useEffect(() => {
+    if (surface === "spin" && sessionId !== undefined) {
+      requestSpin(surfaceModel, null, multiplicity);
+    }
+  }, [surface, surfaceModel, multiplicity, sessionId, version, requestSpin]);
+  useEffect(() => {
+    if (surface === "difference" && sessionId !== undefined) {
+      requestDifference(surfaceModel, null, multiplicity);
+    }
+  }, [surface, surfaceModel, multiplicity, sessionId, version, requestDifference]);
 
   // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of
   const { selected: shownOrbital, kind: orbitalKind, scope: orbitalScope, count: orbitalCount } = useObservable(shared.orbital);
