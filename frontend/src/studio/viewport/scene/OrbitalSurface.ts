@@ -1,21 +1,21 @@
 import {
-  BoxGeometry,
-  BufferGeometry,
-  DoubleSide,
-  EdgesGeometry,
-  Float32BufferAttribute,
-  Group,
-  LineBasicMaterial,
-  LineSegments,
-  Mesh,
-  MeshStandardMaterial,
+    BoxGeometry,
+    BufferGeometry,
+    DoubleSide,
+    EdgesGeometry,
+    Float32BufferAttribute,
+    Group,
+    LineBasicMaterial,
+    LineSegments,
+    Mesh,
+    MeshStandardMaterial,
 } from "three";
 import {disposeMaterials} from "../../../render/dispose";
 import {isosurface, type Surface} from "../../../render/isosurface";
 import type {Stage} from "../../../render/stage";
-import type {DecodedField, DrawnOrbital} from "../../layout/orbitals";
+import {amplitudeForShare, type DecodedField, type DrawnOrbital} from "../../layout/orbitals";
 import {characterColour} from "../../layout/orbitalColours";
-import type {OrbitalColouring} from "../../models/OrbitalModel";
+import type {LevelBy, OrbitalColouring, OrbitalDisplay} from "../../models/OrbitalModel";
 import type {MoleculeScene} from "./MoleculeScene";
 
 /** The colour of the part of an orbital that is positive. */
@@ -34,7 +34,19 @@ export interface OrbitalOptions {
   colouring: OrbitalColouring;
   /** Whether to also draw the box the values were worked out in. */
   debug: boolean;
+  /** Whether to draw the amplitude, as lobes with a sign, or the probability, as shells. */
+  display: OrbitalDisplay;
+  /** How the level of the lobes is chosen. */
+  levelBy: LevelBy;
+  /** How much of the orbital the surface holds, as a percentage, where the level is chosen by share, and always for the shells. */
+  share: number;
 }
+
+/** The colour of the shell of an orbital that holds half of it, where the electron is most likely to be. */
+export const CORE_SHELL = "#d9480f";
+
+/** The colour of the shell that holds the share asked for. */
+export const OUTER_SHELL = "#fab005";
 
 /** What drawing an orbital made, which debugging reports. */
 export interface OrbitalDrawn {
@@ -83,9 +95,31 @@ export class OrbitalSurface {
       const marks = new Group();
       drawn = { positive: 0, negative: 0 };
       for (const { field, pi } of orbitals) {
-        const positive = isosurface(field.values, field.shape, options.isovalue);
+        if (options.display === "probability") {
+          // the shells are of the amplitude without its sign, since the probability does not have one
+          const amplitudes = field.values.map(Math.abs);
+          const shells = options.share > 50 ? [{ share: 50, colour: CORE_SHELL, opacity: options.opacity }, { share: options.share, colour: OUTER_SHELL, opacity: options.opacity * 0.55 }] : [{ share: options.share, colour: CORE_SHELL, opacity: options.opacity }];
+          for (const shell of shells) {
+            const level = amplitudeForShare(field.values, shell.share / 100);
+            if (level > 0) {
+              const surface = isosurface(amplitudes, field.shape, level);
+              marks.add(this.lobe(surface, shell.colour, Math.min(1, shell.opacity)));
+              drawn.positive += surface.positions.length / 9;
+            }
+          }
+          if (options.debug) {
+            marks.add(this.box(field));
+          }
+          continue;
+        }
+
+        const level = options.levelBy === "share" ? amplitudeForShare(field.values, options.share / 100) : options.isovalue;
+        if (!(level > 0)) {
+          continue;
+        }
+        const positive = isosurface(field.values, field.shape, level);
         // the negative lobes are the positive ones of the field turned upside down
-        const negative = isosurface(field.values.map((value) => -value), field.shape, options.isovalue);
+        const negative = isosurface(field.values.map((value) => -value), field.shape, level);
         // by character both lobes are the one colour, since what colours the orbital is what it is made of and not which way it points
         const character = characterColour(pi);
         marks.add(this.lobe(positive, options.colouring === "character" ? character : POSITIVE_LOBE, options.opacity));

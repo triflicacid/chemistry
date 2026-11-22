@@ -6,11 +6,16 @@ import {
     COUNTS,
     DEFAULT_ISOVALUE,
     DEFAULT_OPACITY,
+    DEFAULT_SHARE,
+    type LevelBy,
     MAX_ISOVALUE,
+    MAX_SHARE,
     MAX_SHOWN,
     MIN_ISOVALUE,
+    MIN_SHARE,
     ORBITAL_KINDS,
     type OrbitalChoice,
+    type OrbitalDisplay,
     type OrbitalKind,
     type OrbitalScope,
 } from "../models/OrbitalModel";
@@ -20,6 +25,7 @@ import {InteractionDiagram} from "../controls/InteractionDiagram";
 import {type ChartSeries, LineChart} from "../controls/LineChart";
 import {type DrawnChannel, LevelDiagram} from "../controls/LevelDiagram";
 import {
+    amplitudeForShare,
     answers,
     type DecodedField,
     decodeField,
@@ -40,7 +46,7 @@ import {atomShares, characterOf, KINDS, localisationBars, piBars, spinSplittings
 import type {FieldResult, OrbitalChannel, OrbitalTarget, SessionState} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
 import {NEUTRAL_COLOUR, PI_COLOUR, SIGMA_COLOUR} from "../layout/orbitalColours";
-import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
+import {CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
 import {seconds} from "./PropertiesOptions";
 
 /** How many orbitals either side of the gap are drawn, unless all are asked for. */
@@ -79,7 +85,7 @@ function scopeOf(value: string): OrbitalScope {
  */
 export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
   const { orbitals, orbitalsSince, requestOrbitals, fields, fieldsAsked } = useSessionContext();
-  const { selected, kind, scope, count, colouring, isovalue, opacity } = useObservable(models.orbital);
+  const { selected, kind, scope, count, colouring, isovalue, opacity, display, levelBy, share } = useObservable(models.orbital);
   const debug = useObservable(models.debug);
   const [everything, setEverything] = useState(false);
 
@@ -128,6 +134,10 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
     const molecule = fragments.length > 1 ? `${nameOfMolecule(target.fragment) ?? "all"} ` : "";
     return decoded.map((field: DecodedField) => ({ label: `${molecule}${arrow(target.spin)}${nameOf(target.orbital, homo)}`, field }));
   });
+
+  // the level the first orbital is drawn at, which is what the marker on the chart of the share inside shows
+  const first = inside[0];
+  const shownIsovalue = first && (display === "probability" || levelBy === "share") ? amplitudeForShare(first.field.values, share / 100) || isovalue : isovalue;
 
   return (
     <div className="energy-plots">
@@ -189,6 +199,138 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
         {complete && !asked && <span className="energy-note">{seconds(orbitals.elapsed_ms)}</span>}
       </div>
 
+      {selected !== null && (
+        <dl className="properties">
+          <dt>Show</dt>
+          <dd>
+            <select value={display} aria-label="What the surfaces of the orbital show" onChange={(event) => models.orbital.displayTo(event.target.value as OrbitalDisplay)}>
+              <option value="amplitude" title="The orbital as lobes that are positive or negative, which shows its shape and phase">
+                Amplitude (phase)
+              </option>
+              <option value="probability" title="Nested shells that hold half of the electron and then the share chosen, which shows where it is most likely to be">
+                Probability (hotspots)
+              </option>
+            </select>
+          </dd>
+          {display === "amplitude" && (
+            <>
+              <dt>Level by</dt>
+              <dd>
+                <select value={levelBy} aria-label="How the level of the surface is chosen" onChange={(event) => models.orbital.levelByTo(event.target.value as LevelBy)}>
+                  <option value="isovalue" title="Choose the value of the orbital at its surface">
+                    Isovalue
+                  </option>
+                  <option value="share" title="Choose how much of the electron the surface holds, the same for every orbital, whatever its size">
+                    Share enclosed
+                  </option>
+                </select>
+              </dd>
+            </>
+          )}
+          {display === "amplitude" && levelBy === "isovalue" ? (
+            <>
+              <dt>Isovalue</dt>
+              <dd className="position">
+                <input
+                  type="range"
+                  className="render-slider"
+                  min={Math.round(MIN_ISOVALUE * 1000)}
+                  max={Math.round(MAX_ISOVALUE * 1000)}
+                  step={5}
+                  value={Math.round(isovalue * 1000)}
+                  aria-label="The value of the orbital at its surface"
+                  title="The value of the orbital at its surface. A smaller value draws a bigger, fatter surface. Double-click to put it back"
+                  onChange={(event) => models.orbital.isovalueTo(Number(event.target.value) / 1000)}
+                  onDoubleClick={() => models.orbital.isovalueTo(DEFAULT_ISOVALUE)}
+                />
+                <span className="unit render-value">±{isovalue.toFixed(3)}</span>
+              </dd>
+            </>
+          ) : (
+            <>
+              <dt>Encloses</dt>
+              <dd className="position">
+                <input
+                  type="range"
+                  className="render-slider"
+                  min={MIN_SHARE}
+                  max={MAX_SHARE}
+                  step={1}
+                  value={share}
+                  aria-label="How much of the electron the surface holds"
+                  title="How much of the electron lies inside the surface. A bigger share draws a bigger surface. Double-click to put it back"
+                  onChange={(event) => models.orbital.shareTo(Number(event.target.value))}
+                  onDoubleClick={() => models.orbital.shareTo(DEFAULT_SHARE)}
+                />
+                <span className="unit render-value">{share}%</span>
+              </dd>
+            </>
+          )}
+          <dt>Opacity</dt>
+          <dd className="position">
+            <input
+              type="range"
+              className="render-slider"
+              min={10}
+              max={100}
+              step={5}
+              value={Math.round(opacity * 100)}
+              aria-label="How opaque the surface of the orbital is"
+              title="How opaque the surface is. Double-click to put it back"
+              onChange={(event) => models.orbital.opacityTo(Number(event.target.value) / 100)}
+              onDoubleClick={() => models.orbital.opacityTo(DEFAULT_OPACITY)}
+            />
+            <span className="unit render-value">{Math.round(opacity * 100)}%</span>
+          </dd>
+          {display === "amplitude" && <dt>Colour</dt>}
+          {display === "amplitude" && <dd>
+            <label
+              className="legend-check"
+              title="Colour each orbital by how much of it is sigma and how much is pi, whichever way its lobes point, instead of by the sign of its lobes. Needs a flat molecule"
+            >
+              <input type="checkbox" checked={colouring === "character"} onChange={(event) => models.orbital.colouringTo(event.target.checked ? "character" : "phase")} />
+              By σ / π
+            </label>
+          </dd>}
+          <dt>Key</dt>
+          <dd className="legend-note">
+            {display === "probability" ? (
+              <>
+                {share > 50 && (
+                  <span className="legend-key">
+                    <span style={{ color: CORE_SHELL }}>●</span> holds 50%
+                  </span>
+                )}
+                <span className="legend-key">
+                  <span style={{ color: share > 50 ? OUTER_SHELL : CORE_SHELL }}>●</span> holds {share}%
+                </span>
+              </>
+            ) : colouring === "character" ? (
+              <>
+                <span className="legend-key">
+                  <span style={{ color: SIGMA_COLOUR }}>●</span> σ
+                </span>
+                <span className="legend-key">
+                  <span style={{ color: PI_COLOUR }}>●</span> π
+                </span>
+                <span className="legend-key">
+                  <span style={{ color: NEUTRAL_COLOUR }}>●</span> not flat
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="legend-key">
+                  <span style={{ color: POSITIVE_LOBE }}>●</span> positive
+                </span>
+                <span className="legend-key">
+                  <span style={{ color: NEGATIVE_LOBE }}>●</span> negative
+                </span>
+              </>
+            )}
+          </dd>
+        </dl>
+      )}
+
       {!complete && (
         <p className="energy-note">Draws the molecular orbitals from a Hartree-Fock calculation. Choose a level to see its orbital in the scene.</p>
       )}
@@ -214,82 +356,10 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
           <SpinSplitting channels={drawn} nameOfMolecule={nameOfMolecule} />
           <InteractionSection state={state} kind={kind} everything={everything} nameOfMolecule={nameOfMolecule} />
 
-          {selected !== null && (
-            <dl className="properties">
-              <dt>Isovalue</dt>
-              <dd className="position">
-                <input
-                  type="range"
-                  className="render-slider"
-                  min={Math.round(MIN_ISOVALUE * 1000)}
-                  max={Math.round(MAX_ISOVALUE * 1000)}
-                  step={5}
-                  value={Math.round(isovalue * 1000)}
-                  aria-label="The value of the orbital at its surface"
-                  title="The value of the orbital at its surface. A smaller value draws a bigger, fatter surface. Double-click to put it back"
-                  onChange={(event) => models.orbital.isovalueTo(Number(event.target.value) / 1000)}
-                  onDoubleClick={() => models.orbital.isovalueTo(DEFAULT_ISOVALUE)}
-                />
-                <span className="unit render-value">±{isovalue.toFixed(3)}</span>
-              </dd>
-              <dt>Opacity</dt>
-              <dd className="position">
-                <input
-                  type="range"
-                  className="render-slider"
-                  min={10}
-                  max={100}
-                  step={5}
-                  value={Math.round(opacity * 100)}
-                  aria-label="How opaque the surface of the orbital is"
-                  title="How opaque the surface is. Double-click to put it back"
-                  onChange={(event) => models.orbital.opacityTo(Number(event.target.value) / 100)}
-                  onDoubleClick={() => models.orbital.opacityTo(DEFAULT_OPACITY)}
-                />
-                <span className="unit render-value">{Math.round(opacity * 100)}%</span>
-              </dd>
-              <dt>Colour</dt>
-              <dd>
-                <label
-                  className="legend-check"
-                  title="Colour each orbital by how much of it is sigma and how much is pi, whichever way its lobes point, instead of by the sign of its lobes. Needs a flat molecule"
-                >
-                  <input type="checkbox" checked={colouring === "character"} onChange={(event) => models.orbital.colouringTo(event.target.checked ? "character" : "phase")} />
-                  By σ / π
-                </label>
-              </dd>
-              <dt>Key</dt>
-              <dd className="legend-note">
-                {colouring === "character" ? (
-                  <>
-                    <span className="legend-key">
-                      <span style={{ color: SIGMA_COLOUR }}>●</span> σ
-                    </span>
-                    <span className="legend-key">
-                      <span style={{ color: PI_COLOUR }}>●</span> π
-                    </span>
-                    <span className="legend-key">
-                      <span style={{ color: NEUTRAL_COLOUR }}>●</span> not flat
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="legend-key">
-                      <span style={{ color: POSITIVE_LOBE }}>●</span> positive
-                    </span>
-                    <span className="legend-key">
-                      <span style={{ color: NEGATIVE_LOBE }}>●</span> negative
-                    </span>
-                  </>
-                )}
-              </dd>
-            </dl>
-          )}
-
           {selected !== null && targets.length > 0 && <ShownOrbitals targets={targets} channels={channels} fields={fields} state={state} nameOfMolecule={nameOfMolecule} />}
           {selected !== null && targets.length > 0 && <OrbitalSites targets={targets} channels={channels} state={state} models={models} nameOfMolecule={nameOfMolecule} />}
           {selected !== null && targets.length > 0 && <Character targets={targets} channels={channels} nameOfMolecule={nameOfMolecule} />}
-          {inside.length > 0 && <EnclosedShare shown={inside} isovalue={isovalue} onIsovalue={(value) => models.orbital.isovalueTo(value)} />}
+          {inside.length > 0 && <EnclosedShare shown={inside} isovalue={shownIsovalue} onIsovalue={(value) => display === "amplitude" && models.orbital.pickIsovalue(value)} />}
 
           {debug && <OrbitalsDebug channels={drawn} nameOfMolecule={nameOfMolecule} />}
         </>

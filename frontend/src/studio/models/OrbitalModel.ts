@@ -5,6 +5,11 @@ export const MAX_ISOVALUE = 0.2;
 export const DEFAULT_ISOVALUE = 0.04;
 export const DEFAULT_OPACITY = 0.65;
 
+/** The least share of an orbital a surface can be chosen to hold, as a percentage, and the most. */
+export const MIN_SHARE = 50;
+export const MAX_SHARE = 99;
+export const DEFAULT_SHARE = 90;
+
 /** The most orbitals of one set that are drawn at once, which keeps the work and the picture in hand when all are asked for. */
 export const MAX_SHOWN = 12;
 
@@ -56,6 +61,12 @@ export interface OrbitalState {
   isovalue: number;
   /** How opaque the surface is, from nearly clear to solid. */
   opacity: number;
+  /** What the surfaces show. */
+  display: OrbitalDisplay;
+  /** How the level of a surface of the amplitude is chosen; a surface of the probability is always chosen by share. */
+  levelBy: LevelBy;
+  /** How much of the orbital the surface holds, as a percentage, where it is chosen by share. */
+  share: number;
 }
 
 /**
@@ -92,10 +103,19 @@ export function sameScope(first: OrbitalScope, second: OrbitalScope): boolean {
   return first.kind === second.kind && (first.kind !== "one" || first.atom === (second as { atom: string }).atom);
 }
 
+/**
+ * What a surface of an orbital shows: its amplitude, as lobes that are positive or negative; or its probability, the squared amplitude, as
+ * nested shells that hold half of it and then the share asked for, which shows where the electron is most likely to be.
+ */
+export type OrbitalDisplay = "amplitude" | "probability";
+
+/** How the level a surface of an orbital is drawn at is chosen: as a value of the orbital, or as the share of it the surface holds. */
+export type LevelBy = "isovalue" | "share";
+
 /** Which orbital is drawn in the scene, and how. It is not remembered between visits, since an orbital belongs to one structure. */
 export class OrbitalModel extends Observable<OrbitalState> {
   constructor() {
-    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY });
+    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE });
   }
 
   /**
@@ -168,6 +188,46 @@ export class OrbitalModel extends Observable<OrbitalState> {
     const clamped = clampIsovalue(isovalue);
     if (this.get().isovalue !== clamped) {
       this.set({ ...this.get(), isovalue: clamped });
+    }
+  }
+
+  /**
+   * @param display what the surfaces show
+   */
+  displayTo(display: OrbitalDisplay): void {
+    if (this.get().display !== display) {
+      this.set({ ...this.get(), display });
+    }
+  }
+
+  /**
+   * @param levelBy how the level of a surface of the amplitude is chosen
+   */
+  levelByTo(levelBy: LevelBy): void {
+    if (this.get().levelBy !== levelBy) {
+      this.set({ ...this.get(), levelBy });
+    }
+  }
+
+  /**
+   * @param share how much of the orbital the surface is to hold, as a percentage, which is held to what can be drawn
+   */
+  shareTo(share: number): void {
+    const clamped = Number.isFinite(share) ? Math.round(Math.min(MAX_SHARE, Math.max(MIN_SHARE, share))) : DEFAULT_SHARE;
+    if (this.get().share !== clamped) {
+      this.set({ ...this.get(), share: clamped });
+    }
+  }
+
+  /**
+   * Chooses the isovalue and draws the surfaces by it, which is what dragging the marker on the chart of the share inside means.
+   *
+   * @param isovalue the value of the orbital to draw its surface at
+   */
+  pickIsovalue(isovalue: number): void {
+    const clamped = clampIsovalue(isovalue);
+    if (this.get().isovalue !== clamped || this.get().levelBy !== "isovalue") {
+      this.set({ ...this.get(), isovalue: clamped, levelBy: "isovalue" });
     }
   }
 

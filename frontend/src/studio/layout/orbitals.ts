@@ -317,6 +317,60 @@ export function densityOfStates(energies: readonly number[], width: number, from
   });
 }
 
+/** The squared amplitudes of an orbital from the largest down, with the running share of the whole, which choosing a share looks up. */
+interface Cumulative {
+  /** The amplitude at each point, from the largest down. */
+  amplitudes: Float32Array;
+  /** The share of the squared amplitude held by the points up to and including each, from zero to one. */
+  share: Float64Array;
+}
+
+const cumulatives = new WeakMap<Float32Array, Cumulative>();
+
+/**
+ * Finds the amplitude at which the surface of an orbital holds a share of it: the surface where the orbital is at least that large, which
+ * is how much of the electron's probability, the squared amplitude, lies inside it. A bigger share is a smaller amplitude and a bigger surface.
+ *
+ * @param values the orbital at each point of a grid
+ * @param share how much of the orbital the surface is to hold, from zero to one
+ * @returns the amplitude to draw the surface at, or zero if the orbital is nothing everywhere
+ */
+export function amplitudeForShare(values: Float32Array, share: number): number {
+  let held = cumulatives.get(values);
+  if (!held) {
+    const amplitudes = Float32Array.from(values, Math.abs).sort().reverse();
+    const running = new Float64Array(amplitudes.length);
+    let total = 0;
+    for (const amplitude of amplitudes) {
+      total += amplitude * amplitude;
+    }
+    let sum = 0;
+    for (let at = 0; at < amplitudes.length; at++) {
+      sum += (amplitudes[at] as number) ** 2;
+      running[at] = total > 0 ? sum / total : 0;
+    }
+    held = { amplitudes, share: running };
+    cumulatives.set(values, held);
+  }
+
+  const { amplitudes, share: running } = held;
+  if (running.length === 0 || (running[running.length - 1] as number) <= 0) {
+    return 0;
+  }
+  // the first point at which the running share reaches the share asked for
+  let low = 0;
+  let high = running.length - 1;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if ((running[middle] as number) >= share) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return amplitudes[low] as number;
+}
+
 /**
  * How much of an orbital lies inside the surface drawn at each value: the share of its squared amplitude, summed over the grid, at
  * the points where its amplitude is at least that value. A bigger value draws a surface that holds less of the orbital.
