@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 20;
+export const PROTOCOL_VERSION = 25;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -559,6 +559,188 @@ export interface ScanResult extends ServerEnvelope {
   message: string | null;
 }
 
+/** The answer to a request for orbitals, which says only that the request was understood: the levels follow as an `orbitals.result`. */
+export interface OrbitalsRequestAck extends ServerEnvelope {
+  type: "orbitals.request.ack";
+}
+
+/** One molecular orbital. */
+export interface OrbitalLevel {
+  /** Which orbital it is, counting from the lowest in energy at zero. */
+  index: number;
+  /** In hartree. */
+  energy: number;
+  /** How many electrons it holds: two, one or none. */
+  occupancy: number;
+  /**
+   * How much of the orbital is on each atom, in the order of the set's atoms, as three numbers an atom: its share in the atom's s
+   * functions, then its p, then its d and higher. They add up to one.
+   */
+  weights: number[];
+  /**
+   * How much of the orbital is pi, from zero for a sigma orbital to one for a pi orbital: its share in the p functions that point
+   * out of the plane of the atoms. Null if the atoms are not flat enough for sigma and pi to mean something.
+   */
+  pi: number | null;
+}
+
+/** A set of orbitals: the one that both spins share, or one spin's set in an unrestricted calculation. */
+export interface OrbitalChannel {
+  /** An atom of the molecule the set is of, or null if it is of the session calculated as one. */
+  fragment: string | null;
+  /** `restricted` where both spins share the set, otherwise `alpha` (spin up) or `beta` (spin down). */
+  spin: "restricted" | "alpha" | "beta";
+  /** The index of the highest orbital that holds electrons, or null if none does. */
+  homo: number | null;
+  /** The atoms the calculation was of, whose order the orbitals' weights follow. */
+  atoms: string[];
+  /**
+   * How far the atoms lie off the plane they lie closest to, as a root mean square distance in angstroms, or null if there are
+   * fewer than three or they lie on a line, where there is no one plane. Sigma and pi mean something only below about 0.35.
+   */
+  flatness: number | null;
+  /** The orbitals, the lowest in energy first. */
+  levels: OrbitalLevel[];
+}
+
+/**
+ * The molecular orbitals of a session, or of some of its molecules each on its own, from Hartree-Fock calculations, sent on the server's own
+ * initiative after a request. They describe the geometry at `version`, so they are out of date once the session has moved on.
+ */
+export interface OrbitalsResult extends ServerEnvelope {
+  type: "orbitals.result";
+  session_id: string;
+  version: number;
+  /** `unavailable` if there are no orbitals of the kind asked for, as when a closed-shell calculation is asked of electrons that do not pair up. */
+  status: "complete" | "unavailable" | "failed";
+  /** The model the client asked for, which is not always the one that was used. */
+  requested: string;
+  /** The molecules the client asked for, each as an atom of it, in the order asked; empty for the whole session calculated as one. */
+  fragments: string[];
+  /** The kind of calculation that was made: `rhf`, `uhf` or `rohf`, or `mixed` if the molecules were not all calculated the same way; null if there was none. */
+  model: "rhf" | "uhf" | "rohf" | "mixed" | null;
+  /** How many electrons the calculation treats explicitly, which is every electron less those of any core replaced by a core potential. */
+  electrons: number;
+  /** The sets of orbitals: one, or a set for each spin in an unrestricted calculation. */
+  channels: OrbitalChannel[];
+  /** The total energy of the calculation in hartree. */
+  total_energy: number | null;
+  /** How many Fock builds it took. */
+  iterations: number | null;
+  elapsed_ms: number;
+  /** Why there are no orbitals. */
+  message: string | null;
+}
+
+/** One orbital to evaluate. */
+export interface OrbitalTarget {
+  /** An atom of the molecule it is of, or null for the whole session calculated as one. */
+  fragment: string | null;
+  spin: "restricted" | "alpha" | "beta";
+  /** Which orbital of that set, counting from the lowest in energy at zero. */
+  orbital: number;
+}
+
+/** The answer to a request for an interaction diagram, which says only that the request was understood: it follows as an `interaction.result`. */
+export interface InteractionRequestAck extends ServerEnvelope {
+  type: "interaction.request.ack";
+}
+
+/** One orbital, without what it is made of. */
+export interface InteractionLevel {
+  index: number;
+  /** In hartree. */
+  energy: number;
+  occupancy: number;
+}
+
+/** A set of orbitals, without what they are made of. */
+export interface InteractionChannel {
+  spin: "restricted" | "alpha" | "beta";
+  homo: number | null;
+  levels: InteractionLevel[];
+}
+
+/** One calculation's orbitals: everything together, or one molecule on its own. */
+export interface InteractionPart {
+  /** An atom of the molecule, or null for everything together. */
+  fragment: string | null;
+  channels: InteractionChannel[];
+}
+
+/** An orbital of the whole that is partly an orbital of a molecule. */
+export interface InteractionLink {
+  spin: "restricted" | "alpha" | "beta";
+  /** Which orbital of everything together. */
+  whole: number;
+  /** An atom of the molecule. */
+  fragment: string;
+  /** Which orbital of the molecule's set. */
+  orbital: number;
+  /** How much of the whole's orbital is the molecule's, from zero to one. */
+  weight: number;
+}
+
+/**
+ * How the orbitals of everything in the session together are made of the orbitals of its molecules each on its own, which an
+ * orbital interaction diagram shows, sent on the server's own initiative after a request. It describes the geometry at `version`.
+ */
+export interface InteractionResult extends ServerEnvelope {
+  type: "interaction.result";
+  session_id: string;
+  version: number;
+  /** `unavailable` if there is no diagram to draw, as when there is only one molecule. */
+  status: "complete" | "unavailable" | "failed";
+  /** The model the client asked for. */
+  requested: string;
+  /** The kind of calculation that was made, or `mixed`. */
+  model: "rhf" | "uhf" | "rohf" | "mixed" | null;
+  /** The calculations: everything together first, then each molecule on its own. */
+  parts: InteractionPart[];
+  links: InteractionLink[];
+  elapsed_ms: number;
+  /** Why there is no diagram. */
+  message: string | null;
+}
+
+/** The answer to a request for a field, which says only that the request was understood: the field follows as a `field.result`. */
+export interface FieldRequestAck extends ServerEnvelope {
+  type: "field.request.ack";
+}
+
+/**
+ * A number at every point of a grid in the session's space, such as the value of an orbital, sent on the server's own
+ * initiative after a request. It describes the geometry at `version`.
+ */
+export interface FieldResult extends ServerEnvelope {
+  type: "field.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** What the field is. */
+  kind: "orbital";
+  /** Which orbital it is, counting from the lowest in energy at zero. */
+  orbital: number | null;
+  /** Which set of orbitals it is of: `restricted`, `alpha` or `beta`. */
+  spin: "restricted" | "alpha" | "beta" | null;
+  /** An atom of the molecule the field is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** Where the point with all indices zero is, in the session's frame, in angstroms. */
+  origin: Vec3 | null;
+  /** The distance between neighbouring points, in angstroms. */
+  spacing: number | null;
+  nx: number;
+  ny: number;
+  nz: number;
+  /** Every point's value as a little-endian 32-bit float in base64, running along x fastest, then y, then z. */
+  values: string | null;
+  min: number | null;
+  max: number | null;
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
 /** One term of the geometry beyond its tolerance. */
 export interface GeometryFinding {
   kind: "bond" | "angle" | "clash";
@@ -644,5 +826,11 @@ export type ServerMessage =
   | ForcesResult
   | ScanRequestAck
   | ScanResult
+  | OrbitalsRequestAck
+  | OrbitalsResult
+  | FieldRequestAck
+  | FieldResult
+  | InteractionRequestAck
+  | InteractionResult
   | SocketError
   | Pong;

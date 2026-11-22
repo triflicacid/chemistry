@@ -140,6 +140,45 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session whose molecular orbitals to calculate
+     * @param model the kind of Hartree-Fock calculation: {@code rhf}, {@code uhf} or {@code rohf}; or {@code mulliken} or absent for
+     *     the studio's automatic choice, which is closed-shell where the electrons pair up and unrestricted where they do not
+     * @param fragments the molecules to calculate each on its own, as an atom of each; absent or empty for the whole session as one
+     */
+    public record OrbitalsRequest(String sessionId, String model, List<String> fragments)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose orbitals to relate to those of its molecules on their own
+     * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     */
+    public record InteractionRequest(String sessionId, String model)
+    {
+    }
+
+    /**
+     * One orbital to evaluate.
+     *
+     * @param fragment an atom of the molecule it is of, or absent for the whole session calculated as one
+     * @param spin which set of orbitals: {@code restricted}, {@code alpha} or {@code beta}, as the levels named it
+     * @param orbital which orbital of that set, counting from the lowest in energy at zero
+     */
+    public record FieldTarget(String fragment, String spin, Integer orbital)
+    {
+    }
+
+    /**
+     * @param sessionId the session to calculate fields of
+     * @param kind what the fields are; only {@code orbital} is supported
+     * @param model the kind of calculation, as for {@link OrbitalsRequest}
+     * @param targets the orbitals to evaluate, each of which is answered by a field
+     */
+    public record FieldRequest(String sessionId, String kind, String model, List<FieldTarget> targets)
+    {
+    }
+
+    /**
      * @param sessionId the session whose optimisation to stop
      */
     public record CancelOptimiseRequest(String sessionId)

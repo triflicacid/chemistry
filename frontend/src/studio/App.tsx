@@ -3,6 +3,7 @@ import {Workspace} from "./layout/Workspace";
 import {createModels} from "./models/models";
 import {TOOL_ORDER} from "./models/ToolModel";
 import {useObservable} from "./models/observable";
+import {answers, fragmentsFor, resolveTargets} from "./layout/orbitals";
 import {StateIndex} from "./geometry/StateIndex";
 import {useChemistry} from "./chemistry/useChemistry";
 import {useSession} from "./session/useSession";
@@ -19,7 +20,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -54,6 +55,25 @@ export function App() {
       requestForces();
     }
   }, [forceArrows, sessionId, version, requestForces]);
+
+  // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of
+  const { selected: shownOrbital, kind: orbitalKind, scope: orbitalScope, count: orbitalCount } = useObservable(shared.orbital);
+  // the molecules are named by an atom each, which is a new list on every render, so the list is kept as one string
+  const orbitalFragments = fragmentsFor(orbitalScope, state);
+  const orbitalFragmentsKey = orbitalFragments.join(",");
+  useEffect(() => {
+    if (shownOrbital !== null && sessionId !== undefined) {
+      requestOrbitals(orbitalKind, orbitalFragmentsKey === "" ? [] : orbitalFragmentsKey.split(","));
+    }
+  }, [shownOrbital, orbitalKind, orbitalFragmentsKey, sessionId, version, requestOrbitals]);
+
+  // which orbitals to evaluate depends on the levels, so they are asked for once the levels for the structure as it is now arrive
+  const levelsCurrent = answers(orbitals, orbitalKind, orbitalFragments) && orbitals.status === "complete" && orbitals.version === version;
+  useEffect(() => {
+    if (shownOrbital !== null && levelsCurrent && orbitals !== null) {
+      requestOrbital(orbitalKind, resolveTargets(orbitals, shownOrbital, orbitalCount));
+    }
+  }, [shownOrbital, orbitalKind, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
 
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {

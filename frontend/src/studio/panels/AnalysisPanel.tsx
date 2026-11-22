@@ -7,6 +7,7 @@ import {describeFinding, isCurrent} from "../layout/findings";
 import {describeOutcome} from "./optimisation";
 import {type Segment, Segmented} from "../controls/Segmented";
 import {EnergyPlots} from "./EnergyPlots";
+import {OrbitalsPanel} from "./OrbitalsPanel";
 
 export interface AnalysisPanelProps {
   activity: Activity[];
@@ -16,11 +17,12 @@ export interface AnalysisPanelProps {
   models: Models;
 }
 
-type Tab = "geometry" | "energy" | "activity";
+type Tab = "geometry" | "energy" | "orbitals" | "activity";
 
 const TABS: Segment<Tab>[] = [
   { value: "geometry", label: "Geometry" },
   { value: "energy", label: "Energy" },
+  { value: "orbitals", label: "Orbitals" },
   { value: "activity", label: "Activity" },
 ];
 
@@ -41,6 +43,8 @@ export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPan
         </>
       ) : tab === "energy" ? (
         <EnergyPlots state={state} models={models} />
+      ) : tab === "orbitals" ? (
+        <OrbitalsPanel state={state} models={models} />
       ) : (
         <ActivityLog activity={activity} />
       )}

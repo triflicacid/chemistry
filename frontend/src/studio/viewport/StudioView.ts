@@ -30,6 +30,8 @@ import {Annotations} from "./scene/Annotations";
 import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
 import {HydrogenBondGuide} from "./scene/HydrogenBondGuide";
 import {MoleculeNumbers} from "./scene/MoleculeNumbers";
+import {type OrbitalDrawn, type OrbitalOptions, OrbitalSurface} from "./scene/OrbitalSurface";
+import type {DrawnOrbital} from "../layout/orbitals";
 import type {NumberedMolecule} from "../models/MoleculeNumbersModel";
 import type {HydrogenBondMark} from "../models/HydrogenBondModel";
 import {PanGuide} from "./scene/PanGuide";
@@ -65,6 +67,7 @@ export class StudioView {
   private readonly forceArrows: ForceArrows;
   private readonly bondGuide: HydrogenBondGuide;
   private readonly numbers: MoleculeNumbers;
+  private readonly orbital: OrbitalSurface;
   /** The camera, and the anchor the view is held on. */
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
@@ -117,6 +120,7 @@ export class StudioView {
     this.forceArrows = new ForceArrows(this.stage, this.kit, this.scene);
     this.bondGuide = new HydrogenBondGuide(this.stage, this.kit, this.scene);
     this.numbers = new MoleculeNumbers(this.stage, this.kit, this.scene);
+    this.orbital = new OrbitalSurface(this.stage, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
       this.molecule.sync();
@@ -270,6 +274,7 @@ export class StudioView {
     this.forceArrows.forget();
     this.bondGuide.forget();
     this.numbers.forget();
+    this.orbital.forget();
     this.scene.build(state);
     this.annotations.drawSystem();
     this.scene.refreshLocks();
@@ -429,6 +434,17 @@ export class StudioView {
    */
   showMoleculeNumbers(molecules: readonly NumberedMolecule[]): void {
     this.numbers.show(molecules);
+  }
+
+  /**
+   * Draws molecular orbitals as surfaces, two for each, one for each sign.
+   *
+   * @param orbitals the orbitals, with their values on grids in the structure's frame, which must be of the structure now shown, or none to show none
+   * @param options how to draw them
+   * @returns how many triangles the lobes have all together, or null if nothing is shown
+   */
+  showOrbitals(orbitals: readonly DrawnOrbital[], options: OrbitalOptions): OrbitalDrawn | null {
+    return this.orbital.show(orbitals, options);
   }
 
   /**

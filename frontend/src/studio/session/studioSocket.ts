@@ -1,28 +1,32 @@
 import type {Vec3} from "../../api/types/structure";
 import {
-    type AtomChange,
-    type AtomPlacement,
-    type BondEditAck,
-    type BondOrder,
-    type CameraAck,
-    type ChargesRequestAck,
-    type EditApplied,
-    type EditHistory,
-    type ForcesRequestAck,
-    type GraphEditAck,
-    type LockAck,
-    type OptimiseCancelAck,
-    type OptimiseStarted,
-    type PatchAck,
-    type Pose,
-    PROTOCOL_VERSION,
-    type ScanRequestAck,
-    type ServerEnvelope,
-    type SessionCamera,
-    type SessionConflict,
-    type SessionReady,
-    type SessionState,
-    type TransformAck,
+  type AtomChange,
+  type AtomPlacement,
+  type BondEditAck,
+  type BondOrder,
+  type CameraAck,
+  type ChargesRequestAck,
+  type EditApplied,
+  type EditHistory,
+  type FieldRequestAck,
+  type ForcesRequestAck,
+  type GraphEditAck,
+  type InteractionRequestAck,
+  type LockAck,
+  type OptimiseCancelAck,
+  type OptimiseStarted,
+  type OrbitalsRequestAck,
+  type OrbitalTarget,
+  type PatchAck,
+  type Pose,
+  PROTOCOL_VERSION,
+  type ScanRequestAck,
+  type ServerEnvelope,
+  type SessionCamera,
+  type SessionConflict,
+  type SessionReady,
+  type SessionState,
+  type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -518,6 +522,47 @@ export class StudioSocket {
    */
   requestScan(sessionId: string): Promise<ScanRequestAck> {
     return this.request<ScanRequestAck>("scan.request", { session_id: sessionId }, "scan.request.ack");
+  }
+
+  /**
+   * Asks for the energy levels of a session's molecular orbitals. The answer says only that the request was understood:
+   * listen for `orbitals.result`, which the server sends once the session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose orbitals to calculate
+   * @param model the kind of Hartree-Fock calculation: `rhf`, `uhf` or `rohf`, or `mulliken` for the server's own choice
+   * @param fragments the molecules to calculate each on its own, as an atom of each; empty for the whole session as one
+   */
+  requestOrbitals(sessionId: string, model: string, fragments: readonly string[]): Promise<OrbitalsRequestAck> {
+    return this.request<OrbitalsRequestAck>("orbitals.request", { session_id: sessionId, model, fragments }, "orbitals.request.ack");
+  }
+
+  /**
+   * Asks for the values of some orbitals on grids round the molecules they are of. The answer says only that the request was
+   * understood: listen for `field.result`, once for each orbital asked for, which the server sends once the session has been
+   * left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose orbitals to evaluate
+   * @param model the kind of calculation, as for {@link requestOrbitals}
+   * @param targets the orbitals: which molecule (an atom of it, or null for the whole session), which set and which orbital
+   */
+  requestOrbital(sessionId: string, model: string, targets: readonly OrbitalTarget[]): Promise<FieldRequestAck> {
+    return this.request<FieldRequestAck>(
+      "field.request",
+      { session_id: sessionId, kind: "orbital", model, targets: targets.map(({ fragment, spin, orbital }) => ({ spin, orbital, ...(fragment ? { fragment } : {}) })) },
+      "field.request.ack",
+    );
+  }
+
+  /**
+   * Asks for how the orbitals of everything in a session together are made of those of its molecules on their own. The answer
+   * says only that the request was understood: listen for `interaction.result`, which the server sends once the session has
+   * been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose orbitals to relate
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   */
+  requestInteraction(sessionId: string, model: string): Promise<InteractionRequestAck> {
+    return this.request<InteractionRequestAck>("interaction.request", { session_id: sessionId, model }, "interaction.request.ack");
   }
 
   /**

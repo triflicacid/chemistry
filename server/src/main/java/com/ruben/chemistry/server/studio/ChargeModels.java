@@ -85,7 +85,7 @@ public final class ChargeModels
      * @param library the basis sets and core potentials, which decide how many electrons each atom brings
      * @return the electrons treated explicitly, after the molecule's charge and any core potentials
      */
-    private static int electrons(Structure3D structure, BasisLibrary library)
+    static int electrons(Structure3D structure, BasisLibrary library)
     {
         int electrons = 0;
         for (Structure3D.Site site : structure.sites())

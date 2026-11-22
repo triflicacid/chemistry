@@ -13,6 +13,7 @@ import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import type {ScreenRect} from "../viewport/StudioViewListener";
 import {chargeScale} from "./chargeScale";
+import {answers, drawnOrbitals, fragmentsFor, resolveTargets} from "./orbitals";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
 import {useStructureActions} from "./useStructureActions";
@@ -44,6 +45,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     addBond,
     charges,
     forces,
+    orbitals,
+    fields: orbitalFieldList,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -141,6 +144,19 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.showMoleculeNumbers(debug ? numbered : []);
   }, [view, debug, numbered, state]);
+
+  // an orbital is drawn only for the version it was worked out at, since a surface that stays where the atoms were is worse than none
+  const { selected: shownOrbital, scope: shownScope, count: shownCount, colouring, isovalue, opacity } = useObservable(models.orbital);
+  const orbitalFields = useMemo(() => {
+    const asked = fragmentsFor(shownScope, state);
+    if (shownOrbital === null || !answers(orbitals, models.orbital.get().kind, asked)) {
+      return [];
+    }
+    return drawnOrbitals(orbitals, resolveTargets(orbitals, shownOrbital, shownCount), orbitalFieldList, state);
+  }, [shownOrbital, shownScope, shownCount, orbitals, orbitalFieldList, state, models.orbital]);
+  useEffect(() => {
+    view?.showOrbitals(orbitalFields, { isovalue, opacity, colouring, debug });
+  }, [view, orbitalFields, isovalue, opacity, colouring, debug]);
 
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);
