@@ -1,14 +1,14 @@
 import {useEffect, useState} from "react";
 import type {Models} from "../models/models";
 import {
-  CHARGE_MODELS,
-  type ChargeModel,
-  type ColourBy,
-  DEFAULT_POLAR_THRESHOLD,
-  MAX_FORCE_SCALE,
-  MAX_POLAR_THRESHOLD,
-  MIN_FORCE_SCALE,
-  MIN_POLAR_THRESHOLD,
+    CHARGE_MODELS,
+    type ChargeModel,
+    type ColourBy,
+    DEFAULT_POLAR_THRESHOLD,
+    MAX_FORCE_SCALE,
+    MAX_POLAR_THRESHOLD,
+    MIN_FORCE_SCALE,
+    MIN_POLAR_THRESHOLD,
 } from "../models/PropertiesModel";
 import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
 import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArrows";
@@ -17,6 +17,7 @@ import {divergingGradient} from "../../render/scale";
 import {chargeScale} from "../layout/chargeScale";
 import type {ChargesProgress} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
+import {ForceDebug} from "./ForceDebug";
 
 /** What the atoms can be coloured by, with what each means. */
 const COLOUR_OPTIONS: { value: ColourBy; label: string; title: string }[] = [
@@ -31,6 +32,7 @@ const TICK_MS = 100;
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
   const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, open } = useObservable(properties);
+  const debug = useObservable(models.debug);
 
   return (
     <section className="render-options" aria-label="Properties">
@@ -124,7 +126,7 @@ export function PropertiesOptions({ models }: { models: Models }) {
                   Total force and torque
                 </label>
               </dd>
-              <ForceStatus net={netForces} />
+              <ForceStatus net={netForces} debug={debug} scale={forceScale} models={models} />
             </>
           )}
         </dl>
@@ -185,7 +187,7 @@ function ChargeLegend() {
 }
 
 /** How the calculation of the forces is getting on, what the arrows mean, and why there are none if there are none. */
-function ForceStatus({ net }: { net: boolean }) {
+function ForceStatus({ net, debug, scale, models }: { net: boolean; debug: boolean; scale: number; models: Models }) {
   const { forces, calculatingForcesSince, state } = useSessionContext();
   const current = forces !== null && state !== null && forces.session_id === state.session_id && forces.version === state.version;
   const key = (colour: string, what: string) => (
@@ -223,6 +225,7 @@ function ForceStatus({ net }: { net: boolean }) {
           <dd className="legend-note">
             {key(ATOM_COLOUR, "atom")} {net && key(NET_COLOUR, "total force")} {net && key(TORQUE_COLOUR, "torque axis")}
           </dd>
+          {debug && <ForceDebug forces={forces} scale={scale} label={(id) => models.index?.label(id) ?? id} />}
         </>
       )}
     </>

@@ -2,7 +2,16 @@ import {Group, MeshStandardMaterial, Vector3} from "three";
 import {disposeMaterials} from "../../../render/dispose";
 import type {Primitives} from "../../../render/primitives";
 import type {Stage} from "../../../render/stage";
-import {arrowLength, ATOM_ARROW, largest, magnitude, NET_ARROW, TORQUE_ARROW} from "../../layout/forceArrows";
+import {
+    arrowLength,
+    ATOM_ARROW,
+    KCAL_PER_HARTREE,
+    largest,
+    magnitude,
+    NET_ARROW,
+    toKcalPerAngstrom,
+    TORQUE_ARROW
+} from "../../layout/forceArrows";
 import type {ForcesResult} from "../../session/messages";
 import type {MoleculeScene} from "./MoleculeScene";
 
@@ -21,6 +30,8 @@ export interface ForceOptions {
   scale: number;
   /** Whether to also draw the total force and the torque on each molecule. */
   net: boolean;
+  /** Whether to write each arrow's size beside it, and mark the atoms whose force is too small to be drawn. */
+  debug: boolean;
 }
 
 /**
@@ -59,10 +70,17 @@ export class ForceArrows {
     if (result && result.status === "complete") {
       const marks = new Group();
       const biggest = largest(result);
-      const arrow = (from: Vector3, direction: Vector3, length: number, radius: number, colour: string) => {
+      const arrow = (from: Vector3, direction: Vector3, length: number, radius: number, colour: string, note: string) => {
         if (length > 0) {
           const material = new MeshStandardMaterial({ color: colour, roughness: 0.5 });
-          marks.add(this.kit.arrow(from, from.clone().addScaledVector(direction.normalize(), length), radius, material));
+          const tip = from.clone().addScaledVector(direction.normalize(), length);
+          marks.add(this.kit.arrow(from, tip, radius, material));
+          if (options.debug) {
+            // the size is written just beyond the tip, so that it does not sit on the arrow
+            const label = this.kit.labels.label(note, "#222222", 0.22);
+            label.position.copy(tip).addScaledVector(direction, 0.25);
+            marks.add(label);
+          }
         }
       };
 
@@ -73,15 +91,22 @@ export class ForceArrows {
           const direction = new Vector3(force.x, force.y, force.z).normalize();
           // the arrow starts at the surface of the atom, so that it is not lost inside it
           const start = node.at.clone().addScaledVector(direction, this.scene.radiusOf(node));
-          arrow(start, direction, length, 0.04, ATOM_COLOUR);
+          arrow(start, direction, length, 0.04, ATOM_COLOUR, `${toKcalPerAngstrom(magnitude(force)).toFixed(2)} kcal/mol/�`);
+        } else if (node && options.debug) {
+          // a force this small is not drawn, but debugging says that it is there and how small
+          const label = this.kit.labels.label(`${toKcalPerAngstrom(magnitude(force)).toFixed(3)}`, "#6e6e6e", 0.18);
+          label.position.copy(node.at).setY(node.at.y + this.scene.radiusOf(node) + 0.2);
+          marks.add(label);
         }
       }
 
       if (options.net) {
         for (const { centre, force, torque } of result.fragments) {
           const middle = new Vector3(centre.x, centre.y, centre.z);
-          arrow(middle, new Vector3(force.x, force.y, force.z), arrowLength(magnitude(force), biggest.net, NET_ARROW, options.scale), 0.07, NET_COLOUR);
-          arrow(middle, new Vector3(torque.x, torque.y, torque.z), arrowLength(magnitude(torque), biggest.torque, TORQUE_ARROW, options.scale), 0.06, TORQUE_COLOUR);
+          const total = `total ${toKcalPerAngstrom(magnitude(force)).toFixed(2)} kcal/mol/�`;
+          const turn = `torque ${(magnitude(torque) * KCAL_PER_HARTREE).toFixed(2)} kcal/mol`;
+          arrow(middle, new Vector3(force.x, force.y, force.z), arrowLength(magnitude(force), biggest.net, NET_ARROW, options.scale), 0.07, NET_COLOUR, total);
+          arrow(middle, new Vector3(torque.x, torque.y, torque.z), arrowLength(magnitude(torque), biggest.torque, TORQUE_ARROW, options.scale), 0.06, TORQUE_COLOUR, turn);
         }
       }
 

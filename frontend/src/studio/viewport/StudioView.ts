@@ -28,6 +28,8 @@ import {RollRingInteraction} from "./input/RollRingInteraction";
 import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
 import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
+import {HydrogenBondGuide} from "./scene/HydrogenBondGuide";
+import type {HydrogenBondMark} from "../models/HydrogenBondModel";
 import {PanGuide} from "./scene/PanGuide";
 import {RingGuide} from "./scene/RingGuide";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
@@ -59,6 +61,7 @@ export class StudioView {
   /** What is marked on the molecule: strain, lengths, torsions and angles. */
   private readonly annotations: Annotations;
   private readonly forceArrows: ForceArrows;
+  private readonly bondGuide: HydrogenBondGuide;
   /** The camera, and the anchor the view is held on. */
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
@@ -109,6 +112,7 @@ export class StudioView {
     this.lock = new CameraLock(this.stage);
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
     this.forceArrows = new ForceArrows(this.stage, this.kit, this.scene);
+    this.bondGuide = new HydrogenBondGuide(this.stage, this.kit, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
       this.molecule.sync();
@@ -260,6 +264,7 @@ export class StudioView {
     this.scene.clear();
     this.annotations.forget();
     this.forceArrows.forget();
+    this.bondGuide.forget();
     this.scene.build(state);
     this.annotations.drawSystem();
     this.scene.refreshLocks();
@@ -401,6 +406,15 @@ export class StudioView {
    */
   showForces(result: ForcesResult | null, options: ForceOptions): void {
     this.forceArrows.show(result, options);
+  }
+
+  /**
+   * Draws a hydrogen bond as a dashed line with a note beside it.
+   *
+   * @param mark the bond, which must be between atoms of the structure now shown, or null to show none
+   */
+  showHydrogenBond(mark: HydrogenBondMark | null): void {
+    this.bondGuide.show(mark);
   }
 
   /**

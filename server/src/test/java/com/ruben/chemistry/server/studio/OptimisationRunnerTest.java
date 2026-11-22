@@ -313,6 +313,43 @@ class OptimisationRunnerTest
         assertThat(reported).containsExactly(0, 1, 2, 3, 4);
     }
 
+    @Test
+    void keeps_the_energy_of_every_step_however_few_it_reports()
+    {
+        runner = new OptimisationRunner((structure, constraints, options, progress) ->
+        {
+            for (int iteration = 0; iteration < 5; iteration++)
+            {
+                progress.continues(iteration, 10.0 - iteration);
+            }
+            return unchanged(structure);
+        }, Duration.ofHours(1));
+        StudioSession session = open("CCO");
+
+        runner.start(session, listener);
+        OptimisationRunner.Result result = take();
+
+        assertThat(reported).containsExactly(0);
+        assertThat(result.history()).extracting(OptimisationRunner.Step::iteration).containsExactly(0, 1, 2, 3, 4);
+        assertThat(result.history()).extracting(OptimisationRunner.Step::energy).containsExactly(10.0, 9.0, 8.0, 7.0, 6.0);
+    }
+
+    @Test
+    void has_no_history_for_a_result_that_never_began()
+    {
+        runner = new OptimisationRunner((structure, constraints, options, progress) ->
+        {
+            throw new IllegalStateException("broken");
+        }, Duration.ZERO);
+        StudioSession session = open("CCO");
+
+        runner.start(session, listener);
+        OptimisationRunner.Result result = take();
+
+        assertThat(result.status()).isEqualTo(OptimisationRunner.FAILED);
+        assertThat(result.history()).isEmpty();
+    }
+
     private OptimisationRunner.Result take()
     {
         try

@@ -130,6 +130,7 @@ public final class OptimisationRunner implements AutoCloseable
      * @param iterations how many steps it took
      * @param warnings things the optimisation could not do as asked, such as stereochemistry it could not read, and so left free
      * @param message why it failed or was cancelled, or {@code null} if it did neither
+     * @param history the value it was minimising at each step, from the start, which is empty if it never began
      */
     public record Result(
             String status,
@@ -139,7 +140,26 @@ public final class OptimisationRunner implements AutoCloseable
             Double strainAfter,
             int iterations,
             List<String> warnings,
-            String message)
+            String message,
+            List<Step> history)
+    {
+        /**
+         * @param steps the value it was minimising at each step
+         * @return this result, with that history
+         */
+        Result withHistory(List<Step> steps)
+        {
+            return new Result(status, version, moved, strainBefore, strainAfter, iterations, warnings, message, List.copyOf(steps));
+        }
+    }
+
+    /**
+     * One step of an optimisation.
+     *
+     * @param iteration how many steps had been taken, which is zero for the geometry it started from
+     * @param energy the value it is minimising, which has no unit
+     */
+    public record Step(int iteration, double energy)
     {
     }
 
@@ -275,6 +295,7 @@ public final class OptimisationRunner implements AutoCloseable
     {
         int[] reached = {0};
         long[] told = {0};
+        List<Step> history = new ArrayList<>();
         StructureFixer.Progress progress = (iteration, energy) ->
         {
             reached[0] = iteration;
@@ -282,6 +303,9 @@ public final class OptimisationRunner implements AutoCloseable
             {
                 return false;
             }
+
+            // every step is kept, where the listener is told of only as many as can be read
+            history.add(new Step(iteration, energy));
 
             long now = System.nanoTime();
             if (iteration == 0 || now - told[0] >= progressNanos)
@@ -301,11 +325,11 @@ public final class OptimisationRunner implements AutoCloseable
         {
             result = operation.cancelled()
                     ? cancelled(session, operation, reached[0])
-                    : new Result(FAILED, session.version(), Map.of(), null, null, reached[0], List.of(), String.valueOf(failure.getMessage()));
+                    : new Result(FAILED, session.version(), Map.of(), null, null, reached[0], List.of(), String.valueOf(failure.getMessage()), List.of());
         }
 
         running.remove(session.sessionId(), operation);
-        listener.finished(operation, result);
+        listener.finished(operation, result.withHistory(history));
     }
 
     private Result conclude(StudioSession session, Operation operation, StudioSession.OptimisationInput input, StructureFixer.Progress progress, int[] reached)
@@ -329,7 +353,7 @@ public final class OptimisationRunner implements AutoCloseable
         return switch (report.outcome())
         {
             case FAILED -> new Result(FAILED, session.version(), Map.of(), null, null, reached[0], warnings,
-                    "The structure could not be relaxed without changing its stereochemistry");
+                    "The structure could not be relaxed without changing its stereochemistry", List.of());
             case UNCHANGED -> unchanged(session, input, warnings, reached[0]);
             case FIXED -> apply(session, operation, input, fixed, warnings, reached[0]);
         };
@@ -360,13 +384,13 @@ public final class OptimisationRunner implements AutoCloseable
         Map<String, Vec3> before = before(input);
         Map<String, Vec3> after = new LinkedHashMap<>(before);
         after.putAll(applied.get().moved());
-        return new Result(COMPLETE, applied.get().version(), applied.get().moved(), strain(session, before), strain(session, after), iterations, warnings, null);
+        return new Result(COMPLETE, applied.get().version(), applied.get().moved(), strain(session, before), strain(session, after), iterations, warnings, null, List.of());
     }
 
     private Result unchanged(StudioSession session, StudioSession.OptimisationInput input, List<String> warnings, int iterations)
     {
         Double strain = strain(session, before(input));
-        return new Result(UNCHANGED, session.version(), Map.of(), strain, strain, iterations, warnings, null);
+        return new Result(UNCHANGED, session.version(), Map.of(), strain, strain, iterations, warnings, null, List.of());
     }
 
     /**
@@ -407,6 +431,6 @@ public final class OptimisationRunner implements AutoCloseable
 
     private Result cancelled(StudioSession session, Operation operation, int iterations)
     {
-        return new Result(CANCELLED, session.version(), Map.of(), null, null, iterations, List.of(), operation.cancelledBecause);
+        return new Result(CANCELLED, session.version(), Map.of(), null, null, iterations, List.of(), operation.cancelledBecause, List.of());
     }
 }

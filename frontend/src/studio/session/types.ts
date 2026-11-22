@@ -1,4 +1,4 @@
-import type {OptimiseResult} from "./messages";
+import type {EnergyStep, OptimiseResult} from "./messages";
 
 /** How far the session has got towards being editable. */
 export type SessionPhase =
@@ -32,6 +32,8 @@ export type EditResult =
 /** An optimisation the server is running. */
 export interface Optimising {
   iteration: number;
+  /** The value being minimised at each step the server has reported, which is only some of them. */
+  history: EnergyStep[];
 }
 
 export interface OptimisationOutcome {
@@ -42,6 +44,8 @@ export interface OptimisationOutcome {
   /** How many atoms it moved. */
   atoms: number;
   iterations: number;
+  /** The value that was minimised at every step. */
+  history: EnergyStep[];
   message: string | null;
   warnings: string[];
 }

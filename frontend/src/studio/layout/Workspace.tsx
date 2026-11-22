@@ -103,8 +103,8 @@ export function Workspace(props: WorkspaceProps) {
         </div>
       )}
 
-      <section className={`panel panel-analysis${layout.analysisCollapsed ? " collapsed" : ""}`} aria-label="Activity">
-        <Header name="Activity" panel="analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
+      <section className={`panel panel-analysis${layout.analysisCollapsed ? " collapsed" : ""}`} aria-label="Analysis">
+        <Header name="Analysis" panel="analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
         {!layout.analysisCollapsed && (
           <div className="panel-body">
             <AnalysisPanel activity={activity} state={state} geometry={geometry} models={models} />

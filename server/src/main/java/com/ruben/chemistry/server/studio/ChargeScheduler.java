@@ -4,6 +4,8 @@ import com.ruben.chemistry.charges.PartialChargeModel;
 import com.ruben.chemistry.quantum.scf.ScfListener;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -102,6 +104,8 @@ public final class ChargeScheduler implements AutoCloseable
                 (described, run) ->
                 {
                     Pace pace = new Pace(session, described, requested, progress, run);
+                    // every Fock build is kept, where progress reports only as many as can be read
+                    List<ChargeReport.ScfStep> steps = new ArrayList<>();
                     pace.stage("starting");
                     PartialChargeModel model = models.create(requested, new ScfListener()
                     {
@@ -116,10 +120,16 @@ public final class ChargeScheduler implements AutoCloseable
                         public void iteration(int iteration, double energy, double error)
                         {
                             run.check();
+                            if (iteration == 1)
+                            {
+                                // the count starts again from 1 when a second calculation begins, which replaces the first
+                                steps.clear();
+                            }
+                            steps.add(new ChargeReport.ScfStep(iteration, energy, error));
                             pace.iteration(iteration, energy, error);
                         }
                     });
-                    return ChargeReport.of(session, described, requested, model).elapsed(run.elapsedMs());
+                    return ChargeReport.of(session, described, requested, model).converged(steps).elapsed(run.elapsedMs());
                 },
                 (described, elapsedMs, message) -> ChargeReport.failed(session, described.version(), requested, elapsedMs, message),
                 deliver);

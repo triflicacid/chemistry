@@ -2,25 +2,27 @@ import {useMemo, useRef} from "react";
 import {ChemistryApi} from "../../api/ChemistryApi";
 import type {Vec3} from "../../api/types/structure";
 import type {
-  AtomChange,
-  AtomMove,
-  AtomPlacement,
-  BondEdit,
-  BondOrder,
-  ChargesProgress,
-  ChargesResult,
-  ForcesResult,
-  GeometryResult,
-  HistoryEntry,
-  Pose,
-  SessionCamera,
-  SessionState
+    AtomChange,
+    AtomMove,
+    AtomPlacement,
+    BondEdit,
+    BondOrder,
+    ChargesProgress,
+    ChargesResult,
+    ForcesResult,
+    GeometryResult,
+    HistoryEntry,
+    Pose,
+    ScanResult,
+    SessionCamera,
+    SessionState
 } from "./messages";
 import {useCameraSave} from "./camera";
 import type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
 import {type Calculating, useCharges} from "./useCharges";
 import {useDrags} from "./useDrags";
 import {useForces} from "./useForces";
+import {useScan} from "./useScan";
 import {useEdits} from "./useEdits";
 import {useOptimise} from "./useOptimise";
 import {type SocketEvents, useSocket} from "./useSocket";
@@ -53,6 +55,12 @@ export interface Session {
   calculatingForcesSince: number | null;
   /** Asks the server for the forces on the session as it is now, which arrive as `forces`. */
   requestForces: () => void;
+  /** The scan of the hydrogen bond between two molecules, as the server last said, once it has been asked. */
+  scan: ScanResult | null;
+  /** When the scan under way was asked for, as `Date.now` says, or null if there is none. */
+  scanningSince: number | null;
+  /** Asks the server to scan the session as it is now, which arrives as `scan`. */
+  requestScan: () => void;
   /** The calculation of the charges that is under way, or null if there is none. */
   calculatingCharges: Calculating | null;
   /** How the calculation of the charges is getting on, or null if the server has not said. */
@@ -158,6 +166,7 @@ export function useSession(client?: ChemistryApi): Session {
   const { optimising, outcome, optimise, cancelOptimise } = useOptimise(socket, edits, events);
   const saveCamera = useCameraSave(socket);
   const { forces, calculatingSince: calculatingForcesSince, requestForces } = useForces(socket);
+  const { scan, scanningSince, requestScan } = useScan(socket);
   const { charges, calculating: calculatingCharges, progress: chargesProgress, requestCharges } = useCharges(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
@@ -172,6 +181,9 @@ export function useSession(client?: ChemistryApi): Session {
     forces,
     calculatingForcesSince,
     requestForces,
+    scan,
+    scanningSince,
+    requestScan,
     charges,
     calculatingCharges,
     chargesProgress,

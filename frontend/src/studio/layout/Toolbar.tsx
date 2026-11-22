@@ -92,7 +92,7 @@ export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onTog
       <div className="tool-group tool-group-end" role="group" aria-label="Panels">
         <PanelToggle panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} />
         <PanelToggle panel="inspector" name="Inspector" collapsed={layout.inspectorCollapsed} onCollapse={onCollapse} />
-        <PanelToggle panel="analysis" name="Activity" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
+        <PanelToggle panel="analysis" name="Analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
       </div>
 
       <span className={`status status-${phase.kind}`} role="status">

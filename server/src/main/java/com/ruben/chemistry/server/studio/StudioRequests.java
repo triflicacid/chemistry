@@ -133,6 +133,13 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session whose molecules to scan along a hydrogen bond
+     */
+    public record ScanRequest(String sessionId)
+    {
+    }
+
+    /**
      * @param sessionId the session whose optimisation to stop
      */
     public record CancelOptimiseRequest(String sessionId)

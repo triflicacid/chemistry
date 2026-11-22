@@ -1,27 +1,28 @@
 import type {Vec3} from "../../api/types/structure";
 import {
-  type AtomChange,
-  type AtomPlacement,
-  type BondEditAck,
-  type BondOrder,
-  type CameraAck,
-  type ChargesRequestAck,
-  type EditApplied,
-  type EditHistory,
-  type ForcesRequestAck,
-  type GraphEditAck,
-  type LockAck,
-  type OptimiseCancelAck,
-  type OptimiseStarted,
-  type PatchAck,
-  type Pose,
-  PROTOCOL_VERSION,
-  type ServerEnvelope,
-  type SessionCamera,
-  type SessionConflict,
-  type SessionReady,
-  type SessionState,
-  type TransformAck,
+    type AtomChange,
+    type AtomPlacement,
+    type BondEditAck,
+    type BondOrder,
+    type CameraAck,
+    type ChargesRequestAck,
+    type EditApplied,
+    type EditHistory,
+    type ForcesRequestAck,
+    type GraphEditAck,
+    type LockAck,
+    type OptimiseCancelAck,
+    type OptimiseStarted,
+    type PatchAck,
+    type Pose,
+    PROTOCOL_VERSION,
+    type ScanRequestAck,
+    type ServerEnvelope,
+    type SessionCamera,
+    type SessionConflict,
+    type SessionReady,
+    type SessionState,
+    type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -506,6 +507,17 @@ export class StudioSocket {
    */
   requestForces(sessionId: string): Promise<ForcesRequestAck> {
     return this.request<ForcesRequestAck>("forces.request", { session_id: sessionId }, "forces.request.ack");
+  }
+
+  /**
+   * Asks for the interaction energy of two of a session's molecules along a hydrogen bond between them. The answer says only
+   * that the request was understood: listen for `scan.result` for the scan, which the server sends once the session has been
+   * left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose molecules to scan
+   */
+  requestScan(sessionId: string): Promise<ScanRequestAck> {
+    return this.request<ScanRequestAck>("scan.request", { session_id: sessionId }, "scan.request.ack");
   }
 
   /**

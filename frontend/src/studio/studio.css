@@ -1184,3 +1184,194 @@ body.resizing {
   min-width: 2.6rem;
   text-align: right;
 }
+
+/* charts */
+.line-chart {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+  position: relative;
+  user-select: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .line-chart {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #0ca30c;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+
+.line-chart svg {
+  display: block;
+  touch-action: none;
+}
+
+.line-chart-draggable {
+  cursor: ew-resize;
+}
+
+.line-chart-empty {
+  height: 0;
+}
+
+.chart-grid {
+  stroke: var(--edge);
+  stroke-width: 1;
+}
+
+.chart-axis {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.chart-tick,
+.chart-title {
+  fill: var(--ink-soft);
+  font-size: 10px;
+}
+
+.chart-reference {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-series path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-series circle,
+.chart-hover circle {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.chart-series-1 { stroke: var(--series-1); fill: var(--series-1); color: var(--series-1); }
+.chart-series-2 { stroke: var(--series-2); fill: var(--series-2); color: var(--series-2); }
+.chart-series-3 { stroke: var(--series-3); fill: var(--series-3); color: var(--series-3); }
+.chart-series-4 { stroke: var(--series-4); fill: var(--series-4); color: var(--series-4); }
+.chart-series-5 { stroke: var(--series-5); fill: var(--series-5); color: var(--series-5); }
+.chart-series-6 { stroke: var(--series-6); fill: var(--series-6); color: var(--series-6); }
+.chart-series-7 { stroke: var(--series-7); fill: var(--series-7); color: var(--series-7); }
+.chart-series-8 { stroke: var(--series-8); fill: var(--series-8); color: var(--series-8); }
+
+.chart-muted {
+  opacity: 0.4;
+}
+
+.chart-muted path {
+  stroke-width: 1.5;
+}
+
+.chart-marker line,
+.chart-hover line {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.chart-marker circle {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--panel);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.chart-key {
+  stroke: none;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  margin: 0;
+  padding: 0 0 0 56px;
+  list-style: none;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.energy-plots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.energy-plots h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.energy-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.energy-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.debug-note {
+  color: var(--ink-soft);
+  font-family: ui-monospace, monospace;
+}
+
+.debug-table {
+  border-collapse: collapse;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+.debug-table th,
+.debug-table td {
+  padding: 0 0.5rem 0 0;
+  text-align: right;
+}
+
+.debug-table th:first-child,
+.debug-table td:first-child {
+  text-align: left;
+}
+
+.debug-table th {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.debug-table tr[data-hidden="true"] {
+  opacity: 0.5;
+}
+
+.debug-table-cell {
+  max-height: 9rem;
+  overflow-y: auto;
+}

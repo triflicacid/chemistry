@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 17;
+export const PROTOCOL_VERSION = 19;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -314,6 +314,14 @@ export interface OptimiseProgress extends ServerEnvelope {
   energy: number;
 }
 
+/** The value an optimisation was minimising after some number of steps. */
+export interface EnergyStep {
+  /** How many steps had been taken, which is zero for the geometry it started from. */
+  iteration: number;
+  /** The value, which has no unit. */
+  energy: number;
+}
+
 /** How an optimisation ended, sent on the server's own initiative. */
 export interface OptimiseResult extends ServerEnvelope {
   type: "optimise.result";
@@ -340,6 +348,8 @@ export interface OptimiseResult extends ServerEnvelope {
   strain_before: number | null;
   strain_after: number | null;
   iterations: number;
+  /** The value being minimised at every step, from the start, which the progress reports sample. Empty if it never began. */
+  energy_history: EnergyStep[];
   /** Things the optimisation could not do as asked, such as stereochemistry it could not read. */
   warnings: string[];
   /** Why it failed or was cancelled. */
@@ -365,6 +375,16 @@ export interface AtomCharge {
   charge: number;
 }
 
+/** One Fock build of a self-consistent-field calculation. */
+export interface ScfStep {
+  /** How many had been built, from 1. */
+  iteration: number;
+  /** The total energy so far, in hartree. */
+  energy: number;
+  /** The root-mean-square element of the Fock-density commutator, which is zero at self-consistency. */
+  error: number;
+}
+
 /**
  * The partial charge of every atom, sent on the server's own initiative once it has worked them out after a request. It
  * describes the geometry at `version`, so it is out of date once the session has moved on from that.
@@ -382,6 +402,8 @@ export interface ChargesResult extends ServerEnvelope {
   convention: string | null;
   /** Each atom's charge, empty if the calculation failed. */
   charges: AtomCharge[];
+  /** Every Fock build of the quantum calculation, in order; empty if there was none, as for formal charges. */
+  convergence: ScfStep[];
   /** How long the calculation took, in milliseconds. */
   elapsed_ms: number;
   /** Why the calculation failed, if it did. */
@@ -453,6 +475,73 @@ export interface ForcesResult extends ServerEnvelope {
   /** How long the calculation took, in milliseconds. */
   elapsed_ms: number;
   /** Why the forces are unavailable or could not be calculated. */
+  message: string | null;
+}
+
+/** The answer to a request for a scan, which says only that the request was understood: the scan follows as a `scan.result`. */
+export interface ScanRequestAck extends ServerEnvelope {
+  type: "scan.request.ack";
+}
+
+/** The parts of an interaction energy, in hartree. */
+export interface ScanTerms {
+  nuclear_nuclear: number;
+  nuclear_electron: number;
+  electron_electron: number;
+  exchange_correlation: number;
+}
+
+/** The interaction energy of two molecules with the hydrogen bond between them at one length. */
+export interface ScanPoint {
+  /** The distance from the hydrogen to the acceptor, in angstroms. */
+  distance: number;
+  /** The interaction energy of the two molecules, in hartree. */
+  energy: number;
+  /**
+   * The interaction energy of the moved molecule with every other molecule, in hartree, which counts a third molecule that
+   * the move brings closer or takes away. Null if there are only two molecules, when it is the same as `energy`.
+   */
+  energy_with_others: number | null;
+  /** What `energy` is made of. */
+  terms: ScanTerms;
+  /** Where the atoms of the molecule that is moved are at this distance, in the session's frame. */
+  atoms: { id: string; position: Vec3 }[];
+}
+
+/** One hydrogen bond, scanned. */
+export interface ScanBond {
+  /** The heavy atom that gives the hydrogen. */
+  donor: string;
+  hydrogen: string;
+  /** The atom that receives the hydrogen. */
+  acceptor: string;
+  /** How far the hydrogen is from the acceptor as the geometry is, in angstroms. */
+  current: number;
+  /** The scan, in order of increasing distance. Every bond is scanned at the same distances. */
+  points: ScanPoint[];
+  /** The distance of the lowest energy between the two molecules, in angstroms, refined between points. */
+  minimum_distance: number;
+  /** The interaction energy there, in hartree. */
+  minimum_energy: number;
+}
+
+/**
+ * How the energy between a session's molecules changes as one is moved along each of their closest hydrogen bonds, sent on
+ * the server's own initiative after a request. It describes the geometry at `version`.
+ */
+export interface ScanResult extends ServerEnvelope {
+  type: "scan.result";
+  session_id: string;
+  version: number;
+  /** `unavailable` if the session has no pair of molecules with a hydrogen bond between them to scan. */
+  status: "complete" | "unavailable" | "failed";
+  /** How many separate molecules the session has. */
+  molecules: number;
+  /** The bonds scanned, the one whose hydrogen is nearest its acceptor first; empty if there is no scan. */
+  bonds: ScanBond[];
+  model: string | null;
+  elapsed_ms: number;
+  /** Why there is no scan. */
   message: string | null;
 }
 
@@ -539,5 +628,7 @@ export type ServerMessage =
   | ChargesResult
   | ForcesRequestAck
   | ForcesResult
+  | ScanRequestAck
+  | ScanResult
   | SocketError
   | Pong;

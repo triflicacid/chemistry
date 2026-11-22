@@ -211,7 +211,7 @@ public record ForceReport(
      * @param sites the sites of one connected part, in site order
      * @return that part as a structure of its own, whose sites are the given ones in the same order
      */
-    private static Structure3D alone(Structure3D structure, List<Integer> sites)
+    static Structure3D alone(Structure3D structure, List<Integer> sites)
     {
         // a part is found by any atom of it, and implied hydrogens belong to the atom they are on
         int atom = sites.stream().map(structure.sites()::get).filter(site -> !site.implied()).findFirst()

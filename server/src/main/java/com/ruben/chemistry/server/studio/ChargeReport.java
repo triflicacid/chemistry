@@ -18,6 +18,8 @@ import java.util.List;
  * @param convention what the charges mean, which is {@code FORMAL} where no real model could be applied, or
  *     {@code null} if the calculation failed
  * @param charges the charge of each atom, in elementary charges, in atom order; empty if the calculation failed
+ * @param convergence how the energy and the error fell over the Fock builds of the quantum calculation, in order; empty if
+ *     there was none, as for formal charges
  * @param elapsedMs how long the calculation took, in milliseconds
  * @param message why the calculation failed, or {@code null} if it did not
  */
@@ -30,6 +32,7 @@ public record ChargeReport(
         String model,
         String convention,
         List<AtomCharge> charges,
+        List<ScfStep> convergence,
         long elapsedMs,
         String message)
 {
@@ -43,6 +46,17 @@ public record ChargeReport(
      * @param charge its partial charge, in elementary charges
      */
     public record AtomCharge(String id, double charge)
+    {
+    }
+
+    /**
+     * One Fock build of a self-consistent-field calculation.
+     *
+     * @param iteration how many had been built, from 1
+     * @param energy the total energy so far, in hartree
+     * @param error the root-mean-square element of the Fock-density commutator, which is zero at self-consistency
+     */
+    public record ScfStep(int iteration, double energy, double error)
     {
     }
 
@@ -65,7 +79,7 @@ public record ChargeReport(
         }
 
         return new ChargeReport(TYPE, session.sessionId(), described.version(), requested, "complete", model.name(),
-                charges.convention().name(), List.copyOf(byAtom), 0, null);
+                charges.convention().name(), List.copyOf(byAtom), List.of(), 0, null);
     }
 
     /**
@@ -74,7 +88,16 @@ public record ChargeReport(
      */
     public ChargeReport elapsed(long milliseconds)
     {
-        return new ChargeReport(type, sessionId, version, requested, status, model, convention, charges, milliseconds, message);
+        return new ChargeReport(type, sessionId, version, requested, status, model, convention, charges, convergence, milliseconds, message);
+    }
+
+    /**
+     * @param steps the Fock builds of the calculation, in order
+     * @return this report, saying how the calculation converged
+     */
+    public ChargeReport converged(List<ScfStep> steps)
+    {
+        return new ChargeReport(type, sessionId, version, requested, status, model, convention, charges, List.copyOf(steps), elapsedMs, message);
     }
 
     /**
@@ -87,6 +110,6 @@ public record ChargeReport(
      */
     public static ChargeReport failed(StudioSession session, long version, String requested, long elapsedMs, String message)
     {
-        return new ChargeReport(TYPE, session.sessionId(), version, requested, "failed", null, null, List.of(), elapsedMs, message);
+        return new ChargeReport(TYPE, session.sessionId(), version, requested, "failed", null, null, List.of(), List.of(), elapsedMs, message);
     }
 }

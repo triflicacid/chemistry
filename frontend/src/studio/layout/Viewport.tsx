@@ -50,11 +50,11 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const [axes, setAxes] = useState(false);
   const [grid, setGrid] = useState<GridKind | "off">("off");
   const [gridPlane, setGridPlane] = useState<GridPlaneChoice>("xz");
-  const [debug, setDebug] = useState(false);
   const [look, setLook] = useState(false);
   const [selectionArea, setSelectionArea] = useState<ScreenRect | null>(null);
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
+  const debug = useObservable(models.debug);
   const toolState = useObservable(tools);
   const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold, axis, editClick, ringSize, bondOrder } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
@@ -127,8 +127,14 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   // forces are drawn only for the version they were made from, since an arrow that stays where an atom was is worse than none
   const forceable = forceArrows && forces !== null && state !== null && forces.session_id === state.session_id && forces.version === state.version;
   useEffect(() => {
-    view?.showForces(forceable ? forces : null, { scale: forceScale, net: netForces });
-  }, [view, forceable, forces, forceScale, netForces]);
+    view?.showForces(forceable ? forces : null, { scale: forceScale, net: netForces, debug });
+  }, [view, forceable, forces, forceScale, netForces, debug]);
+
+  // the hydrogen bond the scan is on is drawn from where its atoms are now, so it is redrawn as they move
+  const bond = useObservable(models.hydrogenBond);
+  useEffect(() => {
+    view?.showHydrogenBond(debug ? bond : null);
+  }, [view, debug, bond, state]);
 
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);
@@ -387,7 +393,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
             strain={strain}
             tools={tools}
             debug={debug}
-            onDebug={setDebug}
+            onDebug={(on) => models.debug.to(on)}
             onScreenshot={screenshot}
           />
 

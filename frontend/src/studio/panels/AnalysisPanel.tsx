@@ -6,6 +6,7 @@ import {useSessionContext} from "../session/SessionContext";
 import {describeFinding, isCurrent} from "../layout/findings";
 import {describeOutcome} from "./optimisation";
 import {type Segment, Segmented} from "../controls/Segmented";
+import {EnergyPlots} from "./EnergyPlots";
 
 export interface AnalysisPanelProps {
   activity: Activity[];
@@ -15,10 +16,11 @@ export interface AnalysisPanelProps {
   models: Models;
 }
 
-type Tab = "geometry" | "activity";
+type Tab = "geometry" | "energy" | "activity";
 
 const TABS: Segment<Tab>[] = [
   { value: "geometry", label: "Geometry" },
+  { value: "energy", label: "Energy" },
   { value: "activity", label: "Activity" },
 ];
 
@@ -37,6 +39,8 @@ export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPan
           {outcome && <LastOptimisation outcome={outcome} />}
           <GeometryView state={state} geometry={geometry} models={models} />
         </>
+      ) : tab === "energy" ? (
+        <EnergyPlots state={state} models={models} />
       ) : (
         <ActivityLog activity={activity} />
       )}

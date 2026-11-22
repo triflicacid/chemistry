@@ -1,7 +1,9 @@
 import type {ChemistryStatus} from "../chemistry/useChemistry";
 import {CameraModel} from "./CameraModel";
+import {DebugModel} from "./DebugModel";
 import {FocusModel} from "./FocusModel";
 import {HoverModel} from "./HoverModel";
+import {HydrogenBondModel} from "./HydrogenBondModel";
 import {PropertiesModel} from "./PropertiesModel";
 import {RenderModel} from "./RenderModel";
 import {RevealModel} from "./RevealModel";
@@ -28,6 +30,10 @@ export interface Models {
   render: RenderModel;
   /** Which calculated properties are shown on it. */
   properties: PropertiesModel;
+  /** Whether debug mode is on, in which what is shown comes with the numbers behind it. */
+  debug: DebugModel;
+  /** The hydrogen bond the scan is on, which the viewport draws while debug mode is on. */
+  hydrogenBond: HydrogenBondModel;
   /** Looks identifiers up in the state the surfaces are showing; null until a session opens. */
   index: StateIndex | null;
   /** The molecule's chemistry. */
@@ -40,7 +46,7 @@ export interface Models {
  * @returns a selection and a hover model, with nothing selected, a tool model on the select tool, and a camera model
  *     that knows nothing until a viewport reports
  */
-export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render" | "properties"> {
+export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render" | "properties" | "debug" | "hydrogenBond"> {
   return {
     selection: new SelectionModel(),
     hover: new HoverModel(),
@@ -50,5 +56,7 @@ export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "
     reveal: new RevealModel(),
     render: new RenderModel(),
     properties: new PropertiesModel(),
+    debug: new DebugModel(),
+    hydrogenBond: new HydrogenBondModel(),
   };
 }
