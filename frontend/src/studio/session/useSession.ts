@@ -2,20 +2,20 @@ import {useMemo, useRef} from "react";
 import {ChemistryApi} from "../../api/ChemistryApi";
 import type {Vec3} from "../../api/types/structure";
 import type {
-    AtomChange,
-    AtomMove,
-    AtomPlacement,
-    BondEdit,
-    BondOrder,
-    ChargesProgress,
-    ChargesResult,
-    ForcesResult,
-    GeometryResult,
-    HistoryEntry,
-    Pose,
-    ScanResult,
-    SessionCamera,
-    SessionState
+  AtomChange,
+  AtomMove,
+  AtomPlacement,
+  BondEdit,
+  BondOrder,
+  ChargesProgress,
+  ChargesResult,
+  ForcesResult,
+  GeometryResult,
+  HistoryEntry,
+  Pose,
+  ScanResult,
+  SessionCamera,
+  SessionState
 } from "./messages";
 import {useCameraSave} from "./camera";
 import type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
@@ -23,6 +23,7 @@ import {type Calculating, useCharges} from "./useCharges";
 import {useDrags} from "./useDrags";
 import {useForces} from "./useForces";
 import {useScan} from "./useScan";
+import {type Density, useDensity} from "./useDensity";
 import {type Esp, useEsp} from "./useEsp";
 import {type Orbitals, useOrbitals} from "./useOrbitals";
 import {useEdits} from "./useEdits";
@@ -31,7 +32,7 @@ import {type SocketEvents, useSocket} from "./useSocket";
 
 export type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
 
-export interface Session extends Orbitals, Esp {
+export interface Session extends Orbitals, Esp, Density {
   phase: SessionPhase;
   state: SessionState | null;
   /** The optimisation under way, or null if there is none. */
@@ -171,6 +172,7 @@ export function useSession(client?: ChemistryApi): Session {
   const { scan, scanningSince, requestScan } = useScan(socket);
   const orbitals = useOrbitals(socket);
   const potential = useEsp(socket);
+  const density = useDensity(socket);
   const { charges, calculating: calculatingCharges, progress: chargesProgress, requestCharges } = useCharges(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
@@ -190,6 +192,7 @@ export function useSession(client?: ChemistryApi): Session {
     requestScan,
     ...orbitals,
     ...potential,
+    ...density,
     charges,
     calculatingCharges,
     chargesProgress,

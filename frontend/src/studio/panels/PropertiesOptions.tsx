@@ -1,18 +1,21 @@
-import {useEffect, useState} from "react";
+import {type ReactNode, useEffect, useState} from "react";
 import type {Models} from "../models/models";
 import {
     CHARGE_MODELS,
     type ChargeModel,
     type ColourBy,
-    DEFAULT_ESP_ISOVALUE,
     DEFAULT_POLAR_THRESHOLD,
-    MAX_ESP_ISOVALUE,
+    DEFAULT_SURFACE_ISOVALUE,
+    type DensityColour,
     MAX_FORCE_SCALE,
     MAX_POLAR_THRESHOLD,
-    MIN_ESP_ISOVALUE,
-    MIN_ESP_OPACITY,
+    MAX_SURFACE_ISOVALUE,
     MIN_FORCE_SCALE,
     MIN_POLAR_THRESHOLD,
+    MIN_SURFACE_ISOVALUE,
+    MIN_SURFACE_OPACITY,
+    type PropertyGroup,
+    type SurfaceKind,
 } from "../models/PropertiesModel";
 import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
 import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArrows";
@@ -30,14 +33,26 @@ const COLOUR_OPTIONS: { value: ColourBy; label: string; title: string }[] = [
   { value: "charge", label: "Partial charge", title: "Red where an atom has gained electrons and blue where it has lost them" },
 ];
 
+/** What can be drawn as a surface of the electron density, with what each means. */
+const SURFACE_OPTIONS: { value: SurfaceKind; label: string; title: string }[] = [
+  { value: "none", label: "None", title: "Draw no surface" },
+  { value: "density", label: "Electron density", title: "A surface where the electron density has a chosen value, from Hartree-Fock" },
+  { value: "esp", label: "Potential on density", title: "The same surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive" },
+];
+
 /** How often the running timer is redrawn. */
 const TICK_MS = 100;
 
-/** What is shown on the molecule beyond its shape: which calculated property the atoms are coloured by. */
+/**
+ * What is shown on the molecule beyond its shape. Each property is a group of its own: one row with its switch, a line saying how its
+ * calculation is getting on and what its colours mean, and its settings, which are folded away until asked for.
+ */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, espSurface, espIsovalue, espOpacity, open } = useObservable(properties);
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceIsovalue, surfaceOpacity, open, expanded } =
+    useObservable(properties);
   const debug = useObservable(models.debug);
+  const fold = (group: PropertyGroup) => ({ open: expanded[group], onToggle: () => properties.expandTo(group, !expanded[group]) });
 
   return (
     <section className="render-options" aria-label="Properties">
@@ -46,280 +61,317 @@ export function PropertiesOptions({ models }: { models: Models }) {
         Properties
       </button>
       {open && (
-        <dl className="properties render-body">
-          <dt>Colour by</dt>
-          <dd>
-            <select value={colourBy} aria-label="What the atoms are coloured by" onChange={(event) => properties.colourWith(event.target.value as ColourBy)}>
-              {COLOUR_OPTIONS.map(({ value, label, title }) => (
-                <option key={value} value={value} title={title}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </dd>
-          {colourBy === "charge" && (
-            <>
-              <dt>Model</dt>
-              <dd>
-                <select value={chargeModel} aria-label="How partial charges are calculated" onChange={(event) => properties.chargeWith(event.target.value as ChargeModel)}>
-                  {CHARGE_MODELS.map(({ value, label, title }) => (
-                    <option key={value} value={value} title={title}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </dd>
-              <dt>Labels</dt>
-              <dd>
-                <label className="legend-check" title="Write δ+ above atoms with a clearly positive charge and δ− above those with a clearly negative one. Atoms with a formal charge already show it, so they are left out">
-                  <input type="checkbox" checked={polarLabels} onChange={(event) => properties.labelPolarity(event.target.checked)} />
-                  Label polar atoms (δ+ / δ−)
-                </label>
-              </dd>
-              {polarLabels && (
+        <div className="properties-groups">
+          <Group
+            title="Atoms"
+            {...fold("atoms")}
+            control={
+              <select value={colourBy} aria-label="What the atoms are coloured by" onChange={(event) => properties.colourWith(event.target.value as ColourBy)}>
+                {COLOUR_OPTIONS.map(({ value, label, title }) => (
+                  <option key={value} value={value} title={title}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            }
+            summary={colourBy === "charge" ? <ChargeSummary /> : null}
+            details={
+              colourBy === "charge" ? (
                 <>
-                  <dt>Beyond</dt>
-                  <dd className="position">
-                    <input
-                      type="range"
-                      className="render-slider"
-                      min={Math.round(MIN_POLAR_THRESHOLD * 100)}
-                      max={Math.round(MAX_POLAR_THRESHOLD * 100)}
-                      step={1}
-                      value={Math.round(polarThreshold * 100)}
-                      aria-label="How far from zero a partial charge must be for its atom to be labelled, in elementary charges"
-                      title="How far from zero a partial charge must be for its atom to be labelled. Double-click to put it back"
-                      onChange={(event) => properties.thresholdTo(Number(event.target.value) / 100)}
-                      onDoubleClick={() => properties.thresholdTo(DEFAULT_POLAR_THRESHOLD)}
-                    />
-                    <span className="unit render-value">±{polarThreshold.toFixed(2)}</span>
+                  <dt>Model</dt>
+                  <dd>
+                    <select value={chargeModel} aria-label="How partial charges are calculated" onChange={(event) => properties.chargeWith(event.target.value as ChargeModel)}>
+                      {CHARGE_MODELS.map(({ value, label, title }) => (
+                        <option key={value} value={value} title={title}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
                   </dd>
+                  <dt>Labels</dt>
+                  <dd>
+                    <label className="legend-check" title="Write δ+ above atoms with a clearly positive charge and δ− above those with a clearly negative one. Atoms with a formal charge already show it, so they are left out">
+                      <input type="checkbox" checked={polarLabels} onChange={(event) => properties.labelPolarity(event.target.checked)} />
+                      Label polar atoms (δ+ / δ−)
+                    </label>
+                  </dd>
+                  {polarLabels && (
+                    <>
+                      <dt>Beyond</dt>
+                      <dd className="position">
+                        <input
+                          type="range"
+                          className="render-slider"
+                          min={Math.round(MIN_POLAR_THRESHOLD * 100)}
+                          max={Math.round(MAX_POLAR_THRESHOLD * 100)}
+                          step={1}
+                          value={Math.round(polarThreshold * 100)}
+                          aria-label="How far from zero a partial charge must be for its atom to be labelled, in elementary charges"
+                          title="How far from zero a partial charge must be for its atom to be labelled. Double-click to put it back"
+                          onChange={(event) => properties.thresholdTo(Number(event.target.value) / 100)}
+                          onDoubleClick={() => properties.thresholdTo(DEFAULT_POLAR_THRESHOLD)}
+                        />
+                        <span className="unit render-value">±{polarThreshold.toFixed(2)}</span>
+                      </dd>
+                    </>
+                  )}
+                  <ChargeDetails />
                 </>
-              )}
-              <ChargeLegend />
-            </>
-          )}
-          <dt>Forces</dt>
-          <dd>
-            <label className="legend-check" title="Draw an arrow on each atom for the force the other molecules in the session put on it. A single molecule has none">
-              <input type="checkbox" checked={forceArrows} onChange={(event) => properties.forcesTo(event.target.checked)} />
-              Show force arrows
-            </label>
-          </dd>
-          {forceArrows && (
-            <>
-              <dt>Length</dt>
-              <dd className="position">
-                <input
-                  type="range"
-                  className="render-slider"
-                  min={Math.round(MIN_FORCE_SCALE * 100)}
-                  max={Math.round(MAX_FORCE_SCALE * 100)}
-                  step={5}
-                  value={Math.round(forceScale * 100)}
-                  aria-label="How long the force arrows are drawn, as a multiple of the usual length"
-                  title="How long the arrows are drawn. They are drawn in proportion to the largest force, so this is relative. Double-click to put it back"
-                  onChange={(event) => properties.forceScaleTo(Number(event.target.value) / 100)}
-                  onDoubleClick={() => properties.forceScaleTo(1)}
-                />
-                <span className="unit render-value">×{forceScale.toFixed(2)}</span>
-              </dd>
-              <dt />
-              <dd>
-                <label className="legend-check" title="Also draw the total force on each molecule, and the torque that turns it">
-                  <input type="checkbox" checked={netForces} onChange={(event) => properties.netForcesTo(event.target.checked)} />
-                  Total force and torque
-                </label>
-              </dd>
-              <ForceStatus net={netForces} debug={debug} scale={forceScale} models={models} />
-            </>
-          )}
-          <dt>Surface</dt>
-          <dd>
-            <label className="legend-check" title="Draw the electron density as a surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive">
-              <input type="checkbox" checked={espSurface} onChange={(event) => properties.espSurfaceTo(event.target.checked)} />
-              Potential on density surface
-            </label>
-          </dd>
-          {espSurface && (
-            <>
-              <dt>Density</dt>
-              <dd className="position">
-                <input
-                  type="range"
-                  className="render-slider"
-                  min={Math.round(MIN_ESP_ISOVALUE * 1000)}
-                  max={Math.round(MAX_ESP_ISOVALUE * 1000)}
-                  step={1}
-                  value={Math.round(espIsovalue * 1000)}
-                  aria-label="The electron density at the surface, in electrons per cubic bohr"
-                  title="The electron density the surface is at: lower is a larger, looser surface. Double-click to put it back"
-                  onChange={(event) => properties.espIsovalueTo(Number(event.target.value) / 1000)}
-                  onDoubleClick={() => properties.espIsovalueTo(DEFAULT_ESP_ISOVALUE)}
-                />
-                <span className="unit render-value">{espIsovalue.toFixed(3)}</span>
-              </dd>
-              <dt>Opacity</dt>
-              <dd className="position">
-                <input
-                  type="range"
-                  className="render-slider"
-                  min={Math.round(MIN_ESP_OPACITY * 100)}
-                  max={100}
-                  step={5}
-                  value={Math.round(espOpacity * 100)}
-                  aria-label="How opaque the surface is"
-                  onChange={(event) => properties.espOpacityTo(Number(event.target.value) / 100)}
-                />
-                <span className="unit render-value">{Math.round(espOpacity * 100)}%</span>
-              </dd>
-              <EspLegend isovalue={espIsovalue} />
-            </>
-          )}
-        </dl>
+              ) : (
+                <dd className="note-row panel-note">Colour by partial charge to see its settings.</dd>
+              )
+            }
+          />
+          <Group
+            title="Forces"
+            {...fold("forces")}
+            control={
+              <label className="legend-check" title="Draw an arrow on each atom for the force the other molecules in the session put on it. A single molecule has none">
+                <input type="checkbox" checked={forceArrows} onChange={(event) => properties.forcesTo(event.target.checked)} />
+                Show arrows
+              </label>
+            }
+            summary={forceArrows ? <ForceSummary /> : null}
+            details={
+              <>
+                <dt>Length</dt>
+                <dd className="position">
+                  <input
+                    type="range"
+                    className="render-slider"
+                    min={Math.round(MIN_FORCE_SCALE * 100)}
+                    max={Math.round(MAX_FORCE_SCALE * 100)}
+                    step={5}
+                    value={Math.round(forceScale * 100)}
+                    aria-label="How long the force arrows are drawn, as a multiple of the usual length"
+                    title="How long the arrows are drawn. They are drawn in proportion to the largest force, so this is relative. Double-click to put it back"
+                    onChange={(event) => properties.forceScaleTo(Number(event.target.value) / 100)}
+                    onDoubleClick={() => properties.forceScaleTo(1)}
+                  />
+                  <span className="unit render-value">×{forceScale.toFixed(2)}</span>
+                </dd>
+                <dt />
+                <dd>
+                  <label className="legend-check" title="Also draw the total force on each molecule, and the torque that turns it">
+                    <input type="checkbox" checked={netForces} onChange={(event) => properties.netForcesTo(event.target.checked)} />
+                    Total force and torque
+                  </label>
+                </dd>
+                {forceArrows && <ForceDetails net={netForces} debug={debug} scale={forceScale} models={models} />}
+              </>
+            }
+          />
+          <Group
+            title="Surface"
+            {...fold("surface")}
+            control={
+              <select value={surface} aria-label="What is drawn as a surface of the electron density" onChange={(event) => properties.surfaceTo(event.target.value as SurfaceKind)}>
+                {SURFACE_OPTIONS.map(({ value, label, title }) => (
+                  <option key={value} value={value} title={title}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            }
+            summary={surface !== "none" ? <SurfaceSummary kind={surface} isovalue={surfaceIsovalue} /> : null}
+            details={
+              <>
+                {surface === "density" && (
+                  <>
+                    <dt>Colour</dt>
+                    <dd>
+                      <select value={densityColour} aria-label="What colours the density surface" onChange={(event) => properties.densityColourTo(event.target.value as DensityColour)}>
+                        <option value="single" title="The whole surface in one colour">
+                          One colour
+                        </option>
+                        <option value="element" title="Each part of the surface in the colour of the atom it is nearest">
+                          Nearest atom
+                        </option>
+                      </select>
+                    </dd>
+                  </>
+                )}
+                <dt>Density</dt>
+                <dd className="position">
+                  <input
+                    type="range"
+                    className="render-slider"
+                    min={Math.round(MIN_SURFACE_ISOVALUE * 1000)}
+                    max={Math.round(MAX_SURFACE_ISOVALUE * 1000)}
+                    step={1}
+                    value={Math.round(surfaceIsovalue * 1000)}
+                    aria-label="The electron density at the surface, in electrons per cubic bohr"
+                    title="The electron density the surface is at: lower is a larger, looser surface. Double-click to put it back"
+                    onChange={(event) => properties.surfaceIsovalueTo(Number(event.target.value) / 1000)}
+                    onDoubleClick={() => properties.surfaceIsovalueTo(DEFAULT_SURFACE_ISOVALUE)}
+                  />
+                  <span className="unit render-value">{surfaceIsovalue.toFixed(3)}</span>
+                </dd>
+                <dt>Opacity</dt>
+                <dd className="position">
+                  <input
+                    type="range"
+                    className="render-slider"
+                    min={Math.round(MIN_SURFACE_OPACITY * 100)}
+                    max={100}
+                    step={5}
+                    value={Math.round(surfaceOpacity * 100)}
+                    aria-label="How opaque the surface is"
+                    onChange={(event) => properties.surfaceOpacityTo(Number(event.target.value) / 100)}
+                  />
+                  <span className="unit render-value">{Math.round(surfaceOpacity * 100)}%</span>
+                </dd>
+              </>
+            }
+          />
+        </div>
       )}
     </section>
   );
 }
 
-/** What the charge colours mean, how the calculation is getting on, and whether the colours can be trusted yet. */
-function ChargeLegend() {
-  const { charges, calculatingCharges, chargesProgress, state } = useSessionContext();
+/**
+ * One property: a row with its switch, a line under it for how its calculation is getting on and what its colours mean, and its
+ * settings behind a twisty.
+ */
+function Group({ title, open, onToggle, control, summary, details }: { title: string; open: boolean; onToggle: () => void; control: ReactNode; summary: ReactNode; details: ReactNode }) {
+  return (
+    <div className="prop-group">
+      <div className="prop-row">
+        <button type="button" className="prop-twisty" aria-expanded={open} aria-label={`${title} settings`} title={`${open ? "Hide" : "Show"} the settings`} onClick={onToggle}>
+          {open ? "▾" : "▸"}
+        </button>
+        <span className="prop-title">{title}</span>
+        <div className="prop-control">{control}</div>
+      </div>
+      {summary && (
+        <div className="prop-summary legend-note" role="status">
+          {summary}
+        </div>
+      )}
+      {open && <dl className="properties prop-details">{details}</dl>}
+    </div>
+  );
+}
+
+/** The colour scale of a property, with its two ends and the middle written under it. */
+function Scale({ limit, unit, label }: { limit: string; unit: string; label: string }) {
+  return (
+    <div className="legend">
+      <div className="legend-bar" style={{ background: divergingGradient() }} role="img" aria-label={label} />
+      <div className="legend-labels">
+        <span>−{limit}</span>
+        <span>{unit}</span>
+        <span>+{limit}</span>
+      </div>
+    </div>
+  );
+}
+
+/** How the calculation of the charges is getting on, and what their colours mean. */
+function ChargeSummary() {
+  const { charges, calculatingCharges, chargesProgress } = useSessionContext();
   const scale = chargeScale(charges);
-  const current = charges !== null && state !== null && charges.session_id === state.session_id && charges.version === state.version;
 
   return (
     <>
-      {calculatingCharges && (
-        <>
-          <dt>Status</dt>
-          <dd className="legend-note" role="status">
-            <Running startedAt={calculatingCharges.startedAt} detail={describeProgress(chargesProgress)} />
-          </dd>
-        </>
-      )}
-      {!calculatingCharges && charges?.status === "failed" && (
-        <>
-          <dt>Charges</dt>
-          <dd className="legend-note">
-            {charges.message ?? "They could not be calculated."} <Took milliseconds={charges.elapsed_ms} />
-          </dd>
-        </>
-      )}
-      {scale && charges && (
-        <>
-          <dt>Scale</dt>
-          <dd className="legend">
-            <div
-              className="legend-bar"
-              style={{ background: divergingGradient() }}
-              role="img"
-              aria-label={`From minus ${scale.limit.toFixed(2)} to plus ${scale.limit.toFixed(2)} elementary charges`}
-            />
-            <div className="legend-labels">
-              <span>−{scale.limit.toFixed(2)}</span>
-              <span>0</span>
-              <span>+{scale.limit.toFixed(2)}</span>
-            </div>
-          </dd>
-          <dt>Charges</dt>
-          <dd className="legend-note">
-            {describeConvention(charges.convention)}
-            {current && !calculatingCharges ? <Took milliseconds={charges.elapsed_ms} /> : " (updating…)"}
-          </dd>
-        </>
-      )}
+      {calculatingCharges && <Running startedAt={calculatingCharges.startedAt} detail={describeProgress(chargesProgress)} />}
+      {!calculatingCharges && charges?.status === "failed" && <>{charges.message ?? "They could not be calculated."}</>}
+      {scale && <Scale limit={scale.limit.toFixed(2)} unit="e" label={`From minus ${scale.limit.toFixed(2)} to plus ${scale.limit.toFixed(2)} elementary charges`} />}
     </>
   );
 }
 
-/** How the potential calculation is getting on, and what the colours of its surface mean. */
-function EspLegend({ isovalue }: { isovalue: number }) {
-  const { esp, espSince, state } = useSessionContext();
-  const current = esp !== null && state !== null && esp.session_id === state.session_id && esp.version === state.version;
-  const decoded = current && esp ? decodeEsp(esp) : null;
+/** What the charges are and whether the colours can be trusted yet. */
+function ChargeDetails() {
+  const { charges, calculatingCharges, state } = useSessionContext();
+  const current = charges !== null && state !== null && charges.session_id === state.session_id && charges.version === state.version;
+  if (!charges || !chargeScale(charges)) {
+    return null;
+  }
+
+  return (
+    <>
+      <dt>Charges</dt>
+      <dd className="legend-note">
+        {describeConvention(charges.convention)}
+        {current && !calculatingCharges ? <Took milliseconds={charges.elapsed_ms} /> : " (updating…)"}
+      </dd>
+    </>
+  );
+}
+
+/** How the calculation behind a surface is getting on, and for the potential what the colours mean. */
+function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: number }) {
+  const { esp, espSince, density, densitySince, state } = useSessionContext();
+  const result = kind === "esp" ? esp : density;
+  const since = kind === "esp" ? espSince : densitySince;
+  const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
+  const decoded = kind === "esp" && current && esp ? decodeEsp(esp) : null;
   const limit = decoded ? makeEspSurface(decoded, isovalue).limit : null;
 
   return (
     <>
-      {espSince !== null && (
+      {since !== null && <Running startedAt={since} detail={kind === "esp" ? "working out the potential…" : "working out the density…"} />}
+      {since === null && result?.status === "failed" && <>{result.message ?? "It could not be calculated."}</>}
+      {since === null && kind === "density" && density?.status === "complete" && (
         <>
-          <dt>Status</dt>
-          <dd className="legend-note" role="status">
-            <Running startedAt={espSince} detail="working out the potential…" />
-          </dd>
+          electrons per cubic bohr
+          <Took milliseconds={density.elapsed_ms} />
+          {current ? "" : " (updating…)"}
         </>
       )}
-      {espSince === null && esp?.status === "failed" && (
-        <>
-          <dt>Potential</dt>
-          <dd className="legend-note">{esp.message ?? "It could not be calculated."}</dd>
-        </>
+      {limit !== null && (
+        <Scale
+          limit={toKcalPerCharge(limit).toFixed(0)}
+          unit="kcal/mol/e"
+          label={`From minus ${toKcalPerCharge(limit).toFixed(0)} to plus ${toKcalPerCharge(limit).toFixed(0)} kilocalories per mole per charge`}
+        />
       )}
-      {limit !== null && esp && (
+    </>
+  );
+}
+
+/** How the calculation of the forces is getting on, and the strongest of them. */
+function ForceSummary() {
+  const { forces, calculatingForcesSince, state } = useSessionContext();
+  const current = forces !== null && state !== null && forces.session_id === state.session_id && forces.version === state.version;
+
+  return (
+    <>
+      {calculatingForcesSince !== null && <Running startedAt={calculatingForcesSince} detail="working out the forces…" />}
+      {calculatingForcesSince === null && forces && forces.status !== "complete" && <>{forces.message ?? "They could not be calculated."}</>}
+      {calculatingForcesSince === null && forces?.status === "complete" && forces.energy !== null && (
         <>
-          <dt>Scale</dt>
-          <dd className="legend">
-            <div className="legend-bar" style={{ background: divergingGradient() }} role="img" aria-label={`From minus ${toKcalPerCharge(limit).toFixed(0)} to plus ${toKcalPerCharge(limit).toFixed(0)} kilocalories per mole per charge`} />
-            <div className="legend-labels">
-              <span>−{toKcalPerCharge(limit).toFixed(0)}</span>
-              <span>0</span>
-              <span>+{toKcalPerCharge(limit).toFixed(0)}</span>
-            </div>
-          </dd>
-          <dt>Potential</dt>
-          <dd className="legend-note">
-            kcal/mol per unit charge, Hartree-Fock
-            <Took milliseconds={esp.elapsed_ms} />
-          </dd>
+          strongest {toKcalPerAngstrom(largest(forces).atom).toFixed(2)} kcal/mol/Å
+          {current ? <Took milliseconds={forces.elapsed_ms} /> : " (updating…)"}
         </>
       )}
     </>
   );
 }
 
-/** How the calculation of the forces is getting on, what the arrows mean, and why there are none if there are none. */
-function ForceStatus({ net, debug, scale, models }: { net: boolean; debug: boolean; scale: number; models: Models }) {
-  const { forces, calculatingForcesSince, state } = useSessionContext();
-  const current = forces !== null && state !== null && forces.session_id === state.session_id && forces.version === state.version;
+/** The energy between the molecules, what the arrows mean, and with Debug on every force. */
+function ForceDetails({ net, debug, scale, models }: { net: boolean; debug: boolean; scale: number; models: Models }) {
+  const { forces } = useSessionContext();
   const key = (colour: string, what: string) => (
     <span className="legend-key">
       <span style={{ color: colour }}>●</span> {what}
     </span>
   );
+  if (forces?.status !== "complete" || forces.energy === null) {
+    return null;
+  }
 
   return (
     <>
-      {calculatingForcesSince !== null && (
-        <>
-          <dt>Status</dt>
-          <dd className="legend-note" role="status">
-            <Running startedAt={calculatingForcesSince} detail="working out the forces…" />
-          </dd>
-        </>
-      )}
-      {calculatingForcesSince === null && forces && forces.status !== "complete" && (
-        <>
-          <dt>Forces</dt>
-          <dd className="legend-note">{forces.message ?? "They could not be calculated."}</dd>
-        </>
-      )}
-      {forces?.status === "complete" && forces.energy !== null && (
-        <>
-          <dt>Strongest</dt>
-          <dd className="legend-note">
-            {toKcalPerAngstrom(largest(forces).atom).toFixed(2)} kcal/mol/Å
-            {current && calculatingForcesSince === null ? <Took milliseconds={forces.elapsed_ms} /> : " (updating…)"}
-          </dd>
-          <dt>Energy</dt>
-          <dd className="legend-note">{(forces.energy * KCAL_PER_HARTREE).toFixed(3)} kcal/mol between the molecules</dd>
-          <dt>Key</dt>
-          <dd className="legend-note">
-            {key(ATOM_COLOUR, "atom")} {net && key(NET_COLOUR, "total force")} {net && key(TORQUE_COLOUR, "torque axis")}
-          </dd>
-          {debug && <ForceDebug forces={forces} scale={scale} label={(id) => models.index?.label(id) ?? id} />}
-        </>
-      )}
+      <dt>Energy</dt>
+      <dd className="legend-note">{(forces.energy * KCAL_PER_HARTREE).toFixed(3)} kcal/mol between the molecules</dd>
+      <dt>Key</dt>
+      <dd className="legend-note">
+        {key(ATOM_COLOUR, "atom")} {net && key(NET_COLOUR, "total force")} {net && key(TORQUE_COLOUR, "torque axis")}
+      </dd>
+      {debug && <ForceDebug forces={forces} scale={scale} label={(id) => models.index?.label(id) ?? id} />}
     </>
   );
 }

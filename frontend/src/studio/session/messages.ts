@@ -751,6 +751,30 @@ export interface EspRequestAck extends ServerEnvelope {
   type: "esp.request.ack";
 }
 
+/** The answer to a request for the electron density, which says only that the request was understood: it follows as a `density.result`. */
+export interface DensityRequestAck extends ServerEnvelope {
+  type: "density.request.ack";
+}
+
+/** The electron density at every point of a grid, sent on the server's own initiative after a request. It describes the geometry at `version`. */
+export interface DensityResult extends ServerEnvelope {
+  type: "density.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** An atom of the molecule it is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** Where the points are, or null if there is no field. */
+  grid: FieldGridMessage | null;
+  /** Every point's electron density, in electrons per cubic bohr, in the same form as an orbital's values. */
+  density: string | null;
+  min: number | null;
+  max: number | null;
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
 /**
  * The electron density at every point of a grid, with the electrostatic potential beside it, sent on the server's own initiative after
  * a request. It describes the geometry at `version`.
@@ -871,5 +895,7 @@ export type ServerMessage =
   | InteractionResult
   | EspRequestAck
   | EspResult
+  | DensityRequestAck
+  | DensityResult
   | SocketError
   | Pong;

@@ -167,6 +167,15 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session whose electron density to calculate
+     * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     * @param fragment an atom of the molecule to calculate, or absent for the whole session
+     */
+    public record DensityRequest(String sessionId, String model, String fragment)
+    {
+    }
+
+    /**
      * One orbital to evaluate.
      *
      * @param fragment an atom of the molecule it is of, or absent for the whole session calculated as one

@@ -20,7 +20,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestDensity } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -40,7 +40,7 @@ export function App() {
 
   // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
   // The server waits for the session to be left alone, so a drag asks many times and is answered once
-  const { colourBy, chargeModel, forceArrows, espSurface } = useObservable(shared.properties);
+  const { colourBy, chargeModel, forceArrows, surface } = useObservable(shared.properties);
   const version = state?.version;
   const sessionId = state?.session_id;
   useEffect(() => {
@@ -56,12 +56,17 @@ export function App() {
     }
   }, [forceArrows, sessionId, version, requestForces]);
 
-  // the potential is likewise only worked out while its surface is shown, for the whole session with the automatic kind of calculation
+  // the density and the potential are likewise only worked out while a surface of them is shown, for the whole session with the automatic kind of calculation
   useEffect(() => {
-    if (espSurface && sessionId !== undefined) {
+    if (surface === "esp" && sessionId !== undefined) {
       requestEsp("mulliken", null);
     }
-  }, [espSurface, sessionId, version, requestEsp]);
+  }, [surface, sessionId, version, requestEsp]);
+  useEffect(() => {
+    if (surface === "density" && sessionId !== undefined) {
+      requestDensity("mulliken", null);
+    }
+  }, [surface, sessionId, version, requestDensity]);
 
   // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of
   const { selected: shownOrbital, kind: orbitalKind, scope: orbitalScope, count: orbitalCount } = useObservable(shared.orbital);

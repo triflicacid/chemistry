@@ -88,6 +88,7 @@ public final class OrbitalScheduler implements AutoCloseable
     private final JobScheduler<List<FieldReport>> fields;
     private final JobScheduler<InteractionReport> interactions;
     private final JobScheduler<EspReport> potentials;
+    private final JobScheduler<DensityReport> densities;
     private final Wavefunctions wavefunctions;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
     private final Object lock = new Object();
@@ -112,6 +113,7 @@ public final class OrbitalScheduler implements AutoCloseable
         this.fields = new JobScheduler<>(debounce);
         this.interactions = new JobScheduler<>(debounce);
         this.potentials = new JobScheduler<>(debounce);
+        this.densities = new JobScheduler<>(debounce);
         this.wavefunctions = Objects.requireNonNull(wavefunctions, "wavefunctions");
     }
 
@@ -312,6 +314,37 @@ public final class OrbitalScheduler implements AutoCloseable
                 deliver);
     }
 
+    /**
+     * Asks for the electron density of the session, or of one of its molecules, on a grid round the atoms, once the session has been left
+     * alone, replacing any such request for it that is waiting. It is the cheaper half of {@link #potential}, for a surface drawn in one colour.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void density(StudioSession session, String requested, String fragment, Consumer<DensityReport> deliver)
+    {
+        String model = resolve(requested);
+        densities.schedule(session,
+                (described, run) ->
+                {
+                    try
+                    {
+                        Cached made = calculation(session, described, model, fragment, run);
+                        FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), MARGIN, LONGEST_SIDE, FINEST);
+                        float[] density = ElectronDensity.evaluate(made.orbitals(), grid, run::check);
+                        return DensityReport.of(session, described.version(), fragment, grid, density).elapsed(run.elapsedMs());
+                    }
+                    catch (IllegalArgumentException unsuitable)
+                    {
+                        return DensityReport.failed(session, described.version(), fragment, run.elapsedMs(), unsuitable.getMessage());
+                    }
+                },
+                (described, elapsedMs, message) -> DensityReport.failed(session, described.version(), fragment, elapsedMs, message),
+                deliver);
+    }
+
     /** Stops calculating anything, and abandons what is waiting. */
     @Override
     public void close()
@@ -320,6 +353,7 @@ public final class OrbitalScheduler implements AutoCloseable
         fields.close();
         interactions.close();
         potentials.close();
+        densities.close();
     }
 
     /**

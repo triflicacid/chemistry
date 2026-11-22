@@ -1151,6 +1151,65 @@ body.resizing {
   cursor: pointer;
 }
 
+/* the groups of the Properties section: a row with the switch, a line of status under it, and the settings folded away */
+.properties-groups {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.15rem;
+  /* several groups unfolded at once must not push the Outliner out of the window */
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.prop-group {
+  padding: 0.25rem 0;
+  font-size: 0.8rem;
+}
+
+.prop-group + .prop-group {
+  border-top: 1px solid var(--edge);
+}
+
+.prop-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.prop-twisty {
+  flex: none;
+  width: 1rem;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.prop-title {
+  flex: none;
+  width: 3.4rem;
+  color: var(--ink-soft);
+}
+
+.prop-control {
+  flex: 1;
+  min-width: 0;
+}
+
+.prop-control select {
+  width: 100%;
+}
+
+.prop-summary {
+  margin: 0.2rem 0 0 1.3rem;
+}
+
+.prop-details {
+  margin: 0.25rem 0 0 1.3rem;
+}
+
 .render-body {
   margin: 0.15rem 0 0;
 }

@@ -30,8 +30,8 @@ import {Annotations} from "./scene/Annotations";
 import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
 import {HydrogenBondGuide} from "./scene/HydrogenBondGuide";
 import {MoleculeNumbers} from "./scene/MoleculeNumbers";
-import {type EspDrawOptions, EspSurfaceMesh} from "./scene/EspSurfaceMesh";
-import type {EspSurface} from "../layout/esp";
+import {FieldSurfaceMesh, type FieldSurfaceOptions} from "./scene/FieldSurfaceMesh";
+import type {Surface} from "../../render/isosurface";
 import {type OrbitalDrawn, type OrbitalOptions, OrbitalSurface} from "./scene/OrbitalSurface";
 import type {DrawnOrbital} from "../layout/orbitals";
 import type {NumberedMolecule} from "../models/MoleculeNumbersModel";
@@ -70,7 +70,7 @@ export class StudioView {
   private readonly bondGuide: HydrogenBondGuide;
   private readonly numbers: MoleculeNumbers;
   private readonly orbital: OrbitalSurface;
-  private readonly espMesh: EspSurfaceMesh;
+  private readonly fieldSurface: FieldSurfaceMesh;
   /** The camera, and the anchor the view is held on. */
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
@@ -124,7 +124,7 @@ export class StudioView {
     this.bondGuide = new HydrogenBondGuide(this.stage, this.kit, this.scene);
     this.numbers = new MoleculeNumbers(this.stage, this.kit, this.scene);
     this.orbital = new OrbitalSurface(this.stage, this.scene);
-    this.espMesh = new EspSurfaceMesh(this.stage, this.scene);
+    this.fieldSurface = new FieldSurfaceMesh(this.stage, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
       this.molecule.sync();
@@ -279,7 +279,7 @@ export class StudioView {
     this.bondGuide.forget();
     this.numbers.forget();
     this.orbital.forget();
-    this.espMesh.forget();
+    this.fieldSurface.forget();
     this.scene.build(state);
     this.annotations.drawSystem();
     this.scene.refreshLocks();
@@ -453,21 +453,21 @@ export class StudioView {
   }
 
   /**
-   * Draws the electron density as a surface coloured by the electrostatic potential.
+   * Draws a surface of the electron density, in one colour or coloured at each vertex by something such as the electrostatic potential.
    *
-   * @param surface the surface with the potential at each vertex, in the structure's frame, which must be of the structure now shown, or null to show none
+   * @param surface the surface, in the structure's frame, which must be of the structure now shown, or null to show none
    * @param options how to draw it
    */
-  showEsp(surface: EspSurface | null, options: EspDrawOptions): void {
-    this.espMesh.show(surface, options);
+  showFieldSurface(surface: Surface | null, options: FieldSurfaceOptions): void {
+    this.fieldSurface.show(surface, options);
   }
 
   /**
    * @param event where the pointer is
-   * @returns where the pointer meets the potential surface, in the structure's frame, or null if it is not on it
+   * @returns where the pointer meets the field surface, in the structure's frame, or null if it is not on it
    */
-  probeEsp(event: { clientX: number; clientY: number }): { x: number; y: number; z: number } | null {
-    return this.espMesh.probe(event);
+  probeFieldSurface(event: { clientX: number; clientY: number }): { x: number; y: number; z: number } | null {
+    return this.fieldSurface.probe(event);
   }
 
   /**

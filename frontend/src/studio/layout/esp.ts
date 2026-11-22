@@ -1,17 +1,21 @@
 import {Color} from "three";
 import {type GridShape, isosurface, type Surface} from "../../render/isosurface";
 import {diverging} from "../../render/scale";
-import type {EspResult} from "../session/messages";
+import type {DensityResult, EspResult} from "../session/messages";
 import {KCAL_PER_HARTREE} from "./forceArrows";
 import {decodeFloats} from "./orbitals";
 
-/** The electron density and the electrostatic potential on one grid. */
-export interface DecodedEsp {
+/** The electron density on a grid. */
+export interface DecodedDensity {
   /** The density at each point, in electrons per cubic bohr. */
   density: Float32Array;
+  shape: GridShape;
+}
+
+/** The electron density and the electrostatic potential on one grid. */
+export interface DecodedEsp extends DecodedDensity {
   /** The potential at each point, in hartree per elementary charge, which is NaN where it was not found. */
   potential: Float32Array;
-  shape: GridShape;
 }
 
 /** What each field decoded to. */
@@ -37,6 +41,81 @@ function decode(field: EspResult): DecodedEsp | null {
   const density = decodeFloats(field.density, count);
   const potential = decodeFloats(field.potential, count);
   return density && potential ? { density, potential, shape: field.grid } : null;
+}
+
+/** What each density decoded to. */
+const decodedDensities = new WeakMap<DensityResult, DecodedDensity | null>();
+
+/**
+ * @param field what the server said of the density
+ * @returns the density and where its grid is, or null if there is none or it is not the size the grid says
+ */
+export function decodeDensity(field: DensityResult): DecodedDensity | null {
+  if (!decodedDensities.has(field)) {
+    const count = field.grid ? field.grid.nx * field.grid.ny * field.grid.nz : 0;
+    const density = field.status === "complete" && field.density !== null && field.grid !== null ? decodeFloats(field.density, count) : null;
+    decodedDensities.set(field, density && field.grid ? { density, shape: field.grid } : null);
+  }
+  return decodedDensities.get(field) ?? null;
+}
+
+/** The last surface made of each density, which is kept for as long as the isovalue it was made at is asked for. */
+const densitySurfaces = new WeakMap<DecodedDensity, { isovalue: number; made: Surface }>();
+
+/**
+ * @param field the density
+ * @param isovalue the density the surface is at, in electrons per cubic bohr
+ * @returns the surface of that density, which is empty if the density never reaches it
+ */
+export function densitySurface(field: DecodedDensity, isovalue: number): Surface {
+  const held = densitySurfaces.get(field);
+  if (held && held.isovalue === isovalue) {
+    return held.made;
+  }
+  const made = isosurface(field.density, field.shape, isovalue);
+  densitySurfaces.set(field, { isovalue, made });
+  return made;
+}
+
+/** An atom as far as colouring a surface by it goes. */
+export interface SurfaceAtom {
+  /** Where it is, in the frame of the surface, in angstroms. */
+  position: { x: number; y: number; z: number };
+  /** Its colour, as hex. */
+  colour: string;
+  /** Its van der Waals radius, in angstroms. */
+  radius: number;
+}
+
+/**
+ * Colours each vertex of a surface as the atom it belongs to, which is the atom whose van der Waals sphere it is deepest in: the nearest by
+ * distance squared less radius squared, so that a small hydrogen does not lose to a big atom beside it.
+ *
+ * @param surface the surface
+ * @param atoms the atoms, in the same frame
+ * @returns the red, green and blue of each vertex, from 0 to 1, as three numbers a vertex, or grey if there are no atoms
+ */
+export function nearestAtomColours(surface: Surface, atoms: readonly SurfaceAtom[]): Float32Array {
+  const colours = new Float32Array(surface.positions.length);
+  const tints = atoms.map((atom) => new Color(atom.colour));
+  for (let v = 0; v < surface.positions.length; v += 3) {
+    const [x, y, z] = [surface.positions[v] as number, surface.positions[v + 1] as number, surface.positions[v + 2] as number];
+    let best = -1;
+    let least = Number.POSITIVE_INFINITY;
+    for (let a = 0; a < atoms.length; a++) {
+      const { position, radius } = atoms[a] as SurfaceAtom;
+      const score = (x - position.x) ** 2 + (y - position.y) ** 2 + (z - position.z) ** 2 - radius * radius;
+      if (score < least) {
+        least = score;
+        best = a;
+      }
+    }
+    const tint = tints[best] ?? MISSING;
+    colours[v] = tint.r;
+    colours[v + 1] = tint.g;
+    colours[v + 2] = tint.b;
+  }
+  return colours;
 }
 
 /**
@@ -98,7 +177,7 @@ export function espSurface(esp: DecodedEsp, isovalue: number): EspSurface {
     return held.made;
   }
 
-  const surface = isosurface(esp.density, esp.shape, isovalue);
+  const surface = densitySurface(esp, isovalue);
   const values = new Float32Array(surface.positions.length / 3);
   for (let v = 0; v < values.length; v++) {
     values[v] = sampleGrid(esp.potential, esp.shape, surface.positions[v * 3] as number, surface.positions[v * 3 + 1] as number, surface.positions[v * 3 + 2] as number);

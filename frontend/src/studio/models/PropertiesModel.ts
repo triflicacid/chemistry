@@ -47,26 +47,40 @@ export function clampForceScale(scale: number): number {
   return Number.isFinite(scale) ? Math.round(Math.min(MAX_FORCE_SCALE, Math.max(MIN_FORCE_SCALE, scale)) * 100) / 100 : 1;
 }
 
-export const MIN_ESP_ISOVALUE = 0.001;
-export const MAX_ESP_ISOVALUE = 0.02;
-export const DEFAULT_ESP_ISOVALUE = 0.004;
-export const MIN_ESP_OPACITY = 0.3;
-export const DEFAULT_ESP_OPACITY = 0.9;
+/** What is drawn as a surface of the electron density: nothing, the density alone, or the density coloured by the electrostatic potential. */
+export type SurfaceKind = "none" | "density" | "esp";
+
+/** What colours a surface of the electron density alone: nothing, or the element of the atom each part of it is nearest. */
+export type DensityColour = "single" | "element";
+
+/**
+ * @param value anything
+ * @returns it if it is a way of colouring the density surface, and one colour otherwise
+ */
+export function asDensityColour(value: unknown): DensityColour {
+  return value === "element" ? "element" : "single";
+}
+
+export const MIN_SURFACE_ISOVALUE = 0.001;
+export const MAX_SURFACE_ISOVALUE = 0.02;
+export const DEFAULT_SURFACE_ISOVALUE = 0.004;
+export const MIN_SURFACE_OPACITY = 0.3;
+export const DEFAULT_SURFACE_OPACITY = 0.9;
 
 /**
  * @param isovalue an electron density in electrons per cubic bohr
  * @returns the nearest density a surface can be drawn at, to the thousandth
  */
-export function clampEspIsovalue(isovalue: number): number {
-  return Number.isFinite(isovalue) ? Math.round(Math.min(MAX_ESP_ISOVALUE, Math.max(MIN_ESP_ISOVALUE, isovalue)) * 1000) / 1000 : DEFAULT_ESP_ISOVALUE;
+export function clampSurfaceIsovalue(isovalue: number): number {
+  return Number.isFinite(isovalue) ? Math.round(Math.min(MAX_SURFACE_ISOVALUE, Math.max(MIN_SURFACE_ISOVALUE, isovalue)) * 1000) / 1000 : DEFAULT_SURFACE_ISOVALUE;
 }
 
 /**
  * @param opacity how opaque a surface is
  * @returns the nearest opacity it can be drawn at, to the hundredth
  */
-export function clampEspOpacity(opacity: number): number {
-  return Number.isFinite(opacity) ? Math.round(Math.min(1, Math.max(MIN_ESP_OPACITY, opacity)) * 100) / 100 : DEFAULT_ESP_OPACITY;
+export function clampSurfaceOpacity(opacity: number): number {
+  return Number.isFinite(opacity) ? Math.round(Math.min(1, Math.max(MIN_SURFACE_OPACITY, opacity)) * 100) / 100 : DEFAULT_SURFACE_OPACITY;
 }
 
 export const MIN_POLAR_THRESHOLD = 0.05;
@@ -99,17 +113,30 @@ export interface PropertiesState {
   forceScale: number;
   /** Whether the total force and torque on each molecule are drawn too. */
   netForces: boolean;
-  /** Whether the electron density is drawn as a surface coloured by the electrostatic potential. */
-  espSurface: boolean;
+  /** What is drawn as a surface of the electron density. */
+  surface: SurfaceKind;
   /** The density, in electrons per cubic bohr, that the surface is at. */
-  espIsovalue: number;
+  /** What colours the density surface when it is not coloured by the potential. */
+  densityColour: DensityColour;
+  surfaceIsovalue: number;
   /** How opaque the surface is. */
-  espOpacity: number;
+  surfaceOpacity: number;
   /** Whether the Properties section is open. */
   open: boolean;
+  /** Which groups of settings in it are unfolded. */
+  expanded: Expanded;
 }
 
-/** Which calculated properties are shown on the molecule, remembered between visits. */
+/** The groups of settings in the Properties section, each of which folds away. */
+export type PropertyGroup = "atoms" | "forces" | "surface";
+
+/** Which groups of settings are unfolded. */
+export type Expanded = Record<PropertyGroup, boolean>;
+
+/**
+ * Which calculated properties are shown on the molecule. How they are shown is remembered between visits, but not whether they are:
+ * colouring by charge, force arrows and surfaces each start a calculation, which must not begin by itself on a reload.
+ */
 export class PropertiesModel extends Observable<PropertiesState> {
   constructor() {
     super(PropertiesModel.read());
@@ -181,31 +208,52 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   /**
-   * @param espSurface whether to draw the electron density coloured by the electrostatic potential
+   * @param surface what to draw as a surface of the electron density
    */
-  espSurfaceTo(espSurface: boolean): void {
-    if (this.get().espSurface !== espSurface) {
-      this.change({ ...this.get(), espSurface });
+  surfaceTo(surface: SurfaceKind): void {
+    if (this.get().surface !== surface) {
+      this.change({ ...this.get(), surface });
+    }
+  }
+
+  /**
+   * @param densityColour what colours the density surface
+   */
+  densityColourTo(densityColour: DensityColour): void {
+    if (this.get().densityColour !== densityColour) {
+      this.change({ ...this.get(), densityColour });
     }
   }
 
   /**
    * @param isovalue the density the surface is at, in electrons per cubic bohr
    */
-  espIsovalueTo(isovalue: number): void {
-    const espIsovalue = clampEspIsovalue(isovalue);
-    if (this.get().espIsovalue !== espIsovalue) {
-      this.change({ ...this.get(), espIsovalue });
+  surfaceIsovalueTo(isovalue: number): void {
+    const surfaceIsovalue = clampSurfaceIsovalue(isovalue);
+    if (this.get().surfaceIsovalue !== surfaceIsovalue) {
+      this.change({ ...this.get(), surfaceIsovalue });
     }
   }
 
   /**
    * @param opacity how opaque the surface is
    */
-  espOpacityTo(opacity: number): void {
-    const espOpacity = clampEspOpacity(opacity);
-    if (this.get().espOpacity !== espOpacity) {
-      this.change({ ...this.get(), espOpacity });
+  surfaceOpacityTo(opacity: number): void {
+    const surfaceOpacity = clampSurfaceOpacity(opacity);
+    if (this.get().surfaceOpacity !== surfaceOpacity) {
+      this.change({ ...this.get(), surfaceOpacity });
+    }
+  }
+
+  /**
+   * Unfolds or folds the settings of one group.
+   *
+   * @param group the group
+   * @param open whether its settings are shown
+   */
+  expandTo(group: PropertyGroup, open: boolean): void {
+    if (this.get().expanded[group] !== open) {
+      this.change({ ...this.get(), expanded: { ...this.get().expanded, [group]: open } });
     }
   }
 
@@ -230,7 +278,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, espSurface: false, espIsovalue: DEFAULT_ESP_ISOVALUE, espOpacity: DEFAULT_ESP_OPACITY, open: false };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -243,16 +291,22 @@ export class PropertiesModel extends Observable<PropertiesState> {
       return defaults;
     }
     return {
-      colourBy: asColourBy(held.colourBy),
+      colourBy: defaults.colourBy,
       chargeModel: asChargeModel(held.chargeModel),
       polarLabels: typeof held.polarLabels === "boolean" ? held.polarLabels : defaults.polarLabels,
-      forceArrows: typeof held.forceArrows === "boolean" ? held.forceArrows : defaults.forceArrows,
+      forceArrows: defaults.forceArrows,
       forceScale: typeof held.forceScale === "number" ? clampForceScale(held.forceScale) : defaults.forceScale,
       netForces: typeof held.netForces === "boolean" ? held.netForces : defaults.netForces,
       polarThreshold: typeof held.polarThreshold === "number" ? clampPolarThreshold(held.polarThreshold) : defaults.polarThreshold,
-      espSurface: typeof held.espSurface === "boolean" ? held.espSurface : defaults.espSurface,
-      espIsovalue: typeof held.espIsovalue === "number" ? clampEspIsovalue(held.espIsovalue) : defaults.espIsovalue,
-      espOpacity: typeof held.espOpacity === "number" ? clampEspOpacity(held.espOpacity) : defaults.espOpacity,
+      surface: defaults.surface,
+      densityColour: asDensityColour(held.densityColour),
+      surfaceIsovalue: typeof held.surfaceIsovalue === "number" ? clampSurfaceIsovalue(held.surfaceIsovalue) : defaults.surfaceIsovalue,
+      surfaceOpacity: typeof held.surfaceOpacity === "number" ? clampSurfaceOpacity(held.surfaceOpacity) : defaults.surfaceOpacity,
+      expanded: {
+        atoms: held.expanded?.atoms === true,
+        forces: held.expanded?.forces === true,
+        surface: held.expanded?.surface === true,
+      },
       open: typeof held.open === "boolean" ? held.open : defaults.open,
     };
   }

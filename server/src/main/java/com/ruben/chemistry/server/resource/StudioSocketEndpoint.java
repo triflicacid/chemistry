@@ -980,6 +980,46 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Asks for the electron density of a session, on a grid round its atoms. The answer says only that the request was understood; the
+     * field follows, from another thread, as {@code density.result}, which is dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestDensity(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.DensityRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.DensityRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("density.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("density.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        orbitals.density(session, request.model(), request.fragment(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "density.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
      * Stops the session's optimisation, which then ends with a {@code cancelled} result.
      *
      * @param context the connection that asked
@@ -1871,6 +1911,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("field.request", endpoint::requestField),
                     Map.entry("interaction.request", endpoint::requestInteraction),
                     Map.entry("esp.request", endpoint::requestEsp),
+                    Map.entry("density.request", endpoint::requestDensity),
                     Map.entry("edit.undo", endpoint::undo),
                     Map.entry("edit.redo", endpoint::redo),
                     Map.entry("history.list", endpoint::history),
