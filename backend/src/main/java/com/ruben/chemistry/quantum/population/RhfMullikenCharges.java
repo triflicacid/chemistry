@@ -3,17 +3,13 @@ package com.ruben.chemistry.quantum.population;
 import com.ruben.chemistry.charges.ChargeConvention;
 import com.ruben.chemistry.charges.PartialChargeModel;
 import com.ruben.chemistry.charges.PartialCharges;
-import com.ruben.chemistry.quantum.Units;
 import com.ruben.chemistry.quantum.basis.BasisLibrary;
 import com.ruben.chemistry.quantum.basis.BasisSet;
-import com.ruben.chemistry.quantum.basis.ElementBasis;
-import com.ruben.chemistry.quantum.integrals.EcpCentre;
 import com.ruben.chemistry.quantum.integrals.PointCharge;
 import com.ruben.chemistry.quantum.scf.ClosedShellScf;
 import com.ruben.chemistry.quantum.scf.ScfResult;
 import com.ruben.chemistry.quantum.scf.ScfSettings;
 import com.ruben.chemistry.space.Structure3D;
-import com.ruben.chemistry.space.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -99,33 +95,17 @@ public final class RhfMullikenCharges implements PartialChargeModel
      */
     public Calculation run(Structure3D structure, int conformer)
     {
-        BasisSet basis = BasisSet.build(structure, conformer, library);
-        List<Vec3> positions = structure.conformers().get(conformer).positions();
-
-        List<PointCharge> nuclei = new ArrayList<>();
-        List<EcpCentre> cores = new ArrayList<>();
-        double[] effectiveCharges = new double[structure.sites().size()];
-        int valenceElectrons = 0;
-        for (Structure3D.Site site : structure.sites())
-        {
-            ElementBasis element = library.element(site.element());
-            Vec3 angstrom = positions.get(site.index());
-            Vec3 bohr = new Vec3(Units.toBohr(angstrom.x()), Units.toBohr(angstrom.y()), Units.toBohr(angstrom.z()));
-            int zeff = element.effectiveNuclearCharge();
-            effectiveCharges[site.index()] = zeff;
-            valenceElectrons += zeff - site.charge();
-            nuclei.add(new PointCharge(bohr, zeff));
-            if (element.ecp() != null)
-            {
-                cores.add(new EcpCentre(bohr, element.ecp()));
-            }
-        }
+        MolecularSetup setup = MolecularSetup.of(structure, conformer, library);
+        BasisSet basis = setup.basis();
+        List<PointCharge> nuclei = setup.nuclei();
+        double[] effectiveCharges = setup.effectiveCharges();
+        int valenceElectrons = setup.valenceElectrons();
         if (valenceElectrons % 2 != 0)
         {
             throw new IllegalArgumentException("closed-shell calculation needs an even number of electrons, the molecule has " + valenceElectrons);
         }
 
-        ScfResult result = ClosedShellScf.run(basis.functions(), nuclei, cores, valenceElectrons, settings);
+        ScfResult result = ClosedShellScf.run(basis.functions(), nuclei, setup.cores(), valenceElectrons, settings);
         if (!result.converged())
         {
             throw new IllegalStateException("SCF did not converge in " + result.iterations() + " iterations");

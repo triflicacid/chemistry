@@ -7,6 +7,8 @@ import com.ruben.chemistry.quantum.integrals.PointCharge;
 import com.ruben.chemistry.quantum.linalg.Matrix;
 import com.ruben.chemistry.quantum.scf.ClosedShellScf;
 import com.ruben.chemistry.quantum.scf.ScfResult;
+import com.ruben.chemistry.quantum.scf.UnrestrictedScf;
+import com.ruben.chemistry.quantum.scf.UnrestrictedScfResult;
 import com.ruben.chemistry.space.Vec3;
 import org.junit.jupiter.api.Test;
 
@@ -124,5 +126,51 @@ class MullikenAnalysisTest
         // (P S)_00 = 1.5 * 1 + 0.2 * 0.5 = 1.6 and (P S)_11 = 0.2 * 0.5 + 0.5 * 1 = 0.6
         assertThat(populations[0]).isCloseTo(1.6, within(1e-14));
         assertThat(populations[1]).isCloseTo(0.6, within(1e-14));
+    }
+
+    @Test
+    void should_analyse_a_bare_density_matrix_like_a_result()
+    {
+        Matrix overlap = Matrix.of(new double[][] {{1.0, 0.5}, {0.5, 1.0}});
+        Matrix density = Matrix.of(new double[][] {{1.5, 0.2}, {0.2, 0.5}});
+
+        double[] populations = MullikenAnalysis.populations(density, overlap, List.of(0, 1), 2);
+
+        assertThat(populations[0]).isCloseTo(1.6, within(1e-14));
+        assertThat(populations[1]).isCloseTo(0.6, within(1e-14));
+    }
+
+    @Test
+    void should_give_spin_populations_that_sum_to_the_number_of_unpaired_electrons()
+    {
+        Vec3 second = new Vec3(0, 0, 1.4);
+        UnrestrictedScfResult triplet = UnrestrictedScf.run(List.of(hydrogen(Vec3.ZERO), hydrogen(second)), List.of(new PointCharge(Vec3.ZERO, 1.0), new PointCharge(second, 1.0)), 2, 0);
+
+        double[] spin = MullikenAnalysis.spinPopulations(triplet, List.of(0, 1), 2);
+
+        assertThat(spin[0] + spin[1]).isCloseTo(2.0, within(1e-10));
+        assertThat(spin[0]).isCloseTo(spin[1], within(1e-10));
+    }
+
+    @Test
+    void should_give_an_unrestricted_closed_shell_molecule_no_spin_population()
+    {
+        Vec3 second = new Vec3(0, 0, 1.4);
+        UnrestrictedScfResult singlet = UnrestrictedScf.run(List.of(hydrogen(Vec3.ZERO), hydrogen(second)), List.of(new PointCharge(Vec3.ZERO, 1.0), new PointCharge(second, 1.0)), 1, 1);
+
+        double[] spin = MullikenAnalysis.spinPopulations(singlet, List.of(0, 1), 2);
+
+        assertThat(spin[0]).isCloseTo(0.0, within(1e-8));
+        assertThat(spin[1]).isCloseTo(0.0, within(1e-8));
+    }
+
+    @Test
+    void should_charge_an_unrestricted_atom_from_both_spins()
+    {
+        UnrestrictedScfResult cation = UnrestrictedScf.run(List.of(helium(Vec3.ZERO)), List.of(new PointCharge(Vec3.ZERO, 2.0)), 1, 0);
+
+        double[] charges = MullikenAnalysis.charges(cation, List.of(0), new double[] {2.0});
+
+        assertThat(charges[0]).isCloseTo(1.0, within(1e-10));
     }
 }
