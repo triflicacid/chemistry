@@ -1,22 +1,32 @@
 import {
-  BoxGeometry,
-  BufferGeometry,
-  DoubleSide,
-  EdgesGeometry,
-  Float32BufferAttribute,
-  Group,
-  LineBasicMaterial,
-  LineSegments,
-  Mesh,
-  MeshStandardMaterial,
+    BoxGeometry,
+    BufferGeometry,
+    DoubleSide,
+    EdgesGeometry,
+    Float32BufferAttribute,
+    Group,
+    LineBasicMaterial,
+    LineSegments,
+    Mesh,
+    MeshStandardMaterial,
 } from "three";
 import {disposeMaterials} from "../../../render/dispose";
 import {isosurface, type Surface} from "../../../render/isosurface";
 import type {Stage} from "../../../render/stage";
 import {amplitudeForShare, type DecodedField, type DrawnOrbital} from "../../layout/orbitals";
-import {characterColour, CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE} from "../../layout/orbitalColours";
+import {
+    characterColour,
+    CORE_SHELL,
+    energyColour,
+    isRole,
+    NEGATIVE_LOBE,
+    OUTER_SHELL,
+    POSITIVE_LOBE,
+    roleColour
+} from "../../layout/orbitalColours";
 import {mergeSummed, mergeUnion} from "../../layout/orbitalMerge";
-import type {LevelBy, OrbitalColouring, OrbitalCombine, OrbitalDisplay} from "../../models/OrbitalModel";
+import {contourLines} from "../../layout/contours";
+import type {LevelBy, OrbitalColouring, OrbitalCombine, OrbitalDisplay, OrbitalStyle} from "../../models/OrbitalModel";
 import type {MoleculeScene} from "./MoleculeScene";
 
 export {CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE};
@@ -39,7 +49,12 @@ export interface OrbitalOptions {
   share: number;
   /** How several orbitals are shown when more than one is drawn. */
   combine: OrbitalCombine;
+  /** Whether the surfaces are drawn as solid skins or as outlines. */
+  style: OrbitalStyle;
 }
+
+/** The distance between the planes an outline is drawn at, in ångström, which are the same for every surface so that their lines line up. */
+const OUTLINE_SPACING = 0.5;
 
 /** What drawing an orbital made, which debugging reports. */
 export interface OrbitalDrawn {
@@ -55,6 +70,8 @@ export interface OrbitalDrawn {
 export class OrbitalSurface {
   /** The surfaces, or null while there are none. */
   private marks: Group | null = null;
+  /** Whether the surfaces being drawn are drawn as outlines. */
+  private outline = false;
 
   constructor(
     private readonly stage: Stage,
@@ -83,6 +100,7 @@ export class OrbitalSurface {
       this.marks = null;
     }
 
+    this.outline = options.style === "outline";
     let drawn: OrbitalDrawn | null = null;
     if (orbitals.length > 0) {
       const marks = new Group();
@@ -90,7 +108,7 @@ export class OrbitalSurface {
       // several orbitals can be merged into one surface, which is of no use for one
       const merged = orbitals.length > 1 && options.combine !== "separate";
       if (merged) {
-        const parts = options.combine === "sum" ? mergeSummed(orbitals, options.share, options.opacity) : mergeUnion(orbitals, options);
+        const parts = options.combine === "sum" ? mergeSummed(orbitals, options.share, options.opacity, options.colouring) : mergeUnion(orbitals, options);
         for (const part of parts) {
           marks.add(this.lobe(part.surface, part.colour, part.opacity, part.colours));
           drawn.positive += part.surface.positions.length / 9;
@@ -107,11 +125,18 @@ export class OrbitalSurface {
         }
       }
 
-      for (const { field, pi } of merged ? [] : orbitals) {
+      for (const { field, pi, occupied, fromGapEv, offset, spin } of merged ? [] : orbitals) {
         if (options.display === "probability") {
           // the shells are of the amplitude without its sign, since the probability does not have one
           const amplitudes = field.values.map(Math.abs);
-          const shells = options.share > 50 ? [{ share: 50, colour: CORE_SHELL, opacity: options.opacity }, { share: options.share, colour: OUTER_SHELL, opacity: options.opacity * 0.55 }] : [{ share: options.share, colour: CORE_SHELL, opacity: options.opacity }];
+          // by energy both shells are the colour of the orbital's energy, the outer one more transparent, in place of the usual orange
+          const [core, outer] =
+            options.colouring === "energy"
+              ? [energyColour(occupied, fromGapEv), energyColour(occupied, fromGapEv)]
+              : isRole(options.colouring)
+                ? [roleColour(options.colouring, offset, spin), roleColour(options.colouring, offset, spin)]
+                : [CORE_SHELL, OUTER_SHELL];
+          const shells = options.share > 50 ? [{ share: 50, colour: core, opacity: options.opacity }, { share: options.share, colour: outer, opacity: options.opacity * 0.55 }] : [{ share: options.share, colour: core, opacity: options.opacity }];
           for (const shell of shells) {
             const level = amplitudeForShare(field.values, shell.share / 100);
             if (level > 0) {
@@ -134,9 +159,17 @@ export class OrbitalSurface {
         // the negative lobes are the positive ones of the field turned upside down
         const negative = isosurface(field.values.map((value) => -value), field.shape, level);
         // by character both lobes are the one colour, since what colours the orbital is what it is made of and not which way it points
-        const character = characterColour(pi);
-        marks.add(this.lobe(positive, options.colouring === "character" ? character : POSITIVE_LOBE, options.opacity));
-        marks.add(this.lobe(negative, options.colouring === "character" ? character : NEGATIVE_LOBE, options.opacity));
+        // by energy too, which is the same for both lobes, since the sign is not what is being shown
+        const whole =
+          options.colouring === "character"
+            ? characterColour(pi)
+            : options.colouring === "energy"
+              ? energyColour(occupied, fromGapEv)
+              : isRole(options.colouring)
+                ? roleColour(options.colouring, offset, spin)
+                : null;
+        marks.add(this.lobe(positive, whole ?? POSITIVE_LOBE, options.opacity));
+        marks.add(this.lobe(negative, whole ?? NEGATIVE_LOBE, options.opacity));
         drawn.positive += positive.positions.length / 9;
         drawn.negative += negative.positions.length / 9;
 
@@ -157,9 +190,23 @@ export class OrbitalSurface {
    * @param colour what to colour it
    * @param opacity how opaque
    * @param colours the red, green and blue of each vertex, from 0 to 1, or none to draw it in the one colour
-   * @returns the mesh
+   * @returns the mesh, or its lines where the surfaces are drawn as outlines
    */
-  private lobe(surface: Surface, colour: string, opacity: number, colours: Float32Array | null = null): Mesh {
+  private lobe(surface: Surface, colour: string, opacity: number, colours: Float32Array | null = null): Mesh | LineSegments {
+    if (this.outline) {
+      const lines = contourLines(surface, OUTLINE_SPACING, colours);
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new Float32BufferAttribute(lines.positions, 3));
+      if (lines.colours) {
+        geometry.setAttribute("color", new Float32BufferAttribute(lines.colours, 3));
+      }
+      // lines never hide what is behind them, and are thin, so they are kept stronger than a skin of the same opacity would be
+      const strength = Math.min(1, opacity + 0.25);
+      const outline = new LineSegments(geometry, new LineBasicMaterial({ ...(lines.colours ? { vertexColors: true } : { color: colour }), transparent: strength < 1, opacity: strength, depthWrite: false }));
+      outline.renderOrder = 3;
+      return outline;
+    }
+
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new Float32BufferAttribute(surface.positions, 3));
     geometry.setAttribute("normal", new Float32BufferAttribute(surface.normals, 3));

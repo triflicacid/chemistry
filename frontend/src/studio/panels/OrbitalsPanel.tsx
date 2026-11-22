@@ -20,6 +20,7 @@ import {
     type OrbitalDisplay,
     type OrbitalKind,
     type OrbitalScope,
+    type OrbitalStyle,
 } from "../models/OrbitalModel";
 import {type Bar, BarChart} from "../controls/BarChart";
 import {type Segment, Segmented} from "../controls/Segmented";
@@ -33,12 +34,14 @@ import {
     decodeField,
     densityOfStates,
     enclosedShare,
+    energyPlace,
     fieldsFor,
     fragmentsFor,
     frontierGaps,
     frontiers,
     nameAt,
     nameOf,
+    nearestToGap,
     nearGap,
     resolveTargets,
     smallestGap,
@@ -47,7 +50,19 @@ import {
 import {atomShares, characterOf, KINDS, localisationBars, piBars, spinSplittings} from "../layout/composition";
 import type {FieldResult, OrbitalChannel, OrbitalTarget, SessionState} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
-import {NEUTRAL_COLOUR, orbitalHue, PI_COLOUR, SIGMA_COLOUR} from "../layout/orbitalColours";
+import {
+    className,
+    EMPTY_CORE_SHELL,
+    EMPTY_OUTER_SHELL,
+    ENERGY_REACH_EV,
+    energyColour,
+    energyGradient,
+    isRole,
+    NEUTRAL_COLOUR,
+    PI_COLOUR,
+    roleColour,
+    SIGMA_COLOUR
+} from "../layout/orbitalColours";
 import {CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
 import {seconds} from "./PropertiesOptions";
 
@@ -87,7 +102,7 @@ function scopeOf(value: string): OrbitalScope {
  */
 export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
   const { orbitals, orbitalsSince, requestOrbitals, fields, fieldsAsked } = useSessionContext();
-  const { selected, kind, scope, count, colouring, isovalue, opacity, display, levelBy, share, combine } = useObservable(models.orbital);
+  const { selected, kind, scope, count, colouring, isovalue, opacity, display, levelBy, share, combine, style } = useObservable(models.orbital);
   const debug = useObservable(models.debug);
   const [everything, setEverything] = useState(false);
 
@@ -118,7 +133,8 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
   const spins = [...new Set(channels.map((channel) => channel.spin))];
   const arrow = (spin: string) => (spins.length > 1 ? (spin === "alpha" ? "↑ " : "↓ ") : "");
   // the orbitals either side of the gap, as one choice, which is none of them when another level has been picked
-  const frontierOptions: Segment<string>[] = spins.flatMap((spin) =>
+  const frontierOptions: Segment<string>[] = [
+    ...spins.flatMap((spin) =>
     [0, 1].map((offset) => ({
       value: `${spin}:${offset}`,
       label: `${arrow(spin)}${nameAt(offset)}`,
@@ -126,15 +142,34 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
         (offset === 0 ? "Draw the highest orbital that holds electrons" : "Draw the lowest orbital that holds none") + (scope.kind === "each" ? ", of every molecule" : ""),
       disabled: !complete || resolveTargets(orbitals, { spin, offset }).length === 0,
     })),
-  );
-  const frontierValue = selected !== null && (selected.offset === 0 || selected.offset === 1) ? `${selected.spin}:${selected.offset}` : null;
+  ),
+    {
+      value: "frontier",
+      label: "Frontier",
+      title: `Draw the HOMO and the orbitals below it together with the LUMO and those above it, as many each as Show says${scope.kind === "each" ? ", of every molecule" : ""}`,
+      disabled: !complete,
+    },
+  ];
+  const frontierValue = selected?.frontier ? "frontier" : selected !== null && (selected.offset === 0 || selected.offset === 1) ? `${selected.spin}:${selected.offset}` : null;
   const targets = complete && selected !== null ? resolveTargets(orbitals, selected, count) : [];
   const ready = fieldsFor(fields, targets, state).length === targets.length;
   const inside = targets.flatMap((target) => {
     const decoded = fieldsFor(fields, [target], state).flatMap((field) => decodeField(field) ?? []);
     const homo = channels.find((channel) => channel.fragment === target.fragment && channel.spin === target.spin)?.homo ?? -1;
     const molecule = fragments.length > 1 ? `${nameOfMolecule(target.fragment) ?? "all"} ` : "";
-    return decoded.map((field: DecodedField) => ({ label: `${molecule}${arrow(target.spin)}${nameOf(target.orbital, homo)}`, field }));
+    const channel = channels.find((each) => each.fragment === target.fragment && each.spin === target.spin);
+    const where = channel ? energyPlace(channel.levels, homo, target.orbital) : { energyEv: 0, occupied: target.orbital <= homo, fromGapEv: 0 };
+    return decoded.map((field: DecodedField) => ({
+      label: `${molecule}${arrow(target.spin)}${nameOf(target.orbital, homo)}`,
+      field,
+      filled: where.occupied,
+      energyEv: where.energyEv,
+      fromGapEv: where.fromGapEv,
+      offset: target.orbital - homo,
+      spin: target.spin,
+      type: `${arrow(target.spin)}${nameOf(target.orbital, homo)}`,
+      kind: `${arrow(target.spin)}${className(target.orbital - homo)}`,
+    }));
   });
 
   // several orbitals can be merged into one surface, which changes what the controls below mean
@@ -143,9 +178,9 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
   // the level is a share for the sum and the shells, and otherwise as chosen; the choice of one is for the amplitude, which a sum has no use for
   const byShare = combine === "sum" || (merged ? levelBy === "share" : display === "probability" || levelBy === "share");
   const levelChoice = merged ? combine === "union" : display === "amplitude";
-  const colourChoice = merged ? combine === "union" : display === "amplitude";
-  // the colouring by orbital means nothing for a surface of one orbital or of each on its own, which are coloured by sign
-  const colourValue = !merged && colouring === "orbital" ? "phase" : colouring;
+  // what the surfaces can be coloured by depends on what they show: the sign is of the amplitude; the type and the energy are of every view
+  const signs = merged ? combine === "union" : display === "amplitude";
+  const colourValue: OrbitalColouring = colouring === "energy" || isRole(colouring) || colouring === "phase" || (colouring === "character" && signs) ? colouring : "phase";
 
   // the level the first orbital is drawn at, which is what the marker on the chart of the share inside shows
   const first = inside[0];
@@ -186,6 +221,10 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
             value={frontierValue}
             options={frontierOptions}
             onChange={(value) => {
+              if (value === "frontier") {
+                models.orbital.select({ spin: spins[0] ?? "restricted", offset: 0, frontier: true });
+                return;
+              }
               const [spin, offset] = value.split(":");
               models.orbital.select({ spin: spin as OrbitalChoice["spin"], offset: Number(offset) });
             }}
@@ -316,44 +355,118 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
             />
             <span className="unit render-value">{Math.round(opacity * 100)}%</span>
           </dd>
-          {colourChoice && <dt>Colour</dt>}
-          {colourChoice && (
-            <dd>
-              <select value={colourValue} aria-label="What colours the orbitals" onChange={(event) => models.orbital.colouringTo(event.target.value as OrbitalColouring)}>
-                <option value="phase" title="Blue where the orbital is positive and red where it is negative">
-                  Sign (blue / red)
-                </option>
-                {merged && (
-                  <option value="orbital" title="Each part in the colour of the orbital that is largest there, which tells the orbitals apart but loses the sign">
-                    By orbital
-                  </option>
-                )}
+          <dt>Style</dt>
+          <dd>
+            <select value={style} aria-label="How the surfaces are drawn" onChange={(event) => models.orbital.styleTo(event.target.value as OrbitalStyle)}>
+              <option value="solid" title="Each surface as a skin">
+                Solid
+              </option>
+              <option value="outline" title="Each surface as lines where it crosses evenly spaced planes, like the contours of a map, which show what is behind them and where surfaces overlap">
+                Outline
+              </option>
+            </select>
+          </dd>
+          <dt>Colour</dt>
+          <dd>
+            <select value={colourValue} aria-label="What colours the orbitals" onChange={(event) => models.orbital.colouringTo(event.target.value as OrbitalColouring)}>
+              <option value="phase" title={signs ? "Blue where the orbital is positive and red where it is negative" : "The usual colours of the shells: orange, and teal for the empty orbitals where they are merged"}>
+                {signs ? "Sign (blue / red)" : "Default"}
+              </option>
+              <option value="type" title="Colour each orbital by its type: the HOMO, the one below it, the LUMO and every other place relative to the gap has a colour of its own, warm for those that hold electrons and cool for those that do not, and a spin-down orbital is paler than its spin-up one">
+                By type (every orbital)
+              </option>
+              <option value="class" title="Colour each orbital by its class: the HOMO, the LUMO, and the others that hold electrons and that do not, which are four colours, so that the HOMO and the LUMO stand out. A spin-down orbital is paler">
+                By class (HOMO / LUMO / other)
+              </option>
+              {signs && (
                 <option value="character" title="Colour each orbital by how much of it is sigma and how much is pi, whichever way its lobes point. Needs a flat molecule">
                   By σ / π
                 </option>
-              </select>
-            </dd>
-          )}
+              )}
+              <option value="energy" title="Colour each orbital by its energy: orange for those that hold electrons and teal for those that do not, most vivid at the gap and fainter further from it, with the energies in eV in the key">
+                By energy (eV)
+              </option>
+            </select>
+          </dd>
           <dt>Key</dt>
           <dd className="legend-note">
-            {combine === "union" && merged && colouring === "orbital" ? (
-              inside.map((item, at) => (
-                <span key={`${item.label}${at}`} className="legend-key">
-                  <span style={{ color: orbitalHue(at) }}>●</span> {item.label}
+            {colourValue === "energy" ? (
+              <>
+                <span className="energy-scale">
+                  <span className="legend-bar" style={{ background: energyGradient() }} role="img" aria-label={`Orange for orbitals that hold electrons, fading with distance below the HOMO over ${ENERGY_REACH_EV} electronvolts, and teal for empty orbitals, fading with distance above the LUMO`} />
+                  <span className="legend-labels">
+                    <span>{ENERGY_REACH_EV} eV below the HOMO</span>
+                    <span>gap</span>
+                    <span>{ENERGY_REACH_EV} eV above the LUMO</span>
+                  </span>
                 </span>
-              ))
+                <span className="energy-explained">Orange holds electrons and teal does not. The nearer the gap, the stronger the colour. Each orbital's energy is listed.</span>
+              {merged && combine === "sum" ? (
+                // the shells of a group are one colour, which is its mean, so the key is of the group
+                [true, false]
+                  .filter((filled) => inside.some((item) => item.filled === filled))
+                  .map((filled) => {
+                    const group = inside.filter((item) => item.filled === filled);
+                    const mean = (pick: (item: (typeof inside)[number]) => number) => group.reduce((sum, item) => sum + pick(item), 0) / group.length;
+                    return (
+                      <span key={String(filled)} className="legend-key">
+                        <span style={{ color: energyColour(filled, mean((item) => item.fromGapEv)) }}>●</span> {filled ? "filled" : "empty"} mean {mean((item) => item.energyEv).toFixed(2)} eV
+                      </span>
+                    );
+                  })
+              ) : (
+                inside.map((item, at) => (
+                  <span key={`${item.label}${at}`} className="legend-key">
+                    <span style={{ color: energyColour(item.filled, item.fromGapEv) }}>●</span> {item.label} {item.energyEv.toFixed(2)} eV
+                  </span>
+                ))
+              )}
+              </>
+            ) : isRole(colourValue) ? (
+              merged && combine === "sum" ? (
+                // the shells of a group are one colour, which is that of its orbital nearest the gap
+                [true, false]
+                  .filter((filled) => inside.some((item) => item.filled === filled))
+                  .map((filled) => {
+                    const group = inside.filter((item) => item.filled === filled);
+                    const nearest = group[nearestToGap(group.map((item) => ({ offset: item.offset, occupied: item.filled })))] as (typeof inside)[number];
+                    return (
+                      <span key={String(filled)} className="legend-key">
+                        <span style={{ color: roleColour(colourValue, nearest.offset, nearest.spin) }}>●</span> {filled ? "filled" : "empty"}, as the {colourValue === "class" ? nearest.kind : nearest.type}
+                      </span>
+                    );
+                  })
+              ) : (
+                // each type or class is listed once, however many orbitals of it there are, since they all have its colour
+                [...new Map(inside.map((item) => [colourValue === "class" ? item.kind : `${item.spin}:${item.offset}`, item])).values()]
+                  .sort((a, b) => b.offset - a.offset)
+                  .map((item) => (
+                    <span key={colourValue === "class" ? item.kind : `${item.spin}:${item.offset}`} className="legend-key">
+                      <span style={{ color: roleColour(colourValue, item.offset, item.spin) }}>●</span> {colourValue === "class" ? item.kind : item.type}
+                    </span>
+                  ))
+              )
             ) : (merged && combine === "sum") || (!merged && display === "probability") ? (
               <>
-                {share > 50 && (
-                  <span className="legend-key">
-                    <span style={{ color: CORE_SHELL }}>●</span> holds 50%
-                  </span>
-                )}
-                <span className="legend-key">
-                  <span style={{ color: share > 50 ? OUTER_SHELL : CORE_SHELL }}>●</span> holds {share}%
-                </span>
+                {[
+                  { shown: inside.some((item) => item.filled), name: "filled ", core: CORE_SHELL, outer: OUTER_SHELL },
+                  { shown: inside.some((item) => !item.filled), name: "empty ", core: EMPTY_CORE_SHELL, outer: EMPTY_OUTER_SHELL },
+                ]
+                  .filter((group) => group.shown)
+                  .map((group, _, shown) => (
+                    <span key={group.name}>
+                      {share > 50 && (
+                        <span className="legend-key">
+                          <span style={{ color: group.core }}>●</span> {shown.length > 1 ? group.name : ""}holds 50%
+                        </span>
+                      )}
+                      <span className="legend-key">
+                        <span style={{ color: share > 50 ? group.outer : group.core }}>●</span> {shown.length > 1 ? group.name : ""}holds {share}%
+                      </span>
+                    </span>
+                  ))}
               </>
-            ) : colouring === "character" ? (
+            ) : colourValue === "character" ? (
               <>
                 <span className="legend-key">
                   <span style={{ color: SIGMA_COLOUR }}>●</span> σ
@@ -387,7 +500,7 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
         <>
           <p className="energy-note">
             {selected !== null
-              ? `${arrow(selected.spin)}${nameAt(selected.offset)}${count === 1 ? "" : ` and ${count === null ? "all" : `${count - 1} more`} ${selected.offset <= 0 ? "below" : "above"}`}${describeTargets(orbitals.channels, targets.length, selected.spin, count)}${fieldsAsked ? " · working out the shape…" : ready ? "" : " · updating…"}`
+              ? `${selected.frontier ? `Frontier: ${frontierName(count)}${targets.length === 0 ? " · there is none" : ` · ${targets.length} ${targets.length === 1 ? "orbital" : "orbitals"}`}` : `${arrow(selected.spin)}${nameAt(selected.offset)}${count === 1 ? "" : ` and ${count === null ? "all" : `${count - 1} more`} ${selected.offset <= 0 ? "below" : "above"}`}${describeTargets(orbitals.channels, targets.length, selected.spin, count)}`}${fieldsAsked ? " · working out the shape…" : ready ? "" : " · updating…"}`
               : gapNote(channels)}
             {stale && " The structure has changed since, so the levels are being worked out again."}
           </p>
@@ -414,6 +527,15 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
       )}
     </div>
   );
+}
+
+/**
+ * @param count how many orbitals are drawn each side of the gap, or null for every one up to {@link MAX_SHOWN}
+ * @returns words that name the orbitals of the frontier
+ */
+function frontierName(count: number | null): string {
+  const each = Math.min(count ?? MAX_SHOWN, MAX_SHOWN);
+  return each === 1 ? "the HOMO and the LUMO" : `the HOMO to HOMO−${each - 1} and the LUMO to LUMO+${each - 1}`;
 }
 
 /**

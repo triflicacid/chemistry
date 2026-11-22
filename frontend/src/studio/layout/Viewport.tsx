@@ -14,15 +14,15 @@ import {StudioView} from "../viewport/StudioView";
 import type {ScreenRect} from "../viewport/StudioViewListener";
 import {chargeScale} from "./chargeScale";
 import {
-  decodeDensity,
-  decodeEsp,
-  densitySurface,
-  espSurface,
-  nearestAtomColours,
-  sampleGrid,
-  signedDensitySurfaces,
-  toKcalPerCharge,
-  vertexColours
+    decodeDensity,
+    decodeEsp,
+    densitySurface,
+    espSurface,
+    nearestAtomColours,
+    sampleGrid,
+    signedDensitySurfaces,
+    toKcalPerCharge,
+    vertexColours
 } from "./esp";
 import {answers, drawnOrbitals, fragmentsFor, resolveTargets} from "./orbitals";
 import {isCurrent} from "./findings";
@@ -262,7 +262,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   }, [view, debug, numbered, state]);
 
   // an orbital is drawn only for the version it was worked out at, since a surface that stays where the atoms were is worse than none
-  const { selected: shownOrbital, scope: shownScope, count: shownCount, colouring, isovalue, opacity, display: orbitalDisplay, levelBy, share, combine } = useObservable(models.orbital);
+  const { selected: shownOrbital, scope: shownScope, count: shownCount, colouring, isovalue, opacity, display: orbitalDisplay, levelBy, share, combine, style: orbitalStyle } = useObservable(models.orbital);
   const orbitalFields = useMemo(() => {
     const asked = fragmentsFor(shownScope, state);
     if (shownOrbital === null || !answers(orbitals, models.orbital.get().kind, asked)) {
@@ -271,8 +271,8 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     return drawnOrbitals(orbitals, resolveTargets(orbitals, shownOrbital, shownCount), orbitalFieldList, state);
   }, [shownOrbital, shownScope, shownCount, orbitals, orbitalFieldList, state, models.orbital]);
   useEffect(() => {
-    view?.showOrbitals(orbitalFields, { isovalue, opacity, colouring, debug, display: orbitalDisplay, levelBy, share, combine });
-  }, [view, orbitalFields, isovalue, opacity, colouring, debug, orbitalDisplay, levelBy, share, combine]);
+    view?.showOrbitals(orbitalFields, { isovalue, opacity, colouring, debug, display: orbitalDisplay, levelBy, share, combine, style: orbitalStyle });
+  }, [view, orbitalFields, isovalue, opacity, colouring, debug, orbitalDisplay, levelBy, share, combine, orbitalStyle]);
 
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);

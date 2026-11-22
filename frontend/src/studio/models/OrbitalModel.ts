@@ -40,10 +40,15 @@ export interface OrbitalChoice {
   spin: "restricted" | "alpha" | "beta";
   /** How far above the highest orbital that holds electrons it is: zero for that orbital, one for the next, minus one for the one below. */
   offset: number;
+  /**
+   * Whether this is the frontier of every set instead: the HOMO and the orbitals below it together with the LUMO and those above it, as many
+   * each as the number drawn says. The spin and offset then mean nothing.
+   */
+  frontier?: boolean;
 }
 
 /** What colours an orbital's surfaces: the sign of each lobe, or what the orbital is made of, sigma or pi, whatever the sign. */
-export type OrbitalColouring = "phase" | "character" | "orbital";
+export type OrbitalColouring = "phase" | "character" | "type" | "class" | "energy";
 
 /** Which orbital is drawn in the scene, of what and from which calculation, and how. */
 export interface OrbitalState {
@@ -69,6 +74,8 @@ export interface OrbitalState {
   share: number;
   /** How several orbitals drawn at once are shown. */
   combine: OrbitalCombine;
+  /** Whether the surfaces are drawn as solid skins or as outlines. */
+  style: OrbitalStyle;
 }
 
 /**
@@ -93,7 +100,10 @@ export function clampOpacity(opacity: number): number {
  * @returns whether they are the same place in the same set
  */
 export function sameOrbital(first: OrbitalChoice | null, second: OrbitalChoice | null): boolean {
-  return first === second || (first !== null && second !== null && first.spin === second.spin && first.offset === second.offset);
+  return (
+    first === second ||
+    (first !== null && second !== null && Boolean(first.frontier) === Boolean(second.frontier) && (first.frontier === true || (first.spin === second.spin && first.offset === second.offset)))
+  );
 }
 
 /**
@@ -118,13 +128,16 @@ export type OrbitalDisplay = "amplitude" | "probability";
  */
 export type OrbitalCombine = "separate" | "sum" | "union";
 
+/** How the surfaces of orbitals are drawn: as solid skins, or as outlines, the lines where they cross evenly spaced planes, which show what is behind them. */
+export type OrbitalStyle = "solid" | "outline";
+
 /** How the level a surface of an orbital is drawn at is chosen: as a value of the orbital, or as the share of it the surface holds. */
 export type LevelBy = "isovalue" | "share";
 
 /** Which orbital is drawn in the scene, and how. It is not remembered between visits, since an orbital belongs to one structure. */
 export class OrbitalModel extends Observable<OrbitalState> {
   constructor() {
-    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE, combine: "separate" });
+    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE, combine: "separate", style: "solid" });
   }
 
   /**
@@ -206,6 +219,15 @@ export class OrbitalModel extends Observable<OrbitalState> {
   displayTo(display: OrbitalDisplay): void {
     if (this.get().display !== display) {
       this.set({ ...this.get(), display });
+    }
+  }
+
+  /**
+   * @param style whether to draw the surfaces as solid skins or as outlines
+   */
+  styleTo(style: OrbitalStyle): void {
+    if (this.get().style !== style) {
+      this.set({ ...this.get(), style });
     }
   }
 

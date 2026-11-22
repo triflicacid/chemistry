@@ -1,8 +1,19 @@
 import {type GridShape, isosurface, type Surface} from "../../render/isosurface";
 import type {LevelBy, OrbitalColouring} from "../models/OrbitalModel";
 import {sampleGrid} from "./esp";
-import {amplitudeForShare, type DrawnOrbital, massLevel} from "./orbitals";
-import {characterColour, CORE_SHELL, NEGATIVE_LOBE, orbitalHue, OUTER_SHELL, POSITIVE_LOBE} from "./orbitalColours";
+import {amplitudeForShare, type DrawnOrbital, massLevel, nearestToGap} from "./orbitals";
+import {
+    characterColour,
+    CORE_SHELL,
+    EMPTY_CORE_SHELL,
+    EMPTY_OUTER_SHELL,
+    energyColour,
+    isRole,
+    NEGATIVE_LOBE,
+    OUTER_SHELL,
+    POSITIVE_LOBE,
+    roleColour
+} from "./orbitalColours";
 
 /** One surface of several orbitals merged, with its colour. */
 export interface MergedPart {
@@ -23,7 +34,7 @@ export interface UnionOptions {
   isovalue: number;
   /** How much of each orbital its part of the surface holds, as a percentage, where the level is chosen by share. */
   share: number;
-  /** What colours the surface: the sign of the orbital that is largest at each part, the orbital that is, or what that orbital is made of. */
+  /** What colours the surface: the sign of the orbital that is largest at each part, the orbital that is, what that orbital is made of, or its energy. */
   colouring: OrbitalColouring;
   /** How opaque the surface is. */
   opacity: number;
@@ -31,6 +42,14 @@ export interface UnionOptions {
 
 /** How opaque the outer shell is next to the core. */
 const OUTER_OPACITY = 0.55;
+
+/**
+ * @param orbital an orbital to draw
+ * @returns a string that is the same for orbitals that are in the same place with the same points and are both filled or both empty
+ */
+function groupKey(orbital: DrawnOrbital): string {
+  return `${gridKey(orbital.field.shape)}|${orbital.occupied}`;
+}
 
 /**
  * @param shape where a grid is
@@ -42,12 +61,14 @@ function gridKey(shape: GridShape): string {
 
 /**
  * @param orbitals the orbitals to draw
- * @returns the positions in that list of those that share a grid, for each grid, since orbitals can only be merged where their values are at the same points
+ * @returns the positions in that list of those that share a grid, for each grid, since orbitals can only be merged where their values are at the same
+ *     points, and of those that are filled and those that are empty, which are not merged with one another, since the one is where electrons are
+ *     and the other where they would go
  */
 function byGrid(orbitals: readonly DrawnOrbital[]): number[][] {
   const groups = new Map<string, number[]>();
   orbitals.forEach((orbital, at) => {
-    const key = gridKey(orbital.field.shape);
+    const key = groupKey(orbital);
     groups.set(key, [...(groups.get(key) ?? []), at]);
   });
   return [...groups.values()];
@@ -61,9 +82,11 @@ function byGrid(orbitals: readonly DrawnOrbital[]): number[][] {
  * @param orbitals the orbitals to merge, which are merged in groups that share a grid
  * @param share how much of the whole the outer shell holds, as a percentage
  * @param opacity how opaque the core is, and the outer shell a part of that
+ * @param colouring what colours the shells: the energy of the orbitals, the mean of the group; or the type or class of the one nearest the gap; and
+ *     otherwise whether they are filled
  * @returns the shells
  */
-export function mergeSummed(orbitals: readonly DrawnOrbital[], share: number, opacity: number): MergedPart[] {
+export function mergeSummed(orbitals: readonly DrawnOrbital[], share: number, opacity: number, colouring: OrbitalColouring = "phase"): MergedPart[] {
   const parts: MergedPart[] = [];
   for (const group of byGrid(orbitals)) {
     const { shape } = (orbitals[group[0] as number] as DrawnOrbital).field;
@@ -76,7 +99,19 @@ export function mergeSummed(orbitals: readonly DrawnOrbital[], share: number, op
       }
     }
 
-    const shells = share > 50 ? [{ share: 50, colour: CORE_SHELL, opacity }, { share, colour: OUTER_SHELL, opacity: opacity * OUTER_OPACITY }] : [{ share, colour: CORE_SHELL, opacity }];
+    // the shells of the filled orbitals are warm, and of the empty cool, since they are where electrons are and where they would go
+    const first = orbitals[group[0] as number] as DrawnOrbital;
+    const meanFromGap = group.reduce((sum, at) => sum + (orbitals[at] as DrawnOrbital).fromGapEv, 0) / group.length;
+    const nearest = orbitals[group[nearestToGap(group.map((at) => orbitals[at] as DrawnOrbital))] as number] as DrawnOrbital;
+    const [core, outer] =
+      colouring === "energy"
+        ? [energyColour(first.occupied, meanFromGap), energyColour(first.occupied, meanFromGap)]
+        : isRole(colouring)
+          ? [roleColour(colouring, nearest.offset, nearest.spin), roleColour(colouring, nearest.offset, nearest.spin)]
+          : first.occupied
+        ? [CORE_SHELL, OUTER_SHELL]
+        : [EMPTY_CORE_SHELL, EMPTY_OUTER_SHELL];
+    const shells = share > 50 ? [{ share: 50, colour: core, opacity }, { share, colour: outer, opacity: opacity * OUTER_OPACITY }] : [{ share, colour: core, opacity }];
     for (const shell of shells) {
       const level = massLevel(sum, shell.share / 100);
       if (level > 0) {
@@ -90,8 +125,8 @@ export function mergeSummed(orbitals: readonly DrawnOrbital[], share: number, op
 /**
  * Merges orbitals into one surface that is wherever any of them reaches its own level. Each is first divided by its own level, so that a
  * diffuse orbital counts as much as a compact one, and the surface is where the largest of them is one. Each part of it is coloured as the
- * orbital that is largest there, by its sign where the colouring is by phase, so that the lobes keep their blue and red, or by its hue or what it is
- * made of. Where lobes of opposite sign meet they are one surface with a blue part and a red part.
+ * orbital that is largest there, by its sign where the colouring is by phase, so that the lobes keep their blue and red, or by its type or energy or
+ * what it is made of. Where lobes of opposite sign meet they are one surface with a blue part and a red part.
  *
  * @param orbitals the orbitals to merge, which are merged in groups that share a grid; the hue of each is by its place in this list
  * @param options how to choose the levels and colour the surface
@@ -122,7 +157,18 @@ export function mergeUnion(orbitals: readonly DrawnOrbital[], options: UnionOpti
     const surface = isosurface(union, shape, 1);
     const colours = new Float32Array(surface.positions.length);
     // by sign the colour is found at each vertex, from the orbital that is largest there; otherwise it belongs to that orbital throughout
-    const tints = members.map(({ at, pi }) => hexToUnit(options.colouring === "character" ? characterColour(pi) : orbitalHue(at)));
+    const tints = members.map(({ at, pi }) => {
+      const orbital = orbitals[at] as DrawnOrbital;
+      const colour =
+        options.colouring === "character"
+          ? characterColour(pi)
+          : options.colouring === "energy"
+            ? energyColour(orbital.occupied, orbital.fromGapEv)
+            : isRole(options.colouring)
+              ? roleColour(options.colouring, orbital.offset, orbital.spin)
+              : NEGATIVE_LOBE;
+      return hexToUnit(colour);
+    });
     const positive = hexToUnit(POSITIVE_LOBE);
     const negative = hexToUnit(NEGATIVE_LOBE);
     for (let vertex = 0; vertex < surface.positions.length; vertex += 3) {
@@ -142,7 +188,7 @@ export function mergeUnion(orbitals: readonly DrawnOrbital[], options: UnionOpti
       colours[vertex + 1] = tint[1];
       colours[vertex + 2] = tint[2];
     }
-    parts.push({ surface, colours, colour: orbitalHue(0), opacity: options.opacity });
+    parts.push({ surface, colours, colour: POSITIVE_LOBE, opacity: options.opacity });
   }
   return parts;
 }

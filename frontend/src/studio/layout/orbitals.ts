@@ -23,6 +23,45 @@ export function toEv(hartree: number): number {
   return hartree * EV_PER_HARTREE;
 }
 
+/**
+ * @param orbitals orbitals of one kind, each with its place relative to the gap and whether it holds electrons
+ * @returns the position in that list of the one nearest the gap: the HOMO if there is one among them, or else the LUMO, or else the nearest to either
+ */
+export function nearestToGap(orbitals: readonly { offset: number; occupied: boolean }[]): number {
+  const away = (orbital: { offset: number; occupied: boolean }) => (orbital.occupied ? -orbital.offset : orbital.offset - 1);
+  let best = 0;
+  orbitals.forEach((orbital, at) => {
+    if (away(orbital) < away(orbitals[best] as { offset: number; occupied: boolean })) {
+      best = at;
+    }
+  });
+  return best;
+}
+
+/** Where an orbital is in energy: how high, and how far from the gap. */
+export interface EnergyPlace {
+  /** Its energy, in electronvolts. */
+  energyEv: number;
+  /** Whether it holds electrons. */
+  occupied: boolean;
+  /** How far it is from the gap, in electronvolts: below the HOMO if it holds electrons, above the LUMO if it does not; never negative. */
+  fromGapEv: number;
+}
+
+/**
+ * @param levels the orbitals of a set, the lowest in energy first
+ * @param homo the index of the highest that holds electrons, or -1 if none does
+ * @param index the orbital
+ * @returns where it is in energy
+ */
+export function energyPlace(levels: readonly { energy: number }[], homo: number, index: number): EnergyPlace {
+  const energyEv = toEv(levels[index]?.energy ?? 0);
+  const occupied = index <= homo;
+  const homoEv = homo >= 0 ? toEv(levels[homo]?.energy ?? 0) : energyEv;
+  const lumoEv = levels[homo + 1] ? toEv(levels[homo + 1]?.energy ?? 0) : homoEv;
+  return { energyEv, occupied, fromGapEv: Math.max(0, occupied ? homoEv - energyEv : energyEv - lumoEv) };
+}
+
 /** A field that has arrived, ready to make a surface of. */
 export interface DecodedField {
   values: Float32Array;
@@ -178,7 +217,15 @@ function outward(choice: OrbitalChoice): 1 | -1 {
  * @returns whether that orbital is one of those drawn
  */
 export function covers(choice: OrbitalChoice | null, count: number | null, place: OrbitalChoice): boolean {
-  if (choice === null || choice.spin !== place.spin) {
+  if (choice === null) {
+    return false;
+  }
+  // the frontier is as many either side of the gap as are drawn, in every set
+  if (choice.frontier) {
+    const each = Math.min(count ?? MAX_SHOWN, MAX_SHOWN);
+    return place.offset <= 0 ? -place.offset < each : place.offset - 1 < each;
+  }
+  if (choice.spin !== place.spin) {
     return false;
   }
   const away = (place.offset - choice.offset) * outward(choice);
@@ -195,6 +242,12 @@ export function covers(choice: OrbitalChoice | null, count: number | null, place
  * @returns the orbitals to evaluate, those of each molecule together
  */
 export function resolveTargets(result: OrbitalsResult, choice: OrbitalChoice, count: number | null = 1): OrbitalTarget[] {
+  // the frontier is the HOMO and those below it and the LUMO and those above it, in every set, which are two choices of each
+  if (choice.frontier) {
+    const spins = [...new Set(result.channels.map((channel) => channel.spin))];
+    return spins.flatMap((spin) => [0, 1].flatMap((offset) => resolveTargets(result, { spin, offset }, count)));
+  }
+
   const targets: OrbitalTarget[] = [];
   for (const channel of result.channels) {
     if (channel.spin !== choice.spin) {
@@ -438,6 +491,14 @@ export interface DrawnOrbital {
   field: DecodedField;
   /** How much of it is pi, or null if the atoms are not flat enough for it to be sigma or pi. */
   pi: number | null;
+  /** Whether it holds electrons, so that where orbitals are merged the filled ones are not mixed with the empty. */
+  occupied: boolean;
+  /** Its place relative to the gap: zero for the HOMO, one for the LUMO, minus one for the orbital below the HOMO, and so on. */
+  offset: number;
+  /** Which set of orbitals it is of, which tells a spin-up orbital from a spin-down one of the same type. */
+  spin: "restricted" | "alpha" | "beta";
+  /** How far it is from the gap, in electronvolts, which is what colours it when it is coloured by its energy. */
+  fromGapEv: number;
   /** How many electrons it counts for where orbitals are merged into one probability: how many it holds, or one if it holds none. */
   weight: number;
 }
@@ -453,7 +514,9 @@ export interface DrawnOrbital {
 export function drawnOrbitals(result: OrbitalsResult, targets: readonly OrbitalTarget[], fields: readonly FieldResult[], state: SessionState | null): DrawnOrbital[] {
   return targets.flatMap((target) => {
     const decoded = fieldsFor(fields, [target], state).flatMap((field) => decodeField(field) ?? []);
-    const level = result.channels.find((channel) => channel.fragment === target.fragment && channel.spin === target.spin)?.levels[target.orbital];
-    return decoded.map((field) => ({ field, pi: level?.pi ?? null, weight: level && level.occupancy > 0 ? level.occupancy : 1 }));
+    const channel = result.channels.find((each) => each.fragment === target.fragment && each.spin === target.spin);
+    const level = channel?.levels[target.orbital];
+    const fromGapEv = channel ? energyPlace(channel.levels, channel.homo ?? -1, target.orbital).fromGapEv : 0;
+    return decoded.map((field) => ({ field, pi: level?.pi ?? null, occupied: level !== undefined && level.occupancy > 0, offset: target.orbital - (channel?.homo ?? -1), spin: target.spin, fromGapEv, weight: level && level.occupancy > 0 ? level.occupancy : 1 }));
   });
 }

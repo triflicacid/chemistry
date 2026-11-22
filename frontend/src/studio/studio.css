@@ -1577,3 +1577,18 @@ body.resizing {
 .level-selected.level-pi .level-line {
   stroke: var(--accent);
 }
+
+/* the key of orbitals coloured by energy: a bar along the energy axis, a line saying what it means, and each orbital's energy under it */
+.energy-scale {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.25rem;
+}
+
+.energy-explained {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--ink-soft);
+  white-space: normal;
+}
