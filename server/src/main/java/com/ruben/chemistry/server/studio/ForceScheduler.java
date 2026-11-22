@@ -2,28 +2,25 @@ package com.ruben.chemistry.server.studio;
 
 import com.ruben.chemistry.charges.PartialChargeModel;
 import com.ruben.chemistry.quantum.scf.ScfListener;
-import com.ruben.chemistry.server.util.Debouncer;
 
 import java.time.Duration;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
  * Works out the forces on a session's atoms when asked.
+ * <p>
+ * Each molecule's charges come from a quantum calculation, so this is a {@link JobScheduler}: requests are debounced, the
+ * calculation runs on its own thread, and it is abandoned as soon as the session moves on or a newer request is made for it.
  */
 public final class ForceScheduler implements AutoCloseable
 {
     /** How long a session must be left alone before its forces are calculated. */
     public static final Duration DEFAULT_DEBOUNCE = Duration.ofMillis(300);
 
-    private final Debouncer<String> debouncer;
+    private final JobScheduler<ForceReport> jobs;
     private final Function<ScfListener, PartialChargeModel> charges;
-    private final Map<String, AtomicLong> latest = new ConcurrentHashMap<>();
 
     /**
      * Assigns each molecule's charges with the studio's automatic Hartree-Fock model.
@@ -32,7 +29,7 @@ public final class ForceScheduler implements AutoCloseable
      */
     public ForceScheduler(Duration debounce)
     {
-        this(new Debouncer<>(debounce), listener -> ChargeModels.create(ChargeModels.MULLIKEN, listener));
+        this(new JobScheduler<>(debounce), listener -> ChargeModels.create(ChargeModels.MULLIKEN, listener));
     }
 
     /**
@@ -41,12 +38,12 @@ public final class ForceScheduler implements AutoCloseable
      */
     public ForceScheduler(Duration debounce, Function<ScfListener, PartialChargeModel> charges)
     {
-        this(new Debouncer<>(debounce), Objects.requireNonNull(charges, "charges"));
+        this(new JobScheduler<>(debounce), Objects.requireNonNull(charges, "charges"));
     }
 
-    private ForceScheduler(Debouncer<String> debouncer, Function<ScfListener, PartialChargeModel> charges)
+    private ForceScheduler(JobScheduler<ForceReport> jobs, Function<ScfListener, PartialChargeModel> charges)
     {
-        this.debouncer = debouncer;
+        this.jobs = jobs;
         this.charges = charges;
     }
 
@@ -55,7 +52,7 @@ public final class ForceScheduler implements AutoCloseable
      */
     public static ForceScheduler disabled()
     {
-        return new ForceScheduler(Debouncer.disabled(), listener -> ChargeModels.create(ChargeModels.MULLIKEN, listener));
+        return new ForceScheduler(JobScheduler.disabled(), listener -> ChargeModels.create(ChargeModels.MULLIKEN, listener));
     }
 
     /**
@@ -67,68 +64,33 @@ public final class ForceScheduler implements AutoCloseable
      */
     public void schedule(StudioSession session, Consumer<ForceReport> deliver)
     {
-        latest.computeIfAbsent(session.sessionId(), id -> new AtomicLong()).incrementAndGet();
-        debouncer.submit(session.sessionId(), () -> run(session, deliver));
+        jobs.schedule(session,
+                (described, run) ->
+                {
+                    PartialChargeModel model = charges.apply(new ScfListener()
+                    {
+                        @Override
+                        public void stage(String stage)
+                        {
+                            run.check();
+                        }
+
+                        @Override
+                        public void iteration(int iteration, double energy, double error)
+                        {
+                            run.check();
+                        }
+                    });
+                    return ForceReport.of(session, described, model).elapsed(run.elapsedMs());
+                },
+                (described, elapsedMs, message) -> ForceReport.failed(session, described.version(), elapsedMs, message),
+                deliver);
     }
 
     /** Stops calculating anything, and abandons what is waiting. */
     @Override
     public void close()
     {
-        debouncer.close();
-    }
-
-    private void run(StudioSession session, Consumer<ForceReport> deliver)
-    {
-        AtomicLong generation = latest.computeIfAbsent(session.sessionId(), id -> new AtomicLong());
-        long mine = generation.get();
-        long started = System.nanoTime();
-        StudioSession.Described described = session.describe();
-        Runnable check = () ->
-        {
-            if (generation.get() != mine || session.version() != described.version())
-            {
-                throw new CancellationException("The forces are out of date");
-            }
-        };
-
-        ForceReport report;
-        try
-        {
-            check.run();
-            PartialChargeModel model = charges.apply(new ScfListener()
-            {
-                @Override
-                public void stage(String stage)
-                {
-                    check.run();
-                }
-
-                @Override
-                public void iteration(int iteration, double energy, double error)
-                {
-                    check.run();
-                }
-            });
-            report = ForceReport.of(session, described, model).elapsed(millisSince(started));
-        }
-        catch (CancellationException outOfDate)
-        {
-            return;
-        }
-        catch (RuntimeException failure)
-        {
-            report = ForceReport.failed(session, described.version(), millisSince(started), String.valueOf(failure.getMessage()));
-        }
-
-        if (generation.get() == mine && session.version() == described.version())
-        {
-            deliver.accept(report);
-        }
-    }
-
-    private static long millisSince(long nanos)
-    {
-        return (System.nanoTime() - nanos) / 1_000_000;
+        jobs.close();
     }
 }

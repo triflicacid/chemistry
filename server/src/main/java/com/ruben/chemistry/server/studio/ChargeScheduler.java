@@ -2,23 +2,16 @@ package com.ruben.chemistry.server.studio;
 
 import com.ruben.chemistry.charges.PartialChargeModel;
 import com.ruben.chemistry.quantum.scf.ScfListener;
-import com.ruben.chemistry.server.util.Debouncer;
 
 import java.time.Duration;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
- * Works out the partial charges of a session's atoms when asked, without doing so for every request of a run of them.
+ * Works out the partial charges of a session's atoms when asked, and reports how the calculation is getting on.
  * <p>
- * The calculation is a quantum one and takes a while, so it runs on its own thread, apart from the one that examines
- * the geometry, and reports how it is getting on. Requests are debounced. A calculation is abandoned, and nothing is
- * delivered for it, as soon as the session moves on from the geometry it was started from or a newer request is made
- * for the session.
+ * It is a {@link JobScheduler}: requests are debounced, the calculation runs on its own thread, and it is abandoned as soon
+ * as the session moves on or a newer request is made for it.
  */
 public final class ChargeScheduler implements AutoCloseable
 {
@@ -43,9 +36,8 @@ public final class ChargeScheduler implements AutoCloseable
         PartialChargeModel create(String id, ScfListener listener);
     }
 
-    private final Debouncer<String> debouncer;
+    private final JobScheduler<ChargeReport> jobs;
     private final Models models;
-    private final Map<String, AtomicLong> latest = new ConcurrentHashMap<>();
 
     /**
      * Assigns charges with the models of {@link ChargeModels}.
@@ -54,7 +46,7 @@ public final class ChargeScheduler implements AutoCloseable
      */
     public ChargeScheduler(Duration debounce)
     {
-        this(new Debouncer<>(debounce), ChargeModels::create);
+        this(new JobScheduler<>(debounce), ChargeModels::create);
     }
 
     /**
@@ -63,7 +55,7 @@ public final class ChargeScheduler implements AutoCloseable
      */
     public ChargeScheduler(Duration debounce, Models models)
     {
-        this(new Debouncer<>(debounce), Objects.requireNonNull(models, "models"));
+        this(new JobScheduler<>(debounce), Objects.requireNonNull(models, "models"));
     }
 
     /**
@@ -75,9 +67,9 @@ public final class ChargeScheduler implements AutoCloseable
         this(debounce, only(model));
     }
 
-    private ChargeScheduler(Debouncer<String> debouncer, Models models)
+    private ChargeScheduler(JobScheduler<ChargeReport> jobs, Models models)
     {
-        this.debouncer = debouncer;
+        this.jobs = jobs;
         this.models = models;
     }
 
@@ -92,7 +84,7 @@ public final class ChargeScheduler implements AutoCloseable
      */
     public static ChargeScheduler disabled()
     {
-        return new ChargeScheduler(Debouncer.disabled(), ChargeModels::create);
+        return new ChargeScheduler(JobScheduler.disabled(), ChargeModels::create);
     }
 
     /**
@@ -106,68 +98,38 @@ public final class ChargeScheduler implements AutoCloseable
      */
     public void schedule(StudioSession session, String requested, Consumer<ChargeProgress> progress, Consumer<ChargeReport> deliver)
     {
-        latest.computeIfAbsent(session.sessionId(), id -> new AtomicLong()).incrementAndGet();
-        debouncer.submit(session.sessionId(), () -> run(session, requested, progress, deliver));
+        jobs.schedule(session,
+                (described, run) ->
+                {
+                    Pace pace = new Pace(session, described, requested, progress, run);
+                    pace.stage("starting");
+                    PartialChargeModel model = models.create(requested, new ScfListener()
+                    {
+                        @Override
+                        public void stage(String stage)
+                        {
+                            run.check();
+                            pace.stage(stage);
+                        }
+
+                        @Override
+                        public void iteration(int iteration, double energy, double error)
+                        {
+                            run.check();
+                            pace.iteration(iteration, energy, error);
+                        }
+                    });
+                    return ChargeReport.of(session, described, requested, model).elapsed(run.elapsedMs());
+                },
+                (described, elapsedMs, message) -> ChargeReport.failed(session, described.version(), requested, elapsedMs, message),
+                deliver);
     }
 
     /** Stops calculating anything, and abandons what is waiting. */
     @Override
     public void close()
     {
-        debouncer.close();
-    }
-
-    private void run(StudioSession session, String requested, Consumer<ChargeProgress> progress, Consumer<ChargeReport> deliver)
-    {
-        AtomicLong generation = latest.computeIfAbsent(session.sessionId(), id -> new AtomicLong());
-        long mine = generation.get();
-        long started = System.nanoTime();
-        StudioSession.Described described = session.describe();
-        Pace pace = new Pace(session, described, requested, progress, started);
-        Runnable check = () ->
-        {
-            if (generation.get() != mine || session.version() != described.version())
-            {
-                throw new CancellationException("The charges are out of date");
-            }
-        };
-
-        ChargeReport report;
-        try
-        {
-            check.run();
-            pace.stage("starting");
-            PartialChargeModel model = models.create(requested, new ScfListener()
-            {
-                @Override
-                public void stage(String stage)
-                {
-                    check.run();
-                    pace.stage(stage);
-                }
-
-                @Override
-                public void iteration(int iteration, double energy, double error)
-                {
-                    check.run();
-                    pace.iteration(iteration, energy, error);
-                }
-            });
-            report = ChargeReport.of(session, described, requested, model).elapsed(Pace.millisSince(started));
-        }
-        catch (CancellationException outOfDate)
-        {
-            return;
-        }
-        catch (RuntimeException failure)
-        {
-            report = ChargeReport.failed(session, described.version(), requested, Pace.millisSince(started), String.valueOf(failure.getMessage()));
-        }
-
-        if (generation.get() == mine && session.version() == described.version())
-        {
-            deliver.accept(report);
-        }
+        jobs.close();
     }
 
     /**
@@ -179,22 +141,17 @@ public final class ChargeScheduler implements AutoCloseable
         private final StudioSession.Described described;
         private final String requested;
         private final Consumer<ChargeProgress> progress;
-        private final long started;
+        private final JobScheduler.Run run;
         private String stage = "starting";
         private long last;
 
-        private Pace(StudioSession session, StudioSession.Described described, String requested, Consumer<ChargeProgress> progress, long started)
+        private Pace(StudioSession session, StudioSession.Described described, String requested, Consumer<ChargeProgress> progress, JobScheduler.Run run)
         {
             this.session = session;
             this.described = described;
             this.requested = requested;
             this.progress = progress;
-            this.started = started;
-        }
-
-        static long millisSince(long nanos)
-        {
-            return (System.nanoTime() - nanos) / 1_000_000;
+            this.run = run;
         }
 
         /** A change of stage is always reported. */
@@ -217,7 +174,7 @@ public final class ChargeScheduler implements AutoCloseable
         {
             last = System.nanoTime();
             progress.accept(new ChargeProgress(ChargeProgress.TYPE, session.sessionId(), described.version(), requested, stage,
-                    iteration, energy, error, millisSince(started)));
+                    iteration, energy, error, run.elapsedMs()));
         }
     }
 }
