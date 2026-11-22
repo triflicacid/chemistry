@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 16;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -353,6 +353,63 @@ export interface OptimiseCancelAck extends ServerEnvelope {
   cancelling: boolean;
 }
 
+/** The answer to a request for charges, which says only that the request was understood: the charges follow as a `charges.result`. */
+export interface ChargesRequestAck extends ServerEnvelope {
+  type: "charges.request.ack";
+}
+
+/** One atom's partial charge. */
+export interface AtomCharge {
+  id: string;
+  /** In elementary charges. */
+  charge: number;
+}
+
+/**
+ * The partial charge of every atom, sent on the server's own initiative once it has worked them out after a request. It
+ * describes the geometry at `version`, so it is out of date once the session has moved on from that.
+ */
+export interface ChargesResult extends ServerEnvelope {
+  type: "charges.result";
+  session_id: string;
+  version: number;
+  /** The model the client asked for, which is not always the one that assigned the charges. */
+  requested: string;
+  status: "complete" | "failed";
+  /** The name of the model that assigned the charges; null if the calculation failed. */
+  model: string | null;
+  /** What the charges mean, such as `MULLIKEN`, or `FORMAL` where no real model could be applied; null if the calculation failed. */
+  convention: string | null;
+  /** Each atom's charge, empty if the calculation failed. */
+  charges: AtomCharge[];
+  /** How long the calculation took, in milliseconds. */
+  elapsed_ms: number;
+  /** Why the calculation failed, if it did. */
+  message: string | null;
+}
+
+/**
+ * How the calculation of the charges is getting on, sent on the server's own initiative while it runs, and dropped if the
+ * session moves on first.
+ */
+export interface ChargesProgress extends ServerEnvelope {
+  type: "charges.progress";
+  session_id: string;
+  version: number;
+  /** The model the client asked for. */
+  requested: string;
+  /** `starting`, then `integrals` while the integrals are worked out, then `iterating` while the orbitals are made self-consistent. */
+  stage: "starting" | "integrals" | "iterating";
+  /** How many Fock builds have been made, or zero if none has. */
+  iteration: number;
+  /** The total energy so far in hartree, or null before the first Fock build. */
+  energy: number | null;
+  /** How far the orbitals are from self-consistent, or null before the first Fock build. */
+  error: number | null;
+  /** How long the calculation has been running, in milliseconds. */
+  elapsed_ms: number;
+}
+
 /** One term of the geometry beyond its tolerance. */
 export interface GeometryFinding {
   kind: "bond" | "angle" | "clash";
@@ -431,5 +488,8 @@ export type ServerMessage =
   | OptimiseResult
   | OptimiseCancelAck
   | GeometryResult
+  | ChargesRequestAck
+  | ChargesProgress
+  | ChargesResult
   | SocketError
   | Pong;

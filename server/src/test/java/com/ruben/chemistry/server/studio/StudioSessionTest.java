@@ -30,6 +30,18 @@ class StudioSessionTest
     private final MoleculeParser parser = new MoleculeParser();
 
     @Test
+    void describes_the_geometry_with_the_atom_each_site_is()
+    {
+        StudioSession session = open("CCO");
+
+        StudioSession.Described described = session.describe();
+
+        assertThat(described.version()).isEqualTo(session.version());
+        assertThat(described.sites()).hasSize(described.structure().sites().size());
+        assertThat(described.sites()).containsExactlyInAnyOrderElementsOf(session.molecule().atoms().stream().map(session::atomId).toList());
+    }
+
+    @Test
     void makes_every_counted_hydrogen_an_atom_of_its_own()
     {
         StudioSession session = open("CCO");

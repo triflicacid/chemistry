@@ -12,6 +12,7 @@ import com.ruben.chemistry.quantum.linalg.Orthogonaliser;
 import com.ruben.chemistry.quantum.linalg.SymmetricEigen;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 /**
  * Restricted Hartree-Fock for a closed-shell molecule: every occupied orbital holds two electrons of opposite spin.
@@ -88,6 +89,7 @@ public final class ClosedShellScf
         }
         int occupied = electrons / 2;
 
+        settings.listener().stage(ScfListener.INTEGRALS);
         Matrix overlap = OneElectronIntegrals.overlapMatrix(basis);
         Matrix core = OneElectronIntegrals.coreHamiltonian(basis, nuclei);
         if (!cores.isEmpty())
@@ -104,9 +106,9 @@ public final class ClosedShellScf
             throw new IllegalArgumentException(electrons + " electrons do not fit in " + transform.columns() + " independent functions");
         }
 
+        settings.listener().stage(ScfListener.ITERATING);
         Diis diis = new Diis(Math.max(settings.diisSize(), 1));
-        // the first density comes from the core Hamiltonian alone, ignoring electron repulsion
-        Orbitals orbitals = diagonalise(core, transform, occupied);
+        Orbitals orbitals = diagonalise(InitialGuess.fock(core, overlap), transform, occupied);
         double previousEnergy = 0.0;
         for (int iteration = 1; iteration <= settings.maxIterations(); iteration++)
         {
@@ -119,6 +121,7 @@ public final class ClosedShellScf
             Matrix error = transform.transpose().times(commutator).times(transform);
             double rms = error.frobeniusNorm() / error.rows();
 
+            settings.listener().iteration(iteration, total, rms);
             boolean converged = iteration > 1 && Math.abs(total - previousEnergy) < settings.energyTolerance() && rms < settings.errorTolerance();
             if (converged || iteration == settings.maxIterations())
             {
@@ -178,7 +181,8 @@ public final class ClosedShellScf
     {
         int n = density.rows();
         Matrix g = new Matrix(n, n);
-        for (int mu = 0; mu < n; mu++)
+        // each row of the result is made on its own
+        IntStream.range(0, n).parallel().forEach(mu ->
         {
             for (int nu = 0; nu < n; nu++)
             {
@@ -193,7 +197,7 @@ public final class ClosedShellScf
                 }
                 g.set(mu, nu, sum);
             }
-        }
+        });
         return g;
     }
 }

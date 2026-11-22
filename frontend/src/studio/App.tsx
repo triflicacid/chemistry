@@ -19,7 +19,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -36,6 +36,17 @@ export function App() {
       shared.hover.hover(null);
     }
   }, [index, shared]);
+
+  // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
+  // The server waits for the session to be left alone, so a drag asks many times and is answered once
+  const { colourBy, chargeModel } = useObservable(shared.properties);
+  const version = state?.version;
+  const sessionId = state?.session_id;
+  useEffect(() => {
+    if (colourBy === "charge" && sessionId !== undefined) {
+      requestCharges(chargeModel);
+    }
+  }, [colourBy, chargeModel, sessionId, version, requestCharges]);
 
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {

@@ -8,6 +8,7 @@ import {AnalysisPanel} from "../panels/AnalysisPanel";
 import {Inspector} from "../panels/Inspector";
 import {ErrorToast} from "../panels/popups/ErrorToast";
 import {OptimiseNotice} from "../panels/popups/OptimiseNotice";
+import {PropertiesOptions} from "../panels/PropertiesOptions";
 import {RenderOptions} from "../panels/RenderOptions";
 import {Outliner} from "../panels/Outliner";
 import {SmilesBar} from "../controls/SmilesBar";
@@ -68,7 +69,7 @@ export function Workspace(props: WorkspaceProps) {
 
       <SmilesBar state={state} onSubmit={onSubmitSmiles} />
 
-      <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} footer={<RenderOptions models={models} />}>
+      <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} footer={<><PropertiesOptions models={models} /><RenderOptions models={models} /></>}>
         <Outliner state={state} models={models} />
       </Side>
 

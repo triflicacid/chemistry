@@ -10,6 +10,8 @@ import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.molecule.StudioSnapshot;
+import com.ruben.chemistry.server.studio.ChargeModels;
+import com.ruben.chemistry.server.studio.ChargeScheduler;
 import com.ruben.chemistry.server.studio.GeometryScheduler;
 import com.ruben.chemistry.server.studio.OptimisationRunner;
 import com.ruben.chemistry.server.studio.StudioEditException;
@@ -41,7 +43,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 14;
+    private static final int PROTOCOL_VERSION = 16;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -50,6 +52,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     private final StudioSessionStore sessions;
     private final GeometryScheduler geometry;
     private final OptimisationRunner optimiser;
+    private final ChargeScheduler charges;
     private final MoleculeParser parser = new MoleculeParser();
 
     /** The connection each session's results are sent to, which is the one holding it. */
@@ -90,6 +93,19 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser)
     {
+        this(molecules, sessions, geometry, optimiser, new ChargeScheduler(ChargeScheduler.DEFAULT_DEBOUNCE));
+    }
+
+    /**
+     * @param molecules the molecules a session can be opened on
+     * @param sessions where to hold the open sessions
+     * @param geometry what examines a session's geometry once it has been left alone
+     * @param optimiser what relaxes a session's geometry when asked to
+     * @param charges what works out the partial charges of a session's atoms when asked to
+     */
+    public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges)
+    {
+        this.charges = Objects.requireNonNull(charges, "charges");
         this.molecules = Objects.requireNonNull(molecules, "molecules");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.geometry = Objects.requireNonNull(geometry, "geometry");
@@ -605,6 +621,55 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             started.put("version", operation.version());
             context.sendJson(started);
         }
+    }
+
+    /**
+     * Asks for the partial charges of a session's atoms, as the geometry is when they have been calculated. The answer
+     * says only that the request was understood; {@code charges.progress} follows while they are worked out, and the
+     * charges as {@code charges.result}, from another thread. Both are dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestCharges(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.ChargesRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.ChargesRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("charges.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("charges.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        String model = request.model() == null ? ChargeModels.DEFAULT : request.model();
+        if (!ChargeModels.exists(model))
+        {
+            context.error("charges.request", sequence, "UNKNOWN_MODEL",
+                    "No charge model is called '" + model + "'; use one of " + ChargeModels.IDS);
+            return;
+        }
+
+        charges.schedule(session, model, progress -> sendToHolder(session, progress), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "charges.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
     }
 
     /**
@@ -1489,6 +1554,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("bond.order", endpoint::bondOrder),
                     Map.entry("optimise.start", endpoint::optimise),
                     Map.entry("optimise.cancel", endpoint::cancelOptimise),
+                    Map.entry("charges.request", endpoint::requestCharges),
                     Map.entry("edit.undo", endpoint::undo),
                     Map.entry("edit.redo", endpoint::redo),
                     Map.entry("history.list", endpoint::history),

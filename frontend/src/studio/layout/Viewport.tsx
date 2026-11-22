@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import type {SystemView} from "../geometry/conjugation";
 import {type Item, type PartItem, selectsEveryMolecule} from "../models/items";
 import type {Models, PickScope} from "../models/models";
@@ -12,6 +12,7 @@ import {useSessionContext} from "../session/SessionContext";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import type {ScreenRect} from "../viewport/StudioViewListener";
+import {chargeScale} from "./chargeScale";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
 import {useStructureActions} from "./useStructureActions";
@@ -41,6 +42,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     cancelBondDrag,
     addAtom,
     addBond,
+    charges,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -109,6 +111,17 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.setGrid(grid === "off" ? null : grid, gridPlane);
   }, [view, grid, gridPlane]);
+
+  // atoms are coloured by what the server last calculated for them. A result a little behind the session is kept, so that
+  // the colours do not flicker while an atom is dragged, and the Properties section says that it is updating
+  const { colourBy, polarLabels, polarThreshold } = useObservable(models.properties);
+  const charged = useMemo(() => (colourBy === "charge" && charges?.session_id === state?.session_id ? chargeScale(charges) : null), [colourBy, charges, state?.session_id]);
+  useEffect(() => {
+    view?.colourAtoms(charged?.colours ?? null);
+  }, [view, charged]);
+  useEffect(() => {
+    view?.labelPolarity(polarLabels && charged ? charged.charges : null, polarThreshold);
+  }, [view, charged, polarLabels, polarThreshold]);
 
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);

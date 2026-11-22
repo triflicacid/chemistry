@@ -1,25 +1,26 @@
 import type {Vec3} from "../../api/types/structure";
 import {
-  type AtomChange,
-  type AtomPlacement,
-  type BondEditAck,
-  type BondOrder,
-  type CameraAck,
-  type EditApplied,
-  type EditHistory,
-  type GraphEditAck,
-  type LockAck,
-  type OptimiseCancelAck,
-  type OptimiseStarted,
-  type PatchAck,
-  type Pose,
-  PROTOCOL_VERSION,
-  type ServerEnvelope,
-  type SessionCamera,
-  type SessionConflict,
-  type SessionReady,
-  type SessionState,
-  type TransformAck,
+    type AtomChange,
+    type AtomPlacement,
+    type BondEditAck,
+    type BondOrder,
+    type CameraAck,
+    type ChargesRequestAck,
+    type EditApplied,
+    type EditHistory,
+    type GraphEditAck,
+    type LockAck,
+    type OptimiseCancelAck,
+    type OptimiseStarted,
+    type PatchAck,
+    type Pose,
+    PROTOCOL_VERSION,
+    type ServerEnvelope,
+    type SessionCamera,
+    type SessionConflict,
+    type SessionReady,
+    type SessionState,
+    type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -481,6 +482,18 @@ export class StudioSocket {
       { session_id: sessionId, base_version: baseVersion },
       ["optimise.started", "conflict"],
     );
+  }
+
+  /**
+   * Asks for the partial charge of every atom of a session. The answer says only that the request was understood: listen
+   * for `charges.progress` while they are worked out and `charges.result` for the charges, which the server sends once the
+   * session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose atoms to calculate charges for
+   * @param model the name of the model to assign them with, such as `rhf`; the server's own choice if omitted
+   */
+  requestCharges(sessionId: string, model?: string): Promise<ChargesRequestAck> {
+    return this.request<ChargesRequestAck>("charges.request", { session_id: sessionId, ...(model ? { model } : {}) }, "charges.request.ack");
   }
 
   /**

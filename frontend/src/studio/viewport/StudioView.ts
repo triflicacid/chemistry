@@ -371,6 +371,25 @@ export class StudioView {
   }
 
   /**
+   * Draws atoms, and the halves of the bonds that join them, in colours of their own in place of their elements'.
+   *
+   * @param colours the colour of each atom to draw differently, by atom, or null to draw every atom as its element
+   */
+  colourAtoms(colours: ReadonlyMap<string, string> | null): void {
+    this.scene.colourAtoms(colours);
+  }
+
+  /**
+   * Labels the atoms that are strongly positive (δ+) or negative (δ−), except those with a formal charge.
+   *
+   * @param charges each atom's partial charge, by atom, or null to label none
+   * @param threshold how far from zero a partial charge must be, in elementary charges, to be labelled
+   */
+  labelPolarity(charges: ReadonlyMap<string, number> | null, threshold: number): void {
+    this.scene.labelPolarity(charges, threshold);
+  }
+
+  /**
    * Marks where the geometry is strained.
    *
    * @param result what the session said of its geometry, or null to show nothing

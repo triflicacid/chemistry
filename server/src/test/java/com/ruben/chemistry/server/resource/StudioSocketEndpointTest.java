@@ -1,14 +1,20 @@
 package com.ruben.chemistry.server.resource;
 
+import com.ruben.chemistry.charges.ChargeConvention;
+import com.ruben.chemistry.charges.PartialChargeModel;
+import com.ruben.chemistry.charges.PartialCharges;
 import com.ruben.chemistry.core.Atom;
 import com.ruben.chemistry.server.molecule.MoleculeParser;
 import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
+import com.ruben.chemistry.server.studio.ChargeScheduler;
 import com.ruben.chemistry.server.studio.GeometryScheduler;
+import com.ruben.chemistry.server.studio.OptimisationRunner;
 import com.ruben.chemistry.server.studio.StudioSessionStore;
 import com.ruben.chemistry.server.ws.SocketHarness;
 import com.ruben.chemistry.server.ws.SocketHarness.Collector;
 import com.ruben.chemistry.server.ws.WebSocketServer;
+import com.ruben.chemistry.space.Structure3D;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -27,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class StudioSocketEndpointTest
 {
     /** The start of every message, naming the protocol the client is written for. */
-    private static final String PROTOCOL = "\"protocol_version\": 14, ";
+    private static final String PROTOCOL = "\"protocol_version\": 16, ";
 
     @RegisterExtension
     private final SocketHarness sockets = new SocketHarness();
@@ -47,7 +53,7 @@ class StudioSocketEndpointTest
 
         Map<String, Object> ready = collector.nextJson();
         assertThat(ready).containsEntry("type", "session.ready");
-        assertThat(ready).containsEntry("protocol_version", 14L);
+        assertThat(ready).containsEntry("protocol_version", 16L);
         assertThat(ready.get("connection_id")).asString().startsWith("ws-");
 
         socket.sendText("{\"type\": \"ping\", \"sequence\": 108}", true).join();
@@ -98,7 +104,7 @@ class StudioSocketEndpointTest
         assertThat(stale).containsEntry("answering", "session.open").containsEntry("sequence", 1L);
         assertThat((String) error(stale).get("message")).contains("out of date");
 
-        socket.sendText("{\"protocol_version\": 15, \"type\": \"session.open\", \"sequence\": 2}", true).join();
+        socket.sendText("{\"protocol_version\": 17, \"type\": \"session.open\", \"sequence\": 2}", true).join();
         assertThat((String) error(collector.nextJson()).get("message")).contains("restart the server");
 
         // the version is checked ahead of the type, so a message this server has never heard of is still a mismatch
@@ -222,6 +228,63 @@ class StudioSocketEndpointTest
         assertThat(again).containsEntry("sequence", 2L);
         assertThat(again).containsEntry("session_id", sessionId);
         assertThat(again).containsEntry("version", 1L);
+    }
+
+    @Test
+    void should_send_the_charges_of_a_session_after_acknowledging_the_request() throws Exception
+    {
+        endpoint = new StudioSocketEndpoint(molecules, new StudioSessionStore(), GeometryScheduler.disabled(), new OptimisationRunner(),
+                new ChargeScheduler(Duration.ofMillis(10), new NoCharge()));
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"charges.request\", \"sequence\": 2, \"session_id\": \"" + sessionId + "\", \"model\": \"rhf\"}", true).join();
+        Map<String, Object> ack = collector.nextJson();
+        Map<String, Object> progress = collector.nextJson();
+        Map<String, Object> result = collector.nextJson();
+
+        assertThat(ack).containsEntry("type", "charges.request.ack").containsEntry("sequence", 2L);
+        assertThat(progress).containsEntry("type", "charges.progress").containsEntry("session_id", sessionId)
+                .containsEntry("requested", "rhf").containsEntry("stage", "starting").containsKey("elapsed_ms");
+        assertThat(result).containsEntry("type", "charges.result").containsEntry("session_id", sessionId);
+        assertThat(result).containsEntry("status", "complete").containsEntry("version", 1L).containsEntry("model", "no-charge")
+                .containsEntry("requested", "rhf").containsKey("elapsed_ms");
+        assertThat(list(result, "charges")).hasSize(9).allSatisfy(charge -> assertThat(charge).containsKeys("id", "charge"));
+    }
+
+    @Test
+    void should_refuse_a_request_for_charges_from_a_model_it_does_not_have() throws Exception
+    {
+        StoredMolecule stored = store("CCO");
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+        socket.sendText(open(stored.id(), 1), true).join();
+        String sessionId = (String) collector.nextJson().get("session_id");
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"charges.request\", \"sequence\": 2, \"session_id\": \"" + sessionId + "\", \"model\": \"magic\"}", true).join();
+
+        Map<String, Object> refused = collector.nextJson();
+        assertThat(error(refused)).containsEntry("code", "UNKNOWN_MODEL");
+        assertThat(refused).containsEntry("answering", "charges.request");
+    }
+
+    @Test
+    void should_refuse_a_request_for_the_charges_of_a_session_that_is_not_open() throws Exception
+    {
+        Collector collector = new Collector();
+        WebSocket socket = studio(collector);
+        collector.next();
+
+        socket.sendText("{" + PROTOCOL + "\"type\": \"charges.request\", \"sequence\": 1, \"session_id\": \"nope\"}", true).join();
+
+        Map<String, Object> refused = collector.nextJson();
+        assertThat(error(refused)).containsEntry("code", "NO_SESSION");
+        assertThat(refused).containsEntry("answering", "charges.request");
     }
 
     @Test
@@ -1247,6 +1310,28 @@ class StudioSocketEndpointTest
      *
      * @return that store
      */
+    /** Gives every site no charge, so that a test of the connection need not wait for a quantum calculation. */
+    private static final class NoCharge implements PartialChargeModel
+    {
+        @Override
+        public String name()
+        {
+            return "no-charge";
+        }
+
+        @Override
+        public ChargeConvention convention()
+        {
+            return ChargeConvention.FORMAL;
+        }
+
+        @Override
+        public PartialCharges calculate(Structure3D structure, int conformer)
+        {
+            return new PartialCharges(ChargeConvention.FORMAL, structure.sites().stream().map(site -> 0.0).toList());
+        }
+    }
+
     private StudioSessionStore expiringAtOnce()
     {
         StudioSessionStore expiring = new StudioSessionStore(Duration.ZERO, Clock.systemUTC());

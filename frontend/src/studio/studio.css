@@ -1137,6 +1137,37 @@ body.resizing {
   margin: 0.15rem 0 0;
 }
 
+/* the colour scale of a calculated property, and the words under it */
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.legend-bar {
+  height: 0.6rem;
+  border-radius: 3px;
+  border: 1px solid var(--edge);
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted, inherit);
+}
+
+.legend-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.legend-note {
+  font-size: 0.8rem;
+}
+
 .render-slider {
   flex: 1;
   min-width: 0;

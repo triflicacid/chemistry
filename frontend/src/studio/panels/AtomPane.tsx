@@ -23,11 +23,12 @@ interface AtomPaneProps {
 
 /** Describe a single atom. */
 export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
-  const { moveAtom, lockAtoms } = useSessionContext();
+  const { moveAtom, lockAtoms, charges } = useSessionContext();
   const { position } = atom;
   const fragment = index.fragmentOf({ kind: "atom", id: atom.id });
   const state = index.state;
   const locked = state.locked.includes(atom.id);
+  const partialCharge = charges?.status === "complete" && charges.session_id === state.session_id ? charges.charges.find((entry) => entry.id === atom.id)?.charge : undefined;
   return (
     <>
       <h3 className="pane-title">Atom {index.label(atom.id)}</h3>
@@ -40,6 +41,7 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
       <dl className="properties">
         <Property name="Aromatic" value={atom.aromatic ? "yes" : "no"} />
         <Property name="Radius" value={atom.radius.toFixed(3) + " Å"} />
+        {partialCharge !== undefined && <Property name="Partial charge" value={partialCharge.toFixed(3)} mono />}
         {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
         {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
       </dl>

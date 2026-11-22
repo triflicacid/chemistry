@@ -7,6 +7,8 @@ import type {
     AtomPlacement,
     BondEdit,
     BondOrder,
+    ChargesProgress,
+    ChargesResult,
     GeometryResult,
     HistoryEntry,
     Pose,
@@ -15,6 +17,7 @@ import type {
 } from "./messages";
 import {useCameraSave} from "./camera";
 import type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
+import {type Calculating, useCharges} from "./useCharges";
 import {useDrags} from "./useDrags";
 import {useEdits} from "./useEdits";
 import {useOptimise} from "./useOptimise";
@@ -34,6 +37,21 @@ export interface Session {
    * once the session has moved on; the server sends a fresh one shortly after every change.
    */
   geometry: GeometryResult | null;
+  /**
+   * The partial charge of every atom, as the server last said, once it has been asked. It describes the version in
+   * `version`, which is out of date once the session has moved on.
+   */
+  charges: ChargesResult | null;
+  /** The calculation of the charges that is under way, or null if there is none. */
+  calculatingCharges: Calculating | null;
+  /** How the calculation of the charges is getting on, or null if the server has not said. */
+  chargesProgress: ChargesProgress | null;
+  /**
+   * Asks the server for the partial charges of the session as it is now, which arrive as `charges`.
+   *
+   * @param model the name of the model to assign them with
+   */
+  requestCharges: (model: string) => void;
   activity: Activity[];
   /** Stores a molecule written as SMILES and opens a session on it. */
   openSmiles: (smiles: string) => void;
@@ -128,6 +146,7 @@ export function useSession(client?: ChemistryApi): Session {
   const drags = useDrags(socket, edits);
   const { optimising, outcome, optimise, cancelOptimise } = useOptimise(socket, edits, events);
   const saveCamera = useCameraSave(socket);
+  const { charges, calculating: calculatingCharges, progress: chargesProgress, requestCharges } = useCharges(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
   const { moveAtom, setAtom, addAtom, addBond, setBondOrder, deleteAtoms, fillValences, deleteBonds, setBondLength, setBondTorsion, setAngle, moveMolecule, lockAtoms, undo, redo, history, goTo, clearHistory, submitSmiles } = edits;
@@ -138,6 +157,10 @@ export function useSession(client?: ChemistryApi): Session {
     optimising,
     outcome,
     geometry,
+    charges,
+    calculatingCharges,
+    chargesProgress,
+    requestCharges,
     activity,
     openSmiles,
     submitSmiles,

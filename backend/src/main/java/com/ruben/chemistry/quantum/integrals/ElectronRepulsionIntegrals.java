@@ -3,7 +3,9 @@ package com.ruben.chemistry.quantum.integrals;
 import com.ruben.chemistry.quantum.basis.ContractedGaussian;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 
 /**
  * Coulomb repulsion between two electrons, each in a product of two Cartesian Gaussian basis functions, for any
@@ -11,6 +13,12 @@ import java.util.List;
  */
 public final class ElectronRepulsionIntegrals
 {
+    /** An integral whose Schwarz bound is below this, in hartree, is taken to be zero. */
+    static final double SCREENING_THRESHOLD = 1e-12;
+
+    /** A product of two primitives whose weighted Hermite expansion is smaller than this everywhere is left out. */
+    private static final double NEGLIGIBLE_PRODUCT = 1e-15;
+
     private ElectronRepulsionIntegrals()
     {
     }
@@ -28,11 +36,17 @@ public final class ElectronRepulsionIntegrals
             {
                 for (int j = 0; j < b.size(); j++)
                 {
-                    weights[pairs.size()] = a.coefficient(i) * b.coefficient(j);
-                    pairs.add(HermitePair.of(a, i, b, j));
+                    HermitePair pair = HermitePair.of(a, i, b, j);
+                    double weight = a.coefficient(i) * b.coefficient(j);
+                    // a product of primitives far apart or very unlike each other is nothing next to the rest
+                    if (Math.abs(weight) * pair.magnitude() >= NEGLIGIBLE_PRODUCT)
+                    {
+                        weights[pairs.size()] = weight;
+                        pairs.add(pair);
+                    }
                 }
             }
-            return new ContractedPair(pairs, weights);
+            return new ContractedPair(pairs, Arrays.copyOf(weights, pairs.size()));
         }
     }
 
@@ -49,49 +63,46 @@ public final class ElectronRepulsionIntegrals
     }
 
     /**
+     * Computed on every available core, leaving out the integrals that Schwarz screening shows cannot reach
+     * {@link #SCREENING_THRESHOLD}.
+     *
      * @param basis the basis functions
      * @return every electron-repulsion integral over the basis
      */
     public static ElectronRepulsionTensor tensor(List<ContractedGaussian> basis)
     {
         int n = basis.size();
-        double[] values = new double[n * n * n * n];
+        double[] values = new double[ElectronRepulsionTensor.length(n)];
 
-        // a pair (i, j) with i >= j has one index
-        List<int[]> indices = new ArrayList<>();
+        // the pair (i, j) with i >= j is at position i (i + 1) / 2 + j, which is the order they are added in
         List<ContractedPair> pairs = new ArrayList<>();
         for (int i = 0; i < n; i++)
         {
             for (int j = 0; j <= i; j++)
             {
-                indices.add(new int[] {i, j});
                 pairs.add(ContractedPair.of(basis.get(i), basis.get(j)));
             }
         }
 
-        for (int first = 0; first < pairs.size(); first++)
+        // (ab|cd) cannot be larger than sqrt((ab|ab) (cd|cd)), so a quartet whose bound is negligible is left at zero
+        double[] bounds = new double[pairs.size()];
+        IntStream.range(0, pairs.size()).parallel()
+                .forEach(pair -> bounds[pair] = Math.sqrt(Math.max(0.0, contract(pairs.get(pair), pairs.get(pair)))));
+
+        // each quartet has a slot of its own, so no two tasks write the same one
+        IntStream.range(0, pairs.size()).parallel().forEach(first ->
         {
             for (int second = 0; second <= first; second++)
             {
-                double value = contract(pairs.get(first), pairs.get(second));
-                int[] ij = indices.get(first);
-                int[] kl = indices.get(second);
-                store(values, n, ij[0], ij[1], kl[0], kl[1], value);
-            }
-        }
-        return new ElectronRepulsionTensor(n, values);
-    }
+                if (bounds[first] * bounds[second] < SCREENING_THRESHOLD)
+                {
+                    continue;
+                }
 
-    /**
-     * Writes the value at all eight index orders that are equal by symmetry.
-     */
-    private static void store(double[] values, int n, int i, int j, int k, int l, double value)
-    {
-        int[][] orders = {{i, j, k, l}, {j, i, k, l}, {i, j, l, k}, {j, i, l, k}, {k, l, i, j}, {l, k, i, j}, {k, l, j, i}, {l, k, j, i}};
-        for (int[] order : orders)
-        {
-            values[((order[0] * n + order[1]) * n + order[2]) * n + order[3]] = value;
-        }
+                values[ElectronRepulsionTensor.slot(first, second)] = contract(pairs.get(first), pairs.get(second));
+            }
+        });
+        return new ElectronRepulsionTensor(n, values);
     }
 
     private static double contract(ContractedPair left, ContractedPair right)
@@ -116,7 +127,8 @@ public final class ElectronRepulsionIntegrals
         double q = right.exponent();
         // the two densities interact like point charges with this reduced exponent
         double reduced = p * q / (p + q);
-        double[][][] coulomb = HermiteCoulomb.integrals(
+        int size = left.order() + right.order() + 1;
+        double[] coulomb = HermiteCoulomb.flat(
                 left.order() + right.order(),
                 reduced,
                 left.centre()[0] - right.centre()[0],
@@ -141,7 +153,7 @@ public final class ElectronRepulsionIntegrals
                             {
                                 // Hermite functions on the second centre are differentiated the opposite way round
                                 double sign = (tau + nu + phi) % 2 == 0 ? 1.0 : -1.0;
-                                inner += sign * f[0][tau] * f[1][nu] * f[2][phi] * coulomb[t + tau][u + nu][v + phi];
+                                inner += sign * f[0][tau] * f[1][nu] * f[2][phi] * coulomb[((t + tau) * size + u + nu) * size + v + phi];
                             }
                         }
                     }

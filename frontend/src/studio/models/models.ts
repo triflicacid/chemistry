@@ -2,6 +2,7 @@ import type {ChemistryStatus} from "../chemistry/useChemistry";
 import {CameraModel} from "./CameraModel";
 import {FocusModel} from "./FocusModel";
 import {HoverModel} from "./HoverModel";
+import {PropertiesModel} from "./PropertiesModel";
 import {RenderModel} from "./RenderModel";
 import {RevealModel} from "./RevealModel";
 import type {StateIndex} from "../geometry/StateIndex";
@@ -25,6 +26,8 @@ export interface Models {
   reveal: RevealModel;
   /** How the molecule is drawn. */
   render: RenderModel;
+  /** Which calculated properties are shown on it. */
+  properties: PropertiesModel;
   /** Looks identifiers up in the state the surfaces are showing; null until a session opens. */
   index: StateIndex | null;
   /** The molecule's chemistry. */
@@ -37,7 +40,7 @@ export interface Models {
  * @returns a selection and a hover model, with nothing selected, a tool model on the select tool, and a camera model
  *     that knows nothing until a viewport reports
  */
-export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render"> {
+export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render" | "properties"> {
   return {
     selection: new SelectionModel(),
     hover: new HoverModel(),
@@ -46,5 +49,6 @@ export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "
     focus: new FocusModel(),
     reveal: new RevealModel(),
     render: new RenderModel(),
+    properties: new PropertiesModel(),
   };
 }

@@ -118,6 +118,14 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session whose atoms' partial charges to calculate
+     * @param model the name of the model to assign them with (optional; {@link ChargeModels#DEFAULT} if absent)
+     */
+    public record ChargesRequest(String sessionId, String model)
+    {
+    }
+
+    /**
      * @param sessionId the session whose optimisation to stop
      */
     public record CancelOptimiseRequest(String sessionId)

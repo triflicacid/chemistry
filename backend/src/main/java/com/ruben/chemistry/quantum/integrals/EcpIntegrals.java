@@ -10,6 +10,7 @@ import com.ruben.chemistry.quantum.grid.SphericalGrid;
 import com.ruben.chemistry.quantum.linalg.Matrix;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 /**
  * Matrix elements of semilocal effective core potentials between basis functions, for any angular momentum.
@@ -19,6 +20,9 @@ import java.util.List;
  */
 public final class EcpIntegrals
 {
+    /** A shell whose potential, weighted by its quadrature weight, is smaller than this in every channel is left out, in hartree. */
+    private static final double NEGLIGIBLE = 1e-14;
+
     private EcpIntegrals()
     {
     }
@@ -82,68 +86,135 @@ public final class EcpIntegrals
             }
         }
 
-        double[][] values = new double[n][directions];
-        for (int shell = 0; shell < radial.size(); shell++)
+        // far from the centre the potential has decayed to nothing, and a shell there adds only rounding noise
+        List<Integer> active = IntStream.range(0, radial.size())
+                .filter(shell -> reaches(potential, radial.radii()[shell], radial.weights()[shell]))
+                .boxed()
+                .toList();
+
+        // shells are independent of one another, so each is integrated on its own and the results added up
+        double[][] total = active.parallelStream()
+                .map(shell -> shellContribution(basis, centre, potential, radial, angular, harmonics, shell))
+                .reduce(new double[n][n], EcpIntegrals::added);
+        for (int a = 0; a < n; a++)
         {
-            double r = radial.radii()[shell];
-            double weight = radial.weights()[shell];
+            for (int b = 0; b <= a; b++)
+            {
+                sum[a][b] += total[a][b];
+            }
+        }
+    }
+
+    /**
+     * @return whether the potential on a shell of this radius and weight is big enough to matter
+     */
+    private static boolean reaches(EffectiveCorePotential potential, double r, double weight)
+    {
+        if (Math.abs(weight * radialValue(potential.local(), r)) > NEGLIGIBLE)
+        {
+            return true;
+        }
+        for (int l = 0; l < potential.maxAngularMomentum(); l++)
+        {
+            if (Math.abs(weight * radialValue(potential.projectors().get(l), r)) > NEGLIGIBLE)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return the sum of two lower-triangle matrices, in a new one if neither is the empty starting value, otherwise in the other
+     */
+    private static double[][] added(double[][] first, double[][] second)
+    {
+        for (int a = 0; a < first.length; a++)
+        {
+            for (int b = 0; b <= a; b++)
+            {
+                second[a][b] += first[a][b];
+            }
+        }
+        return second;
+    }
+
+    /**
+     * @return the lower triangle of what one radial shell of the centre adds to the matrix
+     */
+    private static double[][] shellContribution(
+            List<ContractedGaussian> basis,
+            EcpCentre centre,
+            EffectiveCorePotential potential,
+            RadialGrid radial,
+            SphericalGrid angular,
+            double[][][] harmonics,
+            int shell)
+    {
+        int n = basis.size();
+        int directions = angular.size();
+        double[][] sum = new double[n][n];
+        double[][] values = new double[n][directions];
+
+        double r = radial.radii()[shell];
+        double weight = radial.weights()[shell];
+        for (int b = 0; b < n; b++)
+        {
+            for (int j = 0; j < directions; j++)
+            {
+                values[b][j] = basis.get(b).valueAt(
+                        centre.position().x() + r * angular.x()[j],
+                        centre.position().y() + r * angular.y()[j],
+                        centre.position().z() + r * angular.z()[j]);
+            }
+        }
+
+        // the local part acts on every electron, so it is just a weighted overlap on this shell
+        double local = weight * radialValue(potential.local(), r);
+        for (int a = 0; a < n; a++)
+        {
+            for (int b = 0; b <= a; b++)
+            {
+                double overlap = 0.0;
+                for (int j = 0; j < directions; j++)
+                {
+                    overlap += angular.weights()[j] * values[a][j] * values[b][j];
+                }
+                sum[a][b] += local * overlap;
+            }
+        }
+
+        // each projector keeps only the l-th angular component of a function on this shell
+        for (int l = 0; l < potential.maxAngularMomentum(); l++)
+        {
+            double radialFactor = weight * radialValue(potential.projectors().get(l), r);
+            int components = 2 * l + 1;
+            double[][] projected = new double[n][components];
             for (int b = 0; b < n; b++)
             {
                 for (int j = 0; j < directions; j++)
                 {
-                    values[b][j] = basis.get(b).valueAt(
-                            centre.position().x() + r * angular.x()[j],
-                            centre.position().y() + r * angular.y()[j],
-                            centre.position().z() + r * angular.z()[j]);
+                    double weighted = angular.weights()[j] * values[b][j];
+                    for (int m = 0; m < components; m++)
+                    {
+                        projected[b][m] += weighted * harmonics[l][j][m];
+                    }
                 }
             }
-
-            // the local part acts on every electron, so it is just a weighted overlap on this shell
-            double local = weight * radialValue(potential.local(), r);
             for (int a = 0; a < n; a++)
             {
                 for (int b = 0; b <= a; b++)
                 {
                     double overlap = 0.0;
-                    for (int j = 0; j < directions; j++)
+                    for (int m = 0; m < components; m++)
                     {
-                        overlap += angular.weights()[j] * values[a][j] * values[b][j];
+                        overlap += projected[a][m] * projected[b][m];
                     }
-                    sum[a][b] += local * overlap;
-                }
-            }
-
-            // each projector keeps only the l-th angular component of a function on this shell
-            for (int l = 0; l < potential.maxAngularMomentum(); l++)
-            {
-                double radialFactor = weight * radialValue(potential.projectors().get(l), r);
-                int components = 2 * l + 1;
-                double[][] projected = new double[n][components];
-                for (int b = 0; b < n; b++)
-                {
-                    for (int j = 0; j < directions; j++)
-                    {
-                        double weighted = angular.weights()[j] * values[b][j];
-                        for (int m = 0; m < components; m++)
-                        {
-                            projected[b][m] += weighted * harmonics[l][j][m];
-                        }
-                    }
-                }
-                for (int a = 0; a < n; a++)
-                {
-                    for (int b = 0; b <= a; b++)
-                    {
-                        double overlap = 0.0;
-                        for (int m = 0; m < components; m++)
-                        {
-                            overlap += projected[a][m] * projected[b][m];
-                        }
-                        sum[a][b] += radialFactor * overlap;
-                    }
+                    sum[a][b] += radialFactor * overlap;
                 }
             }
         }
+        return sum;
     }
 
     /**
