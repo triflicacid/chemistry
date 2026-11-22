@@ -13,6 +13,7 @@ import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import type {ScreenRect} from "../viewport/StudioViewListener";
 import {chargeScale} from "./chargeScale";
+import {decodeEsp, espSurface, sampleGrid, toKcalPerCharge} from "./esp";
 import {answers, drawnOrbitals, fragmentsFor, resolveTargets} from "./orbitals";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
@@ -47,6 +48,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     forces,
     orbitals,
     fields: orbitalFieldList,
+    esp,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -118,7 +120,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
 
   // atoms are coloured by what the server last calculated for them. A result a little behind the session is kept, so that
   // the colours do not flicker while an atom is dragged, and the Properties section says that it is updating
-  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces } = useObservable(models.properties);
+  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces, espSurface: espOn, espIsovalue, espOpacity } = useObservable(models.properties);
   const charged = useMemo(() => (colourBy === "charge" && charges?.session_id === state?.session_id ? chargeScale(charges) : null), [colourBy, charges, state?.session_id]);
   useEffect(() => {
     view?.colourAtoms(charged?.colours ?? null);
@@ -132,6 +134,49 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.showForces(forceable ? forces : null, { scale: forceScale, net: netForces, debug });
   }, [view, forceable, forces, forceScale, netForces, debug]);
+
+  // the potential is drawn only for the version it was worked out at, since a surface that stays where the atoms were is worse than none
+  const espCurrent = espOn && esp !== null && state !== null && esp.session_id === state.session_id && esp.version === state.version;
+  const surface = useMemo(() => {
+    const decoded = espCurrent && esp ? decodeEsp(esp) : null;
+    return decoded ? espSurface(decoded, espIsovalue) : null;
+  }, [espCurrent, esp, espIsovalue]);
+  useEffect(() => {
+    view?.showEsp(surface, { opacity: espOpacity, limit: surface?.limit ?? 1 });
+  }, [view, surface, espOpacity]);
+
+  // with Debug on, the density and potential under the pointer are read where it is on the surface
+  const [probe, setProbe] = useState<{ left: number; top: number; density: number; potential: number } | null>(null);
+  const decodedEsp = useMemo(() => (espCurrent && esp ? decodeEsp(esp) : null), [espCurrent, esp]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!view || !canvas || !debug || !decodedEsp || !surface) {
+      setProbe(null);
+      return;
+    }
+    const move = (event: PointerEvent) => {
+      const at = event.buttons === 0 ? view.probeEsp(event) : null;
+      if (!at) {
+        setProbe(null);
+        return;
+      }
+      const box = canvas.getBoundingClientRect();
+      setProbe({
+        left: event.clientX - box.left,
+        top: event.clientY - box.top,
+        density: sampleGrid(decodedEsp.density, decodedEsp.shape, at.x, at.y, at.z),
+        potential: sampleGrid(decodedEsp.potential, decodedEsp.shape, at.x, at.y, at.z),
+      });
+    };
+    const leave = () => setProbe(null);
+    canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerleave", leave);
+    return () => {
+      canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerleave", leave);
+      setProbe(null);
+    };
+  }, [view, debug, decodedEsp, surface]);
 
   // the hydrogen bond the scan is on is drawn from where its atoms are now, so it is redrawn as they move
   const bond = useObservable(models.hydrogenBond);
@@ -402,6 +447,13 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   return (
     <section className="viewport" aria-label="3D viewport">
       <canvas ref={canvasRef} className="viewport-canvas" />
+      {probe && (
+        <div className="field-probe" style={{ left: probe.left + 14, top: probe.top + 14 }} aria-hidden="true">
+          density {probe.density.toFixed(4)} e/bohr³
+          <br />
+          potential {Number.isNaN(probe.potential) ? "n/a" : `${toKcalPerCharge(probe.potential).toFixed(1)} kcal/mol/e`}
+        </div>
+      )}
       {selectionArea && <div className="marquee" style={{ left: selectionArea.x, top: selectionArea.y, width: selectionArea.width, height: selectionArea.height }} aria-hidden="true" />}
       {state && (
         <>

@@ -1,6 +1,7 @@
 package com.ruben.chemistry.server.studio;
 
 import com.ruben.chemistry.quantum.basis.BasisLibrary;
+import com.ruben.chemistry.quantum.field.ElectronDensity;
 import com.ruben.chemistry.quantum.field.FieldGrid;
 import com.ruben.chemistry.quantum.field.MolecularOrbitals;
 import com.ruben.chemistry.quantum.field.OrbitalComposition;
@@ -38,6 +39,12 @@ public final class OrbitalScheduler implements AutoCloseable
 
     /** The least spacing of the grid, in ångström. */
     public static final double FINEST = 0.2;
+
+    /** The least density, in electrons per cubic bohr, at which the electrostatic potential is found, which is below any surface worth drawing. */
+    public static final double POTENTIAL_FROM = 0.0005;
+
+    /** The greatest density at which it is found, which is above any surface worth drawing. */
+    public static final double POTENTIAL_TO = 0.03;
 
     /** The kind of calculation that is closed-shell where the electrons pair up and unrestricted where they do not. */
     public static final String AUTOMATIC = ChargeModels.MULLIKEN;
@@ -80,6 +87,7 @@ public final class OrbitalScheduler implements AutoCloseable
     private final JobScheduler<OrbitalReport> levels;
     private final JobScheduler<List<FieldReport>> fields;
     private final JobScheduler<InteractionReport> interactions;
+    private final JobScheduler<EspReport> potentials;
     private final Wavefunctions wavefunctions;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
     private final Object lock = new Object();
@@ -103,6 +111,7 @@ public final class OrbitalScheduler implements AutoCloseable
         this.levels = new JobScheduler<>(debounce);
         this.fields = new JobScheduler<>(debounce);
         this.interactions = new JobScheduler<>(debounce);
+        this.potentials = new JobScheduler<>(debounce);
         this.wavefunctions = Objects.requireNonNull(wavefunctions, "wavefunctions");
     }
 
@@ -174,7 +183,7 @@ public final class OrbitalScheduler implements AutoCloseable
                     return List.copyOf(reports);
                 },
                 (described, elapsedMs, message) -> asked.stream()
-                        .map(target -> FieldReport.failed(session, described.version(), FieldReport.ORBITAL, target.orbital(), target.spin(), target.fragment(), elapsedMs, message))
+                        .map(target -> FieldReport.failed(session, described.version(), target.orbital(), target.spin(), target.fragment(), elapsedMs, message))
                         .toList(),
                 deliver);
     }
@@ -270,6 +279,39 @@ public final class OrbitalScheduler implements AutoCloseable
         return links;
     }
 
+    /**
+     * Asks for the electron density of the session, or of one of its molecules, with its electrostatic potential beside it, on a grid round the
+     * atoms, once the session has been left alone, replacing any such request for it that is waiting. The potential is found only where the
+     * density is near enough to the surfaces it can be drawn on to be of use.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void potential(StudioSession session, String requested, String fragment, Consumer<EspReport> deliver)
+    {
+        String model = resolve(requested);
+        potentials.schedule(session,
+                (described, run) ->
+                {
+                    try
+                    {
+                        Cached made = calculation(session, described, model, fragment, run);
+                        FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), MARGIN, LONGEST_SIDE, FINEST);
+                        float[] density = ElectronDensity.evaluate(made.orbitals(), grid, run::check);
+                        float[] potential = ElectronDensity.potential(made.orbitals(), grid, density, POTENTIAL_FROM, POTENTIAL_TO, run::check);
+                        return EspReport.of(session, described.version(), fragment, grid, density, potential).elapsed(run.elapsedMs());
+                    }
+                    catch (IllegalArgumentException unsuitable)
+                    {
+                        return EspReport.failed(session, described.version(), fragment, run.elapsedMs(), unsuitable.getMessage());
+                    }
+                },
+                (described, elapsedMs, message) -> EspReport.failed(session, described.version(), fragment, elapsedMs, message),
+                deliver);
+    }
+
     /** Stops calculating anything, and abandons what is waiting. */
     @Override
     public void close()
@@ -277,6 +319,7 @@ public final class OrbitalScheduler implements AutoCloseable
         levels.close();
         fields.close();
         interactions.close();
+        potentials.close();
     }
 
     /**
@@ -293,19 +336,19 @@ public final class OrbitalScheduler implements AutoCloseable
         MolecularOrbitals.Channel channel = made.orbitals().channel(target.spin());
         if (channel == null)
         {
-            return FieldReport.failed(session, described.version(), FieldReport.ORBITAL, target.orbital(), target.spin(), target.fragment(), run.elapsedMs(),
+            return FieldReport.failed(session, described.version(), target.orbital(), target.spin(), target.fragment(), run.elapsedMs(),
                     "This calculation has no " + target.spin() + " orbitals; it has " + made.orbitals().channels().stream().map(MolecularOrbitals.Channel::spin).toList());
         }
         if (target.orbital() < 0 || target.orbital() >= channel.energies().length)
         {
-            return FieldReport.failed(session, described.version(), FieldReport.ORBITAL, target.orbital(), target.spin(), target.fragment(), run.elapsedMs(),
+            return FieldReport.failed(session, described.version(), target.orbital(), target.spin(), target.fragment(), run.elapsedMs(),
                     "There is no orbital " + target.orbital() + "; there are " + channel.energies().length);
         }
 
         List<Vec3> positions = made.structure().conformers().getFirst().positions();
         FieldGrid grid = FieldGrid.around(positions, MARGIN, LONGEST_SIDE, FINEST);
         float[] values = OrbitalField.evaluate(made.orbitals().basis(), channel.coefficients().column(target.orbital()), grid, run::check);
-        return FieldReport.of(session, described.version(), FieldReport.ORBITAL, target.orbital(), target.spin(), target.fragment(), grid, values).elapsed(run.elapsedMs());
+        return FieldReport.of(session, described.version(), target.orbital(), target.spin(), target.fragment(), grid, values).elapsed(run.elapsedMs());
     }
 
     /**

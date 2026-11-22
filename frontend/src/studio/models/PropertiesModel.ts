@@ -47,6 +47,28 @@ export function clampForceScale(scale: number): number {
   return Number.isFinite(scale) ? Math.round(Math.min(MAX_FORCE_SCALE, Math.max(MIN_FORCE_SCALE, scale)) * 100) / 100 : 1;
 }
 
+export const MIN_ESP_ISOVALUE = 0.001;
+export const MAX_ESP_ISOVALUE = 0.02;
+export const DEFAULT_ESP_ISOVALUE = 0.004;
+export const MIN_ESP_OPACITY = 0.3;
+export const DEFAULT_ESP_OPACITY = 0.9;
+
+/**
+ * @param isovalue an electron density in electrons per cubic bohr
+ * @returns the nearest density a surface can be drawn at, to the thousandth
+ */
+export function clampEspIsovalue(isovalue: number): number {
+  return Number.isFinite(isovalue) ? Math.round(Math.min(MAX_ESP_ISOVALUE, Math.max(MIN_ESP_ISOVALUE, isovalue)) * 1000) / 1000 : DEFAULT_ESP_ISOVALUE;
+}
+
+/**
+ * @param opacity how opaque a surface is
+ * @returns the nearest opacity it can be drawn at, to the hundredth
+ */
+export function clampEspOpacity(opacity: number): number {
+  return Number.isFinite(opacity) ? Math.round(Math.min(1, Math.max(MIN_ESP_OPACITY, opacity)) * 100) / 100 : DEFAULT_ESP_OPACITY;
+}
+
 export const MIN_POLAR_THRESHOLD = 0.05;
 export const MAX_POLAR_THRESHOLD = 0.6;
 export const DEFAULT_POLAR_THRESHOLD = 0.2;
@@ -77,6 +99,12 @@ export interface PropertiesState {
   forceScale: number;
   /** Whether the total force and torque on each molecule are drawn too. */
   netForces: boolean;
+  /** Whether the electron density is drawn as a surface coloured by the electrostatic potential. */
+  espSurface: boolean;
+  /** The density, in electrons per cubic bohr, that the surface is at. */
+  espIsovalue: number;
+  /** How opaque the surface is. */
+  espOpacity: number;
   /** Whether the Properties section is open. */
   open: boolean;
 }
@@ -153,6 +181,35 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   /**
+   * @param espSurface whether to draw the electron density coloured by the electrostatic potential
+   */
+  espSurfaceTo(espSurface: boolean): void {
+    if (this.get().espSurface !== espSurface) {
+      this.change({ ...this.get(), espSurface });
+    }
+  }
+
+  /**
+   * @param isovalue the density the surface is at, in electrons per cubic bohr
+   */
+  espIsovalueTo(isovalue: number): void {
+    const espIsovalue = clampEspIsovalue(isovalue);
+    if (this.get().espIsovalue !== espIsovalue) {
+      this.change({ ...this.get(), espIsovalue });
+    }
+  }
+
+  /**
+   * @param opacity how opaque the surface is
+   */
+  espOpacityTo(opacity: number): void {
+    const espOpacity = clampEspOpacity(opacity);
+    if (this.get().espOpacity !== espOpacity) {
+      this.change({ ...this.get(), espOpacity });
+    }
+  }
+
+  /**
    * Opens or closes the Properties section.
    *
    * @param open whether it is open
@@ -173,7 +230,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, open: false };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, espSurface: false, espIsovalue: DEFAULT_ESP_ISOVALUE, espOpacity: DEFAULT_ESP_OPACITY, open: false };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -193,6 +250,9 @@ export class PropertiesModel extends Observable<PropertiesState> {
       forceScale: typeof held.forceScale === "number" ? clampForceScale(held.forceScale) : defaults.forceScale,
       netForces: typeof held.netForces === "boolean" ? held.netForces : defaults.netForces,
       polarThreshold: typeof held.polarThreshold === "number" ? clampPolarThreshold(held.polarThreshold) : defaults.polarThreshold,
+      espSurface: typeof held.espSurface === "boolean" ? held.espSurface : defaults.espSurface,
+      espIsovalue: typeof held.espIsovalue === "number" ? clampEspIsovalue(held.espIsovalue) : defaults.espIsovalue,
+      espOpacity: typeof held.espOpacity === "number" ? clampEspOpacity(held.espOpacity) : defaults.espOpacity,
       open: typeof held.open === "boolean" ? held.open : defaults.open,
     };
   }

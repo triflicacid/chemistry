@@ -47,7 +47,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 25;
+    private static final int PROTOCOL_VERSION = 26;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -934,6 +934,47 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "interaction.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for the electron density of a session, with its electrostatic potential, on a grid round its atoms. The answer says only that the
+     * request was understood; the field follows, from another thread, as {@code esp.result}, which is dropped if the
+     * session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestEsp(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.EspRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.EspRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("esp.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("esp.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        orbitals.potential(session, request.model(), request.fragment(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "esp.request.ack");
         ack.put("sequence", sequence);
         context.sendJson(ack);
     }
@@ -1829,6 +1870,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("orbitals.request", endpoint::requestOrbitals),
                     Map.entry("field.request", endpoint::requestField),
                     Map.entry("interaction.request", endpoint::requestInteraction),
+                    Map.entry("esp.request", endpoint::requestEsp),
                     Map.entry("edit.undo", endpoint::undo),
                     Map.entry("edit.redo", endpoint::redo),
                     Map.entry("history.list", endpoint::history),

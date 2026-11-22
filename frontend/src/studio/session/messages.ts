@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 25;
+export const PROTOCOL_VERSION = 26;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -708,32 +708,69 @@ export interface FieldRequestAck extends ServerEnvelope {
   type: "field.request.ack";
 }
 
+/** Where the points of a field are: a regular grid in the session's space. */
+export interface FieldGridMessage {
+  /** Where the point with all indices zero is, in the session's frame, in angstroms. */
+  origin: Vec3;
+  /** The distance between neighbouring points, in angstroms. */
+  spacing: number;
+  /** How many points there are along x, y and z. */
+  nx: number;
+  ny: number;
+  nz: number;
+}
+
 /**
- * A number at every point of a grid in the session's space, such as the value of an orbital, sent on the server's own
- * initiative after a request. It describes the geometry at `version`.
+ * One molecular orbital at every point of a grid in the session's space, sent on the server's own initiative after a request.
+ * It describes the geometry at `version`.
  */
 export interface FieldResult extends ServerEnvelope {
   type: "field.result";
   session_id: string;
   version: number;
   status: "complete" | "failed";
-  /** What the field is. */
-  kind: "orbital";
   /** Which orbital it is, counting from the lowest in energy at zero. */
-  orbital: number | null;
+  orbital: number;
   /** Which set of orbitals it is of: `restricted`, `alpha` or `beta`. */
-  spin: "restricted" | "alpha" | "beta" | null;
+  spin: "restricted" | "alpha" | "beta";
   /** An atom of the molecule the field is of, as the client asked, or null for the whole session. */
   fragment: string | null;
-  /** Where the point with all indices zero is, in the session's frame, in angstroms. */
-  origin: Vec3 | null;
-  /** The distance between neighbouring points, in angstroms. */
-  spacing: number | null;
-  nx: number;
-  ny: number;
-  nz: number;
-  /** Every point's value as a little-endian 32-bit float in base64, running along x fastest, then y, then z. */
+  /** Where the points are, or null if there is no field. */
+  grid: FieldGridMessage | null;
+  /** Every point's amplitude as a little-endian 32-bit float in base64, running along x fastest, then y, then z. */
   values: string | null;
+  min: number | null;
+  max: number | null;
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
+/** The answer to a request for the electrostatic potential, which says only that the request was understood: it follows as an `esp.result`. */
+export interface EspRequestAck extends ServerEnvelope {
+  type: "esp.request.ack";
+}
+
+/**
+ * The electron density at every point of a grid, with the electrostatic potential beside it, sent on the server's own initiative after
+ * a request. It describes the geometry at `version`.
+ */
+export interface EspResult extends ServerEnvelope {
+  type: "esp.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** An atom of the molecule it is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** Where the points are, or null if there is no field. */
+  grid: FieldGridMessage | null;
+  /** Every point's electron density, in electrons per cubic bohr, in the same form as an orbital's values. */
+  density: string | null;
+  /**
+   * The electrostatic potential at each point in the same form, in hartree per elementary charge, which is NaN at the points that are
+   * not near enough to a surface of the density to be worth finding it at.
+   */
+  potential: string | null;
   min: number | null;
   max: number | null;
   elapsed_ms: number;
@@ -832,5 +869,7 @@ export type ServerMessage =
   | FieldResult
   | InteractionRequestAck
   | InteractionResult
+  | EspRequestAck
+  | EspResult
   | SocketError
   | Pong;

@@ -1,6 +1,7 @@
 package com.ruben.chemistry.quantum.field;
 
 import com.ruben.chemistry.quantum.basis.BasisSet;
+import com.ruben.chemistry.quantum.integrals.PointCharge;
 import com.ruben.chemistry.quantum.linalg.Matrix;
 import com.ruben.chemistry.quantum.population.RhfMullikenCharges;
 import com.ruben.chemistry.quantum.population.RohfMullikenCharges;
@@ -18,11 +19,13 @@ import java.util.List;
  *
  * @param basis the basis functions the orbitals are combinations of, placed on the molecule, in bohr
  * @param overlap the overlap of each basis function with each other, which the orbitals are normalised with
+ * @param density the density matrix of all the electrons, both spins together, over the basis functions
+ * @param nuclei the nuclei as the point charges the electrons see, which are the effective charges where a core is replaced by a potential, in bohr
  * @param channels the sets of orbitals: one, or two for an unrestricted calculation, the spin-up set first
  * @param totalEnergy the total energy of the calculation, in hartree
  * @param iterations how many Fock builds it took
  */
-public record MolecularOrbitals(BasisSet basis, Matrix overlap, List<Channel> channels, double totalEnergy, int iterations)
+public record MolecularOrbitals(BasisSet basis, Matrix overlap, Matrix density, List<PointCharge> nuclei, List<Channel> channels, double totalEnergy, int iterations)
 {
     /** The name of the one set of orbitals that both spins share. */
     public static final String RESTRICTED = "restricted";
@@ -78,7 +81,7 @@ public record MolecularOrbitals(BasisSet basis, Matrix overlap, List<Channel> ch
         {
             occupancy[index] = 2;
         }
-        return new MolecularOrbitals(calculation.basis(), result.overlap(), List.of(new Channel(RESTRICTED, result.orbitalEnergies(), result.coefficients(), occupancy)),
+        return new MolecularOrbitals(calculation.basis(), result.overlap(), result.density(), calculation.nuclei(), List.of(new Channel(RESTRICTED, result.orbitalEnergies(), result.coefficients(), occupancy)),
                 result.totalEnergy(), result.iterations());
     }
 
@@ -89,7 +92,7 @@ public record MolecularOrbitals(BasisSet basis, Matrix overlap, List<Channel> ch
     public static MolecularOrbitals of(UhfMullikenCharges.Calculation calculation)
     {
         UnrestrictedScfResult result = calculation.result();
-        return new MolecularOrbitals(calculation.basis(), result.overlap(),
+        return new MolecularOrbitals(calculation.basis(), result.overlap(), result.alphaDensity().plus(result.betaDensity()), calculation.nuclei(),
                 List.of(
                         new Channel(ALPHA, result.alphaOrbitalEnergies(), result.alphaCoefficients(), filled(result.alphaOrbitalEnergies().length, 0, result.alphaElectrons())),
                         new Channel(BETA, result.betaOrbitalEnergies(), result.betaCoefficients(), filled(result.betaOrbitalEnergies().length, 0, result.betaElectrons()))),
@@ -108,7 +111,8 @@ public record MolecularOrbitals(BasisSet basis, Matrix overlap, List<Channel> ch
         {
             occupancy[index] = index < result.closedOrbitals() ? 2 : 1;
         }
-        return new MolecularOrbitals(calculation.basis(), result.overlap(), List.of(new Channel(RESTRICTED, result.orbitalEnergies(), result.coefficients(), occupancy)),
+        return new MolecularOrbitals(calculation.basis(), result.overlap(), result.alphaDensity().plus(result.betaDensity()), calculation.nuclei(),
+                List.of(new Channel(RESTRICTED, result.orbitalEnergies(), result.coefficients(), occupancy)),
                 result.totalEnergy(), result.iterations());
     }
 

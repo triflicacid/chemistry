@@ -2,17 +2,17 @@ import {useState} from "react";
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import {
-  ALL,
-  COUNTS,
-  DEFAULT_ISOVALUE,
-  DEFAULT_OPACITY,
-  MAX_ISOVALUE,
-  MAX_SHOWN,
-  MIN_ISOVALUE,
-  ORBITAL_KINDS,
-  type OrbitalChoice,
-  type OrbitalKind,
-  type OrbitalScope,
+    ALL,
+    COUNTS,
+    DEFAULT_ISOVALUE,
+    DEFAULT_OPACITY,
+    MAX_ISOVALUE,
+    MAX_SHOWN,
+    MIN_ISOVALUE,
+    ORBITAL_KINDS,
+    type OrbitalChoice,
+    type OrbitalKind,
+    type OrbitalScope,
 } from "../models/OrbitalModel";
 import {type Bar, BarChart} from "../controls/BarChart";
 import {type Segment, Segmented} from "../controls/Segmented";
@@ -20,21 +20,21 @@ import {InteractionDiagram} from "../controls/InteractionDiagram";
 import {type ChartSeries, LineChart} from "../controls/LineChart";
 import {type DrawnChannel, LevelDiagram} from "../controls/LevelDiagram";
 import {
-  answers,
-  type DecodedField,
-  decodeField,
-  densityOfStates,
-  enclosedShare,
-  fieldsFor,
-  fragmentsFor,
-  frontierGaps,
-  frontiers,
-  nameAt,
-  nameOf,
-  nearGap,
-  resolveTargets,
-  smallestGap,
-  toEv,
+    answers,
+    type DecodedField,
+    decodeField,
+    densityOfStates,
+    enclosedShare,
+    fieldsFor,
+    fragmentsFor,
+    frontierGaps,
+    frontiers,
+    nameAt,
+    nameOf,
+    nearGap,
+    resolveTargets,
+    smallestGap,
+    toEv,
 } from "../layout/orbitals";
 import {atomShares, characterOf, KINDS, localisationBars, piBars, spinSplittings} from "../layout/composition";
 import type {FieldResult, OrbitalChannel, OrbitalTarget, SessionState} from "../session/messages";
@@ -346,10 +346,10 @@ function OrbitalsDebug({ channels, nameOfMolecule }: { channels: readonly DrawnC
         {orbitals?.model?.toUpperCase()} · {orbitals?.electrons} electrons · {orbitals?.iterations} Fock builds · {orbitals?.total_energy?.toFixed(6)} Eh
       </p>
       {fields
-        .filter((field) => field.status === "complete" && field.spacing !== null)
+        .filter((field) => field.status === "complete" && field.grid !== null)
         .map((field) => (
           <p key={`${field.fragment}|${field.spin}|${field.orbital}`} className="energy-note debug-note">
-            {nameOfMolecule(field.fragment) ?? "all"} {field.spin} orbital {field.orbital}: {field.nx}×{field.ny}×{field.nz} points, {field.spacing?.toFixed(3)} Å apart · {field.min?.toPrecision(3)} to{" "}
+            {nameOfMolecule(field.fragment) ?? "all"} {field.spin} orbital {field.orbital}: {field.grid?.nx}×{field.grid?.ny}×{field.grid?.nz} points, {field.grid?.spacing.toFixed(3)} Å apart · {field.min?.toPrecision(3)} to{" "}
             {field.max?.toPrecision(3)} · {field.elapsed_ms} ms
           </p>
         ))}

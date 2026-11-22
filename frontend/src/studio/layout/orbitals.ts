@@ -48,13 +48,22 @@ const decoded = new WeakMap<FieldResult, DecodedField | null>();
  * @returns its values and where its grid is, or null if it has none or they are not the size the grid says
  */
 function decode(field: FieldResult): DecodedField | null {
-  if (field.status !== "complete" || field.values === null || field.origin === null || field.spacing === null) {
+  if (field.status !== "complete" || field.values === null || field.grid === null) {
     return null;
   }
 
-  const text = atob(field.values);
-  const count = Math.floor(text.length / 4);
-  if (count !== field.nx * field.ny * field.nz) {
+  const values = decodeFloats(field.values, field.grid.nx * field.grid.ny * field.grid.nz);
+  return values ? { values, shape: field.grid } : null;
+}
+
+/**
+ * @param base64 numbers as little-endian 32-bit floats in base64, as the server sends a field
+ * @param count how many numbers there should be
+ * @returns the numbers, or null if there are not that many
+ */
+export function decodeFloats(base64: string, count: number): Float32Array | null {
+  const text = atob(base64);
+  if (Math.floor(text.length / 4) !== count) {
     return null;
   }
 
@@ -66,7 +75,7 @@ function decode(field: FieldResult): DecodedField | null {
   for (let i = 0; i < count; i++) {
     values[i] = bytes.getFloat32(i * 4, true);
   }
-  return { values, shape: { nx: field.nx, ny: field.ny, nz: field.nz, origin: field.origin, spacing: field.spacing } };
+  return values;
 }
 
 /**

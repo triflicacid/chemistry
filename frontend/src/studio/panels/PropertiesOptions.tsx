@@ -4,9 +4,13 @@ import {
     CHARGE_MODELS,
     type ChargeModel,
     type ColourBy,
+    DEFAULT_ESP_ISOVALUE,
     DEFAULT_POLAR_THRESHOLD,
+    MAX_ESP_ISOVALUE,
     MAX_FORCE_SCALE,
     MAX_POLAR_THRESHOLD,
+    MIN_ESP_ISOVALUE,
+    MIN_ESP_OPACITY,
     MIN_FORCE_SCALE,
     MIN_POLAR_THRESHOLD,
 } from "../models/PropertiesModel";
@@ -18,6 +22,7 @@ import {chargeScale} from "../layout/chargeScale";
 import type {ChargesProgress} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
 import {ForceDebug} from "./ForceDebug";
+import {decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
 
 /** What the atoms can be coloured by, with what each means. */
 const COLOUR_OPTIONS: { value: ColourBy; label: string; title: string }[] = [
@@ -31,7 +36,7 @@ const TICK_MS = 100;
 /** What is shown on the molecule beyond its shape: which calculated property the atoms are coloured by. */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, open } = useObservable(properties);
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, espSurface, espIsovalue, espOpacity, open } = useObservable(properties);
   const debug = useObservable(models.debug);
 
   return (
@@ -129,6 +134,48 @@ export function PropertiesOptions({ models }: { models: Models }) {
               <ForceStatus net={netForces} debug={debug} scale={forceScale} models={models} />
             </>
           )}
+          <dt>Surface</dt>
+          <dd>
+            <label className="legend-check" title="Draw the electron density as a surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive">
+              <input type="checkbox" checked={espSurface} onChange={(event) => properties.espSurfaceTo(event.target.checked)} />
+              Potential on density surface
+            </label>
+          </dd>
+          {espSurface && (
+            <>
+              <dt>Density</dt>
+              <dd className="position">
+                <input
+                  type="range"
+                  className="render-slider"
+                  min={Math.round(MIN_ESP_ISOVALUE * 1000)}
+                  max={Math.round(MAX_ESP_ISOVALUE * 1000)}
+                  step={1}
+                  value={Math.round(espIsovalue * 1000)}
+                  aria-label="The electron density at the surface, in electrons per cubic bohr"
+                  title="The electron density the surface is at: lower is a larger, looser surface. Double-click to put it back"
+                  onChange={(event) => properties.espIsovalueTo(Number(event.target.value) / 1000)}
+                  onDoubleClick={() => properties.espIsovalueTo(DEFAULT_ESP_ISOVALUE)}
+                />
+                <span className="unit render-value">{espIsovalue.toFixed(3)}</span>
+              </dd>
+              <dt>Opacity</dt>
+              <dd className="position">
+                <input
+                  type="range"
+                  className="render-slider"
+                  min={Math.round(MIN_ESP_OPACITY * 100)}
+                  max={100}
+                  step={5}
+                  value={Math.round(espOpacity * 100)}
+                  aria-label="How opaque the surface is"
+                  onChange={(event) => properties.espOpacityTo(Number(event.target.value) / 100)}
+                />
+                <span className="unit render-value">{Math.round(espOpacity * 100)}%</span>
+              </dd>
+              <EspLegend isovalue={espIsovalue} />
+            </>
+          )}
         </dl>
       )}
     </section>
@@ -179,6 +226,51 @@ function ChargeLegend() {
           <dd className="legend-note">
             {describeConvention(charges.convention)}
             {current && !calculatingCharges ? <Took milliseconds={charges.elapsed_ms} /> : " (updating…)"}
+          </dd>
+        </>
+      )}
+    </>
+  );
+}
+
+/** How the potential calculation is getting on, and what the colours of its surface mean. */
+function EspLegend({ isovalue }: { isovalue: number }) {
+  const { esp, espSince, state } = useSessionContext();
+  const current = esp !== null && state !== null && esp.session_id === state.session_id && esp.version === state.version;
+  const decoded = current && esp ? decodeEsp(esp) : null;
+  const limit = decoded ? makeEspSurface(decoded, isovalue).limit : null;
+
+  return (
+    <>
+      {espSince !== null && (
+        <>
+          <dt>Status</dt>
+          <dd className="legend-note" role="status">
+            <Running startedAt={espSince} detail="working out the potential…" />
+          </dd>
+        </>
+      )}
+      {espSince === null && esp?.status === "failed" && (
+        <>
+          <dt>Potential</dt>
+          <dd className="legend-note">{esp.message ?? "It could not be calculated."}</dd>
+        </>
+      )}
+      {limit !== null && esp && (
+        <>
+          <dt>Scale</dt>
+          <dd className="legend">
+            <div className="legend-bar" style={{ background: divergingGradient() }} role="img" aria-label={`From minus ${toKcalPerCharge(limit).toFixed(0)} to plus ${toKcalPerCharge(limit).toFixed(0)} kilocalories per mole per charge`} />
+            <div className="legend-labels">
+              <span>−{toKcalPerCharge(limit).toFixed(0)}</span>
+              <span>0</span>
+              <span>+{toKcalPerCharge(limit).toFixed(0)}</span>
+            </div>
+          </dd>
+          <dt>Potential</dt>
+          <dd className="legend-note">
+            kcal/mol per unit charge, Hartree-Fock
+            <Took milliseconds={esp.elapsed_ms} />
           </dd>
         </>
       )}
