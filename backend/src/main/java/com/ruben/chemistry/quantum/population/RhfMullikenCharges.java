@@ -58,6 +58,19 @@ public final class RhfMullikenCharges implements PartialChargeModel
     }
 
     /**
+     * Everything a calculation produced, for callers that want more than the charges.
+     *
+     * @param basis the basis functions placed on the molecule, in bohr
+     * @param nuclei the effective point charges, in bohr
+     * @param effectiveCharges the effective nuclear charge of every site
+     * @param result the converged SCF result
+     * @param charges the Mulliken charge of every site
+     */
+    public record Calculation(BasisSet basis, List<PointCharge> nuclei, double[] effectiveCharges, ScfResult result, double[] charges)
+    {
+    }
+
+    /**
      * @param structure the molecule in three dimensions, with positions in ångström
      * @param conformer the index of the shape to calculate
      * @return the Mulliken charge of every site
@@ -67,6 +80,24 @@ public final class RhfMullikenCharges implements PartialChargeModel
      */
     @Override
     public PartialCharges calculate(Structure3D structure, int conformer)
+    {
+        List<Double> bySite = new ArrayList<>();
+        for (double charge : run(structure, conformer).charges())
+        {
+            bySite.add(charge);
+        }
+        return new PartialCharges(ChargeConvention.MULLIKEN, bySite);
+    }
+
+    /**
+     * @param structure the molecule in three dimensions, with positions in ångström
+     * @param conformer the index of the shape to calculate
+     * @return the basis, nuclei, SCF result and Mulliken charges
+     * @throws IllegalArgumentException if an element is not in the library, the conformer does not exist, or the
+     *     molecule does not have a closed-shell electron count
+     * @throws IllegalStateException if the calculation does not converge
+     */
+    public Calculation run(Structure3D structure, int conformer)
     {
         BasisSet basis = BasisSet.build(structure, conformer, library);
         List<Vec3> positions = structure.conformers().get(conformer).positions();
@@ -100,11 +131,6 @@ public final class RhfMullikenCharges implements PartialChargeModel
             throw new IllegalStateException("SCF did not converge in " + result.iterations() + " iterations");
         }
         double[] charges = MullikenAnalysis.charges(result, basis.siteOfFunction(), effectiveCharges);
-        List<Double> bySite = new ArrayList<>();
-        for (double charge : charges)
-        {
-            bySite.add(charge);
-        }
-        return new PartialCharges(ChargeConvention.MULLIKEN, bySite);
+        return new Calculation(basis, nuclei, effectiveCharges, result, charges);
     }
 }
