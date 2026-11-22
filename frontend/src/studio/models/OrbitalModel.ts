@@ -43,7 +43,7 @@ export interface OrbitalChoice {
 }
 
 /** What colours an orbital's surfaces: the sign of each lobe, or what the orbital is made of, sigma or pi, whatever the sign. */
-export type OrbitalColouring = "phase" | "character";
+export type OrbitalColouring = "phase" | "character" | "orbital";
 
 /** Which orbital is drawn in the scene, of what and from which calculation, and how. */
 export interface OrbitalState {
@@ -67,6 +67,8 @@ export interface OrbitalState {
   levelBy: LevelBy;
   /** How much of the orbital the surface holds, as a percentage, where it is chosen by share. */
   share: number;
+  /** How several orbitals drawn at once are shown. */
+  combine: OrbitalCombine;
 }
 
 /**
@@ -109,13 +111,20 @@ export function sameScope(first: OrbitalScope, second: OrbitalScope): boolean {
  */
 export type OrbitalDisplay = "amplitude" | "probability";
 
+/**
+ * How several orbitals drawn at once are shown: each as its own surface; merged into one probability that is the sum of theirs, drawn as
+ * shells of where the electrons are most likely to be; or merged into one surface that is wherever any reaches its own level, coloured by
+ * the orbital that is largest there.
+ */
+export type OrbitalCombine = "separate" | "sum" | "union";
+
 /** How the level a surface of an orbital is drawn at is chosen: as a value of the orbital, or as the share of it the surface holds. */
 export type LevelBy = "isovalue" | "share";
 
 /** Which orbital is drawn in the scene, and how. It is not remembered between visits, since an orbital belongs to one structure. */
 export class OrbitalModel extends Observable<OrbitalState> {
   constructor() {
-    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE });
+    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE, combine: "separate" });
   }
 
   /**
@@ -197,6 +206,15 @@ export class OrbitalModel extends Observable<OrbitalState> {
   displayTo(display: OrbitalDisplay): void {
     if (this.get().display !== display) {
       this.set({ ...this.get(), display });
+    }
+  }
+
+  /**
+   * @param combine how several orbitals drawn at once are shown
+   */
+  combineTo(combine: OrbitalCombine): void {
+    if (this.get().combine !== combine) {
+      this.set({ ...this.get(), combine });
     }
   }
 

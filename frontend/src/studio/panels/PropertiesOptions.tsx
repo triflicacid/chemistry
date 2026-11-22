@@ -28,7 +28,7 @@ import {chargeScale} from "../layout/chargeScale";
 import type {ChargesProgress} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
 import {ForceDebug} from "./ForceDebug";
-import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
+import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../layout/orbitalColours";
 import {autoLimit, decodeDensity, decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
 import {decodePlane, sequentialGradient, type SliceAxis, sliceLimit} from "../layout/slice";
 

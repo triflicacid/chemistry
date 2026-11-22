@@ -15,6 +15,8 @@ import {
     MIN_SHARE,
     ORBITAL_KINDS,
     type OrbitalChoice,
+    type OrbitalColouring,
+    type OrbitalCombine,
     type OrbitalDisplay,
     type OrbitalKind,
     type OrbitalScope,
@@ -45,7 +47,7 @@ import {
 import {atomShares, characterOf, KINDS, localisationBars, piBars, spinSplittings} from "../layout/composition";
 import type {FieldResult, OrbitalChannel, OrbitalTarget, SessionState} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
-import {NEUTRAL_COLOUR, PI_COLOUR, SIGMA_COLOUR} from "../layout/orbitalColours";
+import {NEUTRAL_COLOUR, orbitalHue, PI_COLOUR, SIGMA_COLOUR} from "../layout/orbitalColours";
 import {CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
 import {seconds} from "./PropertiesOptions";
 
@@ -85,7 +87,7 @@ function scopeOf(value: string): OrbitalScope {
  */
 export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
   const { orbitals, orbitalsSince, requestOrbitals, fields, fieldsAsked } = useSessionContext();
-  const { selected, kind, scope, count, colouring, isovalue, opacity, display, levelBy, share } = useObservable(models.orbital);
+  const { selected, kind, scope, count, colouring, isovalue, opacity, display, levelBy, share, combine } = useObservable(models.orbital);
   const debug = useObservable(models.debug);
   const [everything, setEverything] = useState(false);
 
@@ -134,6 +136,16 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
     const molecule = fragments.length > 1 ? `${nameOfMolecule(target.fragment) ?? "all"} ` : "";
     return decoded.map((field: DecodedField) => ({ label: `${molecule}${arrow(target.spin)}${nameOf(target.orbital, homo)}`, field }));
   });
+
+  // several orbitals can be merged into one surface, which changes what the controls below mean
+  const several = inside.length > 1;
+  const merged = several && combine !== "separate";
+  // the level is a share for the sum and the shells, and otherwise as chosen; the choice of one is for the amplitude, which a sum has no use for
+  const byShare = combine === "sum" || (merged ? levelBy === "share" : display === "probability" || levelBy === "share");
+  const levelChoice = merged ? combine === "union" : display === "amplitude";
+  const colourChoice = merged ? combine === "union" : display === "amplitude";
+  // the colouring by orbital means nothing for a surface of one orbital or of each on its own, which are coloured by sign
+  const colourValue = !merged && colouring === "orbital" ? "phase" : colouring;
 
   // the level the first orbital is drawn at, which is what the marker on the chart of the share inside shows
   const first = inside[0];
@@ -201,8 +213,28 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
 
       {selected !== null && (
         <dl className="properties">
-          <dt>Show</dt>
-          <dd>
+          {several && (
+            <>
+              <dt>Combine</dt>
+              <dd>
+                <select value={combine} aria-label="How the orbitals drawn together are shown" onChange={(event) => models.orbital.combineTo(event.target.value as OrbitalCombine)}>
+                  <option value="separate" title="Each orbital as its own surface, which keeps the sign of its lobes but is crowded where there are many">
+                    Separate
+                  </option>
+                  <option value="sum" title="One probability that is the sum of theirs, each as many times as it holds electrons, drawn as shells of where the electrons are most likely to be">
+                    Summed probability
+                  </option>
+                  <option value="union" title="One surface that is wherever any orbital reaches its own level, coloured by the orbital that is largest there. The sign is lost">
+                    Union by orbital
+                  </option>
+                </select>
+              </dd>
+            </>
+          )}
+          {!merged && (
+            <>
+              <dt>Show</dt>
+              <dd>
             <select value={display} aria-label="What the surfaces of the orbital show" onChange={(event) => models.orbital.displayTo(event.target.value as OrbitalDisplay)}>
               <option value="amplitude" title="The orbital as lobes that are positive or negative, which shows its shape and phase">
                 Amplitude (phase)
@@ -211,8 +243,10 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
                 Probability (hotspots)
               </option>
             </select>
-          </dd>
-          {display === "amplitude" && (
+              </dd>
+            </>
+          )}
+          {levelChoice && (
             <>
               <dt>Level by</dt>
               <dd>
@@ -227,7 +261,7 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
               </dd>
             </>
           )}
-          {display === "amplitude" && levelBy === "isovalue" ? (
+          {!byShare ? (
             <>
               <dt>Isovalue</dt>
               <dd className="position">
@@ -282,19 +316,33 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
             />
             <span className="unit render-value">{Math.round(opacity * 100)}%</span>
           </dd>
-          {display === "amplitude" && <dt>Colour</dt>}
-          {display === "amplitude" && <dd>
-            <label
-              className="legend-check"
-              title="Colour each orbital by how much of it is sigma and how much is pi, whichever way its lobes point, instead of by the sign of its lobes. Needs a flat molecule"
-            >
-              <input type="checkbox" checked={colouring === "character"} onChange={(event) => models.orbital.colouringTo(event.target.checked ? "character" : "phase")} />
-              By σ / π
-            </label>
-          </dd>}
+          {colourChoice && <dt>Colour</dt>}
+          {colourChoice && (
+            <dd>
+              <select value={colourValue} aria-label="What colours the orbitals" onChange={(event) => models.orbital.colouringTo(event.target.value as OrbitalColouring)}>
+                <option value="phase" title="Blue where the orbital is positive and red where it is negative">
+                  Sign (blue / red)
+                </option>
+                {merged && (
+                  <option value="orbital" title="Each part in the colour of the orbital that is largest there, which tells the orbitals apart but loses the sign">
+                    By orbital
+                  </option>
+                )}
+                <option value="character" title="Colour each orbital by how much of it is sigma and how much is pi, whichever way its lobes point. Needs a flat molecule">
+                  By σ / π
+                </option>
+              </select>
+            </dd>
+          )}
           <dt>Key</dt>
           <dd className="legend-note">
-            {display === "probability" ? (
+            {combine === "union" && merged && colouring === "orbital" ? (
+              inside.map((item, at) => (
+                <span key={`${item.label}${at}`} className="legend-key">
+                  <span style={{ color: orbitalHue(at) }}>●</span> {item.label}
+                </span>
+              ))
+            ) : (merged && combine === "sum") || (!merged && display === "probability") ? (
               <>
                 {share > 50 && (
                   <span className="legend-key">

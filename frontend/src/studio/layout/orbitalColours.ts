@@ -30,3 +30,26 @@ export function characterColour(pi: number | null): string {
   const [from, to] = [channels(SIGMA_COLOUR), channels(PI_COLOUR)];
   return `#${from.map((channel, i) => Math.round(channel + ((to[i] as number) - channel) * share).toString(16).padStart(2, "0")).join("")}`;
 }
+
+/** The colour of the shell of an orbital that holds half of it, where the electron is most likely to be. */
+export const CORE_SHELL = "#d9480f";
+
+/** The colour of the shell that holds the share asked for. */
+export const OUTER_SHELL = "#fab005";
+
+/** The colours that tell orbitals apart when several are merged into one surface, which are as many as can be drawn at once. */
+export const ORBITAL_HUES: readonly string[] = ["#2a78d6", "#eb6834", "#1baf7a", "#a545c8", "#d6a100", "#17a2b8", "#d6336c", "#5c7c2f", "#7048e8", "#b3541e", "#0b7285", "#868e96"];
+
+/**
+ * @param index the place of an orbital among those drawn
+ * @returns its colour when they are merged, as `#rrggbb`
+ */
+export function orbitalHue(index: number): string {
+  return ORBITAL_HUES[index % ORBITAL_HUES.length] as string;
+}
+
+/** The colour of the part of an orbital that is positive. */
+export const POSITIVE_LOBE = "#2f6fe4";
+
+/** The colour of the part that is negative. */
+export const NEGATIVE_LOBE = "#e0453a";

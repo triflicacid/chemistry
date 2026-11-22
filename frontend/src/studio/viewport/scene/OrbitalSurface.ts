@@ -1,28 +1,25 @@
 import {
-    BoxGeometry,
-    BufferGeometry,
-    DoubleSide,
-    EdgesGeometry,
-    Float32BufferAttribute,
-    Group,
-    LineBasicMaterial,
-    LineSegments,
-    Mesh,
-    MeshStandardMaterial,
+  BoxGeometry,
+  BufferGeometry,
+  DoubleSide,
+  EdgesGeometry,
+  Float32BufferAttribute,
+  Group,
+  LineBasicMaterial,
+  LineSegments,
+  Mesh,
+  MeshStandardMaterial,
 } from "three";
 import {disposeMaterials} from "../../../render/dispose";
 import {isosurface, type Surface} from "../../../render/isosurface";
 import type {Stage} from "../../../render/stage";
 import {amplitudeForShare, type DecodedField, type DrawnOrbital} from "../../layout/orbitals";
-import {characterColour} from "../../layout/orbitalColours";
-import type {LevelBy, OrbitalColouring, OrbitalDisplay} from "../../models/OrbitalModel";
+import {characterColour, CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE} from "../../layout/orbitalColours";
+import {mergeSummed, mergeUnion} from "../../layout/orbitalMerge";
+import type {LevelBy, OrbitalColouring, OrbitalCombine, OrbitalDisplay} from "../../models/OrbitalModel";
 import type {MoleculeScene} from "./MoleculeScene";
 
-/** The colour of the part of an orbital that is positive. */
-export const POSITIVE_LOBE = "#2f6fe4";
-
-/** The colour of the part that is negative. */
-export const NEGATIVE_LOBE = "#e0453a";
+export {CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE};
 
 /** How an orbital is drawn. */
 export interface OrbitalOptions {
@@ -40,13 +37,9 @@ export interface OrbitalOptions {
   levelBy: LevelBy;
   /** How much of the orbital the surface holds, as a percentage, where the level is chosen by share, and always for the shells. */
   share: number;
+  /** How several orbitals are shown when more than one is drawn. */
+  combine: OrbitalCombine;
 }
-
-/** The colour of the shell of an orbital that holds half of it, where the electron is most likely to be. */
-export const CORE_SHELL = "#d9480f";
-
-/** The colour of the shell that holds the share asked for. */
-export const OUTER_SHELL = "#fab005";
 
 /** What drawing an orbital made, which debugging reports. */
 export interface OrbitalDrawn {
@@ -94,7 +87,27 @@ export class OrbitalSurface {
     if (orbitals.length > 0) {
       const marks = new Group();
       drawn = { positive: 0, negative: 0 };
-      for (const { field, pi } of orbitals) {
+      // several orbitals can be merged into one surface, which is of no use for one
+      const merged = orbitals.length > 1 && options.combine !== "separate";
+      if (merged) {
+        const parts = options.combine === "sum" ? mergeSummed(orbitals, options.share, options.opacity) : mergeUnion(orbitals, options);
+        for (const part of parts) {
+          marks.add(this.lobe(part.surface, part.colour, part.opacity, part.colours));
+          drawn.positive += part.surface.positions.length / 9;
+        }
+        if (options.debug) {
+          const boxed = new Set<string>();
+          for (const { field } of orbitals) {
+            const key = `${field.shape.nx},${field.shape.ny},${field.shape.nz},${field.shape.origin.x},${field.shape.origin.y},${field.shape.origin.z}`;
+            if (!boxed.has(key)) {
+              boxed.add(key);
+              marks.add(this.box(field));
+            }
+          }
+        }
+      }
+
+      for (const { field, pi } of merged ? [] : orbitals) {
         if (options.display === "probability") {
           // the shells are of the amplitude without its sign, since the probability does not have one
           const amplitudes = field.values.map(Math.abs);
@@ -143,16 +156,20 @@ export class OrbitalSurface {
    * @param surface the surface of one lobe
    * @param colour what to colour it
    * @param opacity how opaque
+   * @param colours the red, green and blue of each vertex, from 0 to 1, or none to draw it in the one colour
    * @returns the mesh
    */
-  private lobe(surface: Surface, colour: string, opacity: number): Mesh {
+  private lobe(surface: Surface, colour: string, opacity: number, colours: Float32Array | null = null): Mesh {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new Float32BufferAttribute(surface.positions, 3));
     geometry.setAttribute("normal", new Float32BufferAttribute(surface.normals, 3));
+    if (colours) {
+      geometry.setAttribute("color", new Float32BufferAttribute(colours, 3));
+    }
     const mesh = new Mesh(
       geometry,
       // the inside of a lobe is seen through its front, so both faces are drawn, and a clear surface must not hide what is behind it
-      new MeshStandardMaterial({ color: colour, roughness: 0.4, transparent: opacity < 1, opacity, side: DoubleSide, depthWrite: opacity >= 0.95 }),
+      new MeshStandardMaterial({ ...(colours ? { vertexColors: true } : { color: colour }), roughness: 0.4, transparent: opacity < 1, opacity, side: DoubleSide, depthWrite: opacity >= 0.95 }),
     );
     mesh.renderOrder = 3;
     return mesh;

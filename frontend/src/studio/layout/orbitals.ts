@@ -1,11 +1,11 @@
 import type {GridShape} from "../../render/isosurface";
 import type {
-    FieldResult,
-    OrbitalChannel,
-    OrbitalLevel,
-    OrbitalsResult,
-    OrbitalTarget,
-    SessionState
+  FieldResult,
+  OrbitalChannel,
+  OrbitalLevel,
+  OrbitalsResult,
+  OrbitalTarget,
+  SessionState
 } from "../session/messages";
 import {MAX_SHOWN, type OrbitalChoice, type OrbitalScope} from "../models/OrbitalModel";
 
@@ -317,43 +317,43 @@ export function densityOfStates(energies: readonly number[], width: number, from
   });
 }
 
-/** The squared amplitudes of an orbital from the largest down, with the running share of the whole, which choosing a share looks up. */
+/** Masses from the largest down, with the running share of the whole, which choosing a share looks up. */
 interface Cumulative {
-  /** The amplitude at each point, from the largest down. */
-  amplitudes: Float32Array;
-  /** The share of the squared amplitude held by the points up to and including each, from zero to one. */
+  /** The mass at each point, from the largest down. */
+  masses: Float64Array;
+  /** The share of the whole held by the points up to and including each, from zero to one. */
   share: Float64Array;
 }
 
-const cumulatives = new WeakMap<Float32Array, Cumulative>();
+const cumulatives = new WeakMap<object, Cumulative>();
 
 /**
- * Finds the amplitude at which the surface of an orbital holds a share of it: the surface where the orbital is at least that large, which
- * is how much of the electron's probability, the squared amplitude, lies inside it. A bigger share is a smaller amplitude and a bigger surface.
+ * Finds the level at which a surface holds a share of something spread over a grid: the surface where the mass is at least that, which
+ * holds that share of the whole. A bigger share is a smaller level and a bigger surface.
  *
- * @param values the orbital at each point of a grid
- * @param share how much of the orbital the surface is to hold, from zero to one
- * @returns the amplitude to draw the surface at, or zero if the orbital is nothing everywhere
+ * @param mass how much there is at each point of a grid, none of it negative, such as a probability density
+ * @param share how much of the whole the surface is to hold, from zero to one
+ * @returns the level to draw the surface at, or zero if there is none anywhere
  */
-export function amplitudeForShare(values: Float32Array, share: number): number {
-  let held = cumulatives.get(values);
+export function massLevel(mass: ArrayLike<number>, share: number): number {
+  let held = cumulatives.get(mass);
   if (!held) {
-    const amplitudes = Float32Array.from(values, Math.abs).sort().reverse();
-    const running = new Float64Array(amplitudes.length);
+    const masses = Float64Array.from(mass).sort().reverse();
+    const running = new Float64Array(masses.length);
     let total = 0;
-    for (const amplitude of amplitudes) {
-      total += amplitude * amplitude;
+    for (const each of masses) {
+      total += each;
     }
     let sum = 0;
-    for (let at = 0; at < amplitudes.length; at++) {
-      sum += (amplitudes[at] as number) ** 2;
+    for (let at = 0; at < masses.length; at++) {
+      sum += masses[at] as number;
       running[at] = total > 0 ? sum / total : 0;
     }
-    held = { amplitudes, share: running };
-    cumulatives.set(values, held);
+    held = { masses, share: running };
+    cumulatives.set(mass, held);
   }
 
-  const { amplitudes, share: running } = held;
+  const { masses, share: running } = held;
   if (running.length === 0 || (running[running.length - 1] as number) <= 0) {
     return 0;
   }
@@ -368,7 +368,27 @@ export function amplitudeForShare(values: Float32Array, share: number): number {
       low = middle + 1;
     }
   }
-  return amplitudes[low] as number;
+  return masses[low] as number;
+}
+
+/** The squared amplitude of each orbital, which is its probability at each point. */
+const squares = new WeakMap<Float32Array, Float64Array>();
+
+/**
+ * Finds the amplitude at which the surface of an orbital holds a share of it: the surface where the orbital is at least that large, which
+ * is how much of the electron's probability, the squared amplitude, lies inside it. A bigger share is a smaller amplitude and a bigger surface.
+ *
+ * @param values the orbital at each point of a grid
+ * @param share how much of the orbital the surface is to hold, from zero to one
+ * @returns the amplitude to draw the surface at, or zero if the orbital is nothing everywhere
+ */
+export function amplitudeForShare(values: Float32Array, share: number): number {
+  let probability = squares.get(values);
+  if (!probability) {
+    probability = Float64Array.from(values, (value) => value * value);
+    squares.set(values, probability);
+  }
+  return Math.sqrt(massLevel(probability, share));
 }
 
 /**
@@ -418,6 +438,8 @@ export interface DrawnOrbital {
   field: DecodedField;
   /** How much of it is pi, or null if the atoms are not flat enough for it to be sigma or pi. */
   pi: number | null;
+  /** How many electrons it counts for where orbitals are merged into one probability: how many it holds, or one if it holds none. */
+  weight: number;
 }
 
 /**
@@ -431,7 +453,7 @@ export interface DrawnOrbital {
 export function drawnOrbitals(result: OrbitalsResult, targets: readonly OrbitalTarget[], fields: readonly FieldResult[], state: SessionState | null): DrawnOrbital[] {
   return targets.flatMap((target) => {
     const decoded = fieldsFor(fields, [target], state).flatMap((field) => decodeField(field) ?? []);
-    const pi = result.channels.find((channel) => channel.fragment === target.fragment && channel.spin === target.spin)?.levels[target.orbital]?.pi ?? null;
-    return decoded.map((field) => ({ field, pi }));
+    const level = result.channels.find((channel) => channel.fragment === target.fragment && channel.spin === target.spin)?.levels[target.orbital];
+    return decoded.map((field) => ({ field, pi: level?.pi ?? null, weight: level && level.occupancy > 0 ? level.occupancy : 1 }));
   });
 }
