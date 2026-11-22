@@ -156,15 +156,17 @@ public final class ElectronDensityForceField
      */
     public static XCParameters xcParameters(ModelType type)
     {
+        // the fitting code solves for the electron-nuclear weights first, so the first row of table S3 multiplies
+        // the electron-nuclear kernels and the second row the electron-electron kernels
         if (type == ModelType.FULL)
         {
             return new XCParameters(
-                    new double[] {-1.2626e-2, -1.5394e-1, -8.0226e-2, -1.6789e-3, -1.0836e-4},
-                    new double[] {2.5106e-2, 2.0293e-1, -5.7248e-2, -8.7052e-3, -3.6683e-4});
+                    new double[] {2.5106e-2, 2.0293e-1, -5.7248e-2, -8.7052e-3, -3.6683e-4},
+                    new double[] {-1.2626e-2, -1.5394e-1, -8.0226e-2, -1.6789e-3, -1.0836e-4});
         }
         return new XCParameters(
-                new double[] {-2.0439e-3, 8.5734e-1, 3.6408e-3, 9.2417e-3, 8.7046e-4, 1.3776e-5, 6.1397e-7},
-                new double[] {3.9926e-3, -1.4886, 1.9678e-1, 5.6710e-3, -1.1361e-3, -1.2207e-4, -1.2274e-5});
+                new double[] {3.9926e-3, -1.4886, 1.9678e-1, 5.6710e-3, -1.1361e-3, -1.2207e-4, -1.2274e-5},
+                new double[] {-2.0439e-3, 8.5734e-1, 3.6408e-3, 9.2417e-3, 8.7046e-4, 1.3776e-5, 6.1397e-7});
     }
 
     public static ForceField forceField(ModelType type)
@@ -769,11 +771,11 @@ public final class ElectronDensityForceField
      * @param k the order of the kernel
      * @param lambda the combined Gaussian exponent
      * @param r the distance
-     * @return the kth exchange-correlation radial kernel, from SI equations S4-S10
+     * @return the kth exchange-correlation radial kernel
      */
     private static double xcKernel(int k, double lambda, double r)
     {
-        return k == 0 ? -erfOverR(lambda, r) : laplacianKernel(k, lambda, r);
+        return k == 0 ? erfOverR(lambda, r) : laplacianKernel(k, lambda, r);
     }
 
     /**
@@ -784,7 +786,7 @@ public final class ElectronDensityForceField
      */
     private static double xcKernelDerivative(int k, double lambda, double r)
     {
-        return k == 0 ? -erfOverRDerivative(lambda, r) : laplacianKernelDerivative(k, lambda, r);
+        return k == 0 ? erfOverRDerivative(lambda, r) : laplacianKernelDerivative(k, lambda, r);
     }
 
     /**
