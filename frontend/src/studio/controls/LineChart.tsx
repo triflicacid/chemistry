@@ -1,5 +1,6 @@
-import {useEffect, useRef, useState} from "react";
+import {useRef, useState} from "react";
 import {nearestIndex, niceTicks} from "../layout/chart";
+import {useWidth} from "./useWidth";
 
 /** One line of a chart. */
 export interface ChartSeries {
@@ -45,20 +46,9 @@ const DOTTED = 14;
  * A line chart with one vertical axis, a crosshair and tooltip that follow the pointer, and optionally a marker to drag along the first line.
  */
 export function LineChart({ label, series, xTitle, yTitle, formatX = defaultFormat, formatY = defaultFormat, logY = false, marker = null, onMarker, onMarkerEnd, reference = null, height = 180 }: LineChartProps) {
-  const box = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(480);
+  const [box, width] = useWidth<HTMLDivElement>(480);
   const [hover, setHover] = useState<number | null>(null);
   const dragging = useRef(false);
-
-  useEffect(() => {
-    const element = box.current;
-    if (!element || typeof ResizeObserver === "undefined") {
-      return;
-    }
-    const observer = new ResizeObserver(([entry]) => entry && setWidth(Math.max(200, entry.contentRect.width)));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   const lines = series.map((each) => ({ ...each, points: logY ? each.points.filter((point) => point.y > 0) : each.points }));
   const all = lines.flatMap((line) => line.points);

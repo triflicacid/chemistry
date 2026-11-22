@@ -1375,3 +1375,31 @@ body.resizing {
   max-height: 9rem;
   overflow-y: auto;
 }
+
+.chart-bar {
+  stroke: none;
+}
+
+.chart-name {
+  fill: var(--ink);
+  font-size: 11px;
+}
+
+.chart-net {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.chart-zero {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.chart-net-key {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.chart-legend-flush {
+  padding-left: 12px;
+}

@@ -2,7 +2,6 @@ package com.ruben.chemistry.server.studio;
 
 import com.ruben.chemistry.charges.PartialChargeModel;
 import com.ruben.chemistry.forcefield.ElectronDensityForceField;
-import com.ruben.chemistry.forcefield.Energy;
 import com.ruben.chemistry.forcefield.ForceField;
 import com.ruben.chemistry.forcefield.ForceFieldAtom;
 import com.ruben.chemistry.forcefield.ForceFieldAtoms;
@@ -92,28 +91,8 @@ public record ScanReport(
      * @param terms what {@code energy} is made of
      * @param atoms where the atoms of the moved molecule are, in the session's frame
      */
-    public record Point(double distance, double energy, Double energyWithOthers, Terms terms, List<AtomPosition> atoms)
+    public record Point(double distance, double energy, Double energyWithOthers, EnergyTerms terms, List<AtomPosition> atoms)
     {
-    }
-
-    /**
-     * The parts of an interaction energy, in hartree.
-     *
-     * @param nuclearNuclear the repulsion of the nuclei for each other
-     * @param nuclearElectron the attraction of each molecule's nuclei for the other's electrons
-     * @param electronElectron the repulsion of the electrons for each other
-     * @param exchangeCorrelation the exchange-correlation fit
-     */
-    public record Terms(double nuclearNuclear, double nuclearElectron, double electronElectron, double exchangeCorrelation)
-    {
-        /**
-         * @param energy the contributions as the force field gives them
-         * @return them with the two exchange-correlation fits taken together
-         */
-        static Terms of(Energy energy)
-        {
-            return new Terms(energy.nuclearNuclear(), energy.nuclearElectron(), energy.electronElectron(), energy.exchangeCorrelation());
-        }
     }
 
     /**
@@ -240,7 +219,7 @@ public record ScanReport(
                 atoms.add(new AtomPosition(described.sites().get(acceptorSites.get(atom)),
                         new Vec3(at.x() / BOHR_PER_ANGSTROM, at.y() / BOHR_PER_ANGSTROM, at.z() / BOHR_PER_ANGSTROM)));
             }
-            points.add(new Point(point.distance() / BOHR_PER_ANGSTROM, point.energy().total(), withOthers, Terms.of(point.energy()), List.copyOf(atoms)));
+            points.add(new Point(point.distance() / BOHR_PER_ANGSTROM, point.energy().total(), withOthers, EnergyTerms.of(point.energy()), List.copyOf(atoms)));
         }
 
         List<Integer> donorSites = parts.get(candidate.donorMolecule());

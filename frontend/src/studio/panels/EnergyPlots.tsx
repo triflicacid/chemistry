@@ -2,19 +2,22 @@ import {useEffect, useMemo, useState} from "react";
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import {type Segment, Segmented} from "../controls/Segmented";
+import {BreakdownChart} from "../controls/BreakdownChart";
 import {type ChartSeries, LineChart} from "../controls/LineChart";
+import {stack} from "../layout/breakdown";
 import {apart} from "../layout/chart";
 import {bondDescribes, energyAt, positionsOf, toKcal} from "../layout/scan";
 import type {EnergyStep, ScanBond, ScanPoint, ScanResult, ScfStep, SessionState} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
 import {describeProgress, seconds} from "./PropertiesOptions";
 
-type Plot = "scf" | "optimiser" | "scan";
+type Plot = "scf" | "optimiser" | "scan" | "breakdown";
 
 const PLOTS: Segment<Plot>[] = [
   { value: "scf", label: "SCF convergence" },
   { value: "optimiser", label: "Optimiser" },
   { value: "scan", label: "Hydrogen-bond scan" },
+  { value: "breakdown", label: "Breakdown" },
 ];
 
 export interface EnergyPlotsProps {
@@ -33,6 +36,7 @@ export function EnergyPlots({ state, models }: EnergyPlotsProps) {
       {plot === "scf" && <ScfPlot state={state} models={models} debug={debug} />}
       {plot === "optimiser" && <OptimiserPlot debug={debug} />}
       {plot === "scan" && <ScanPlot state={state} models={models} debug={debug} />}
+      {plot === "breakdown" && <BreakdownPlot state={state} models={models} debug={debug} />}
     </div>
   );
 }
@@ -343,7 +347,7 @@ function ScanDebug({ scan, bond, label, name }: ScanDebugProps) {
   return (
     <>
       <p className="energy-note debug-note">
-        {scan.model} model · version {scan.version} · {scan.molecules} molecules · {scan.bonds.length} bonds · {bond.points.length} points each · donor {label(bond.donor)}, hydrogen {label(bond.hydrogen)}, acceptor {label(bond.acceptor)}
+        {scan.model} model · {scan.molecules} molecules · {scan.bonds.length} bonds · {bond.points.length} points each · donor {label(bond.donor)}, hydrogen {label(bond.hydrogen)}, acceptor {label(bond.acceptor)}
       </p>
       <table className="debug-table">
         <thead>
@@ -401,6 +405,88 @@ function ScanDebug({ scan, bond, label, name }: ScanDebugProps) {
           ))}
         </tbody>
       </table>
+    </>
+  );
+}
+
+/** What the energy between each pair of molecules is made of: the repulsions, the attractions and the exchange-correlation, stacked. */
+function BreakdownPlot({ state, models, debug }: PlotProps) {
+  const { forces, calculatingForcesSince, requestForces } = useSessionContext();
+  const asked = calculatingForcesSince !== null;
+  const stale = forces !== null && state !== null && forces.version !== state.version;
+  // molecules are numbered in the order the Outliner lists them
+  const molecule = (id: string) => {
+    const at = state?.fragments.findIndex((fragment) => fragment.atoms.includes(id)) ?? -1;
+    return at < 0 ? (models.index?.label(id) ?? id) : `${at + 1} ${state?.fragments[at]?.name ?? ""}`.trim();
+  };
+
+  // with debugging on, the numbers are written in the scene so that the bars can be matched to the molecules
+  const { numbers } = models;
+  useEffect(() => {
+    numbers.to(debug && state ? state.fragments.map((fragment, i) => ({ atoms: fragment.atoms, text: String(i + 1) })) : []);
+  }, [numbers, debug, state]);
+  useEffect(() => () => numbers.to([]), [numbers]);
+  const interactions = forces?.status === "complete" ? forces.interactions : [];
+
+  return (
+    <>
+      <div className="energy-actions">
+        <button type="button" className="tool" disabled={asked || state === null} onClick={requestForces}>
+          {asked ? "Calculating…" : interactions.length === 0 ? "Calculate" : "Calculate again"}
+        </button>
+        {forces?.status === "complete" && !asked && <span className="energy-note">{seconds(forces.elapsed_ms)}</span>}
+      </div>
+
+      {interactions.length === 0 ? (
+        <p className="energy-note">
+          {forces && forces.status !== "complete"
+            ? (forces.message ?? "The energies could not be calculated.")
+            : "Splits the energy between each pair of molecules into its parts. It needs at least two molecules, such as water twice (O.O)."}
+        </p>
+      ) : (
+        <>
+          <p className="energy-note">
+            Parts to the right of zero raise the energy and parts to the left lower it. The big parts nearly cancel, and the tick is what is left.
+            {stale && " The structure has changed since, so calculate again."}
+          </p>
+          <BreakdownChart
+            label="The parts of the energy between each pair of molecules"
+            unit="kcal/mol"
+            rows={interactions.map((pair) => ({ label: `${molecule(pair.first)} · ${molecule(pair.second)}`, stack: stack(pair.terms) }))}
+          />
+          {debug && forces && (
+            <>
+              <p className="energy-note debug-note">
+                {forces.model} model · {interactions.length} pairs · system energy {forces.energy === null ? "?" : toKcal(forces.energy).toFixed(3)} kcal/mol
+              </p>
+              <table className="debug-table">
+                <thead>
+                  <tr>
+                    <th>Pair</th>
+                    <th>N–N</th>
+                    <th>N–e</th>
+                    <th>e–e</th>
+                    <th>xc</th>
+                    <th>Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {interactions.map((pair) => (
+                    <tr key={`${pair.first}:${pair.second}`}>
+                      <td>{molecule(pair.first)} · {molecule(pair.second)}</td>
+                      <td>{toKcal(pair.terms.nuclear_nuclear).toFixed(2)}</td>
+                      <td>{toKcal(pair.terms.nuclear_electron).toFixed(2)}</td>
+                      <td>{toKcal(pair.terms.electron_electron).toFixed(2)}</td>
+                      <td>{toKcal(pair.terms.exchange_correlation).toFixed(2)}</td>
+                      <td>{toKcal(pair.energy).toFixed(3)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </>
+      )}
     </>
   );
 }

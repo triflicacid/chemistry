@@ -19,7 +19,7 @@ export function ForceDebug({ forces, scale, label }: ForceDebugProps) {
     <>
       <dt>Debug</dt>
       <dd className="legend-note debug-note">
-        {forces.model} model · session version {forces.version} · {forces.elapsed_ms} ms
+        {forces.model} model · {forces.elapsed_ms} ms
         <br />
         {biggest.atom > 0 ? `${ATOM_ARROW * scale} Å of arrow is ${toKcalPerAngstrom(biggest.atom).toFixed(3)} kcal/mol/Å, so 1 Å is ${(1 / perAngstrom).toFixed(2)}` : "every force is zero"}
         <br />

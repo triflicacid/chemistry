@@ -45,7 +45,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 19;
+    private static final int PROTOCOL_VERSION = 20;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";

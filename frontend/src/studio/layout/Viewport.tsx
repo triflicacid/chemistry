@@ -136,6 +136,12 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     view?.showHydrogenBond(debug ? bond : null);
   }, [view, debug, bond, state]);
 
+  // molecules are numbered where they are now, so the numbers are redrawn as they move
+  const numbered = useObservable(models.numbers);
+  useEffect(() => {
+    view?.showMoleculeNumbers(debug ? numbered : []);
+  }, [view, debug, numbered, state]);
+
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);
   useEffect(() => {

@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 19;
+export const PROTOCOL_VERSION = 20;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -455,6 +455,18 @@ export interface FragmentForce {
   torque: Vec3;
 }
 
+/** The energy between two molecules of the session. */
+export interface PairEnergy {
+  /** An atom of the first molecule, which names it. */
+  first: string;
+  /** An atom of the second. */
+  second: string;
+  /** What the energy is made of. */
+  terms: EnergyTerms;
+  /** The interaction energy of the two in hartree, which is the sum of the terms. */
+  energy: number;
+}
+
 /**
  * The forces the electron-density force field puts on the atoms of a session from the other molecules in it, sent on the
  * server's own initiative after a request. They describe the geometry at `version`, so they are out of date once the
@@ -472,6 +484,8 @@ export interface ForcesResult extends ServerEnvelope {
   energy: number | null;
   atoms: AtomForce[];
   fragments: FragmentForce[];
+  /** The energy between each pair of molecules, split into its parts. */
+  interactions: PairEnergy[];
   /** How long the calculation took, in milliseconds. */
   elapsed_ms: number;
   /** Why the forces are unavailable or could not be calculated. */
@@ -484,7 +498,7 @@ export interface ScanRequestAck extends ServerEnvelope {
 }
 
 /** The parts of an interaction energy, in hartree. */
-export interface ScanTerms {
+export interface EnergyTerms {
   nuclear_nuclear: number;
   nuclear_electron: number;
   electron_electron: number;
@@ -503,7 +517,7 @@ export interface ScanPoint {
    */
   energy_with_others: number | null;
   /** What `energy` is made of. */
-  terms: ScanTerms;
+  terms: EnergyTerms;
   /** Where the atoms of the molecule that is moved are at this distance, in the session's frame. */
   atoms: { id: string; position: Vec3 }[];
 }

@@ -31,6 +31,7 @@ import java.util.Set;
  * @param energy the total intermolecular energy, in hartree, or {@code null} if there are no forces
  * @param atoms the force on each atom, in hartree per bohr; empty if there are none
  * @param fragments the molecules, each with the total force and torque on it; empty if there are none
+ * @param interactions the energy between each pair of molecules, split into its parts; empty if there are none
  * @param elapsedMs how long the calculation took, in milliseconds
  * @param message why the forces are unavailable or could not be calculated, or {@code null} if they could
  */
@@ -43,6 +44,7 @@ public record ForceReport(
         Double energy,
         List<AtomForce> atoms,
         List<FragmentForce> fragments,
+        List<PairEnergy> interactions,
         long elapsedMs,
         String message)
 {
@@ -78,6 +80,18 @@ public record ForceReport(
     }
 
     /**
+     * The energy between two molecules.
+     *
+     * @param first an atom of the first molecule, which names it
+     * @param second an atom of the second molecule, which names it
+     * @param terms what the energy is made of, in hartree
+     * @param energy the interaction energy of the two, in hartree, which is the sum of the terms
+     */
+    public record PairEnergy(String first, String second, EnergyTerms terms, double energy)
+    {
+    }
+
+    /**
      * @param session the session the geometry is of
      * @param described the geometry to calculate forces for, taken from {@code session}
      * @param charges assigns each molecule's charges, which must follow the convention of {@link #MODEL}
@@ -90,7 +104,7 @@ public record ForceReport(
         List<List<Integer>> parts = connectedParts(structure);
         if (parts.size() < 2)
         {
-            return new ForceReport(TYPE, session.sessionId(), described.version(), "unavailable", null, null, List.of(), List.of(), 0,
+            return new ForceReport(TYPE, session.sessionId(), described.version(), "unavailable", null, null, List.of(), List.of(), List.of(), 0,
                     "The force field acts between separate molecules, and this is one. Add another, as in O.O");
         }
 
@@ -137,8 +151,18 @@ public record ForceReport(
             byFragment.add(new FragmentForce(List.copyOf(ids), centre.times(1.0 / BOHR_PER_ANGSTROM), force, torque));
         }
 
+        List<PairEnergy> byPair = new ArrayList<>();
+        for (int first = 0; first < molecules.size(); first++)
+        {
+            for (int second = first + 1; second < molecules.size(); second++)
+            {
+                EnergyTerms terms = EnergyTerms.of(ElectronDensityForceField.interaction(molecules.get(first), molecules.get(second), forceField.xc()));
+                byPair.add(new PairEnergy(described.sites().get(parts.get(first).getFirst()), described.sites().get(parts.get(second).getFirst()), terms, terms.total()));
+            }
+        }
+
         return new ForceReport(TYPE, session.sessionId(), described.version(), "complete", MODEL.name(), result.energy(),
-                List.copyOf(byAtom), List.copyOf(byFragment), 0, null);
+                List.copyOf(byAtom), List.copyOf(byFragment), List.copyOf(byPair), 0, null);
     }
 
     /**
@@ -147,7 +171,7 @@ public record ForceReport(
      */
     public ForceReport elapsed(long milliseconds)
     {
-        return new ForceReport(type, sessionId, version, status, model, energy, atoms, fragments, milliseconds, message);
+        return new ForceReport(type, sessionId, version, status, model, energy, atoms, fragments, interactions, milliseconds, message);
     }
 
     /**
@@ -159,7 +183,7 @@ public record ForceReport(
      */
     public static ForceReport failed(StudioSession session, long version, long elapsedMs, String message)
     {
-        return new ForceReport(TYPE, session.sessionId(), version, "failed", null, null, List.of(), List.of(), elapsedMs, message);
+        return new ForceReport(TYPE, session.sessionId(), version, "failed", null, null, List.of(), List.of(), List.of(), elapsedMs, message);
     }
 
     /**

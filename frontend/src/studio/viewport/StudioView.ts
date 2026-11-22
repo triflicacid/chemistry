@@ -29,6 +29,8 @@ import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
 import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
 import {HydrogenBondGuide} from "./scene/HydrogenBondGuide";
+import {MoleculeNumbers} from "./scene/MoleculeNumbers";
+import type {NumberedMolecule} from "../models/MoleculeNumbersModel";
 import type {HydrogenBondMark} from "../models/HydrogenBondModel";
 import {PanGuide} from "./scene/PanGuide";
 import {RingGuide} from "./scene/RingGuide";
@@ -62,6 +64,7 @@ export class StudioView {
   private readonly annotations: Annotations;
   private readonly forceArrows: ForceArrows;
   private readonly bondGuide: HydrogenBondGuide;
+  private readonly numbers: MoleculeNumbers;
   /** The camera, and the anchor the view is held on. */
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
@@ -113,6 +116,7 @@ export class StudioView {
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
     this.forceArrows = new ForceArrows(this.stage, this.kit, this.scene);
     this.bondGuide = new HydrogenBondGuide(this.stage, this.kit, this.scene);
+    this.numbers = new MoleculeNumbers(this.stage, this.kit, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
       this.molecule.sync();
@@ -265,6 +269,7 @@ export class StudioView {
     this.annotations.forget();
     this.forceArrows.forget();
     this.bondGuide.forget();
+    this.numbers.forget();
     this.scene.build(state);
     this.annotations.drawSystem();
     this.scene.refreshLocks();
@@ -415,6 +420,15 @@ export class StudioView {
    */
   showHydrogenBond(mark: HydrogenBondMark | null): void {
     this.bondGuide.show(mark);
+  }
+
+  /**
+   * Writes a number at the middle of each of some molecules.
+   *
+   * @param molecules the molecules to number, which must be of the structure now shown, or none to number none
+   */
+  showMoleculeNumbers(molecules: readonly NumberedMolecule[]): void {
+    this.numbers.show(molecules);
   }
 
   /**
