@@ -23,6 +23,23 @@ import java.util.List;
  */
 record MolecularSetup(BasisSet basis, List<PointCharge> nuclei, List<EcpCentre> cores, double[] effectiveCharges, int valenceElectrons)
 {
+
+    /**
+     * @param multiplicity the spin multiplicity {@code 2S + 1}
+     * @return the number of spin-up and the number of spin-down electrons, in that order, that give the molecule the multiplicity
+     * @throws IllegalArgumentException if the multiplicity is not possible with the number of electrons
+     */
+    int[] spinElectrons(int multiplicity)
+    {
+        int unpaired = multiplicity - 1;
+        // the unpaired electrons must make up the difference between the counts, so they share the parity of the electron count
+        if (unpaired > valenceElectrons || (valenceElectrons - unpaired) % 2 != 0)
+        {
+            throw new IllegalArgumentException("multiplicity " + multiplicity + " is not possible with " + valenceElectrons + " electrons");
+        }
+        return new int[] {(valenceElectrons + unpaired) / 2, (valenceElectrons - unpaired) / 2};
+    }
+
     /**
      * @param structure the molecule in three dimensions, with positions in ångström
      * @param conformer the index of the shape to use

@@ -2,7 +2,7 @@ package com.ruben.chemistry.quantum.population;
 
 import com.ruben.chemistry.quantum.linalg.Matrix;
 import com.ruben.chemistry.quantum.scf.ScfResult;
-import com.ruben.chemistry.quantum.scf.UnrestrictedScfResult;
+import com.ruben.chemistry.quantum.scf.SpinDensities;
 
 import java.util.List;
 
@@ -76,13 +76,13 @@ public final class MullikenAnalysis
     }
 
     /**
-     * @param result a converged unrestricted calculation
+     * @param result a converged open-shell calculation, restricted or unrestricted
      * @param siteOfFunction the index of the atom each basis function is centred on, in basis order
      * @param nuclearCharges the charge each atom's electrons see, in electrons; the effective nuclear charge when core electrons are replaced
      * @return the charge on each atom, its nuclear charge minus the population of both spins
      * @throws IllegalArgumentException if the site list does not match the basis or names an atom out of range
      */
-    public static double[] charges(UnrestrictedScfResult result, List<Integer> siteOfFunction, double[] nuclearCharges)
+    public static double[] charges(SpinDensities result, List<Integer> siteOfFunction, double[] nuclearCharges)
     {
         double[] populations = populations(result.totalDensity(), result.overlap(), siteOfFunction, nuclearCharges.length);
         double[] charges = new double[populations.length];
@@ -94,13 +94,13 @@ public final class MullikenAnalysis
     }
 
     /**
-     * @param result a converged unrestricted calculation
+     * @param result a converged open-shell calculation, restricted or unrestricted
      * @param siteOfFunction the index of the atom each basis function is centred on, in basis order
      * @param siteCount the number of atoms
      * @return the unpaired electrons on each atom, the spin-up population less the spin-down population; they sum to the difference of the electron counts
      * @throws IllegalArgumentException if the site list does not match the basis or names an atom out of range
      */
-    public static double[] spinPopulations(UnrestrictedScfResult result, List<Integer> siteOfFunction, int siteCount)
+    public static double[] spinPopulations(SpinDensities result, List<Integer> siteOfFunction, int siteCount)
     {
         return populations(result.spinDensity(), result.overlap(), siteOfFunction, siteCount);
     }

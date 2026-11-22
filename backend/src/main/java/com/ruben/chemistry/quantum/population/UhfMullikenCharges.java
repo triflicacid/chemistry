@@ -6,6 +6,9 @@ import com.ruben.chemistry.charges.PartialCharges;
 import com.ruben.chemistry.quantum.basis.BasisLibrary;
 import com.ruben.chemistry.quantum.basis.BasisSet;
 import com.ruben.chemistry.quantum.integrals.PointCharge;
+import com.ruben.chemistry.quantum.linalg.Matrix;
+import com.ruben.chemistry.quantum.scf.RestrictedOpenShellScf;
+import com.ruben.chemistry.quantum.scf.RestrictedOpenShellScfResult;
 import com.ruben.chemistry.quantum.scf.ScfSettings;
 import com.ruben.chemistry.quantum.scf.UnrestrictedScf;
 import com.ruben.chemistry.quantum.scf.UnrestrictedScfResult;
@@ -107,16 +110,14 @@ public final class UhfMullikenCharges implements PartialChargeModel
     public Calculation run(Structure3D structure, int conformer)
     {
         MolecularSetup setup = MolecularSetup.of(structure, conformer, library);
-        int unpaired = multiplicity - 1;
-        // the unpaired electrons must make up the difference between the counts, so they share the parity of the electron count
-        if (unpaired > setup.valenceElectrons() || (setup.valenceElectrons() - unpaired) % 2 != 0)
-        {
-            throw new IllegalArgumentException("multiplicity " + multiplicity + " is not possible with " + setup.valenceElectrons() + " electrons");
-        }
-        int alpha = (setup.valenceElectrons() + unpaired) / 2;
-        int beta = (setup.valenceElectrons() - unpaired) / 2;
+        int[] electrons = setup.spinElectrons(multiplicity);
+        int alpha = electrons[0];
+        int beta = electrons[1];
 
-        UnrestrictedScfResult result = UnrestrictedScf.run(setup.basis().functions(), setup.nuclei(), setup.cores(), alpha, beta, settings);
+        // the core-Hamiltonian guess can leave the iteration on an excited solution, so start from restricted open-shell orbitals when they converge
+        RestrictedOpenShellScfResult start = RestrictedOpenShellScf.run(setup.basis().functions(), setup.nuclei(), setup.cores(), alpha, beta, settings);
+        Matrix guess = start.converged() ? start.coefficients() : null;
+        UnrestrictedScfResult result = UnrestrictedScf.run(setup.basis().functions(), setup.nuclei(), setup.cores(), alpha, beta, settings, 0.0, guess);
         if (!result.converged())
         {
             throw new IllegalStateException("SCF did not converge in " + result.iterations() + " iterations");

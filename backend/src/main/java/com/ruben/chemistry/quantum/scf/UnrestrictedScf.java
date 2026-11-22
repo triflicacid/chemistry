@@ -69,6 +69,27 @@ public final class UnrestrictedScf
      */
     public static UnrestrictedScfResult run(List<ContractedGaussian> basis, List<PointCharge> nuclei, List<EcpCentre> cores, int alphaElectrons, int betaElectrons, ScfSettings settings, double mixing)
     {
+        return run(basis, nuclei, cores, alphaElectrons, betaElectrons, settings, mixing, null);
+    }
+
+    /**
+     * Starts from given orbitals instead of those of the core Hamiltonian. The core guess ignores electron
+     * repulsion and can put the electrons in the wrong orbitals, so that the iteration settles on a solution that
+     * is not the lowest; orbitals from a restricted open-shell calculation are a better start.
+     *
+     * @param basis the basis functions, in bohr
+     * @param nuclei the point charges, which carry the effective nuclear charge when core electrons are replaced
+     * @param cores the effective core potentials added to the one-electron Hamiltonian, empty for an all-electron calculation
+     * @param alphaElectrons the number of spin-up electrons treated explicitly, at least {@code betaElectrons}
+     * @param betaElectrons the number of spin-down electrons treated explicitly
+     * @param settings the convergence controls
+     * @param mixing the angle in radians by which the starting spin-down HOMO is rotated into the LUMO, 0 for none
+     * @param guess the starting orbitals as columns over the basis functions, orthonormal under the overlap matrix and ordered from the most to the least occupied, used for both spins; {@code null} for the orbitals of the core Hamiltonian
+     * @return the energy, orbitals and densities; {@code converged} is false if the iteration limit was reached
+     * @throws IllegalArgumentException if a count is negative, there are no electrons, there are more spin-down than spin-up electrons, a spin has more electrons than independent functions, mixing is requested with no spin-down electron or no empty orbital to mix with, or the guess does not match the basis
+     */
+    public static UnrestrictedScfResult run(List<ContractedGaussian> basis, List<PointCharge> nuclei, List<EcpCentre> cores, int alphaElectrons, int betaElectrons, ScfSettings settings, double mixing, Matrix guess)
+    {
         if (alphaElectrons < 0 || betaElectrons < 0 || alphaElectrons + betaElectrons == 0)
         {
             throw new IllegalArgumentException("need a positive number of electrons, got " + alphaElectrons + " spin-up and " + betaElectrons + " spin-down");
@@ -94,11 +115,12 @@ public final class UnrestrictedScf
             throw new IllegalArgumentException(alphaElectrons + " spin-up electrons do not fit in " + transform.columns() + " independent functions");
         }
 
-        // the first guess ignores electron repulsion, so both spins fill the same lowest orbitals of the core Hamiltonian
-        Orbitals alpha = diagonalise(core, transform);
-        Orbitals beta = alpha;
-        Matrix alphaDensity = density(alpha.coefficients(), alphaElectrons);
-        Matrix betaCoefficients = beta.coefficients();
+        // the core guess ignores electron repulsion, so both spins fill the same lowest orbitals of the core Hamiltonian
+        Matrix start = guess == null ? diagonalise(core, transform).coefficients() : checkedGuess(guess, overlap.rows(), alphaElectrons);
+        Orbitals alpha;
+        Orbitals beta;
+        Matrix alphaDensity = density(start, alphaElectrons);
+        Matrix betaCoefficients = start;
         if (mixing != 0.0)
         {
             betaCoefficients = rotateFrontier(betaCoefficients, betaElectrons, mixing);
@@ -156,11 +178,11 @@ public final class UnrestrictedScf
         throw new IllegalStateException("the last iteration always returns");
     }
 
-    private record Orbitals(double[] energies, Matrix coefficients)
+    record Orbitals(double[] energies, Matrix coefficients)
     {
     }
 
-    private static Orbitals diagonalise(Matrix fock, Matrix transform)
+    static Orbitals diagonalise(Matrix fock, Matrix transform)
     {
         // in the orthonormal basis the generalised problem F C = S C e is an ordinary symmetric eigenproblem
         Matrix orthogonal = transform.transpose().times(fock).times(transform);
@@ -172,7 +194,7 @@ public final class UnrestrictedScf
     /**
      * @return the density of the lowest {@code occupied} orbitals, each holding one electron
      */
-    private static Matrix density(Matrix coefficients, int occupied)
+    static Matrix density(Matrix coefficients, int occupied)
     {
         int n = coefficients.rows();
         Matrix density = new Matrix(n, n);
@@ -189,6 +211,15 @@ public final class UnrestrictedScf
             }
         }
         return density;
+    }
+
+    private static Matrix checkedGuess(Matrix guess, int functions, int alphaElectrons)
+    {
+        if (guess.rows() != functions || guess.columns() < alphaElectrons)
+        {
+            throw new IllegalArgumentException("the guess is " + guess.rows() + " by " + guess.columns() + ", the basis has " + functions + " functions and " + alphaElectrons + " spin-up electrons");
+        }
+        return guess;
     }
 
     private static Matrix rotateFrontier(Matrix coefficients, int occupied, double angle)
@@ -245,7 +276,7 @@ public final class UnrestrictedScf
     /**
      * Fills the Coulomb matrix {@code J = sum P_ls (mn|sl)} and the exchange matrices {@code K = sum P_ls (ml|sn)}
      */
-    private static void twoElectron(ElectronRepulsionTensor repulsion, Matrix total, Matrix alpha, Matrix beta, Matrix coulomb, Matrix exchangeAlpha, Matrix exchangeBeta)
+    static void twoElectron(ElectronRepulsionTensor repulsion, Matrix total, Matrix alpha, Matrix beta, Matrix coulomb, Matrix exchangeAlpha, Matrix exchangeBeta)
     {
         int n = total.rows();
         for (int mu = 0; mu < n; mu++)

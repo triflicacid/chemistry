@@ -34,55 +34,6 @@ public record UnrestrictedScfResult(
         Matrix betaCoefficients,
         Matrix alphaDensity,
         Matrix betaDensity,
-        Matrix overlap)
+        Matrix overlap) implements SpinDensities
 {
-    /**
-     * @return the density of all electrons, {@code P_alpha + P_beta}
-     */
-    public Matrix totalDensity()
-    {
-        return alphaDensity.plus(betaDensity);
-    }
-
-    /**
-     * @return the density of the unpaired electrons, {@code P_alpha - P_beta}
-     */
-    public Matrix spinDensity()
-    {
-        return alphaDensity.minus(betaDensity);
-    }
-
-    /**
-     * @return the expectation value of the spin component, {@code (N_alpha - N_beta) / 2}
-     */
-    public double spinProjection()
-    {
-        return 0.5 * (alphaElectrons - betaElectrons);
-    }
-
-    /**
-     * @return the spin eigenvalue the state would have if it were a pure spin state, {@code S (S + 1)} with {@code S} the spin projection
-     */
-    public double idealSpinSquared()
-    {
-        double s = spinProjection();
-        return s * (s + 1.0);
-    }
-
-    /**
-     * @return the expectation value of the squared total spin
-     */
-    public double spinSquared()
-    {
-        double overlapSum = alphaDensity.times(overlap).times(betaDensity).times(overlap).trace();
-        return idealSpinSquared() + betaElectrons - overlapSum;
-    }
-
-    /**
-     * @return how far the expectation value of the squared total spin lies above the pure-state value, zero for no contamination
-     */
-    public double spinContamination()
-    {
-        return spinSquared() - idealSpinSquared();
-    }
 }
