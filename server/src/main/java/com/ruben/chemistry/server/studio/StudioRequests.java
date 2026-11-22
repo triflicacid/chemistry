@@ -126,6 +126,13 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session whose atoms' forces to calculate
+     */
+    public record ForcesRequest(String sessionId)
+    {
+    }
+
+    /**
      * @param sessionId the session whose optimisation to stop
      */
     public record CancelOptimiseRequest(String sessionId)

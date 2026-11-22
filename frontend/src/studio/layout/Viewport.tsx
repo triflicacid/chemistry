@@ -43,6 +43,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     addAtom,
     addBond,
     charges,
+    forces,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
@@ -114,7 +115,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
 
   // atoms are coloured by what the server last calculated for them. A result a little behind the session is kept, so that
   // the colours do not flicker while an atom is dragged, and the Properties section says that it is updating
-  const { colourBy, polarLabels, polarThreshold } = useObservable(models.properties);
+  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces } = useObservable(models.properties);
   const charged = useMemo(() => (colourBy === "charge" && charges?.session_id === state?.session_id ? chargeScale(charges) : null), [colourBy, charges, state?.session_id]);
   useEffect(() => {
     view?.colourAtoms(charged?.colours ?? null);
@@ -122,6 +123,12 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.labelPolarity(polarLabels && charged ? charged.charges : null, polarThreshold);
   }, [view, charged, polarLabels, polarThreshold]);
+
+  // forces are drawn only for the version they were made from, since an arrow that stays where an atom was is worse than none
+  const forceable = forceArrows && forces !== null && state !== null && forces.session_id === state.session_id && forces.version === state.version;
+  useEffect(() => {
+    view?.showForces(forceable ? forces : null, { scale: forceScale, net: netForces });
+  }, [view, forceable, forces, forceScale, netForces]);
 
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);

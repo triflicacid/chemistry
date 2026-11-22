@@ -34,6 +34,9 @@ public final class WebSocketSession implements WebSocketContext
     /** The most bytes discarded while waiting for the peer to stop sending. */
     private static final int DRAIN_LIMIT = 64 * 1024;
 
+    /** The most characters of one message that are logged, so that a very large one does not flood the log. */
+    private static final int MAX_LOGGED = 1000;
+
     private final String id;
     private final Socket socket;
     private final Handshake handshake;
@@ -240,6 +243,23 @@ public final class WebSocketSession implements WebSocketContext
         closeSocket();
     }
 
+    /**
+     * @param message a message just received
+     * @return what to log of it: its text, cut short if it is very long, or the size of a binary message
+     */
+    private static String describe(WebSocketMessage message)
+    {
+        if (!message.isText())
+        {
+            return "<binary " + message.size() + " bytes>";
+        }
+
+        String text = message.text();
+        return text.length() <= MAX_LOGGED
+                ? text
+                : text.substring(0, MAX_LOGGED) + "... (" + text.length() + " characters)";
+    }
+
     @Override
     public String toString()
     {
@@ -394,11 +414,11 @@ public final class WebSocketSession implements WebSocketContext
                 message.reset();
                 messageType = null;
 
-                listener.onMessage(
-                        type == Opcode.TEXT
-                                ? WebSocketMessage.text(text(completePayload))
-                                : WebSocketMessage.binary(completePayload),
-                        this);
+                WebSocketMessage received = type == Opcode.TEXT
+                        ? WebSocketMessage.text(text(completePayload))
+                        : WebSocketMessage.binary(completePayload);
+                System.out.println("ws--> " + id + " " + describe(received));
+                listener.onMessage(received, this);
             }
         }
         catch (WebSocketException broken)

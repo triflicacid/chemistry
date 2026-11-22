@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 16;
+export const PROTOCOL_VERSION = 17;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -410,6 +410,52 @@ export interface ChargesProgress extends ServerEnvelope {
   elapsed_ms: number;
 }
 
+/** The answer to a request for forces, which says only that the request was understood: the forces follow as a `forces.result`. */
+export interface ForcesRequestAck extends ServerEnvelope {
+  type: "forces.request.ack";
+}
+
+/** The force on one atom. */
+export interface AtomForce {
+  id: string;
+  /** In hartree per bohr. */
+  force: Vec3;
+}
+
+/** The total force and torque on one molecule of the session. */
+export interface FragmentForce {
+  atoms: string[];
+  /** The mean position of the molecule's atoms in the session's frame, in angstroms, which the torque is about. */
+  centre: Vec3;
+  /** In hartree per bohr. */
+  force: Vec3;
+  /** In hartree. */
+  torque: Vec3;
+}
+
+/**
+ * The forces the electron-density force field puts on the atoms of a session from the other molecules in it, sent on the
+ * server's own initiative after a request. They describe the geometry at `version`, so they are out of date once the
+ * session has moved on from that.
+ */
+export interface ForcesResult extends ServerEnvelope {
+  type: "forces.result";
+  session_id: string;
+  version: number;
+  /** `unavailable` if the session is one molecule, which has nothing acting on it from outside. */
+  status: "complete" | "unavailable" | "failed";
+  /** The parameterisation of the force field, such as `ECP`. */
+  model: string | null;
+  /** The total intermolecular energy in hartree. */
+  energy: number | null;
+  atoms: AtomForce[];
+  fragments: FragmentForce[];
+  /** How long the calculation took, in milliseconds. */
+  elapsed_ms: number;
+  /** Why the forces are unavailable or could not be calculated. */
+  message: string | null;
+}
+
 /** One term of the geometry beyond its tolerance. */
 export interface GeometryFinding {
   kind: "bond" | "angle" | "clash";
@@ -491,5 +537,7 @@ export type ServerMessage =
   | ChargesRequestAck
   | ChargesProgress
   | ChargesResult
+  | ForcesRequestAck
+  | ForcesResult
   | SocketError
   | Pong;

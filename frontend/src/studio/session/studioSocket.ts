@@ -1,26 +1,27 @@
 import type {Vec3} from "../../api/types/structure";
 import {
-    type AtomChange,
-    type AtomPlacement,
-    type BondEditAck,
-    type BondOrder,
-    type CameraAck,
-    type ChargesRequestAck,
-    type EditApplied,
-    type EditHistory,
-    type GraphEditAck,
-    type LockAck,
-    type OptimiseCancelAck,
-    type OptimiseStarted,
-    type PatchAck,
-    type Pose,
-    PROTOCOL_VERSION,
-    type ServerEnvelope,
-    type SessionCamera,
-    type SessionConflict,
-    type SessionReady,
-    type SessionState,
-    type TransformAck,
+  type AtomChange,
+  type AtomPlacement,
+  type BondEditAck,
+  type BondOrder,
+  type CameraAck,
+  type ChargesRequestAck,
+  type EditApplied,
+  type EditHistory,
+  type ForcesRequestAck,
+  type GraphEditAck,
+  type LockAck,
+  type OptimiseCancelAck,
+  type OptimiseStarted,
+  type PatchAck,
+  type Pose,
+  PROTOCOL_VERSION,
+  type ServerEnvelope,
+  type SessionCamera,
+  type SessionConflict,
+  type SessionReady,
+  type SessionState,
+  type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -494,6 +495,17 @@ export class StudioSocket {
    */
   requestCharges(sessionId: string, model?: string): Promise<ChargesRequestAck> {
     return this.request<ChargesRequestAck>("charges.request", { session_id: sessionId, ...(model ? { model } : {}) }, "charges.request.ack");
+  }
+
+  /**
+   * Asks for the force on every atom of a session from the other molecules in it. The answer says only that the request
+   * was understood: listen for `forces.result` for the forces, which the server sends once the session has been left alone
+   * and drops if it moves on first.
+   *
+   * @param sessionId the session whose atoms to calculate forces for
+   */
+  requestForces(sessionId: string): Promise<ForcesRequestAck> {
+    return this.request<ForcesRequestAck>("forces.request", { session_id: sessionId }, "forces.request.ack");
   }
 
   /**

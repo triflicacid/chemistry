@@ -12,6 +12,7 @@ import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.molecule.StudioSnapshot;
 import com.ruben.chemistry.server.studio.ChargeModels;
 import com.ruben.chemistry.server.studio.ChargeScheduler;
+import com.ruben.chemistry.server.studio.ForceScheduler;
 import com.ruben.chemistry.server.studio.GeometryScheduler;
 import com.ruben.chemistry.server.studio.OptimisationRunner;
 import com.ruben.chemistry.server.studio.StudioEditException;
@@ -43,7 +44,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 16;
+    private static final int PROTOCOL_VERSION = 17;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -53,6 +54,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     private final GeometryScheduler geometry;
     private final OptimisationRunner optimiser;
     private final ChargeScheduler charges;
+    private final ForceScheduler forces;
     private final MoleculeParser parser = new MoleculeParser();
 
     /** The connection each session's results are sent to, which is the one holding it. */
@@ -105,7 +107,21 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges)
     {
+        this(molecules, sessions, geometry, optimiser, charges, new ForceScheduler(ForceScheduler.DEFAULT_DEBOUNCE));
+    }
+
+    /**
+     * @param molecules the molecules a session can be opened on
+     * @param sessions where to hold the open sessions
+     * @param geometry what examines a session's geometry once it has been left alone
+     * @param optimiser what relaxes a session's geometry when asked to
+     * @param charges what works out the partial charges of a session's atoms when asked to
+     * @param forces what works out the forces on a session's atoms when asked to
+     */
+    public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges, ForceScheduler forces)
+    {
         this.charges = Objects.requireNonNull(charges, "charges");
+        this.forces = Objects.requireNonNull(forces, "forces");
         this.molecules = Objects.requireNonNull(molecules, "molecules");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.geometry = Objects.requireNonNull(geometry, "geometry");
@@ -668,6 +684,47 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "charges.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for the forces on a session's atoms, as the geometry is when they have been calculated. The answer says only
+     * that the request was understood; the forces follow, from another thread, as {@code forces.result}, which is dropped
+     * if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestForces(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.ForcesRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.ForcesRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("forces.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("forces.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        forces.schedule(session, report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "forces.request.ack");
         ack.put("sequence", sequence);
         context.sendJson(ack);
     }
@@ -1555,6 +1612,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("optimise.start", endpoint::optimise),
                     Map.entry("optimise.cancel", endpoint::cancelOptimise),
                     Map.entry("charges.request", endpoint::requestCharges),
+                    Map.entry("forces.request", endpoint::requestForces),
                     Map.entry("edit.undo", endpoint::undo),
                     Map.entry("edit.redo", endpoint::redo),
                     Map.entry("history.list", endpoint::history),

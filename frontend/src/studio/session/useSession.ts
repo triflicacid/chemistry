@@ -2,23 +2,25 @@ import {useMemo, useRef} from "react";
 import {ChemistryApi} from "../../api/ChemistryApi";
 import type {Vec3} from "../../api/types/structure";
 import type {
-    AtomChange,
-    AtomMove,
-    AtomPlacement,
-    BondEdit,
-    BondOrder,
-    ChargesProgress,
-    ChargesResult,
-    GeometryResult,
-    HistoryEntry,
-    Pose,
-    SessionCamera,
-    SessionState
+  AtomChange,
+  AtomMove,
+  AtomPlacement,
+  BondEdit,
+  BondOrder,
+  ChargesProgress,
+  ChargesResult,
+  ForcesResult,
+  GeometryResult,
+  HistoryEntry,
+  Pose,
+  SessionCamera,
+  SessionState
 } from "./messages";
 import {useCameraSave} from "./camera";
 import type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
 import {type Calculating, useCharges} from "./useCharges";
 import {useDrags} from "./useDrags";
+import {useForces} from "./useForces";
 import {useEdits} from "./useEdits";
 import {useOptimise} from "./useOptimise";
 import {type SocketEvents, useSocket} from "./useSocket";
@@ -42,6 +44,15 @@ export interface Session {
    * `version`, which is out of date once the session has moved on.
    */
   charges: ChargesResult | null;
+  /**
+   * The forces the other molecules put on each atom, as the server last said, once it has been asked. They describe the
+   * version in `version`, which is out of date once the session has moved on.
+   */
+  forces: ForcesResult | null;
+  /** When the calculation of the forces under way was asked for, as `Date.now` says, or null if there is none. */
+  calculatingForcesSince: number | null;
+  /** Asks the server for the forces on the session as it is now, which arrive as `forces`. */
+  requestForces: () => void;
   /** The calculation of the charges that is under way, or null if there is none. */
   calculatingCharges: Calculating | null;
   /** How the calculation of the charges is getting on, or null if the server has not said. */
@@ -146,6 +157,7 @@ export function useSession(client?: ChemistryApi): Session {
   const drags = useDrags(socket, edits);
   const { optimising, outcome, optimise, cancelOptimise } = useOptimise(socket, edits, events);
   const saveCamera = useCameraSave(socket);
+  const { forces, calculatingSince: calculatingForcesSince, requestForces } = useForces(socket);
   const { charges, calculating: calculatingCharges, progress: chargesProgress, requestCharges } = useCharges(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
@@ -157,6 +169,9 @@ export function useSession(client?: ChemistryApi): Session {
     optimising,
     outcome,
     geometry,
+    forces,
+    calculatingForcesSince,
+    requestForces,
     charges,
     calculatingCharges,
     chargesProgress,

@@ -1164,6 +1164,11 @@ body.resizing {
   cursor: pointer;
 }
 
+.legend-key {
+  margin-right: 0.5rem;
+  white-space: nowrap;
+}
+
 .legend-note {
   font-size: 0.8rem;
 }

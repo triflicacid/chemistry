@@ -77,7 +77,7 @@ public final class ChargeModels
 
     private static PartialChargeModel covered(BasisLibrary library, PartialChargeModel model)
     {
-        return new FallbackCharges(model, library.symbols());
+        return new FallbackCharges(new Bare(library, model), library.symbols());
     }
 
     /**
@@ -93,6 +93,42 @@ public final class ChargeModels
             electrons += library.element(site.element()).effectiveNuclearCharge() - site.charge();
         }
         return electrons;
+    }
+
+    /**
+     * Leaves a molecule with no electrons treated explicitly, such as a bare sodium ion, to its formal charges, which are
+     * then also its Mulliken charges, since there is nothing to share out.
+     */
+    private static final class Bare implements PartialChargeModel
+    {
+        private final BasisLibrary library;
+        private final PartialChargeModel model;
+
+        private Bare(BasisLibrary library, PartialChargeModel model)
+        {
+            this.library = library;
+            this.model = model;
+        }
+
+        @Override
+        public String name()
+        {
+            return model.name();
+        }
+
+        @Override
+        public ChargeConvention convention()
+        {
+            return model.convention();
+        }
+
+        @Override
+        public PartialCharges calculate(Structure3D structure, int conformer)
+        {
+            return electrons(structure, library) == 0
+                    ? new PartialCharges(ChargeConvention.MULLIKEN, structure.sites().stream().map(site -> (double) site.charge()).toList())
+                    : model.calculate(structure, conformer);
+        }
     }
 
     /**

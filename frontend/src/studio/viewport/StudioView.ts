@@ -27,6 +27,7 @@ import {PointerRouter} from "./input/PointerRouter";
 import {RollRingInteraction} from "./input/RollRingInteraction";
 import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
+import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
 import {PanGuide} from "./scene/PanGuide";
 import {RingGuide} from "./scene/RingGuide";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
@@ -34,7 +35,7 @@ import type {Emphasis} from "../models/items";
 import type {SystemView} from "../geometry/conjugation";
 import {ReferenceLayer} from "./scene/ReferenceLayer";
 import type {StudioViewListener} from "./StudioViewListener";
-import type {GeometryResult, SessionState} from "../session/messages";
+import type {ForcesResult, GeometryResult, SessionState} from "../session/messages";
 import type {AngleView, Pivot, Space, Tool, TorsionView} from "../models/ToolModel";
 import type {CameraEdit, CameraState} from "../models/CameraModel";
 import {type Binding, dispatchKey} from "../keys/binding";
@@ -57,6 +58,7 @@ export class StudioView {
   private readonly scene: MoleculeScene;
   /** What is marked on the molecule: strain, lengths, torsions and angles. */
   private readonly annotations: Annotations;
+  private readonly forceArrows: ForceArrows;
   /** The camera, and the anchor the view is held on. */
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
@@ -106,6 +108,7 @@ export class StudioView {
     this.scene = new MoleculeScene(this.stage, this.kit);
     this.lock = new CameraLock(this.stage);
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
+    this.forceArrows = new ForceArrows(this.stage, this.kit, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
       this.molecule.sync();
@@ -256,6 +259,7 @@ export class StudioView {
     this.scene.structureKey = structureKey;
     this.scene.clear();
     this.annotations.forget();
+    this.forceArrows.forget();
     this.scene.build(state);
     this.annotations.drawSystem();
     this.scene.refreshLocks();
@@ -387,6 +391,16 @@ export class StudioView {
    */
   labelPolarity(charges: ReadonlyMap<string, number> | null, threshold: number): void {
     this.scene.labelPolarity(charges, threshold);
+  }
+
+  /**
+   * Draws the forces the other molecules put on each atom as arrows.
+   *
+   * @param result what the session said of the forces, which must be of the structure now shown, or null to show none
+   * @param options how to draw them
+   */
+  showForces(result: ForcesResult | null, options: ForceOptions): void {
+    this.forceArrows.show(result, options);
   }
 
   /**

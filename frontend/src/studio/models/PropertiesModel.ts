@@ -36,6 +36,17 @@ export function asColourBy(value: unknown): ColourBy {
   return COLOURINGS.find((colouring) => colouring === value) ?? "element";
 }
 
+export const MIN_FORCE_SCALE = 0.25;
+export const MAX_FORCE_SCALE = 3;
+
+/**
+ * @param scale a multiple of the usual arrow length
+ * @returns the nearest scale the arrows can be drawn at, to the hundredth
+ */
+export function clampForceScale(scale: number): number {
+  return Number.isFinite(scale) ? Math.round(Math.min(MAX_FORCE_SCALE, Math.max(MIN_FORCE_SCALE, scale)) * 100) / 100 : 1;
+}
+
 export const MIN_POLAR_THRESHOLD = 0.05;
 export const MAX_POLAR_THRESHOLD = 0.6;
 export const DEFAULT_POLAR_THRESHOLD = 0.2;
@@ -60,6 +71,12 @@ export interface PropertiesState {
   polarLabels: boolean;
   /** How far from zero, in elementary charges, a partial charge must be for its atom to be labelled. */
   polarThreshold: number;
+  /** Whether the force the other molecules put on each atom is drawn as an arrow. */
+  forceArrows: boolean;
+  /** A multiple of the usual length of a force arrow. */
+  forceScale: number;
+  /** Whether the total force and torque on each molecule are drawn too. */
+  netForces: boolean;
   /** Whether the Properties section is open. */
   open: boolean;
 }
@@ -108,6 +125,34 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   /**
+   * @param forceArrows whether to draw the force on each atom
+   */
+  forcesTo(forceArrows: boolean): void {
+    if (this.get().forceArrows !== forceArrows) {
+      this.change({ ...this.get(), forceArrows });
+    }
+  }
+
+  /**
+   * @param scale a multiple of the usual length of a force arrow
+   */
+  forceScaleTo(scale: number): void {
+    const forceScale = clampForceScale(scale);
+    if (this.get().forceScale !== forceScale) {
+      this.change({ ...this.get(), forceScale });
+    }
+  }
+
+  /**
+   * @param netForces whether to draw the total force and torque on each molecule
+   */
+  netForcesTo(netForces: boolean): void {
+    if (this.get().netForces !== netForces) {
+      this.change({ ...this.get(), netForces });
+    }
+  }
+
+  /**
    * Opens or closes the Properties section.
    *
    * @param open whether it is open
@@ -128,7 +173,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, open: false };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, open: false };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -144,6 +189,9 @@ export class PropertiesModel extends Observable<PropertiesState> {
       colourBy: asColourBy(held.colourBy),
       chargeModel: asChargeModel(held.chargeModel),
       polarLabels: typeof held.polarLabels === "boolean" ? held.polarLabels : defaults.polarLabels,
+      forceArrows: typeof held.forceArrows === "boolean" ? held.forceArrows : defaults.forceArrows,
+      forceScale: typeof held.forceScale === "number" ? clampForceScale(held.forceScale) : defaults.forceScale,
+      netForces: typeof held.netForces === "boolean" ? held.netForces : defaults.netForces,
       polarThreshold: typeof held.polarThreshold === "number" ? clampPolarThreshold(held.polarThreshold) : defaults.polarThreshold,
       open: typeof held.open === "boolean" ? held.open : defaults.open,
     };

@@ -1,13 +1,17 @@
 import {useEffect, useState} from "react";
 import type {Models} from "../models/models";
 import {
-    CHARGE_MODELS,
-    type ChargeModel,
-    type ColourBy,
-    DEFAULT_POLAR_THRESHOLD,
-    MAX_POLAR_THRESHOLD,
-    MIN_POLAR_THRESHOLD,
+  CHARGE_MODELS,
+  type ChargeModel,
+  type ColourBy,
+  DEFAULT_POLAR_THRESHOLD,
+  MAX_FORCE_SCALE,
+  MAX_POLAR_THRESHOLD,
+  MIN_FORCE_SCALE,
+  MIN_POLAR_THRESHOLD,
 } from "../models/PropertiesModel";
+import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
+import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArrows";
 import {useObservable} from "../models/observable";
 import {divergingGradient} from "../../render/scale";
 import {chargeScale} from "../layout/chargeScale";
@@ -26,7 +30,7 @@ const TICK_MS = 100;
 /** What is shown on the molecule beyond its shape: which calculated property the atoms are coloured by. */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, open } = useObservable(properties);
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, open } = useObservable(properties);
 
   return (
     <section className="render-options" aria-label="Properties">
@@ -88,6 +92,41 @@ export function PropertiesOptions({ models }: { models: Models }) {
               <ChargeLegend />
             </>
           )}
+          <dt>Forces</dt>
+          <dd>
+            <label className="legend-check" title="Draw an arrow on each atom for the force the other molecules in the session put on it. A single molecule has none">
+              <input type="checkbox" checked={forceArrows} onChange={(event) => properties.forcesTo(event.target.checked)} />
+              Show force arrows
+            </label>
+          </dd>
+          {forceArrows && (
+            <>
+              <dt>Length</dt>
+              <dd className="position">
+                <input
+                  type="range"
+                  className="render-slider"
+                  min={Math.round(MIN_FORCE_SCALE * 100)}
+                  max={Math.round(MAX_FORCE_SCALE * 100)}
+                  step={5}
+                  value={Math.round(forceScale * 100)}
+                  aria-label="How long the force arrows are drawn, as a multiple of the usual length"
+                  title="How long the arrows are drawn. They are drawn in proportion to the largest force, so this is relative. Double-click to put it back"
+                  onChange={(event) => properties.forceScaleTo(Number(event.target.value) / 100)}
+                  onDoubleClick={() => properties.forceScaleTo(1)}
+                />
+                <span className="unit render-value">×{forceScale.toFixed(2)}</span>
+              </dd>
+              <dt />
+              <dd>
+                <label className="legend-check" title="Also draw the total force on each molecule, and the torque that turns it">
+                  <input type="checkbox" checked={netForces} onChange={(event) => properties.netForcesTo(event.target.checked)} />
+                  Total force and torque
+                </label>
+              </dd>
+              <ForceStatus net={netForces} />
+            </>
+          )}
         </dl>
       )}
     </section>
@@ -106,7 +145,7 @@ function ChargeLegend() {
         <>
           <dt>Status</dt>
           <dd className="legend-note" role="status">
-            <Running startedAt={calculatingCharges.startedAt} progress={chargesProgress} />
+            <Running startedAt={calculatingCharges.startedAt} detail={describeProgress(chargesProgress)} />
           </dd>
         </>
       )}
@@ -145,8 +184,53 @@ function ChargeLegend() {
   );
 }
 
+/** How the calculation of the forces is getting on, what the arrows mean, and why there are none if there are none. */
+function ForceStatus({ net }: { net: boolean }) {
+  const { forces, calculatingForcesSince, state } = useSessionContext();
+  const current = forces !== null && state !== null && forces.session_id === state.session_id && forces.version === state.version;
+  const key = (colour: string, what: string) => (
+    <span className="legend-key">
+      <span style={{ color: colour }}>●</span> {what}
+    </span>
+  );
+
+  return (
+    <>
+      {calculatingForcesSince !== null && (
+        <>
+          <dt>Status</dt>
+          <dd className="legend-note" role="status">
+            <Running startedAt={calculatingForcesSince} detail="working out the forces…" />
+          </dd>
+        </>
+      )}
+      {calculatingForcesSince === null && forces && forces.status !== "complete" && (
+        <>
+          <dt>Forces</dt>
+          <dd className="legend-note">{forces.message ?? "They could not be calculated."}</dd>
+        </>
+      )}
+      {forces?.status === "complete" && forces.energy !== null && (
+        <>
+          <dt>Strongest</dt>
+          <dd className="legend-note">
+            {toKcalPerAngstrom(largest(forces).atom).toFixed(2)} kcal/mol/Å
+            {current && calculatingForcesSince === null ? <Took milliseconds={forces.elapsed_ms} /> : " (updating…)"}
+          </dd>
+          <dt>Energy</dt>
+          <dd className="legend-note">{(forces.energy * KCAL_PER_HARTREE).toFixed(3)} kcal/mol between the molecules</dd>
+          <dt>Key</dt>
+          <dd className="legend-note">
+            {key(ATOM_COLOUR, "atom")} {net && key(NET_COLOUR, "total force")} {net && key(TORQUE_COLOUR, "torque axis")}
+          </dd>
+        </>
+      )}
+    </>
+  );
+}
+
 /** How long a calculation has been running, counting up, with what the server last said it is doing. */
-function Running({ startedAt, progress }: { startedAt: number; progress: ChargesProgress | null }) {
+function Running({ startedAt, detail }: { startedAt: number; detail: string }) {
   const [now, setNow] = useState(() => Date.now());
 
   // the timer counts on its own, so that it keeps moving through the stretches where the server has nothing to say
@@ -158,7 +242,7 @@ function Running({ startedAt, progress }: { startedAt: number; progress: Charges
 
   return (
     <>
-      <span className="mono">{seconds(Math.max(0, now - startedAt))}</span> {describeProgress(progress)}
+      <span className="mono">{seconds(Math.max(0, now - startedAt))}</span> {detail}
     </>
   );
 }

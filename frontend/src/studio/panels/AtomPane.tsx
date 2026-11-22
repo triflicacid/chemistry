@@ -10,6 +10,7 @@ import {type Segment, Segmented} from "../controls/Segmented";
 import type {Hold} from "../geometry/bondLength";
 import {heaviestFirst} from "../geometry/torsion";
 import {angleAt, angleMovers, choosePair} from "../geometry/angle";
+import {magnitude, toKcalPerAngstrom} from "../layout/forceArrows";
 import {Links, Property} from "./paneParts";
 import {RingMemberships} from "./RingMemberships";
 import {StrainDetails} from "./StrainDetails";
@@ -23,12 +24,16 @@ interface AtomPaneProps {
 
 /** Describe a single atom. */
 export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
-  const { moveAtom, lockAtoms, charges } = useSessionContext();
+  const { moveAtom, lockAtoms, charges, forces } = useSessionContext();
   const { position } = atom;
   const fragment = index.fragmentOf({ kind: "atom", id: atom.id });
   const state = index.state;
   const locked = state.locked.includes(atom.id);
   const partialCharge = charges?.status === "complete" && charges.session_id === state.session_id ? charges.charges.find((entry) => entry.id === atom.id)?.charge : undefined;
+  const atomForce =
+    forces?.status === "complete" && forces.session_id === state.session_id && forces.version === state.version
+      ? forces.atoms.find((entry) => entry.id === atom.id)?.force
+      : undefined;
   return (
     <>
       <h3 className="pane-title">Atom {index.label(atom.id)}</h3>
@@ -42,6 +47,7 @@ export function AtomPane({ atom, index, geometry, models }: AtomPaneProps) {
         <Property name="Aromatic" value={atom.aromatic ? "yes" : "no"} />
         <Property name="Radius" value={atom.radius.toFixed(3) + " Å"} />
         {partialCharge !== undefined && <Property name="Partial charge" value={partialCharge.toFixed(3)} mono />}
+        {atomForce !== undefined && <Property name="Force" value={`${toKcalPerAngstrom(magnitude(atomForce)).toFixed(3)} kcal/mol/Å`} mono />}
         {atom.was_implicit && <Property name="Origin" value="was an implicit hydrogen" />}
         {fragment !== null && <Property name="Molecule" value={index.fragments.get(fragment)?.name ?? "?"} />}
       </dl>
