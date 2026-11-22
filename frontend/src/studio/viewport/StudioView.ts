@@ -31,6 +31,8 @@ import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
 import {HydrogenBondGuide} from "./scene/HydrogenBondGuide";
 import {MoleculeNumbers} from "./scene/MoleculeNumbers";
 import {FieldSurfaceMesh, type SurfacePart} from "./scene/FieldSurfaceMesh";
+import {SlicePlane} from "./scene/SlicePlane";
+import type {SliceDrawing} from "../layout/slice";
 import {type OrbitalDrawn, type OrbitalOptions, OrbitalSurface} from "./scene/OrbitalSurface";
 import type {DrawnOrbital} from "../layout/orbitals";
 import type {NumberedMolecule} from "../models/MoleculeNumbersModel";
@@ -70,6 +72,7 @@ export class StudioView {
   private readonly numbers: MoleculeNumbers;
   private readonly orbital: OrbitalSurface;
   private readonly fieldSurface: FieldSurfaceMesh;
+  private readonly slicePlane: SlicePlane;
   /** The camera, and the anchor the view is held on. */
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
@@ -124,6 +127,7 @@ export class StudioView {
     this.numbers = new MoleculeNumbers(this.stage, this.kit, this.scene);
     this.orbital = new OrbitalSurface(this.stage, this.scene);
     this.fieldSurface = new FieldSurfaceMesh(this.stage, this.scene);
+    this.slicePlane = new SlicePlane(this.stage, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
       this.molecule.sync();
@@ -279,6 +283,7 @@ export class StudioView {
     this.numbers.forget();
     this.orbital.forget();
     this.fieldSurface.forget();
+    this.slicePlane.forget();
     this.scene.build(state);
     this.annotations.drawSystem();
     this.scene.refreshLocks();
@@ -462,11 +467,26 @@ export class StudioView {
   }
 
   /**
-   * @param event where the pointer is
-   * @returns where the pointer meets the field surface, in the structure's frame, or null if it is not on it
+   * Draws a field on a plane through the molecule, as a colour picture with lines of constant value across it.
+   *
+   * @param drawing the plane, in the structure's frame, which must be of the structure now shown, or null to show none
    */
-  probeFieldSurface(event: { clientX: number; clientY: number }): { x: number; y: number; z: number } | null {
-    return this.fieldSurface.probe(event);
+  showSlice(drawing: SliceDrawing | null): void {
+    this.slicePlane.show(drawing);
+  }
+
+  /**
+   * @param event where the pointer is
+   * @returns what the pointer is over of a field, the surface or the slice plane, whichever is nearer the camera, and where, in the
+   *     structure's frame; or null if it is over neither
+   */
+  probeField(event: { clientX: number; clientY: number }): { on: "surface" | "slice"; at: { x: number; y: number; z: number } } | null {
+    const surface = this.fieldSurface.probe(event);
+    const slice = this.slicePlane.probe(event);
+    if (surface && (!slice || surface.distance <= slice.distance)) {
+      return { on: "surface", at: surface.point };
+    }
+    return slice ? { on: "slice", at: slice.point } : null;
   }
 
   /**

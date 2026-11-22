@@ -41,15 +41,16 @@ export class FieldSurfaceMesh {
 
   /**
    * @param event where the pointer is
-   * @returns where the pointer's ray first meets a surface, in the molecule's own frame, or null if there are none or the ray misses them
+   * @returns where the pointer's ray first meets a surface, in the molecule's own frame, and how far from the camera that is, or null if there
+   *     are none or the ray misses them
    */
-  probe(event: { clientX: number; clientY: number }): Vector3 | null {
+  probe(event: { clientX: number; clientY: number }): { point: Vector3; distance: number } | null {
     if (!this.marks) {
       return null;
     }
     this.raycaster.setFromCamera(this.stage.pointer(event), this.stage.camera);
     const hit = this.raycaster.intersectObjects(this.marks.children, false)[0];
-    return hit ? this.scene.content.worldToLocal(hit.point.clone()) : null;
+    return hit ? { point: this.scene.content.worldToLocal(hit.point.clone()), distance: hit.distance } : null;
   }
 
   /**

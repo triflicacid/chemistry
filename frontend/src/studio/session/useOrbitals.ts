@@ -2,7 +2,7 @@ import {useCallback, useEffect, useState} from "react";
 import type {FieldResult, InteractionResult, OrbitalsResult, OrbitalTarget} from "./messages";
 import {reason} from "./errors";
 import type {SessionLink} from "./useSocket";
-import {useWarnOnce} from "./warnings";
+import {useWarner} from "./warnings";
 
 /** How many fields are kept. */
 const KEPT = 160;
@@ -53,9 +53,9 @@ function sameField(first: FieldResult, second: FieldResult): boolean {
  * @param link the connection
  */
 export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbitals {
-  const warnLevels = useWarnOnce(warn);
-  const warnField = useWarnOnce(warn);
-  const warnInteraction = useWarnOnce(warn);
+  const warnLevels = useWarner(warn);
+  const warnField = useWarner(warn);
+  const warnInteraction = useWarner(warn);
   const [orbitals, setOrbitals] = useState<OrbitalsResult | null>(null);
   const [orbitalsSince, setOrbitalsSince] = useState<number | null>(null);
   const [fields, setFields] = useState<readonly FieldResult[]>([]);

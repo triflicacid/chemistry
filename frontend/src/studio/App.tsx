@@ -6,6 +6,7 @@ import {useObservable} from "./models/observable";
 import {answers, fragmentsFor, resolveTargets} from "./layout/orbitals";
 import {StateIndex} from "./geometry/StateIndex";
 import {useChemistry} from "./chemistry/useChemistry";
+import {useAsk} from "./session/warnings";
 import {useSession} from "./session/useSession";
 import {SessionProvider} from "./session/SessionContext";
 import {KEYS} from "./keys/keymap";
@@ -20,7 +21,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestDensity, requestSpin, requestDifference } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestDensity, requestSpin, requestDifference, requestPlane } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -40,43 +41,23 @@ export function App() {
 
   // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
   // The server waits for the session to be left alone, so a drag asks many times and is answered once
-  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity } = useObservable(shared.properties);
+  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity, sliceField } = useObservable(shared.properties);
   const version = state?.version;
   const sessionId = state?.session_id;
-  useEffect(() => {
-    if (colourBy === "charge" && sessionId !== undefined) {
-      requestCharges(chargeModel);
-    }
-  }, [colourBy, chargeModel, sessionId, version, requestCharges]);
+  useAsk(colourBy === "charge" && sessionId !== undefined, chargeModel, version, (automatic) => requestCharges(chargeModel, automatic));
 
   // forces are likewise only worked out while they are shown
-  useEffect(() => {
-    if (forceArrows && sessionId !== undefined) {
-      requestForces();
-    }
-  }, [forceArrows, sessionId, version, requestForces]);
+  useAsk(forceArrows && sessionId !== undefined, "", version, requestForces);
 
-  // the density and the potential are likewise only worked out while a surface of them is shown, for the whole session, with the calculation and multiplicity chosen for surfaces
-  useEffect(() => {
-    if (surface === "esp" && sessionId !== undefined) {
-      requestEsp(surfaceModel, null, multiplicity);
-    }
-  }, [surface, surfaceModel, multiplicity, sessionId, version, requestEsp]);
-  useEffect(() => {
-    if (surface === "density" && sessionId !== undefined) {
-      requestDensity(surfaceModel, null, multiplicity);
-    }
-  }, [surface, surfaceModel, multiplicity, sessionId, version, requestDensity]);
-  useEffect(() => {
-    if (surface === "spin" && sessionId !== undefined) {
-      requestSpin(surfaceModel, null, multiplicity);
-    }
-  }, [surface, surfaceModel, multiplicity, sessionId, version, requestSpin]);
-  useEffect(() => {
-    if (surface === "difference" && sessionId !== undefined) {
-      requestDifference(surfaceModel, null, multiplicity);
-    }
-  }, [surface, surfaceModel, multiplicity, sessionId, version, requestDifference]);
+  // the density and the potential are likewise only worked out while a surface or a slice of them is shown, for the whole session, with the calculation and multiplicity chosen for surfaces
+  const calculation = `${surfaceModel}|${multiplicity}`;
+  useAsk(surface === "esp" && sessionId !== undefined, calculation, version, (automatic) => requestEsp(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "density" || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(surfaceModel, null, multiplicity, automatic));
+  // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to
+  const { sliceAxis, slicePosition } = useObservable(shared.properties);
+  useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(surfaceModel, null, multiplicity, sliceAxis, slicePosition, automatic), String(slicePosition));
+  useAsk((surface === "difference" || sliceField === "difference") && sessionId !== undefined, calculation, version, (automatic) => requestDifference(surfaceModel, null, multiplicity, automatic));
 
   // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of
   const { selected: shownOrbital, kind: orbitalKind, scope: orbitalScope, count: orbitalCount } = useObservable(shared.orbital);

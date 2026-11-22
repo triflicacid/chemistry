@@ -46,6 +46,12 @@ public final class OrbitalScheduler implements AutoCloseable
     /** The spin density, in electrons per cubic bohr, below which a calculation is taken to have none anywhere. */
     public static final double NO_SPIN = 1.0e-6;
 
+    /** How many points a slice plane has along its longer side at most, which keeps the work of a plane a fraction of that of a grid. */
+    public static final int PLANE_POINTS = 100;
+
+    /** The least spacing of a slice plane's points, in ångström. */
+    public static final double PLANE_FINEST = 0.1;
+
     /** The greatest density at which it is found, which is above any surface worth drawing. */
     public static final double POTENTIAL_TO = 0.03;
 
@@ -95,6 +101,7 @@ public final class OrbitalScheduler implements AutoCloseable
     private final JobScheduler<DensityReport> densities;
     private final JobScheduler<DensityReport> spins;
     private final JobScheduler<DensityReport> differences;
+    private final JobScheduler<PlaneReport> planes;
     private final Wavefunctions wavefunctions;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
     private final Object lock = new Object();
@@ -122,6 +129,7 @@ public final class OrbitalScheduler implements AutoCloseable
         this.densities = new JobScheduler<>(debounce);
         this.spins = new JobScheduler<>(debounce);
         this.differences = new JobScheduler<>(debounce);
+        this.planes = new JobScheduler<>(debounce);
         this.wavefunctions = Objects.requireNonNull(wavefunctions, "wavefunctions");
     }
 
@@ -410,6 +418,89 @@ public final class OrbitalScheduler implements AutoCloseable
                 });
     }
 
+    /**
+     * Asks for the electrostatic potential on a flat grid across the molecule, once the session has been left alone, replacing any such
+     * request for it that is waiting and abandoning one that is under way, so that sliding the plane asks for each place it stops at.
+     * The plane spans the box the grids of the other fields are worked out in.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or {@code null} for the lowest the electron count allows
+     * @param axis the axis the plane is at right angles to: {@code x}, {@code y} or {@code z}
+     * @param position how far along the box in that axis the plane is, from 0 to 1, which is held to that range
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void plane(StudioSession session, String requested, String fragment, Integer multiplicity, String axis, double position, Consumer<PlaneReport> deliver)
+    {
+        String model = resolve(requested);
+        double held = Double.isFinite(position) ? Math.min(1.0, Math.max(0.0, position)) : 0.5;
+        planes.schedule(session,
+                (described, run) ->
+                {
+                    try
+                    {
+                        // the plane's two axes are the other two, in the order that goes round: x then y, y then z, z then x
+                        int normal = switch (axis == null ? "" : axis)
+                        {
+                            case "x" -> 0;
+                            case "y" -> 1;
+                            case "z" -> 2;
+                            default -> throw new IllegalArgumentException("The plane's axis must be x, y or z, not '" + axis + "'");
+                        };
+                        int first = (normal + 1) % 3;
+                        int second = (normal + 2) % 3;
+
+                        Cached made = calculation(session, described, model, fragment, multiplicity, run);
+                        FieldGrid box = FieldGrid.around(positionsOf(made.structure()), MARGIN, LONGEST_SIDE, FINEST);
+                        double[] low = {box.origin().x(), box.origin().y(), box.origin().z()};
+                        double[] extent = {(box.nx() - 1) * box.spacing(), (box.ny() - 1) * box.spacing(), (box.nz() - 1) * box.spacing()};
+
+                        double step = Math.max(PLANE_FINEST, Math.max(extent[first], extent[second]) / (PLANE_POINTS - 1));
+                        int width = (int) Math.round(extent[first] / step) + 1;
+                        int height = (int) Math.round(extent[second] / step) + 1;
+
+                        double[] corner = low.clone();
+                        corner[normal] = low[normal] + held * extent[normal];
+                        Vec3 origin = new Vec3(corner[0], corner[1], corner[2]);
+                        Vec3 along = unit(first, extent[first] / (width - 1));
+                        Vec3 up = unit(second, extent[second] / (height - 1));
+
+                        float[] potential = ElectronDensity.potentialOnPlane(made.orbitals(), origin, along, up, width, height, run::check);
+                        return PlaneReport.of(session, described.version(), fragment, axis, held,
+                                List.of(origin, shift(origin, along, width - 1), shift(shift(origin, along, width - 1), up, height - 1), shift(origin, up, height - 1)),
+                                width, height, potential).elapsed(run.elapsedMs());
+                    }
+                    catch (IllegalArgumentException unsuitable)
+                    {
+                        return PlaneReport.failed(session, described.version(), fragment, axis, held, run.elapsedMs(), unsuitable.getMessage());
+                    }
+                },
+                (described, elapsedMs, message) -> PlaneReport.failed(session, described.version(), fragment, axis, held, elapsedMs, message),
+                deliver);
+    }
+
+    /**
+     * @param axis 0, 1 or 2 for x, y or z
+     * @param length how long
+     * @return a vector of that length along the axis
+     */
+    private static Vec3 unit(int axis, double length)
+    {
+        return new Vec3(axis == 0 ? length : 0.0, axis == 1 ? length : 0.0, axis == 2 ? length : 0.0);
+    }
+
+    /**
+     * @param from a point
+     * @param step a step
+     * @param times how many steps to take
+     * @return the point that far on
+     */
+    private static Vec3 shift(Vec3 from, Vec3 step, int times)
+    {
+        return new Vec3(from.x() + times * step.x(), from.y() + times * step.y(), from.z() + times * step.z());
+    }
+
     /** Some density on a grid. */
     private record Evaluated(FieldGrid grid, float[] values)
     {
@@ -470,6 +561,7 @@ public final class OrbitalScheduler implements AutoCloseable
         densities.close();
         spins.close();
         differences.close();
+        planes.close();
     }
 
     /**

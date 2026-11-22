@@ -168,6 +168,18 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session whose electrostatic potential to calculate on a plane
+     * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     * @param fragment an atom of the molecule to calculate, or absent for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
+     * @param axis the axis the plane is at right angles to: {@code x}, {@code y} or {@code z}
+     * @param position how far along the molecule's box in that axis the plane is, from 0 to 1
+     */
+    public record PlaneRequest(String sessionId, String model, String fragment, Integer multiplicity, String axis, Double position)
+    {
+    }
+
+    /**
      * @param sessionId the session whose density to calculate
      * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
      * @param fragment an atom of the molecule to calculate, or absent for the whole session

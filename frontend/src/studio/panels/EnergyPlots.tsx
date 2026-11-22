@@ -427,7 +427,7 @@ function BreakdownPlot({ state, models, debug }: PlotProps) {
   return (
     <>
       <div className="energy-actions">
-        <button type="button" className="tool" disabled={asked || state === null} onClick={requestForces}>
+        <button type="button" className="tool" disabled={asked || state === null} onClick={() => requestForces()}>
           {asked ? "Calculating…" : interactions.length === 0 ? "Calculate" : "Calculate again"}
         </button>
         {forces?.status === "complete" && !asked && <span className="energy-note">{seconds(forces.elapsed_ms)}</span>}

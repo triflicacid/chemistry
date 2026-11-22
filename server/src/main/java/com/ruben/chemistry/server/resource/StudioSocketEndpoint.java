@@ -48,7 +48,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 28;
+    private static final int PROTOCOL_VERSION = 29;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -1024,6 +1024,48 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Asks for the electrostatic potential of a session on a flat grid across its molecules. The answer says only that the request was
+     * understood; the field follows, from another thread, as {@code plane.result}, which is dropped if the session has moved on by then or
+     * a newer request for a plane has been made.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestPlane(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.PlaneRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.PlaneRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("plane.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("plane.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        orbitals.plane(session, request.model(), request.fragment(), request.multiplicity(), request.axis(),
+                request.position() == null ? 0.5 : request.position(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "plane.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
      * Reads a request for some density.
      *
      * @param context the connection that asked
@@ -1960,6 +2002,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("density.request", endpoint::requestDensity),
                     Map.entry("spin.request", endpoint::requestSpin),
                     Map.entry("difference.request", endpoint::requestDifference),
+                    Map.entry("plane.request", endpoint::requestPlane),
                     Map.entry("edit.undo", endpoint::undo),
                     Map.entry("edit.redo", endpoint::redo),
                     Map.entry("history.list", endpoint::history),

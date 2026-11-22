@@ -2,7 +2,7 @@ import {useCallback, useEffect, useState} from "react";
 import type {ScanResult} from "./messages";
 import {reason} from "./errors";
 import type {SessionLink} from "./useSocket";
-import {useWarnOnce} from "./warnings";
+import {useWarner} from "./warnings";
 
 export interface Scan {
   /** The scan as the server last said, or null if it has not. It describes the version in `version`. */
@@ -19,7 +19,7 @@ export interface Scan {
  * @param link the connection
  */
 export function useScan({ socketRef, held, note, warn }: SessionLink): Scan {
-  const warnOnce = useWarnOnce(warn);
+  const warnOnce = useWarner(warn);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanningSince, setScanningSince] = useState<number | null>(null);
 

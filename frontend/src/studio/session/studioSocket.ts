@@ -21,6 +21,7 @@ import {
   type OrbitalsRequestAck,
   type OrbitalTarget,
   type PatchAck,
+  type PlaneRequestAck,
   type Pose,
   PROTOCOL_VERSION,
   type ScanRequestAck,
@@ -595,6 +596,26 @@ export class StudioSocket {
    */
   requestDensity(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<DensityRequestAck> {
     return this.request<DensityRequestAck>("density.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "density.request.ack");
+  }
+
+  /**
+   * Asks for the electrostatic potential of a session, or of one of its molecules, on a flat grid across it. The answer says only that the
+   * request was understood: listen for `plane.result`. A newer request abandons one still being worked out, so that sliding the plane
+   * asks for each place it stops at.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   * @param axis the axis the plane is at right angles to
+   * @param position how far along the box in that axis the plane is, from 0 to 1
+   */
+  requestPlane(sessionId: string, model: string, fragment: string | null, multiplicity: number | null, axis: "x" | "y" | "z", position: number): Promise<PlaneRequestAck> {
+    return this.request<PlaneRequestAck>(
+      "plane.request",
+      { session_id: sessionId, model, axis, position, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) },
+      "plane.request.ack",
+    );
   }
 
   /**

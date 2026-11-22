@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 28;
+export const PROTOCOL_VERSION = 29;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -756,6 +756,44 @@ export interface DensityRequestAck extends ServerEnvelope {
   type: "density.request.ack";
 }
 
+/** The answer to a request for the potential on a plane, which says only that the request was understood: it follows as a `plane.result`. */
+export interface PlaneRequestAck extends ServerEnvelope {
+  type: "plane.request.ack";
+}
+
+/**
+ * The electrostatic potential at every point of a flat grid across the molecules, sent on the server's own initiative after a request.
+ * It describes the geometry at `version`. A newer request for a plane abandons one still being worked out.
+ */
+export interface PlaneResult extends ServerEnvelope {
+  type: "plane.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** An atom of the molecule it is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** The axis the plane is at right angles to, as the client asked. */
+  axis: "x" | "y" | "z";
+  /** How far along the box in that axis the plane is, from 0 to 1, as the client asked. */
+  position: number;
+  /**
+   * The corners of the plane in the session's frame, in angstroms, or null if there is no field: the low end of both of its axes, then the
+   * high end of the first with the low of the second, then the high of both, then the low of the first with the high of the second.
+   * Its two axes are the other two, in the order that goes round: x then y, y then z, z then x.
+   */
+  corners: Vec3[] | null;
+  /** How many points there are along the first of the plane's axes, and along the second. */
+  width: number;
+  height: number;
+  /** Every point's potential in hartree per elementary charge, in the same form as an orbital's values, running along the first axis fastest. */
+  potential: string | null;
+  min: number | null;
+  max: number | null;
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
 /** The answer to a request for the spin density, which says only that the request was understood: it follows as a `spin.result`. */
 export interface SpinRequestAck extends ServerEnvelope {
   type: "spin.request.ack";
@@ -911,6 +949,8 @@ export type ServerMessage =
   | EspRequestAck
   | EspResult
   | DensityRequestAck
+  | PlaneRequestAck
+  | PlaneResult
   | SpinRequestAck
   | DifferenceRequestAck
   | DensityResult

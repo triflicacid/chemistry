@@ -2,7 +2,7 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import type {ChargesProgress, ChargesResult} from "./messages";
 import {reason} from "./errors";
 import type {SessionLink} from "./useSocket";
-import {useWarnOnce} from "./warnings";
+import {useWarner} from "./warnings";
 
 /** A calculation of charges that has been asked for and has not yet answered. */
 export interface Calculating {
@@ -24,8 +24,9 @@ export interface Charges {
    * that comes while another is under way abandons it.
    *
    * @param model the name of the model to assign them with
+   * @param automatic whether it is asked only because the session changed, so that an answer that says what the last did is not warned of again
    */
-  requestCharges: (model: string) => void;
+  requestCharges: (model: string, automatic?: boolean) => void;
 }
 
 /**
@@ -34,12 +35,13 @@ export interface Charges {
  * @param link the connection
  */
 export function useCharges({ socketRef, held, note, warn }: SessionLink): Charges {
-  const warnOnce = useWarnOnce(warn);
+  const warnOnce = useWarner(warn);
   const [charges, setCharges] = useState<ChargesResult | null>(null);
   const [calculating, setCalculating] = useState<Calculating | null>(null);
   const [progress, setProgress] = useState<ChargesProgress | null>(null);
   // what the latest request asked for, which the listeners read without being made again by it
   const asked = useRef<string | null>(null);
+  const automatically = useRef(false);
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -61,7 +63,7 @@ export function useCharges({ socketRef, held, note, warn }: SessionLink): Charge
       }
       setCalculating(null);
       setProgress(null);
-      warnOnce(result.status === "complete" ? null : (result.message ?? "The charges could not be calculated."));
+      warnOnce(result.status === "complete" ? null : (result.message ?? "The charges could not be calculated."), automatically.current);
       // a result older than the one held is stale
       setCharges((before) => (before && before.session_id === result.session_id && before.version > result.version ? before : result));
     });
@@ -73,7 +75,8 @@ export function useCharges({ socketRef, held, note, warn }: SessionLink): Charge
   }, [held, socketRef, warnOnce]);
 
   const requestCharges = useCallback(
-    (model: string) => {
+    (model: string, automatic = false) => {
+      automatically.current = automatic;
       const socket = socketRef.current;
       const base = held.current;
       if (!socket || !base) {

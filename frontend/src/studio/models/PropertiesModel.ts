@@ -1,4 +1,5 @@
 import {ORBITAL_KINDS, type OrbitalKind} from "./OrbitalModel";
+import type {SliceAxis} from "../layout/slice";
 import {Observable} from "./observable";
 
 /** localStorage key. */
@@ -91,6 +92,28 @@ export function asSurfaceModel(value: unknown): OrbitalKind {
   return ORBITAL_KINDS.find((kind) => kind.value === value)?.value ?? "mulliken";
 }
 
+/** What a slice plane shows: none, which draws no plane, one of the densities a surface can be drawn of, or the electrostatic potential. */
+export type SliceField = "none" | "density" | "spin" | "difference" | "potential";
+
+const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "potential"];
+const SLICE_AXES: readonly SliceAxis[] = ["x", "y", "z"];
+
+/**
+ * @param value anything
+ * @returns it if it is a field a slice can show, and none otherwise
+ */
+export function asSliceField(value: unknown): SliceField {
+  return SLICE_FIELDS.find((field) => field === value) ?? "none";
+}
+
+/**
+ * @param value anything
+ * @returns it if it is an axis, and z otherwise
+ */
+export function asSliceAxis(value: unknown): SliceAxis {
+  return SLICE_AXES.find((axis) => axis === value) ?? "z";
+}
+
 export const MIN_SURFACE_ISOVALUE = 0.001;
 export const MAX_SURFACE_ISOVALUE = 0.02;
 export const DEFAULT_SURFACE_ISOVALUE = 0.004;
@@ -152,6 +175,14 @@ export interface PropertiesState {
   surfaceModel: OrbitalKind;
   /** The spin multiplicity it is calculated at, or null for the lowest the electron count allows. */
   multiplicity: number | null;
+  /** Which density the slice plane shows, if any. */
+  sliceField: SliceField;
+  /** The axis the slice plane is at right angles to. */
+  sliceAxis: SliceAxis;
+  /** How far along the field's extent in that axis the plane is, from 0 to 1. */
+  slicePosition: number;
+  /** Whether lines of constant value are drawn across the plane. */
+  sliceContours: boolean;
   surfaceIsovalue: number;
   /** How opaque the surface is. */
   surfaceOpacity: number;
@@ -162,7 +193,7 @@ export interface PropertiesState {
 }
 
 /** The groups of settings in the Properties section, each of which folds away. */
-export type PropertyGroup = "atoms" | "forces" | "surface";
+export type PropertyGroup = "atoms" | "forces" | "surface" | "slice";
 
 /** Which groups of settings are unfolded. */
 export type Expanded = Record<PropertyGroup, boolean>;
@@ -260,6 +291,43 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   /**
+   * @param sliceField which density the slice plane shows, or none to draw no plane
+   */
+  sliceFieldTo(sliceField: SliceField): void {
+    if (this.get().sliceField !== sliceField) {
+      this.change({ ...this.get(), sliceField });
+    }
+  }
+
+  /**
+   * @param sliceAxis the axis the slice plane is at right angles to
+   */
+  sliceAxisTo(sliceAxis: SliceAxis): void {
+    if (this.get().sliceAxis !== sliceAxis) {
+      this.change({ ...this.get(), sliceAxis });
+    }
+  }
+
+  /**
+   * @param position how far along the field's extent the plane is, from 0 to 1
+   */
+  slicePositionTo(position: number): void {
+    const slicePosition = Number.isFinite(position) ? Math.round(Math.min(1, Math.max(0, position)) * 100) / 100 : 0.5;
+    if (this.get().slicePosition !== slicePosition) {
+      this.change({ ...this.get(), slicePosition });
+    }
+  }
+
+  /**
+   * @param sliceContours whether to draw lines of constant value across the plane
+   */
+  sliceContoursTo(sliceContours: boolean): void {
+    if (this.get().sliceContours !== sliceContours) {
+      this.change({ ...this.get(), sliceContours });
+    }
+  }
+
+  /**
    * @param surfaceModel the kind of Hartree-Fock calculation the surfaces come from
    */
   surfaceModelTo(surfaceModel: OrbitalKind): void {
@@ -330,7 +398,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false } };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -353,6 +421,10 @@ export class PropertiesModel extends Observable<PropertiesState> {
       surface: defaults.surface,
       densityColour: asDensityColour(held.densityColour),
       surfaceModel: asSurfaceModel(held.surfaceModel),
+      sliceField: defaults.sliceField,
+      sliceAxis: asSliceAxis(held.sliceAxis),
+      slicePosition: typeof held.slicePosition === "number" && held.slicePosition >= 0 && held.slicePosition <= 1 ? held.slicePosition : defaults.slicePosition,
+      sliceContours: typeof held.sliceContours === "boolean" ? held.sliceContours : defaults.sliceContours,
       multiplicity: asMultiplicity(held.multiplicity),
       surfaceIsovalue: typeof held.surfaceIsovalue === "number" ? clampSurfaceIsovalue(held.surfaceIsovalue) : defaults.surfaceIsovalue,
       surfaceOpacity: typeof held.surfaceOpacity === "number" ? clampSurfaceOpacity(held.surfaceOpacity) : defaults.surfaceOpacity,
@@ -360,6 +432,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
         atoms: held.expanded?.atoms === true,
         forces: held.expanded?.forces === true,
         surface: held.expanded?.surface === true,
+        slice: held.expanded?.slice === true,
       },
       open: typeof held.open === "boolean" ? held.open : defaults.open,
     };

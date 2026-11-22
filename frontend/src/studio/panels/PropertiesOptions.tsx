@@ -17,6 +17,7 @@ import {
     MIN_SURFACE_OPACITY,
     MULTIPLICITIES,
     type PropertyGroup,
+    type SliceField,
     type SurfaceKind,
 } from "../models/PropertiesModel";
 import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
@@ -28,7 +29,8 @@ import type {ChargesProgress} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
 import {ForceDebug} from "./ForceDebug";
 import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
-import {decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
+import {autoLimit, decodeDensity, decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
+import {decodePlane, sequentialGradient, type SliceAxis, sliceLimit} from "../layout/slice";
 
 /** What the atoms can be coloured by, with what each means. */
 const COLOUR_OPTIONS: { value: ColourBy; label: string; title: string }[] = [
@@ -43,6 +45,15 @@ const SURFACE_OPTIONS: { value: SurfaceKind; label: string; title: string }[] = 
   { value: "spin", label: "Spin density", title: "Where the unpaired electrons are: blue where spin up is in excess, red where spin down is. A molecule whose electrons all pair up has none" },
   { value: "difference", label: "Difference density", title: "The density of everything together less the densities of its molecules each on its own: blue where electrons gather as the molecules meet, red where they leave. Needs two or more molecules" },
   { value: "esp", label: "Potential on density", title: "The same surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive" },
+];
+
+/** What a slice plane can show, with what each means. */
+const SLICE_OPTIONS: { value: SliceField; label: string; title: string }[] = [
+  { value: "none", label: "None", title: "Draw no plane" },
+  { value: "density", label: "Electron density", title: "The electron density across a plane through the molecule, which shows the inside of what a surface only encloses" },
+  { value: "spin", label: "Spin density", title: "The spin density across a plane: blue where spin up is in excess, red where spin down is" },
+  { value: "difference", label: "Difference density", title: "What the molecules do to one another's electrons, across a plane: blue where electrons gather, red where they leave" },
+  { value: "potential", label: "Potential", title: "The electrostatic potential across a plane, worked out for the plane itself wherever it is slid to: red where it is negative, which attracts positive charge, and blue where it is positive" },
 ];
 
 /** What is said while each surface is being worked out. */
@@ -63,7 +74,7 @@ const TICK_MS = 100;
  */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceModel, multiplicity, surfaceIsovalue, surfaceOpacity, open, expanded } =
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceModel, multiplicity, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, surfaceOpacity, open, expanded } =
     useObservable(properties);
   const debug = useObservable(models.debug);
   const fold = (group: PropertyGroup) => ({ open: expanded[group], onToggle: () => properties.expandTo(group, !expanded[group]) });
@@ -262,9 +273,89 @@ export function PropertiesOptions({ models }: { models: Models }) {
               </>
             }
           />
+          <Group
+            title="Slice"
+            {...fold("slice")}
+            control={
+              <select value={sliceField} aria-label="What the slice plane shows" onChange={(event) => properties.sliceFieldTo(event.target.value as SliceField)}>
+                {SLICE_OPTIONS.map(({ value, label, title }) => (
+                  <option key={value} value={value} title={title}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            }
+            summary={sliceField !== "none" ? <SliceSummary field={sliceField} /> : null}
+            details={
+              <>
+                <dt>Axis</dt>
+                <dd>
+                  <select value={sliceAxis} aria-label="The axis the plane is at right angles to" onChange={(event) => properties.sliceAxisTo(event.target.value as SliceAxis)}>
+                    <option value="x">x</option>
+                    <option value="y">y</option>
+                    <option value="z">z</option>
+                  </select>
+                </dd>
+                <dt>Position</dt>
+                <dd className="position">
+                  <input
+                    type="range"
+                    className="render-slider"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={Math.round(slicePosition * 100)}
+                    aria-label="How far along the field the plane is"
+                    title="How far along the field the plane is. Double-click to put it back in the middle"
+                    onChange={(event) => properties.slicePositionTo(Number(event.target.value) / 100)}
+                    onDoubleClick={() => properties.slicePositionTo(0.5)}
+                  />
+                  <span className="unit render-value">{Math.round(slicePosition * 100)}%</span>
+                </dd>
+                <dt />
+                <dd>
+                  <label className="legend-check" title="Draw lines of constant value across the plane">
+                    <input type="checkbox" checked={sliceContours} onChange={(event) => properties.sliceContoursTo(event.target.checked)} />
+                    Contour lines
+                  </label>
+                </dd>
+              </>
+            }
+          />
         </div>
       )}
     </section>
+  );
+}
+
+/** How the calculation behind a slice is getting on, and what its colours mean. */
+function SliceSummary({ field }: { field: SliceField }) {
+  const { density, densitySince, spin, spinSince, difference, differenceSince, plane, planeSince, state } = useSessionContext();
+  const result = { density, spin, difference, potential: plane, none: null }[field];
+  const since = { density: densitySince, spin: spinSince, difference: differenceSince, potential: planeSince, none: null }[field];
+  const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
+  const decoded = current && result && result.type !== "plane.result" ? decodeDensity(result) : null;
+  const flat = current && plane && field === "potential" ? decodePlane(plane) : null;
+  const signed = field === "spin" || field === "difference";
+  const limit = decoded ? sliceLimit(decoded, signed) : null;
+  const shown = limit === null ? "" : limit.toFixed(3);
+  const potentialLimit = flat ? toKcalPerCharge(autoLimit(flat.values)).toFixed(0) : null;
+
+  return (
+    <>
+      {since !== null && <Running startedAt={since} detail={field === "potential" ? "working out the potential on the plane…" : WORKING[field]} />}
+      {potentialLimit !== null && <Scale limit={potentialLimit} unit="kcal/mol/e" label={`From minus ${potentialLimit} to plus ${potentialLimit} kilocalories per mole per charge`} />}
+      {limit !== null && signed && <Scale limit={shown} unit="e/bohr³" label={`From minus ${shown} to plus ${shown} electrons per cubic bohr`} />}
+      {limit !== null && !signed && (
+        <div className="legend">
+          <div className="legend-bar" style={{ background: sequentialGradient() }} role="img" aria-label={`From zero to ${shown} electrons per cubic bohr`} />
+          <div className="legend-labels">
+            <span>0</span>
+            <span>{shown} e/bohr³</span>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

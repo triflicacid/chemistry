@@ -1,16 +1,20 @@
-import {useCallback, useEffect, useState} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
 import type {ForcesResult} from "./messages";
 import {reason} from "./errors";
 import type {SessionLink} from "./useSocket";
-import {useWarnOnce} from "./warnings";
+import {useWarner} from "./warnings";
 
 export interface Forces {
   /** The forces as the server last said, or null if it has not. They describe the version in `version`. */
   forces: ForcesResult | null;
   /** When the calculation under way was asked for, as {@link Date.now} says, or null if there is none. */
   calculatingSince: number | null;
-  /** Asks the server for the forces on the session as it is now. Several asks close together are answered once. */
-  requestForces: () => void;
+  /**
+   * Asks the server for the forces on the session as it is now. Several asks close together are answered once.
+   *
+   * @param automatic whether it is asked only because the session changed, so that an answer that says what the last did is not warned of again
+   */
+  requestForces: (automatic?: boolean) => void;
 }
 
 /**
@@ -19,7 +23,8 @@ export interface Forces {
  * @param link the connection
  */
 export function useForces({ socketRef, held, note, warn }: SessionLink): Forces {
-  const warnOnce = useWarnOnce(warn);
+  const warnOnce = useWarner(warn);
+  const automatically = useRef(false);
   const [forces, setForces] = useState<ForcesResult | null>(null);
   const [calculatingSince, setCalculatingSince] = useState<number | null>(null);
 
@@ -34,13 +39,14 @@ export function useForces({ socketRef, held, note, warn }: SessionLink): Forces 
         return;
       }
       setCalculatingSince(null);
-      warnOnce(result.status === "complete" ? null : (result.message ?? "The forces could not be calculated."));
+      warnOnce(result.status === "complete" ? null : (result.message ?? "The forces could not be calculated."), automatically.current);
       // a result older than the one held is stale
       setForces((before) => (before && before.session_id === result.session_id && before.version > result.version ? before : result));
     });
   }, [held, socketRef, warnOnce]);
 
-  const requestForces = useCallback(() => {
+  const requestForces = useCallback((automatic = false) => {
+    automatically.current = automatic;
     const socket = socketRef.current;
     const base = held.current;
     if (!socket || !base) {

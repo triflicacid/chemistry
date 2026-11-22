@@ -4,6 +4,7 @@ import com.ruben.chemistry.quantum.Units;
 import com.ruben.chemistry.quantum.basis.ContractedGaussian;
 import com.ruben.chemistry.quantum.integrals.ElectrostaticPotential;
 import com.ruben.chemistry.quantum.linalg.Matrix;
+import com.ruben.chemistry.space.Vec3;
 
 import java.util.List;
 import java.util.stream.IntStream;
@@ -81,6 +82,36 @@ public final class ElectronDensity
                     }
                     values[grid.indexOf(i, j, k)] = (float) sum;
                 }
+            }
+        });
+        return values;
+    }
+
+    /**
+     * The electrostatic potential at every point of a flat grid, wherever the plane is.
+     *
+     * @param orbitals the calculation
+     * @param origin the point at the low end of both axes of the plane, in ångström
+     * @param stepU the step from one point to the next along the first axis, in ångström
+     * @param stepV the step along the second axis, in ångström
+     * @param width how many points there are along the first axis
+     * @param height how many along the second
+     * @param check called once for each row of the plane, and able to stop the evaluation by throwing
+     * @return the potential at each point in hartree per elementary charge, running along the first axis fastest
+     */
+    public static float[] potentialOnPlane(MolecularOrbitals orbitals, Vec3 origin, Vec3 stepU, Vec3 stepV, int width, int height, Runnable check)
+    {
+        ElectrostaticPotential potential = new ElectrostaticPotential(orbitals.basis().functions(), orbitals.density(), orbitals.nuclei());
+        float[] values = new float[width * height];
+        IntStream.range(0, height).parallel().forEach(row ->
+        {
+            check.run();
+            for (int column = 0; column < width; column++)
+            {
+                double x = Units.toBohr(origin.x() + column * stepU.x() + row * stepV.x());
+                double y = Units.toBohr(origin.y() + column * stepU.y() + row * stepV.y());
+                double z = Units.toBohr(origin.z() + column * stepU.z() + row * stepV.z());
+                values[row * width + column] = (float) potential.at(x, y, z);
             }
         });
         return values;

@@ -1,16 +1,16 @@
-import {useCallback, useEffect, useState} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
 import type {DensityResult} from "./messages";
 import {reason} from "./errors";
 import type {StudioSocket} from "./studioSocket";
 import type {SessionLink} from "./useSocket";
-import {useWarnOnce} from "./warnings";
+import {useWarner} from "./warnings";
 
 /** One density: the last the server sent, when it was asked for, and how to ask again. */
 interface Held {
   result: DensityResult | null;
   /** When the calculation under way was asked for, as {@link Date.now}, or null if there is none. */
   since: number | null;
-  request: (model: string, fragment: string | null, multiplicity: number | null) => void;
+  request: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
 }
 
 export interface Density {
@@ -22,16 +22,17 @@ export interface Density {
    * @param model the kind of Hartree-Fock calculation
    * @param fragment an atom of the molecule to calculate, or null for the whole session
    * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   * @param automatic whether it is asked only because the session changed, so that an answer that says what the last did is not warned of again
    */
-  requestDensity: (model: string, fragment: string | null, multiplicity: number | null) => void;
+  requestDensity: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
   /** The spin density: the electrons of spin up less those of spin down. */
   spin: DensityResult | null;
   spinSince: number | null;
-  requestSpin: (model: string, fragment: string | null, multiplicity: number | null) => void;
+  requestSpin: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
   /** The difference density: everything together less its molecules each on its own. */
   difference: DensityResult | null;
   differenceSince: number | null;
-  requestDifference: (model: string, fragment: string | null, multiplicity: number | null) => void;
+  requestDifference: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
 }
 
 /**
@@ -44,7 +45,8 @@ export interface Density {
 function useHeld({ socketRef, held, note, warn }: SessionLink, type: DensityResult["type"], ask: (socket: StudioSocket, sessionId: string, model: string, fragment: string | null, multiplicity: number | null) => Promise<unknown>): Held {
   const [result, setResult] = useState<DensityResult | null>(null);
   const [since, setSince] = useState<number | null>(null);
-  const warnOnce = useWarnOnce(warn);
+  const warnOnce = useWarner(warn);
+  const automatically = useRef(false);
 
   useEffect(() => {
     const socket = socketRef.current;
@@ -57,14 +59,15 @@ function useHeld({ socketRef, held, note, warn }: SessionLink, type: DensityResu
         return;
       }
       setSince(null);
-      warnOnce(arrived.status === "complete" ? null : (arrived.message ?? "The density could not be calculated."));
+      warnOnce(arrived.status === "complete" ? null : (arrived.message ?? "The density could not be calculated."), automatically.current);
       // a result older than the one held is stale
       setResult((before) => (before && before.session_id === arrived.session_id && before.version > arrived.version ? before : arrived));
     });
   }, [held, socketRef, type, warnOnce]);
 
   const request = useCallback(
-    (model: string, fragment: string | null, multiplicity: number | null) => {
+    (model: string, fragment: string | null, multiplicity: number | null, automatic = false) => {
+      automatically.current = automatic;
       const socket = socketRef.current;
       const base = held.current;
       if (!socket || !base) {

@@ -2,20 +2,20 @@ import {useMemo, useRef} from "react";
 import {ChemistryApi} from "../../api/ChemistryApi";
 import type {Vec3} from "../../api/types/structure";
 import type {
-  AtomChange,
-  AtomMove,
-  AtomPlacement,
-  BondEdit,
-  BondOrder,
-  ChargesProgress,
-  ChargesResult,
-  ForcesResult,
-  GeometryResult,
-  HistoryEntry,
-  Pose,
-  ScanResult,
-  SessionCamera,
-  SessionState
+    AtomChange,
+    AtomMove,
+    AtomPlacement,
+    BondEdit,
+    BondOrder,
+    ChargesProgress,
+    ChargesResult,
+    ForcesResult,
+    GeometryResult,
+    HistoryEntry,
+    Pose,
+    ScanResult,
+    SessionCamera,
+    SessionState
 } from "./messages";
 import {useCameraSave} from "./camera";
 import type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
@@ -25,6 +25,7 @@ import {useForces} from "./useForces";
 import {useScan} from "./useScan";
 import {type Density, useDensity} from "./useDensity";
 import {type Esp, useEsp} from "./useEsp";
+import {type Plane, usePlane} from "./usePlane";
 import {type Orbitals, useOrbitals} from "./useOrbitals";
 import {useEdits} from "./useEdits";
 import {useOptimise} from "./useOptimise";
@@ -32,7 +33,7 @@ import {type SocketEvents, useSocket} from "./useSocket";
 
 export type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
 
-export interface Session extends Orbitals, Esp, Density {
+export interface Session extends Orbitals, Esp, Density, Plane {
   phase: SessionPhase;
   state: SessionState | null;
   /** The optimisation under way, or null if there is none. */
@@ -57,7 +58,7 @@ export interface Session extends Orbitals, Esp, Density {
   /** When the calculation of the forces under way was asked for, as `Date.now` says, or null if there is none. */
   calculatingForcesSince: number | null;
   /** Asks the server for the forces on the session as it is now, which arrive as `forces`. */
-  requestForces: () => void;
+  requestForces: (automatic?: boolean) => void;
   /** The scan of the hydrogen bond between two molecules, as the server last said, once it has been asked. */
   scan: ScanResult | null;
   /** When the scan under way was asked for, as `Date.now` says, or null if there is none. */
@@ -73,7 +74,7 @@ export interface Session extends Orbitals, Esp, Density {
    *
    * @param model the name of the model to assign them with
    */
-  requestCharges: (model: string) => void;
+  requestCharges: (model: string, automatic?: boolean) => void;
   activity: Activity[];
   /** Stores a molecule written as SMILES and opens a session on it. */
   openSmiles: (smiles: string) => void;
@@ -173,6 +174,7 @@ export function useSession(client?: ChemistryApi): Session {
   const orbitals = useOrbitals(socket);
   const potential = useEsp(socket);
   const density = useDensity(socket);
+  const plane = usePlane(socket);
   const { charges, calculating: calculatingCharges, progress: chargesProgress, requestCharges } = useCharges(socket);
 
   const { phase, state, geometry, activity, openSmiles } = socket;
@@ -193,6 +195,7 @@ export function useSession(client?: ChemistryApi): Session {
     ...orbitals,
     ...potential,
     ...density,
+    ...plane,
     charges,
     calculatingCharges,
     chargesProgress,
