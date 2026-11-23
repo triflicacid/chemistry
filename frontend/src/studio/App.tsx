@@ -22,7 +22,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestDifference, requestLaplacian, requestPlane } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestDifference, requestLaplacian, requestElf, requestPlane } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -59,12 +59,13 @@ export function App() {
   const wantHomo = surface === "homoMap" || surface === "frontierMap" || sliceField === "homoMap";
   const wantLumo = surface === "lumoMap" || surface === "frontierMap" || sliceField === "lumoMap";
   const frontier = wantHomo || wantLumo;
-  useAsk((surface === "density" || mapping || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "density" || surface === "concentrationMap" || mapping || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(surfaceModel, null, multiplicity, automatic));
   // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to
   const { sliceAxis, slicePosition } = useObservable(shared.properties);
   useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(surfaceModel, null, multiplicity, sliceAxis, slicePosition, automatic), String(slicePosition));
-  useAsk(sliceField === "laplacian" && sessionId !== undefined, calculation, version, (automatic) => requestLaplacian(surfaceModel, null, multiplicity, automatic));
+  useAsk((sliceField === "laplacian" || surface === "concentrationMap") && sessionId !== undefined, calculation, version, (automatic) => requestLaplacian(surfaceModel, null, multiplicity, automatic));
+  useAsk(surface === "elf" && sessionId !== undefined, calculation, version, (automatic) => requestElf(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "difference" || sliceField === "difference") && sessionId !== undefined, calculation, version, (automatic) => requestDifference(surfaceModel, null, multiplicity, automatic));
 
   // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of

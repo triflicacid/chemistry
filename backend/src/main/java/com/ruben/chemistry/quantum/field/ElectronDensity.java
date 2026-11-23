@@ -157,6 +157,120 @@ public final class ElectronDensity
     }
 
     /**
+     * The electron localisation function, which is near one where electrons are paired and apart from others, as in a bond, a lone pair or a
+     * core, and about a half where they are as free as in a uniform gas of the same density. It is found from the density matrices alone: the
+     * density, its gradient and the kinetic energy density of each spin, which a set of orbitals gives as {@code sum over the density matrix of the
+     * gradient of one basis function times the gradient of another}.
+     *
+     * <p>Each spin's Pauli kinetic energy {@code D = tau - |grad rho|^2 / (4 rho)} is compared with that of a uniform gas of its density, and the
+     * function is {@code 1 / (1 + (D / D0)^2)}, with both spins' parts added before they are compared so that a closed shell gives the usual
+     * function and an open shell gives one value for the whole.
+     *
+     * @param orbitals the calculation
+     * @param grid the points to evaluate it at, in ångström
+     * @param least the density, in electrons per cubic bohr, below which the function is not worked out and is zero, since in the tail of a
+     *     density it tends to one whatever is there
+     * @param check called once for each slice of the grid, and able to stop the evaluation by throwing
+     * @return the function at each point, from zero to one, running along x fastest, then y, then z
+     */
+    public static float[] localisation(MolecularOrbitals orbitals, FieldGrid grid, double least, Runnable check)
+    {
+        List<ContractedGaussian> functions = orbitals.basis().functions();
+        Matrix total = orbitals.density();
+        Matrix difference = orbitals.spinDensity();
+        int n = functions.size();
+        double[][] up = new double[n][n];
+        double[][] down = new double[n][n];
+        for (int row = 0; row < n; row++)
+        {
+            for (int column = 0; column < n; column++)
+            {
+                up[row][column] = 0.5 * (total.get(row, column) + difference.get(row, column));
+                down[row][column] = 0.5 * (total.get(row, column) - difference.get(row, column));
+            }
+        }
+
+        float[] values = new float[grid.size()];
+        IntStream.range(0, grid.nz()).parallel().forEach(k ->
+        {
+            check.run();
+            double z = Units.toBohr(grid.origin().z() + k * grid.spacing());
+            double[][] chi = new double[4][n];
+            double[] at = new double[ContractedGaussian.DERIVATIVES];
+            for (int j = 0; j < grid.ny(); j++)
+            {
+                double y = Units.toBohr(grid.origin().y() + j * grid.spacing());
+                for (int i = 0; i < grid.nx(); i++)
+                {
+                    double x = Units.toBohr(grid.origin().x() + i * grid.spacing());
+                    for (int mu = 0; mu < n; mu++)
+                    {
+                        functions.get(mu).derivativesAt(x, y, z, at);
+                        for (int d = 0; d < 4; d++)
+                        {
+                            chi[d][mu] = at[d];
+                        }
+                    }
+
+                    double[] spinUp = spinTerms(up, chi, n);
+                    double[] spinDown = spinTerms(down, chi, n);
+                    double rho = spinUp[0] + spinDown[0];
+                    double pauli = 0.0;
+                    double gas = 0.0;
+                    for (double[] spin : new double[][]{spinUp, spinDown})
+                    {
+                        if (spin[0] > 1.0e-12)
+                        {
+                            pauli += spin[1] - spin[2] / (4.0 * spin[0]);
+                            gas += UNIFORM_GAS * Math.pow(spin[0], 5.0 / 3.0);
+                        }
+                    }
+                    double ratio = gas > 0.0 ? Math.max(0.0, pauli) / gas : 0.0;
+                    values[grid.indexOf(i, j, k)] = rho < least ? 0.0f : (float) (1.0 / (1.0 + ratio * ratio));
+                }
+            }
+        });
+        return values;
+    }
+
+    /** The kinetic energy density of a uniform gas of one spin, divided by its density to the five thirds: {@code (3/5) (6 pi^2)^(2/3)}. */
+    private static final double UNIFORM_GAS = 0.6 * Math.cbrt(36.0 * Math.PI * Math.PI * Math.PI * Math.PI);
+
+    /**
+     * @param p one spin's density matrix
+     * @param chi the values of the basis functions at a point, then their slopes along x, y and z
+     * @param n how many basis functions there are
+     * @return the density of that spin there, its kinetic energy density {@code sum of P (slope of one) . (slope of another)}, and the square of
+     *     the length of the gradient of its density
+     */
+    private static double[] spinTerms(double[][] p, double[][] chi, int n)
+    {
+        double rho = 0.0;
+        double tau = 0.0;
+        double[] gradient = new double[3];
+        for (int mu = 0; mu < n; mu++)
+        {
+            double value = 0.0;
+            double[] slope = new double[3];
+            for (int nu = 0; nu < n; nu++)
+            {
+                value += p[mu][nu] * chi[0][nu];
+                for (int a = 0; a < 3; a++)
+                {
+                    slope[a] += p[mu][nu] * chi[1 + a][nu];
+                }
+            }
+            rho += chi[0][mu] * value;
+            for (int a = 0; a < 3; a++)
+            {
+                gradient[a] += 2.0 * chi[1 + a][mu] * value;
+                tau += chi[1 + a][mu] * slope[a];
+            }
+        }
+        return new double[]{rho, tau, gradient[0] * gradient[0] + gradient[1] * gradient[1] + gradient[2] * gradient[2]};
+    }
+
+    /**
      * The electrostatic potential at every point of a flat grid, wherever the plane is.
      *
      * @param orbitals the calculation

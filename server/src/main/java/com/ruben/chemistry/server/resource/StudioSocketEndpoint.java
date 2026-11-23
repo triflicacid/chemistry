@@ -48,7 +48,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 31;
+    private static final int PROTOCOL_VERSION = 32;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -1065,6 +1065,20 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Asks for the electron localisation function of a session, on a grid round its atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestElf(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        densityRequest(context, body, sequence, "elf.request",
+                (session, request) -> orbitals.localisation(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report)));
+    }
+
+    /**
      * Asks for the difference density of a session, on a grid round its atoms.
      *
      * @param context the connection that asked
@@ -2057,6 +2071,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("density.request", endpoint::requestDensity),
                     Map.entry("nci.request", endpoint::requestNci),
                     Map.entry("laplacian.request", endpoint::requestLaplacian),
+                    Map.entry("elf.request", endpoint::requestElf),
                     Map.entry("spin.request", endpoint::requestSpin),
                     Map.entry("difference.request", endpoint::requestDifference),
                     Map.entry("plane.request", endpoint::requestPlane),

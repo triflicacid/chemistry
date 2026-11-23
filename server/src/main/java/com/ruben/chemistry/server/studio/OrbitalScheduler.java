@@ -50,7 +50,7 @@ public final class OrbitalScheduler implements AutoCloseable
     /** How many points a slice plane has along its longer side at most, which keeps the work of a plane a fraction of that of a grid. */
     public static final int PLANE_POINTS = 100;
 
-    /** How far beyond the atoms the finer grid of the non-covalent contacts and the Laplacian reaches, in ångström: the contacts are between atoms, not out in the tails. */
+    /** How far beyond the atoms the finer grid of the non-covalent contacts, the Laplacian and the electron localisation function reaches, in ångström: the contacts are between atoms, not out in the tails. */
     public static final double CONTACT_MARGIN = 2.5;
 
     /** The most points along the longest side of the grid of the contacts, which is finer than the others since the gradient dips sharply at a contact. */
@@ -58,6 +58,9 @@ public final class OrbitalScheduler implements AutoCloseable
 
     /** The least spacing of the grid of the contacts, in ångström. */
     public static final double CONTACT_FINEST = 0.1;
+
+    /** The density, in electrons per cubic bohr, below which the electron localisation function is not worked out and is left at zero, since in the tail of a density it is noise. */
+    public static final double LOCALISATION_FROM = 1.0e-6;
 
     /** The least spacing of a slice plane's points, in ångström. */
     public static final double PLANE_FINEST = 0.1;
@@ -113,6 +116,7 @@ public final class OrbitalScheduler implements AutoCloseable
     private final JobScheduler<DensityReport> spins;
     private final JobScheduler<DensityReport> differences;
     private final JobScheduler<DensityReport> laplacians;
+    private final JobScheduler<DensityReport> localisations;
     private final JobScheduler<PlaneReport> planes;
     private final Wavefunctions wavefunctions;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
@@ -143,6 +147,7 @@ public final class OrbitalScheduler implements AutoCloseable
         this.spins = new JobScheduler<>(debounce);
         this.differences = new JobScheduler<>(debounce);
         this.laplacians = new JobScheduler<>(debounce);
+        this.localisations = new JobScheduler<>(debounce);
         this.planes = new JobScheduler<>(debounce);
         this.wavefunctions = Objects.requireNonNull(wavefunctions, "wavefunctions");
     }
@@ -418,6 +423,28 @@ public final class OrbitalScheduler implements AutoCloseable
     }
 
     /**
+     * Asks for the electron localisation function of the session, or of one of its molecules, on a grid round the atoms, once the session has been
+     * left alone, replacing any such request for it that is waiting. The grid is the finer one the contacts use, since lone pairs and bonds are
+     * smaller than the density's detail.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or {@code null} for the lowest the electron count allows
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void localisation(StudioSession session, String requested, String fragment, Integer multiplicity, Consumer<DensityReport> deliver)
+    {
+        schedule(localisations, DensityReport.ELF, session, resolve(requested), fragment, deliver,
+                (described, model, run) ->
+                {
+                    Cached made = calculation(session, described, model, fragment, multiplicity, run);
+                    FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), CONTACT_MARGIN, CONTACT_LONGEST_SIDE, CONTACT_FINEST);
+                    return new Evaluated(grid, ElectronDensity.localisation(made.orbitals(), grid, LOCALISATION_FROM, run::check));
+                });
+    }
+
+    /**
      * Asks for the spin density on a grid around the atoms.
      *
      * @param session the session
@@ -629,6 +656,7 @@ public final class OrbitalScheduler implements AutoCloseable
         spins.close();
         differences.close();
         laplacians.close();
+        localisations.close();
         planes.close();
     }
 

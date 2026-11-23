@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 31;
+export const PROTOCOL_VERSION = 32;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -804,6 +804,11 @@ export interface SpinRequestAck extends ServerEnvelope {
   type: "spin.request.ack";
 }
 
+/** The answer to a request for the electron localisation function, which says only that the request was understood: it follows as an `elf.result`. */
+export interface ElfRequestAck extends ServerEnvelope {
+  type: "elf.request.ack";
+}
+
 /** The answer to a request for the Laplacian of the density, which says only that the request was understood: it follows as a `laplacian.result`. */
 export interface LaplacianRequestAck extends ServerEnvelope {
   type: "laplacian.request.ack";
@@ -821,7 +826,7 @@ export interface DifferenceRequestAck extends ServerEnvelope {
  * where there is more and negative where there is less.
  */
 export interface DensityResult extends ServerEnvelope {
-  type: "density.result" | "spin.result" | "difference.result" | "laplacian.result";
+  type: "density.result" | "spin.result" | "difference.result" | "laplacian.result" | "elf.result";
   session_id: string;
   version: number;
   status: "complete" | "failed";
@@ -988,6 +993,7 @@ export type ServerMessage =
   | SpinRequestAck
   | DifferenceRequestAck
   | LaplacianRequestAck
+  | ElfRequestAck
   | DensityResult
   | SocketError
   | Pong;

@@ -56,7 +56,7 @@ export function clampForceScale(scale: number): number {
  * where atoms that are not bonded touch, or the density coloured by how much of the HOMO (where an electrophile attacks) or the LUMO
  * (where a nucleophile does) is there.
  */
-export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference" | "nci" | "homoMap" | "lumoMap" | "frontierMap";
+export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference" | "nci" | "homoMap" | "lumoMap" | "frontierMap" | "concentrationMap" | "elf";
 
 /** What colours a surface of the electron density alone: nothing, or the element of the atom each part of it is nearest. */
 export type DensityColour = "single" | "element";
@@ -119,19 +119,33 @@ export function asSliceAxis(value: unknown): SliceAxis {
 
 export const MIN_SURFACE_ISOVALUE = 0.001;
 export const MAX_SURFACE_ISOVALUE = 0.02;
+/** The greatest density the charge concentration map can be drawn at, which is near enough the atoms for a lone pair to show. */
+export const MAX_CONCENTRATION_ISOVALUE = 0.1;
 export const DEFAULT_SURFACE_ISOVALUE = 0.004;
 export const MIN_NCI_LEVEL = 0.1;
 export const MAX_NCI_LEVEL = 2;
 export const DEFAULT_NCI_LEVEL = 0.5;
+export const MIN_ELF_LEVEL = 0.5;
+export const MAX_ELF_LEVEL = 0.95;
+export const DEFAULT_ELF_LEVEL = 0.8;
 export const MIN_SURFACE_OPACITY = 0.3;
 export const DEFAULT_SURFACE_OPACITY = 0.9;
 
 /**
+ * @param kind what is drawn as a surface
+ * @returns the greatest density it can be drawn at, in electrons per cubic bohr
+ */
+export function maxSurfaceIsovalue(kind: SurfaceKind): number {
+  return kind === "concentrationMap" ? MAX_CONCENTRATION_ISOVALUE : MAX_SURFACE_ISOVALUE;
+}
+
+/**
  * @param isovalue an electron density in electrons per cubic bohr
+ * @param most the greatest density the surface can be drawn at
  * @returns the nearest density a surface can be drawn at, to the thousandth
  */
-export function clampSurfaceIsovalue(isovalue: number): number {
-  return Number.isFinite(isovalue) ? Math.round(Math.min(MAX_SURFACE_ISOVALUE, Math.max(MIN_SURFACE_ISOVALUE, isovalue)) * 1000) / 1000 : DEFAULT_SURFACE_ISOVALUE;
+export function clampSurfaceIsovalue(isovalue: number, most: number = MAX_SURFACE_ISOVALUE): number {
+  return Number.isFinite(isovalue) ? Math.round(Math.min(most, Math.max(MIN_SURFACE_ISOVALUE, isovalue)) * 1000) / 1000 : DEFAULT_SURFACE_ISOVALUE;
 }
 
 /**
@@ -140,6 +154,14 @@ export function clampSurfaceIsovalue(isovalue: number): number {
  */
 export function clampNciLevel(level: number): number {
   return Number.isFinite(level) ? Math.round(Math.min(MAX_NCI_LEVEL, Math.max(MIN_NCI_LEVEL, level)) * 100) / 100 : DEFAULT_NCI_LEVEL;
+}
+
+/**
+ * @param level a value of the electron localisation function, which runs from zero to one
+ * @returns the nearest level a surface of it can be drawn at, to the hundredth
+ */
+export function clampElfLevel(level: number): number {
+  return Number.isFinite(level) ? Math.round(Math.min(MAX_ELF_LEVEL, Math.max(MIN_ELF_LEVEL, level)) * 100) / 100 : DEFAULT_ELF_LEVEL;
 }
 
 /**
@@ -200,6 +222,8 @@ export interface PropertiesState {
   surfaceIsovalue: number;
   /** The reduced density gradient the surfaces of non-covalent contacts are drawn at, which has no unit. */
   nciLevel: number;
+  /** The value of the electron localisation function that its surface is drawn at, from zero to one. */
+  elfLevel: number;
   /** How opaque the surface is. */
   surfaceOpacity: number;
   /** Whether the Properties section is open. */
@@ -293,7 +317,8 @@ export class PropertiesModel extends Observable<PropertiesState> {
    */
   surfaceTo(surface: SurfaceKind): void {
     if (this.get().surface !== surface) {
-      this.change({ ...this.get(), surface });
+      // a level only the charge concentration map reaches is brought back to what the new surface can be drawn at
+      this.change({ ...this.get(), surface, surfaceIsovalue: clampSurfaceIsovalue(this.get().surfaceIsovalue, maxSurfaceIsovalue(surface)) });
     }
   }
 
@@ -365,7 +390,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
    * @param isovalue the density the surface is at, in electrons per cubic bohr
    */
   surfaceIsovalueTo(isovalue: number): void {
-    const surfaceIsovalue = clampSurfaceIsovalue(isovalue);
+    const surfaceIsovalue = clampSurfaceIsovalue(isovalue, maxSurfaceIsovalue(this.get().surface));
     if (this.get().surfaceIsovalue !== surfaceIsovalue) {
       this.change({ ...this.get(), surfaceIsovalue });
     }
@@ -378,6 +403,16 @@ export class PropertiesModel extends Observable<PropertiesState> {
     const nciLevel = clampNciLevel(level);
     if (this.get().nciLevel !== nciLevel) {
       this.change({ ...this.get(), nciLevel });
+    }
+  }
+
+  /**
+   * @param level the value of the electron localisation function that its surface is drawn at
+   */
+  elfLevelTo(level: number): void {
+    const elfLevel = clampElfLevel(level);
+    if (this.get().elfLevel !== elfLevel) {
+      this.change({ ...this.get(), elfLevel });
     }
   }
 
@@ -424,7 +459,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, elfLevel: DEFAULT_ELF_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -454,6 +489,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
       multiplicity: asMultiplicity(held.multiplicity),
       surfaceIsovalue: typeof held.surfaceIsovalue === "number" ? clampSurfaceIsovalue(held.surfaceIsovalue) : defaults.surfaceIsovalue,
       nciLevel: typeof held.nciLevel === "number" ? clampNciLevel(held.nciLevel) : defaults.nciLevel,
+      elfLevel: typeof held.elfLevel === "number" ? clampElfLevel(held.elfLevel) : defaults.elfLevel,
       surfaceOpacity: typeof held.surfaceOpacity === "number" ? clampSurfaceOpacity(held.surfaceOpacity) : defaults.surfaceOpacity,
       expanded: {
         atoms: held.expanded?.atoms === true,

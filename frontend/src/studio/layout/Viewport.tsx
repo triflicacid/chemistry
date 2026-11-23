@@ -45,6 +45,7 @@ import {
   sliceTargets
 } from "./orbitals";
 import {isCurrent} from "./findings";
+import {concentrationColours, concentrationSurface, ELF_COLOUR} from "./concentration";
 import {OpenMolecule} from "../controls/OpenMolecule";
 import {useStructureActions} from "./useStructureActions";
 import {ActionTools, DisplayTools} from "./ViewportOverlay";
@@ -62,7 +63,7 @@ export interface ViewportProps {
 }
 
 /** What each density is called in a label. */
-const FIELD_NAMES = { none: "", density: "density", esp: "density", nci: "density", homoMap: "density", lumoMap: "density", frontierMap: "density", laplacian: "−∇²ρ", spin: "spin density", difference: "difference density", potential: "potential", homo: "orbital", lumo: "orbital", frontier: "orbital" };
+const FIELD_NAMES = { none: "", density: "density", esp: "density", nci: "density", homoMap: "density", lumoMap: "density", frontierMap: "density", concentrationMap: "density", elf: "ELF", laplacian: "−∇²ρ", spin: "spin density", difference: "difference density", potential: "potential", homo: "orbital", lumo: "orbital", frontier: "orbital" };
 
 /** No orbitals. */
 const NO_ORBITALS: DrawnOrbital[] = [];
@@ -96,6 +97,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     spin,
     difference,
     laplacian,
+    elf,
     plane,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -168,7 +170,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
 
   // atoms are coloured by what the server last calculated for them. A result a little behind the session is kept, so that
   // the colours do not flicker while an atom is dragged, and the Properties section says that it is updating
-  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface: surfaceKind, densityColour, surfaceIsovalue, nciLevel, surfaceOpacity, sliceField, sliceAxis, slicePosition, sliceContours } = useObservable(models.properties);
+  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface: surfaceKind, densityColour, surfaceIsovalue, nciLevel, elfLevel, surfaceOpacity, sliceField, sliceAxis, slicePosition, sliceContours } = useObservable(models.properties);
   const charged = useMemo(() => (colourBy === "charge" && charges?.session_id === state?.session_id ? chargeScale(charges) : null), [colourBy, charges, state?.session_id]);
   useEffect(() => {
     view?.colourAtoms(charged?.colours ?? null);
@@ -191,9 +193,11 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   // the density alone, the spin and the difference each come in a message of their own, and are decoded the same way
   const mapSide = surfaceKind === "homoMap" ? "homo" : surfaceKind === "lumoMap" ? "lumo" : null;
   const dual = surfaceKind === "frontierMap";
-  const plain = surfaceKind === "density" || mapSide !== null || dual ? density : surfaceKind === "spin" ? spin : surfaceKind === "difference" ? difference : null;
+  const plain = surfaceKind === "density" || surfaceKind === "concentrationMap" || mapSide !== null || dual ? density : surfaceKind === "elf" ? elf : surfaceKind === "spin" ? spin : surfaceKind === "difference" ? difference : null;
   const decodedDensity = useMemo(() => (plain && atVersion(plain) ? decodeDensity(plain) : null), [plain, state]); // eslint-disable-line react-hooks/exhaustive-deps
   const signed = surfaceKind === "spin" || surfaceKind === "difference";
+  // minus the Laplacian is worked out on a grid of its own, and read where the density surface is
+  const decodedLaplacian = useMemo(() => (surfaceKind === "concentrationMap" && laplacian && atVersion(laplacian) ? decodeDensity(laplacian) : null), [surfaceKind, laplacian, state]); // eslint-disable-line react-hooks/exhaustive-deps
   // a map of the frontier orbital reads the HOMO or the LUMO of each set where the density surface is, as the Orbitals tab calculates them
   const { scope: mapScope } = useObservable(models.orbital);
   // a plane through a frontier orbital reads them the same way
@@ -216,6 +220,15 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     if (!decodedDensity) {
       return [];
     }
+    // the electron localisation function is itself the field the surface is drawn of
+    if (surfaceKind === "elf") {
+      const made = densitySurface(decodedDensity, elfLevel);
+      return [{ surface: made, colours: densityColour === "element" && state ? nearestAtomColours(made, state.atoms) : null, colour: ELF_COLOUR }];
+    }
+    if (surfaceKind === "concentrationMap" && decodedLaplacian) {
+      const made = concentrationSurface(decodedDensity, surfaceIsovalue, decodedLaplacian);
+      return [{ surface: made.surface, colours: concentrationColours(made), colour: DENSITY_COLOUR }];
+    }
     // until the orbitals arrive the density surface is drawn plain, so that something is there to see
     if (dual && frontierOrbitals.homo.length > 0 && frontierOrbitals.lumo.length > 0) {
       const made = dualSurface(decodedDensity, surfaceIsovalue, frontierOrbitals.homo, frontierOrbitals.lumo);
@@ -234,7 +247,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     }
     const made = densitySurface(decodedDensity, surfaceIsovalue);
     return [{ surface: made, colours: densityColour === "element" && state ? nearestAtomColours(made, state.atoms) : null, colour: DENSITY_COLOUR }];
-  }, [decodedEsp, decodedNci, decodedDensity, signed, surfaceIsovalue, nciLevel, densityColour, mapSide, mapOrbitals, dual, frontierOrbitals, state]);
+  }, [decodedEsp, decodedNci, decodedDensity, signed, surfaceIsovalue, nciLevel, densityColour, mapSide, mapOrbitals, dual, frontierOrbitals, surfaceKind, elfLevel, decodedLaplacian, state]);
   useEffect(() => {
     view?.showFieldSurface(drawn, surfaceOpacity);
   }, [view, drawn, surfaceOpacity]);
@@ -334,7 +347,10 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
         const reduced = sampleGrid(decodedNci.gradient, decodedNci.shape, x, y, z);
         lines = [`density ${Number.isNaN(signedDensity) ? "n/a" : Math.abs(signedDensity).toFixed(4)} e/bohr³`, `reduced gradient ${Number.isNaN(reduced) ? "n/a" : reduced.toFixed(3)}`, `curvature ${signedDensity < 0 ? "draws the density together (attractive)" : signedDensity > 0 ? "pushes the density apart (repulsive)" : "none"}`];
       } else if (hit.on === "surface" && probed) {
-        lines = [`${FIELD_NAMES[surfaceKind]} ${sampleGrid(probed.density, probed.shape, x, y, z).toFixed(4)} e/bohr³`];
+        lines = [`${FIELD_NAMES[surfaceKind]} ${sampleGrid(probed.density, probed.shape, x, y, z).toFixed(4)}${surfaceKind === "elf" ? "" : " e/bohr³"}`];
+        if (decodedLaplacian) {
+          lines.push(`−∇²ρ ${sampleGrid(decodedLaplacian.density, decodedLaplacian.shape, x, y, z).toFixed(4)} e/bohr⁵`);
+        }
         if (dual) {
           for (const [name, found] of [["HOMO", frontierOrbitals.homo], ["LUMO", frontierOrbitals.lumo]] as const) {
             lines.push(`${name} ${found.reduce((sum, { field }) => sum + sampleGrid(field.values, field.shape, x, y, z) ** 2, 0).toFixed(4)} e/bohr³`);
@@ -360,7 +376,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       canvas.removeEventListener("pointerleave", leave);
       setProbe(null);
     };
-  }, [view, debug, probed, mapSide, mapOrbitals, dual, frontierOrbitals, decodedNci, decodedEsp, decodedSlice, decodedPlane, orbitalDrawing, drawn, surfaceKind, sliceField, sliceAxis]);
+  }, [view, debug, probed, decodedLaplacian, mapSide, mapOrbitals, dual, frontierOrbitals, decodedNci, decodedEsp, decodedSlice, decodedPlane, orbitalDrawing, drawn, surfaceKind, sliceField, sliceAxis]);
 
   // the hydrogen bond the scan is on is drawn from where its atoms are now, so it is redrawn as they move
   const bond = useObservable(models.hydrogenBond);

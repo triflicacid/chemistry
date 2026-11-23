@@ -1,39 +1,40 @@
 import type {Vec3} from "../../api/types/structure";
 import {
-    type AtomChange,
-    type AtomPlacement,
-    type BondEditAck,
-    type BondOrder,
-    type CameraAck,
-    type ChargesRequestAck,
-    type DensityRequestAck,
-    type DifferenceRequestAck,
-    type EditApplied,
-    type EditHistory,
-    type EspRequestAck,
-    type FieldRequestAck,
-    type ForcesRequestAck,
-    type GraphEditAck,
-    type InteractionRequestAck,
-    type LaplacianRequestAck,
-    type LockAck,
-    type NciRequestAck,
-    type OptimiseCancelAck,
-    type OptimiseStarted,
-    type OrbitalsRequestAck,
-    type OrbitalTarget,
-    type PatchAck,
-    type PlaneRequestAck,
-    type Pose,
-    PROTOCOL_VERSION,
-    type ScanRequestAck,
-    type ServerEnvelope,
-    type SessionCamera,
-    type SessionConflict,
-    type SessionReady,
-    type SessionState,
-    type SpinRequestAck,
-    type TransformAck,
+  type AtomChange,
+  type AtomPlacement,
+  type BondEditAck,
+  type BondOrder,
+  type CameraAck,
+  type ChargesRequestAck,
+  type DensityRequestAck,
+  type DifferenceRequestAck,
+  type EditApplied,
+  type EditHistory,
+  type ElfRequestAck,
+  type EspRequestAck,
+  type FieldRequestAck,
+  type ForcesRequestAck,
+  type GraphEditAck,
+  type InteractionRequestAck,
+  type LaplacianRequestAck,
+  type LockAck,
+  type NciRequestAck,
+  type OptimiseCancelAck,
+  type OptimiseStarted,
+  type OrbitalsRequestAck,
+  type OrbitalTarget,
+  type PatchAck,
+  type PlaneRequestAck,
+  type Pose,
+  PROTOCOL_VERSION,
+  type ScanRequestAck,
+  type ServerEnvelope,
+  type SessionCamera,
+  type SessionConflict,
+  type SessionReady,
+  type SessionState,
+  type SpinRequestAck,
+  type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -645,6 +646,20 @@ export class StudioSocket {
    */
   requestSpin(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<SpinRequestAck> {
     return this.request<SpinRequestAck>("spin.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "spin.request.ack");
+  }
+
+  /**
+   * Asks for the electron localisation function of a session, or of one of its molecules, on a grid round its atoms: from zero to one, and high
+   * where electrons are paired and apart from others, as in a bond or a lone pair. The answer says only that the request was understood: listen
+   * for `elf.result`, which the server sends once the session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestElf(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<ElfRequestAck> {
+    return this.request<ElfRequestAck>("elf.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "elf.request.ack");
   }
 
   /**
