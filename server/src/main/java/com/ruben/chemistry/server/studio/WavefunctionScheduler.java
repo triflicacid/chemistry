@@ -3,6 +3,7 @@ package com.ruben.chemistry.server.studio;
 import com.ruben.chemistry.quantum.basis.BasisLibrary;
 import com.ruben.chemistry.quantum.field.AtomicDensity;
 import com.ruben.chemistry.quantum.field.ElectronFields;
+import com.ruben.chemistry.quantum.field.ElfBasins;
 import com.ruben.chemistry.quantum.field.FieldGrid;
 import com.ruben.chemistry.quantum.field.MolecularOrbitals;
 import com.ruben.chemistry.quantum.field.NonCovalent;
@@ -13,6 +14,7 @@ import com.ruben.chemistry.quantum.population.RohfMullikenCharges;
 import com.ruben.chemistry.quantum.population.UhfMullikenCharges;
 import com.ruben.chemistry.quantum.scf.ScfListener;
 import com.ruben.chemistry.quantum.scf.ScfSettings;
+import com.ruben.chemistry.space.ElementData;
 import com.ruben.chemistry.space.Structure3D;
 import com.ruben.chemistry.space.Vec3;
 
@@ -64,6 +66,15 @@ public final class WavefunctionScheduler implements AutoCloseable
     /** The density, in electrons per cubic bohr, below which the electron localisation function is not worked out and is left at zero, since in the tail of a density it is noise. */
     public static final double LOCALISATION_FROM = 1.0e-6;
 
+    /** The least value of the electron localisation function at the maximum of a basin for it to be one. */
+    public static final double BASIN_LEAST = 0.5;
+
+    /** The fewest electrons a basin can hold and still be one, since the density is so thin in the tail that the function has maxima there that hold next to nothing. */
+    public static final double BASIN_SMALLEST = 0.1;
+
+    /** How much a maximum of the electron localisation function must stand above the pass to a higher one to be a basin of its own, which joins a ripple to its neighbour. */
+    public static final double BASIN_PERSISTENCE = 0.02;
+
     /** The least spacing of a slice plane's points, in ångström. */
     public static final double PLANE_FINEST = 0.1;
 
@@ -114,6 +125,7 @@ public final class WavefunctionScheduler implements AutoCloseable
     private final JobScheduler<InteractionReport> interactions;
     private final JobScheduler<EspReport> potentials;
     private final JobScheduler<NciReport> contacts;
+    private final JobScheduler<BasinReport> partitions;
     private final Map<String, JobScheduler<ScalarFieldReport>> scalars = new LinkedHashMap<>();
     private final JobScheduler<PlaneReport> planes;
     private final Wavefunctions wavefunctions;
@@ -141,6 +153,7 @@ public final class WavefunctionScheduler implements AutoCloseable
         this.interactions = new JobScheduler<>(debounce);
         this.potentials = new JobScheduler<>(debounce);
         this.contacts = new JobScheduler<>(debounce);
+        this.partitions = new JobScheduler<>(debounce);
         for (String field : SCALAR_FIELDS)
         {
             scalars.put(field, new JobScheduler<>(debounce));
@@ -375,6 +388,42 @@ public final class WavefunctionScheduler implements AutoCloseable
                     }
                 },
                 (described, elapsedMs, message) -> NciReport.failed(session, described.version(), fragment, elapsedMs, message),
+                deliver);
+    }
+
+    /**
+     * Asks for the electron localisation function of the session, or of one of its molecules, split into its basins, which are its lone pairs and
+     * bonds, once the session has been left alone, replacing any such request for it that is waiting.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or {@code null} for the lowest the electron count allows
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void basins(StudioSession session, String requested, String fragment, Integer multiplicity, Consumer<BasinReport> deliver)
+    {
+        String model = resolve(requested);
+        partitions.schedule(session,
+                (described, run) ->
+                {
+                    try
+                    {
+                        Cached made = calculation(session, described, model, fragment, multiplicity, run);
+                        List<Vec3> centres = positionsOf(made.structure());
+                        List<Double> radii = made.structure().sites().stream().map(site -> ElementData.covalentRadius(ElementData.numberOf(site.element()))).toList();
+                        FieldGrid grid = FieldGrid.around(centres, CONTACT_MARGIN, CONTACT_LONGEST_SIDE, CONTACT_FINEST);
+                        float[] elf = ElectronFields.localisation(made.orbitals(), grid, LOCALISATION_FROM, run::check);
+                        float[] density = ElectronFields.evaluate(made.orbitals(), grid, run::check);
+                        ElfBasins.Partition partition = ElfBasins.partition(elf, density, grid, centres, radii, BASIN_LEAST, BASIN_SMALLEST, BASIN_PERSISTENCE);
+                        return BasinReport.of(session, described.version(), fragment, grid, elf, partition, made.atoms()).elapsed(run.elapsedMs());
+                    }
+                    catch (IllegalArgumentException unsuitable)
+                    {
+                        return BasinReport.failed(session, described.version(), fragment, run.elapsedMs(), unsuitable.getMessage());
+                    }
+                },
+                (described, elapsedMs, message) -> BasinReport.failed(session, described.version(), fragment, elapsedMs, message),
                 deliver);
     }
 
@@ -645,6 +694,7 @@ public final class WavefunctionScheduler implements AutoCloseable
         interactions.close();
         potentials.close();
         contacts.close();
+        partitions.close();
         scalars.values().forEach(JobScheduler::close);
         planes.close();
     }

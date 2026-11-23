@@ -1,4 +1,5 @@
 import type {Surface} from "../../render/isosurface";
+import {NEUTRAL_COLOUR} from "../../render/scale";
 import {vertexColours} from "./esp";
 import {fieldSurface, sampleGrid} from "./gridField";
 import type {DecodedField} from "./orbitals";
@@ -6,6 +7,14 @@ import {strongest} from "./reactivity";
 
 /** The colour of a surface of the electron localisation function, which is violet so that it is not taken for a density or an orbital. */
 export const ELF_COLOUR = "#8f6bd6";
+
+/**
+ * @returns a CSS gradient from where electrons are as free as in a uniform gas to where they are fully localised, to draw a legend with for a plane
+ *     through the electron localisation function, which varies across it
+ */
+export function elfGradient(): string {
+  return `linear-gradient(to right, ${NEUTRAL_COLOUR}, ${ELF_COLOUR})`;
+}
 
 /**
  * What the colours of a mapped field are centred on: the median of the vertices, for a field that is nearly all one sign on the surface, so that the

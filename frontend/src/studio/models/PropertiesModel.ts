@@ -58,6 +58,20 @@ export function clampForceScale(scale: number): number {
  */
 export type SurfaceKind = "none" | "density" | "esp" | "spin" | "intermolecular" | "deformation" | "nci" | "homoMap" | "lumoMap" | "frontierMap" | "concentrationMap" | "elf";
 
+/**
+ * How the electron localisation function is shown: as a surface at a level, or split into its basins, which are the electron pairs, of which all can be
+ * shown, or only the lone pairs, or only the bonds.
+ */
+export type ElfDisplay = "level" | "pairs" | "lone" | "bonds";
+
+/**
+ * @param value anything
+ * @returns it if it is a way of showing the electron localisation function, and a surface at a level otherwise
+ */
+export function asElfDisplay(value: unknown): ElfDisplay {
+  return value === "pairs" || value === "lone" || value === "bonds" ? value : "level";
+}
+
 /** How the density change on bonding is shown: as surfaces where it is gained and lost, or as a range of it on the density surface. */
 export type DeformationDisplay = "levels" | "range";
 
@@ -107,9 +121,9 @@ export function asSurfaceModel(value: unknown): OrbitalKind {
 }
 
 /** What a slice plane shows: none, which draws no plane, one of the densities a surface can be drawn of, or the electrostatic potential. */
-export type SliceField = "none" | "density" | "spin" | "intermolecular" | "deformation" | "laplacian" | "potential" | "homoMap" | "lumoMap" | OrbitalSliceKind;
+export type SliceField = "none" | "density" | "spin" | "intermolecular" | "deformation" | "elf" | "laplacian" | "potential" | "homoMap" | "lumoMap" | OrbitalSliceKind;
 
-const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "intermolecular", "deformation", "laplacian", "potential", "homoMap", "lumoMap", "homo", "lumo", "frontier"];
+const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "intermolecular", "deformation", "elf", "laplacian", "potential", "homoMap", "lumoMap", "homo", "lumo", "frontier"];
 const SLICE_AXES: readonly SliceAxis[] = ["x", "y", "z"];
 
 /**
@@ -221,6 +235,8 @@ export interface PropertiesState {
   densityColour: DensityColour;
   /** How the density change on bonding is shown. */
   deformationDisplay: DeformationDisplay;
+  /** How the electron localisation function is shown. */
+  elfDisplay: ElfDisplay;
   /** The kind of Hartree-Fock calculation the surfaces come from. */
   surfaceModel: OrbitalKind;
   /** The spin multiplicity it is calculated at, or null for the lowest the electron count allows. */
@@ -333,6 +349,15 @@ export class PropertiesModel extends Observable<PropertiesState> {
     if (this.get().surface !== surface) {
       // a level only the surfaces coloured by another field reach is brought back to what the new surface can be drawn at
       this.change({ ...this.get(), surface, surfaceIsovalue: clampSurfaceIsovalue(this.get().surfaceIsovalue, maxSurfaceIsovalue(surface, this.get().deformationDisplay)) });
+    }
+  }
+
+  /**
+   * @param elfDisplay how the electron localisation function is shown
+   */
+  elfDisplayTo(elfDisplay: ElfDisplay): void {
+    if (this.get().elfDisplay !== elfDisplay) {
+      this.change({ ...this.get(), elfDisplay });
     }
   }
 
@@ -483,7 +508,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", deformationDisplay: "levels", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, elfLevel: DEFAULT_ELF_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", deformationDisplay: "levels", elfDisplay: "level", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, elfLevel: DEFAULT_ELF_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -506,6 +531,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
       surface: defaults.surface,
       densityColour: asDensityColour(held.densityColour),
       deformationDisplay: asDeformationDisplay(held.deformationDisplay),
+      elfDisplay: asElfDisplay(held.elfDisplay),
       surfaceModel: asSurfaceModel(held.surfaceModel),
       sliceField: defaults.sliceField,
       sliceAxis: asSliceAxis(held.sliceAxis),

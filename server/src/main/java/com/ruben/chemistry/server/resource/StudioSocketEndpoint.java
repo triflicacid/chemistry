@@ -47,7 +47,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 33;
+    private static final int PROTOCOL_VERSION = 34;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -1016,6 +1016,46 @@ public final class StudioSocketEndpoint extends SocketEndpoint
 
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "nci.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for the electron localisation function of a session split into its basins, which are its lone pairs and bonds. The answer says only that the
+     * request was understood; the basins follow, from another thread, as {@code basins.result}, which is dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestBasins(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.GridRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.GridRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("basins.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("basins.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        wavefunctions.basins(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "basins.request.ack");
         ack.put("sequence", sequence);
         context.sendJson(ack);
     }
@@ -2001,6 +2041,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("interaction.request", endpoint::requestInteraction),
                     Map.entry("esp.request", endpoint::requestEsp),
                     Map.entry("nci.request", endpoint::requestNci),
+                    Map.entry("basins.request", endpoint::requestBasins),
                     Map.entry("scalar.request", endpoint::requestScalarField),
                     Map.entry("plane.request", endpoint::requestPlane),
                     Map.entry("edit.undo", endpoint::undo),

@@ -11,6 +11,7 @@ import {
     DEFAULT_SURFACE_ISOVALUE,
     type DeformationDisplay,
     type DensityColour,
+    type ElfDisplay,
     MAX_ELF_LEVEL,
     MAX_FORCE_SCALE,
     MAX_NCI_LEVEL,
@@ -29,7 +30,8 @@ import {
 } from "../models/PropertiesModel";
 import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
 import {ATTRACTIVE, REPULSIVE, WEAK} from "../layout/nci";
-import {fieldOnSurface} from "../layout/surfaceMap";
+import {BASIN_COLOURS, type PairsShown, pairsShown} from "../layout/basins";
+import {elfGradient, fieldOnSurface} from "../layout/surfaceMap";
 import {dualGradient, isFrontierMap, reactivityGradient} from "../layout/reactivity";
 import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArrows";
 import {useObservable} from "../models/observable";
@@ -73,6 +75,7 @@ const SLICE_OPTIONS: { value: SliceField; label: string; title: string }[] = [
   { value: "spin", label: "Spin density (ρα − ρβ)", title: "The spin density across a plane: blue for spin up, red for spin down" },
   { value: "intermolecular", label: "Density change on interaction (Δρ)", title: "Electrons gained (blue) and lost (red) when the molecules interact, across a plane" },
   { value: "deformation", label: "Density change on bonding (Δρ)", title: "Electrons gained (blue) and lost (red) when the atoms bond into the molecule, across a plane" },
+  { value: "elf", label: "Electron localisation (ELF)", title: "The electron localisation function across a plane: high where electrons are paired and apart from others" },
   { value: "laplacian", label: "Charge concentration (−∇²ρ)", title: "Charge concentration across a plane: blue where concentrated, red where depleted" },
   { value: "homoMap", label: "HOMO probability (|ψ|²)", title: "The probability of the HOMO across a plane, with any orbitals of equal energy" },
   { value: "lumoMap", label: "LUMO probability (|ψ|²)", title: "The probability of the LUMO across a plane, with any orbitals of equal energy" },
@@ -98,6 +101,9 @@ const WORKING: Record<SurfaceKind, string> = {
   elf: "working out the electron localisation…",
 };
 
+/** What the key calls each kind of electron pair. */
+const PAIR_NAMES = { bond: "bonds", "lone pair": "lone pairs", "multicentre bond": "multicentre bonds" } as const;
+
 /** How often the running timer is redrawn. */
 const TICK_MS = 100;
 
@@ -107,7 +113,7 @@ const TICK_MS = 100;
  */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, deformationDisplay, surfaceModel, multiplicity, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, nciLevel, elfLevel, surfaceOpacity, open, expanded } =
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, deformationDisplay, elfDisplay, surfaceModel, multiplicity, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, nciLevel, elfLevel, surfaceOpacity, open, expanded } =
     useObservable(properties);
   const debug = useObservable(models.debug);
   // these surfaces are drawn where the field is a distance above and below zero, not at one value of a density
@@ -233,7 +239,7 @@ export function PropertiesOptions({ models }: { models: Models }) {
                 ))}
               </select>
             }
-            summary={surface !== "none" ? <SurfaceSummary kind={surface} isovalue={surfaceIsovalue} deformationDisplay={deformationDisplay} /> : null}
+            summary={surface !== "none" ? <SurfaceSummary kind={surface} isovalue={surfaceIsovalue} deformationDisplay={deformationDisplay} elfDisplay={elfDisplay} /> : null}
             details={
               <>
                 <dt>Calculation</dt>
@@ -260,7 +266,28 @@ export function PropertiesOptions({ models }: { models: Models }) {
                     ))}
                   </select>
                 </dd>
-                {(surface === "density" || surface === "elf") && (
+                {surface === "elf" && (
+                  <>
+                    <dt>Show</dt>
+                    <dd>
+                      <select value={elfDisplay} aria-label="How the electron localisation is shown" onChange={(event) => properties.elfDisplayTo(event.target.value as ElfDisplay)}>
+                        <option value="level" title="A surface where the localisation has the chosen value">
+                          Level surface
+                        </option>
+                        <option value="pairs" title="Each lone pair and bond as a lobe of its own">
+                          Electron pairs
+                        </option>
+                        <option value="lone" title="Only the lone pairs, each as a lobe of its own">
+                          Lone pairs
+                        </option>
+                        <option value="bonds" title="Only the electrons in bonds, each bond as a lobe of its own">
+                          Bond electrons
+                        </option>
+                      </select>
+                    </dd>
+                  </>
+                )}
+                {(surface === "density" || (surface === "elf" && elfDisplay === "level")) && (
                   <>
                     <dt>Colour</dt>
                     <dd>
@@ -423,12 +450,12 @@ export function PropertiesOptions({ models }: { models: Models }) {
 
 /** How the calculation behind a slice is getting on, and what its colours mean. */
 function SliceSummary({ field, models }: { field: SliceField; models: Models }) {
-  const { density, densitySince, spin, spinSince, intermolecular, intermolecularSince, deformation, deformationSince, laplacian, laplacianSince, plane, planeSince, state, orbitalsSince, fieldsAsked } = useSessionContext();
+  const { density, densitySince, spin, spinSince, intermolecular, intermolecularSince, deformation, deformationSince, laplacian, laplacianSince, elf, elfSince, plane, planeSince, state, orbitalsSince, fieldsAsked } = useSessionContext();
   const { colouring, display, combine } = useObservable(models.orbital);
   const orbitalSlice = isOrbitalSlice(field);
   const frontierSlice = isFrontierMap(field);
-  const result = orbitalSlice || frontierSlice ? null : { density, spin, intermolecular, deformation, laplacian, potential: plane, none: null }[field];
-  const since = orbitalSlice || frontierSlice ? (orbitalsSince !== null || fieldsAsked ? 0 : null) : { density: densitySince, spin: spinSince, intermolecular: intermolecularSince, deformation: deformationSince, laplacian: laplacianSince, potential: planeSince, none: null }[field];
+  const result = orbitalSlice || frontierSlice ? null : { density, spin, intermolecular, deformation, laplacian, elf, potential: plane, none: null }[field];
+  const since = orbitalSlice || frontierSlice ? (orbitalsSince !== null || fieldsAsked ? 0 : null) : { density: densitySince, spin: spinSince, intermolecular: intermolecularSince, deformation: deformationSince, laplacian: laplacianSince, elf: elfSince, potential: planeSince, none: null }[field];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = current && result && result.type !== "plane.result" ? decodeScalarField(result) : null;
   const flat = current && plane && field === "potential" ? decodePlane(plane) : null;
@@ -457,7 +484,16 @@ function SliceSummary({ field, models }: { field: SliceField; models: Models }) 
       {bySign && <Scale limit="2" unit="× surface level" label="From minus twice to plus twice the level the surface is drawn at" />}
       {potentialLimit !== null && <Scale limit={potentialLimit} unit="kcal/mol/e" label={`From minus ${potentialLimit} to plus ${potentialLimit} kilocalories per mole per charge`} />}
       {limit !== null && signed && <Scale limit={shown} unit={unit} label={`From minus ${shown} to plus ${shown} ${field === "laplacian" ? "electrons per fifth power of a bohr" : "electrons per cubic bohr"}`} />}
-      {limit !== null && !signed && (
+      {limit !== null && field === "elf" && (
+        <div className="legend">
+          <div className="legend-bar" style={{ background: elfGradient() }} role="img" aria-label="From electrons as free as in a uniform gas to electrons fully localised" />
+          <div className="legend-labels">
+            <span>0 free</span>
+            <span>1 localised</span>
+          </div>
+        </div>
+      )}
+      {limit !== null && !signed && field !== "elf" && (
         <div className="legend">
           <div className="legend-bar" style={{ background: sequentialGradient() }} role="img" aria-label={`From zero to ${shown} electrons per cubic bohr`} />
           <div className="legend-labels">
@@ -582,10 +618,10 @@ function ChargeDetails() {
 }
 
 /** How the calculation behind a surface is getting on, and for the potential what the colours mean. */
-function SurfaceSummary({ kind, isovalue, deformationDisplay }: { kind: SurfaceKind; isovalue: number; deformationDisplay: DeformationDisplay }) {
-  const { esp, espSince, nci, nciSince, density, densitySince, spin, spinSince, intermolecular, intermolecularSince, deformation, deformationSince, laplacian, laplacianSince, elf, elfSince, state } = useSessionContext();
-  const result = { esp, nci, density, homoMap: density, lumoMap: density, frontierMap: density, concentrationMap: density, elf, spin, intermolecular, deformation, none: null }[kind];
-  const since = { esp: espSince, nci: nciSince, density: densitySince, homoMap: densitySince, lumoMap: densitySince, frontierMap: densitySince, concentrationMap: densitySince ?? laplacianSince, elf: elfSince, spin: spinSince, intermolecular: intermolecularSince, deformation: deformationDisplay === "range" ? (deformationSince ?? densitySince) : deformationSince, none: null }[kind];
+function SurfaceSummary({ kind, isovalue, deformationDisplay, elfDisplay }: { kind: SurfaceKind; isovalue: number; deformationDisplay: DeformationDisplay; elfDisplay: ElfDisplay }) {
+  const { esp, espSince, nci, nciSince, density, densitySince, spin, spinSince, intermolecular, intermolecularSince, deformation, deformationSince, laplacian, laplacianSince, elf, elfSince, basins, basinsSince, state } = useSessionContext();
+  const result = { esp, nci, density, homoMap: density, lumoMap: density, frontierMap: density, concentrationMap: density, elf: elfDisplay !== "level" ? basins : elf, spin, intermolecular, deformation, none: null }[kind];
+  const since = { esp: espSince, nci: nciSince, density: densitySince, homoMap: densitySince, lumoMap: densitySince, frontierMap: densitySince, concentrationMap: densitySince ?? laplacianSince, elf: elfDisplay !== "level" ? basinsSince : elfSince, spin: spinSince, intermolecular: intermolecularSince, deformation: deformationDisplay === "range" ? (deformationSince ?? densitySince) : deformationSince, none: null }[kind];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = kind === "esp" && current && esp ? decodeEsp(esp) : null;
   const limit = decoded ? makeEspSurface(decoded, isovalue).limit : null;
@@ -633,7 +669,21 @@ function SurfaceSummary({ kind, isovalue, deformationDisplay }: { kind: SurfaceK
           {current ? "" : " (updating…)"}
         </>
       )}
-      {since === null && kind === "elf" && elf?.status === "complete" && (
+      {since === null && kind === "elf" && elfDisplay !== "level" && basins?.status === "complete" && (
+        <>
+          {(["bond", "lone pair", "multicentre bond"] as const)
+            .filter((pair) => pairsShown(basins.basins, elfDisplay as PairsShown).some((basin) => basin.kind === pair))
+            .map((pair) => (
+              <span key={pair} className="legend-key">
+                <span style={{ color: BASIN_COLOURS[pair] }}>●</span> {PAIR_NAMES[pair]}
+              </span>
+            ))}
+          {basins.basins.length === 0 && "no electron pairs found"}
+          <Took milliseconds={basins.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && kind === "elf" && elfDisplay === "level" && elf?.status === "complete" && (
         <>
           electron localisation
           <Took milliseconds={elf.elapsed_ms} />

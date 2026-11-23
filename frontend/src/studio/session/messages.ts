@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 33;
+export const PROTOCOL_VERSION = 34;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -756,6 +756,11 @@ export interface NciRequestAck extends ServerEnvelope {
   type: "nci.request.ack";
 }
 
+/** The answer to a request for the electron pairs, which says only that the request was understood: it follows as a `basins.result`. */
+export interface BasinsRequestAck extends ServerEnvelope {
+  type: "basins.request.ack";
+}
+
 /** The answer to a request for a scalar field, which says only that the request was understood: it follows as a `scalar.result`. */
 export interface ScalarRequestAck extends ServerEnvelope {
   type: "scalar.request.ack";
@@ -794,6 +799,44 @@ export interface PlaneResult extends ServerEnvelope {
   potential: string | null;
   min: number | null;
   max: number | null;
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
+/** One electron pair: a basin of the electron localisation function, which is a lone pair or a bond. */
+export interface BasinMessage {
+  /** Which basin it is, as it is numbered in the labels. */
+  id: number;
+  /** Where its maximum is, in the frame of the structure, in angstroms. */
+  attractor: { x: number; y: number; z: number };
+  /** The value of the function at its maximum. */
+  elf: number;
+  /** How many electrons it holds. */
+  population: number;
+  kind: "lone pair" | "bond" | "multicentre bond" | "unattached";
+  /** The identifiers of the atoms it is attached to. */
+  atoms: string[];
+}
+
+/**
+ * The electron localisation function split into its basins, which are its electron pairs, sent on the server's own initiative after a request. It
+ * describes the geometry at `version`.
+ */
+export interface BasinsResult extends ServerEnvelope {
+  type: "basins.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** An atom of the molecule it is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** Where the points are, or null if there is no field. */
+  grid: FieldGridMessage | null;
+  /** The function at every point, from zero to one, in the same form as an orbital's values. */
+  values: string | null;
+  /** The basin each point is in, as a whole number from one, or zero for a point that is in none, in the same form. */
+  labels: string | null;
+  basins: BasinMessage[];
   elapsed_ms: number;
   /** Why there is no field. */
   message: string | null;
@@ -973,6 +1016,8 @@ export type ServerMessage =
   | NciRequestAck
   | NciResult
   | ScalarRequestAck
+  | BasinsRequestAck
+  | BasinsResult
   | PlaneRequestAck
   | PlaneResult
   | ScalarFieldResult

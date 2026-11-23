@@ -22,7 +22,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestIntermolecular, requestDeformation, requestLaplacian, requestElf, requestPlane } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestIntermolecular, requestDeformation, requestLaplacian, requestElf, requestBasins, requestPlane } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -42,7 +42,7 @@ export function App() {
 
   // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
   // The server waits for the session to be left alone, so a drag asks many times and is answered once
-  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity, sliceField, deformationDisplay } = useObservable(shared.properties);
+  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity, sliceField, deformationDisplay, elfDisplay } = useObservable(shared.properties);
   const version = state?.version;
   const sessionId = state?.session_id;
   useAsk(colourBy === "charge" && sessionId !== undefined, chargeModel, version, (automatic) => requestCharges(chargeModel, automatic));
@@ -65,7 +65,8 @@ export function App() {
   const { sliceAxis, slicePosition } = useObservable(shared.properties);
   useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(surfaceModel, null, multiplicity, sliceAxis, slicePosition, automatic), String(slicePosition));
   useAsk((sliceField === "laplacian" || surface === "concentrationMap") && sessionId !== undefined, calculation, version, (automatic) => requestLaplacian(surfaceModel, null, multiplicity, automatic));
-  useAsk(surface === "elf" && sessionId !== undefined, calculation, version, (automatic) => requestElf(surfaceModel, null, multiplicity, automatic));
+  useAsk(((surface === "elf" && elfDisplay === "level") || sliceField === "elf") && sessionId !== undefined, calculation, version, (automatic) => requestElf(surfaceModel, null, multiplicity, automatic));
+  useAsk(surface === "elf" && elfDisplay !== "level" && sessionId !== undefined, calculation, version, (automatic) => requestBasins(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "deformation" || sliceField === "deformation") && sessionId !== undefined, calculation, version, (automatic) => requestDeformation(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "intermolecular" || sliceField === "intermolecular") && sessionId !== undefined, calculation, version, (automatic) => requestIntermolecular(surfaceModel, null, multiplicity, automatic));
 
