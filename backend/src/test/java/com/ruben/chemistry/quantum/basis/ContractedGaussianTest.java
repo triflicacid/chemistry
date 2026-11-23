@@ -46,6 +46,66 @@ class ContractedGaussianTest
     }
 
     @Test
+    void should_find_derivatives_that_agree_with_differences_of_values_for_every_angular_momentum()
+    {
+        List<GaussianPrimitive> primitives = List.of(new GaussianPrimitive(1.4, 0.6), new GaussianPrimitive(0.35, 0.5));
+        double x = 0.37;
+        double y = -0.52;
+        double z = 0.81;
+        double h = 1.0e-4;
+        for (AngularMomentum angular : List.of(new AngularMomentum(0, 0, 0), new AngularMomentum(1, 0, 0), new AngularMomentum(0, 1, 0),
+                new AngularMomentum(1, 1, 0), new AngularMomentum(2, 0, 0), new AngularMomentum(0, 1, 2), new AngularMomentum(1, 1, 1)))
+        {
+            ContractedGaussian function = new ContractedGaussian(new Vec3(0.1, 0.2, -0.3), angular, primitives);
+            double[] exact = new double[ContractedGaussian.DERIVATIVES];
+
+            function.derivativesAt(x, y, z, exact);
+
+            double[][] steps = {{h, 0, 0}, {0, h, 0}, {0, 0, h}};
+            assertThat(exact[0]).isCloseTo(function.valueAt(x, y, z), within(1e-14));
+            for (int a = 0; a < 3; a++)
+            {
+                double[] s = steps[a];
+                double first = (function.valueAt(x + s[0], y + s[1], z + s[2]) - function.valueAt(x - s[0], y - s[1], z - s[2])) / (2 * h);
+                double second = (function.valueAt(x + s[0], y + s[1], z + s[2]) - 2 * function.valueAt(x, y, z) + function.valueAt(x - s[0], y - s[1], z - s[2])) / (h * h);
+                assertThat(exact[1 + a]).as("first derivative %d of %s", a, angular).isCloseTo(first, within(1e-7));
+                assertThat(exact[4 + a]).as("second derivative %d of %s", a, angular).isCloseTo(second, within(1e-5));
+            }
+            int[][] mixed = {{0, 1}, {0, 2}, {1, 2}};
+            for (int m = 0; m < 3; m++)
+            {
+                double[] p = steps[mixed[m][0]];
+                double[] q = steps[mixed[m][1]];
+                double cross = (function.valueAt(x + p[0] + q[0], y + p[1] + q[1], z + p[2] + q[2]) - function.valueAt(x + p[0] - q[0], y + p[1] - q[1], z + p[2] - q[2])
+                        - function.valueAt(x - p[0] + q[0], y - p[1] + q[1], z - p[2] + q[2]) + function.valueAt(x - p[0] - q[0], y - p[1] - q[1], z - p[2] - q[2])) / (4 * h * h);
+                assertThat(exact[7 + m]).as("mixed derivative %d of %s", m, angular).isCloseTo(cross, within(1e-5));
+            }
+        }
+    }
+
+    @Test
+    void should_have_no_derivative_of_a_p_function_along_its_own_axis_at_its_centre_except_its_slope()
+    {
+        ContractedGaussian px = new ContractedGaussian(Vec3.ZERO, new AngularMomentum(1, 0, 0), List.of(new GaussianPrimitive(0.9, 1.0)));
+        double[] at = new double[ContractedGaussian.DERIVATIVES];
+
+        px.derivativesAt(0, 0, 0, at);
+
+        assertThat(at[0]).isEqualTo(0.0);
+        assertThat(at[1]).isCloseTo(px.coefficient(0), within(1e-14));
+        assertThat(at[4]).isEqualTo(0.0);
+        assertThat(at[2]).isEqualTo(0.0);
+    }
+
+    @Test
+    void should_reject_a_derivative_buffer_that_is_too_small()
+    {
+        ContractedGaussian s = new ContractedGaussian(Vec3.ZERO, new AngularMomentum(0, 0, 0), List.of(new GaussianPrimitive(1.0, 1.0)));
+
+        assertThatThrownBy(() -> s.derivativesAt(0, 0, 0, new double[3])).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void should_reject_a_contraction_that_cancels_to_nothing()
     {
         List<GaussianPrimitive> cancelling = List.of(new GaussianPrimitive(1.0, 1.0), new GaussianPrimitive(1.0, -1.0));

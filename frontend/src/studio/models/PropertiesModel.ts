@@ -52,9 +52,10 @@ export function clampForceScale(scale: number): number {
 
 /**
  * What is drawn as a surface: nothing, the electron density alone, the density coloured by the electrostatic potential, the spin density,
- * or the difference density, which is what the molecules in the session do to one another's electrons.
+ * the difference density, which is what the molecules in the session do to one another's electrons, or the non-covalent contacts,
+ * where atoms that are not bonded touch.
  */
-export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference";
+export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference" | "nci";
 
 /** What colours a surface of the electron density alone: nothing, or the element of the atom each part of it is nearest. */
 export type DensityColour = "single" | "element";
@@ -118,6 +119,9 @@ export function asSliceAxis(value: unknown): SliceAxis {
 export const MIN_SURFACE_ISOVALUE = 0.001;
 export const MAX_SURFACE_ISOVALUE = 0.02;
 export const DEFAULT_SURFACE_ISOVALUE = 0.004;
+export const MIN_NCI_LEVEL = 0.1;
+export const MAX_NCI_LEVEL = 2;
+export const DEFAULT_NCI_LEVEL = 0.5;
 export const MIN_SURFACE_OPACITY = 0.3;
 export const DEFAULT_SURFACE_OPACITY = 0.9;
 
@@ -127,6 +131,14 @@ export const DEFAULT_SURFACE_OPACITY = 0.9;
  */
 export function clampSurfaceIsovalue(isovalue: number): number {
   return Number.isFinite(isovalue) ? Math.round(Math.min(MAX_SURFACE_ISOVALUE, Math.max(MIN_SURFACE_ISOVALUE, isovalue)) * 1000) / 1000 : DEFAULT_SURFACE_ISOVALUE;
+}
+
+/**
+ * @param level a reduced density gradient, which has no unit
+ * @returns the nearest level the contacts can be drawn at, to the hundredth
+ */
+export function clampNciLevel(level: number): number {
+  return Number.isFinite(level) ? Math.round(Math.min(MAX_NCI_LEVEL, Math.max(MIN_NCI_LEVEL, level)) * 100) / 100 : DEFAULT_NCI_LEVEL;
 }
 
 /**
@@ -185,6 +197,8 @@ export interface PropertiesState {
   /** Whether lines of constant value are drawn across the plane. */
   sliceContours: boolean;
   surfaceIsovalue: number;
+  /** The reduced density gradient the surfaces of non-covalent contacts are drawn at, which has no unit. */
+  nciLevel: number;
   /** How opaque the surface is. */
   surfaceOpacity: number;
   /** Whether the Properties section is open. */
@@ -357,6 +371,16 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   /**
+   * @param level the reduced density gradient the surfaces of non-covalent contacts are drawn at, which has no unit
+   */
+  nciLevelTo(level: number): void {
+    const nciLevel = clampNciLevel(level);
+    if (this.get().nciLevel !== nciLevel) {
+      this.change({ ...this.get(), nciLevel });
+    }
+  }
+
+  /**
    * @param opacity how opaque the surface is
    */
   surfaceOpacityTo(opacity: number): void {
@@ -399,7 +423,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -428,6 +452,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
       sliceContours: typeof held.sliceContours === "boolean" ? held.sliceContours : defaults.sliceContours,
       multiplicity: asMultiplicity(held.multiplicity),
       surfaceIsovalue: typeof held.surfaceIsovalue === "number" ? clampSurfaceIsovalue(held.surfaceIsovalue) : defaults.surfaceIsovalue,
+      nciLevel: typeof held.nciLevel === "number" ? clampNciLevel(held.nciLevel) : defaults.nciLevel,
       surfaceOpacity: typeof held.surfaceOpacity === "number" ? clampSurfaceOpacity(held.surfaceOpacity) : defaults.surfaceOpacity,
       expanded: {
         atoms: held.expanded?.atoms === true,

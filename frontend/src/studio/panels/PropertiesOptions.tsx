@@ -5,13 +5,16 @@ import {
     CHARGE_MODELS,
     type ChargeModel,
     type ColourBy,
+    DEFAULT_NCI_LEVEL,
     DEFAULT_POLAR_THRESHOLD,
     DEFAULT_SURFACE_ISOVALUE,
     type DensityColour,
     MAX_FORCE_SCALE,
+    MAX_NCI_LEVEL,
     MAX_POLAR_THRESHOLD,
     MAX_SURFACE_ISOVALUE,
     MIN_FORCE_SCALE,
+    MIN_NCI_LEVEL,
     MIN_POLAR_THRESHOLD,
     MIN_SURFACE_ISOVALUE,
     MIN_SURFACE_OPACITY,
@@ -21,6 +24,7 @@ import {
     type SurfaceKind,
 } from "../models/PropertiesModel";
 import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
+import {ATTRACTIVE, REPULSIVE, WEAK} from "../layout/nci";
 import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArrows";
 import {useObservable} from "../models/observable";
 import {divergingGradient} from "../../render/scale";
@@ -45,6 +49,7 @@ const SURFACE_OPTIONS: { value: SurfaceKind; label: string; title: string }[] = 
   { value: "density", label: "Electron density", title: "A surface where the electron density has a chosen value, from Hartree-Fock" },
   { value: "spin", label: "Spin density", title: "Where the unpaired electrons are: blue where spin up is in excess, red where spin down is. A molecule whose electrons all pair up has none" },
   { value: "difference", label: "Difference density", title: "The density of everything together less the densities of its molecules each on its own: blue where electrons gather as the molecules meet, red where they leave. Needs two or more molecules" },
+  { value: "nci", label: "Non-covalent contacts", title: "Where atoms that are not bonded touch: the reduced density gradient is low there. Blue where the density is drawn together across the contact, as in a hydrogen bond, green where the atoms only touch, as in van der Waals contact, and red where they clash or are shut in a ring" },
   { value: "esp", label: "Potential on density", title: "The same surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive" },
 ];
 
@@ -67,6 +72,7 @@ const WORKING: Record<SurfaceKind, string> = {
   esp: "working out the potential…",
   spin: "working out the spin density…",
   difference: "working out the difference density, which takes a calculation for each molecule…",
+  nci: "working out the non-covalent contacts…",
 };
 
 /** How often the running timer is redrawn. */
@@ -78,7 +84,7 @@ const TICK_MS = 100;
  */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceModel, multiplicity, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, surfaceOpacity, open, expanded } =
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceModel, multiplicity, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, nciLevel, surfaceOpacity, open, expanded } =
     useObservable(properties);
   const debug = useObservable(models.debug);
   const fold = (group: PropertyGroup) => ({ open: expanded[group], onToggle: () => properties.expandTo(group, !expanded[group]) });
@@ -244,22 +250,45 @@ export function PropertiesOptions({ models }: { models: Models }) {
                     </dd>
                   </>
                 )}
-                <dt>{surface === "spin" || surface === "difference" ? "Level" : "Density"}</dt>
-                <dd className="position">
-                  <input
-                    type="range"
-                    className="render-slider"
-                    min={Math.round(MIN_SURFACE_ISOVALUE * 1000)}
-                    max={Math.round(MAX_SURFACE_ISOVALUE * 1000)}
-                    step={1}
-                    value={Math.round(surfaceIsovalue * 1000)}
-                    aria-label="The electron density at the surface, in electrons per cubic bohr"
-                    title="The electron density the surface is at: lower is a larger, looser surface. Double-click to put it back"
-                    onChange={(event) => properties.surfaceIsovalueTo(Number(event.target.value) / 1000)}
-                    onDoubleClick={() => properties.surfaceIsovalueTo(DEFAULT_SURFACE_ISOVALUE)}
-                  />
-                  <span className="unit render-value">{surfaceIsovalue.toFixed(3)}</span>
-                </dd>
+                {surface === "nci" ? (
+                  <>
+                    <dt>Gradient</dt>
+                    <dd className="position">
+                      <input
+                        type="range"
+                        className="render-slider"
+                        min={Math.round(MIN_NCI_LEVEL * 100)}
+                        max={Math.round(MAX_NCI_LEVEL * 100)}
+                        step={5}
+                        value={Math.round(nciLevel * 100)}
+                        aria-label="The reduced density gradient the contact surfaces are drawn at"
+                        title="The reduced density gradient the surfaces are at: lower draws only the tightest contacts, higher draws looser, larger ones. Contacts are usually seen at 0.3 to 0.7, and above about 1 the surface is mostly the edge of the molecule. Double-click to put it back"
+                        onChange={(event) => properties.nciLevelTo(Number(event.target.value) / 100)}
+                        onDoubleClick={() => properties.nciLevelTo(DEFAULT_NCI_LEVEL)}
+                      />
+                      <span className="unit render-value">{nciLevel.toFixed(2)}</span>
+                    </dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>{surface === "spin" || surface === "difference" ? "Level" : "Density"}</dt>
+                    <dd className="position">
+                      <input
+                        type="range"
+                        className="render-slider"
+                        min={Math.round(MIN_SURFACE_ISOVALUE * 1000)}
+                        max={Math.round(MAX_SURFACE_ISOVALUE * 1000)}
+                        step={1}
+                        value={Math.round(surfaceIsovalue * 1000)}
+                        aria-label="The electron density at the surface, in electrons per cubic bohr"
+                        title="The electron density the surface is at: lower is a larger, looser surface. Double-click to put it back"
+                        onChange={(event) => properties.surfaceIsovalueTo(Number(event.target.value) / 1000)}
+                        onDoubleClick={() => properties.surfaceIsovalueTo(DEFAULT_SURFACE_ISOVALUE)}
+                      />
+                      <span className="unit render-value">{surfaceIsovalue.toFixed(3)}</span>
+                    </dd>
+                  </>
+                )}
                 <dt>Opacity</dt>
                 <dd className="position">
                   <input
@@ -483,9 +512,9 @@ function ChargeDetails() {
 
 /** How the calculation behind a surface is getting on, and for the potential what the colours mean. */
 function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: number }) {
-  const { esp, espSince, density, densitySince, spin, spinSince, difference, differenceSince, state } = useSessionContext();
-  const result = { esp, density, spin, difference, none: null }[kind];
-  const since = { esp: espSince, density: densitySince, spin: spinSince, difference: differenceSince, none: null }[kind];
+  const { esp, espSince, nci, nciSince, density, densitySince, spin, spinSince, difference, differenceSince, state } = useSessionContext();
+  const result = { esp, nci, density, spin, difference, none: null }[kind];
+  const since = { esp: espSince, nci: nciSince, density: densitySince, spin: spinSince, difference: differenceSince, none: null }[kind];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = kind === "esp" && current && esp ? decodeEsp(esp) : null;
   const limit = decoded ? makeEspSurface(decoded, isovalue).limit : null;
@@ -509,6 +538,21 @@ function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: numbe
             <span style={{ color: NEGATIVE_LOBE }}>●</span> {kind === "spin" ? "spin down" : "lost"}
           </span>
           <Took milliseconds={result.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && kind === "nci" && nci?.status === "complete" && (
+        <>
+          <span className="legend-key">
+            <span style={{ color: ATTRACTIVE }}>●</span> attractive
+          </span>
+          <span className="legend-key">
+            <span style={{ color: WEAK }}>●</span> van der Waals
+          </span>
+          <span className="legend-key">
+            <span style={{ color: REPULSIVE }}>●</span> repulsive
+          </span>
+          <Took milliseconds={nci.elapsed_ms} />
           {current ? "" : " (updating…)"}
         </>
       )}

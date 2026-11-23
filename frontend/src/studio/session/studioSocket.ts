@@ -1,37 +1,38 @@
 import type {Vec3} from "../../api/types/structure";
 import {
-  type AtomChange,
-  type AtomPlacement,
-  type BondEditAck,
-  type BondOrder,
-  type CameraAck,
-  type ChargesRequestAck,
-  type DensityRequestAck,
-  type DifferenceRequestAck,
-  type EditApplied,
-  type EditHistory,
-  type EspRequestAck,
-  type FieldRequestAck,
-  type ForcesRequestAck,
-  type GraphEditAck,
-  type InteractionRequestAck,
-  type LockAck,
-  type OptimiseCancelAck,
-  type OptimiseStarted,
-  type OrbitalsRequestAck,
-  type OrbitalTarget,
-  type PatchAck,
-  type PlaneRequestAck,
-  type Pose,
-  PROTOCOL_VERSION,
-  type ScanRequestAck,
-  type ServerEnvelope,
-  type SessionCamera,
-  type SessionConflict,
-  type SessionReady,
-  type SessionState,
-  type SpinRequestAck,
-  type TransformAck,
+    type AtomChange,
+    type AtomPlacement,
+    type BondEditAck,
+    type BondOrder,
+    type CameraAck,
+    type ChargesRequestAck,
+    type DensityRequestAck,
+    type DifferenceRequestAck,
+    type EditApplied,
+    type EditHistory,
+    type EspRequestAck,
+    type FieldRequestAck,
+    type ForcesRequestAck,
+    type GraphEditAck,
+    type InteractionRequestAck,
+    type LockAck,
+    type NciRequestAck,
+    type OptimiseCancelAck,
+    type OptimiseStarted,
+    type OrbitalsRequestAck,
+    type OrbitalTarget,
+    type PatchAck,
+    type PlaneRequestAck,
+    type Pose,
+    PROTOCOL_VERSION,
+    type ScanRequestAck,
+    type ServerEnvelope,
+    type SessionCamera,
+    type SessionConflict,
+    type SessionReady,
+    type SessionState,
+    type SpinRequestAck,
+    type TransformAck,
 } from "./messages";
 
 /** The error the server answered a message with. */
@@ -582,6 +583,20 @@ export class StudioSocket {
    */
   requestEsp(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<EspRequestAck> {
     return this.request<EspRequestAck>("esp.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "esp.request.ack");
+  }
+
+  /**
+   * Asks for the fields a plot of non-covalent interactions is drawn from, the reduced density gradient and the density signed by its
+   * curvature, of a session or of one of its molecules, on a grid round its atoms. The answer says only that the request was understood:
+   * listen for `nci.result`, which the server sends once the session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestNci(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<NciRequestAck> {
+    return this.request<NciRequestAck>("nci.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "nci.request.ack");
   }
 
   /**

@@ -21,7 +21,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestDensity, requestSpin, requestDifference, requestPlane } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestDifference, requestPlane } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -52,6 +52,7 @@ export function App() {
   // the density and the potential are likewise only worked out while a surface or a slice of them is shown, for the whole session, with the calculation and multiplicity chosen for surfaces
   const calculation = `${surfaceModel}|${multiplicity}`;
   useAsk(surface === "esp" && sessionId !== undefined, calculation, version, (automatic) => requestEsp(surfaceModel, null, multiplicity, automatic));
+  useAsk(surface === "nci" && sessionId !== undefined, calculation, version, (automatic) => requestNci(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "density" || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(surfaceModel, null, multiplicity, automatic));
   // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to

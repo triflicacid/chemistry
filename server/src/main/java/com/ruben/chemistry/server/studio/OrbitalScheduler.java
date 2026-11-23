@@ -4,6 +4,7 @@ import com.ruben.chemistry.quantum.basis.BasisLibrary;
 import com.ruben.chemistry.quantum.field.ElectronDensity;
 import com.ruben.chemistry.quantum.field.FieldGrid;
 import com.ruben.chemistry.quantum.field.MolecularOrbitals;
+import com.ruben.chemistry.quantum.field.NonCovalent;
 import com.ruben.chemistry.quantum.field.OrbitalComposition;
 import com.ruben.chemistry.quantum.field.OrbitalField;
 import com.ruben.chemistry.quantum.population.RhfMullikenCharges;
@@ -48,6 +49,15 @@ public final class OrbitalScheduler implements AutoCloseable
 
     /** How many points a slice plane has along its longer side at most, which keeps the work of a plane a fraction of that of a grid. */
     public static final int PLANE_POINTS = 100;
+
+    /** How far beyond the atoms the grid of the non-covalent contacts reaches, in ångström: the contacts are between atoms, not out in the tails. */
+    public static final double CONTACT_MARGIN = 2.5;
+
+    /** The most points along the longest side of the grid of the contacts, which is finer than the others since the gradient dips sharply at a contact. */
+    public static final int CONTACT_LONGEST_SIDE = 80;
+
+    /** The least spacing of the grid of the contacts, in ångström. */
+    public static final double CONTACT_FINEST = 0.1;
 
     /** The least spacing of a slice plane's points, in ångström. */
     public static final double PLANE_FINEST = 0.1;
@@ -98,6 +108,7 @@ public final class OrbitalScheduler implements AutoCloseable
     private final JobScheduler<List<FieldReport>> fields;
     private final JobScheduler<InteractionReport> interactions;
     private final JobScheduler<EspReport> potentials;
+    private final JobScheduler<NciReport> contacts;
     private final JobScheduler<DensityReport> densities;
     private final JobScheduler<DensityReport> spins;
     private final JobScheduler<DensityReport> differences;
@@ -126,6 +137,7 @@ public final class OrbitalScheduler implements AutoCloseable
         this.fields = new JobScheduler<>(debounce);
         this.interactions = new JobScheduler<>(debounce);
         this.potentials = new JobScheduler<>(debounce);
+        this.contacts = new JobScheduler<>(debounce);
         this.densities = new JobScheduler<>(debounce);
         this.spins = new JobScheduler<>(debounce);
         this.differences = new JobScheduler<>(debounce);
@@ -327,6 +339,38 @@ public final class OrbitalScheduler implements AutoCloseable
                     }
                 },
                 (described, elapsedMs, message) -> EspReport.failed(session, described.version(), fragment, elapsedMs, message),
+                deliver);
+    }
+
+    /**
+     * Asks for the reduced density gradient of the session, or of one of its molecules, with the density signed by its curvature beside it, on a
+     * grid round the atoms, once the session has been left alone, replacing any such request for it that is waiting. Together they show where
+     * atoms touch without being bonded.
+     *
+     * @param session the session
+     * @param requested the kind of calculation, as {@link #resolve} reads it
+     * @param fragment an atom of the molecule to calculate, or {@code null} for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or {@code null} for the lowest the electron count allows
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void contacts(StudioSession session, String requested, String fragment, Integer multiplicity, Consumer<NciReport> deliver)
+    {
+        String model = resolve(requested);
+        contacts.schedule(session,
+                (described, run) ->
+                {
+                    try
+                    {
+                        Cached made = calculation(session, described, model, fragment, multiplicity, run);
+                        FieldGrid grid = FieldGrid.around(positionsOf(made.structure()), CONTACT_MARGIN, CONTACT_LONGEST_SIDE, CONTACT_FINEST);
+                        return NciReport.of(session, described.version(), fragment, grid, NonCovalent.evaluate(made.orbitals(), grid, run::check)).elapsed(run.elapsedMs());
+                    }
+                    catch (IllegalArgumentException unsuitable)
+                    {
+                        return NciReport.failed(session, described.version(), fragment, run.elapsedMs(), unsuitable.getMessage());
+                    }
+                },
+                (described, elapsedMs, message) -> NciReport.failed(session, described.version(), fragment, elapsedMs, message),
                 deliver);
     }
 
@@ -558,6 +602,7 @@ public final class OrbitalScheduler implements AutoCloseable
         fields.close();
         interactions.close();
         potentials.close();
+        contacts.close();
         densities.close();
         spins.close();
         differences.close();

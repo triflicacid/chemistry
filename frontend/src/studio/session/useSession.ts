@@ -25,6 +25,7 @@ import {useForces} from "./useForces";
 import {useScan} from "./useScan";
 import {type Density, useDensity} from "./useDensity";
 import {type Esp, useEsp} from "./useEsp";
+import {type Nci, useNci} from "./useNci";
 import {type Plane, usePlane} from "./usePlane";
 import {type Orbitals, useOrbitals} from "./useOrbitals";
 import {useEdits} from "./useEdits";
@@ -33,7 +34,7 @@ import {type SocketEvents, useSocket} from "./useSocket";
 
 export type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
 
-export interface Session extends Orbitals, Esp, Density, Plane {
+export interface Session extends Orbitals, Esp, Nci, Density, Plane {
   phase: SessionPhase;
   state: SessionState | null;
   /** The optimisation under way, or null if there is none. */
@@ -173,6 +174,7 @@ export function useSession(client?: ChemistryApi): Session {
   const { scan, scanningSince, requestScan } = useScan(socket);
   const orbitals = useOrbitals(socket);
   const potential = useEsp(socket);
+  const contacts = useNci(socket);
   const density = useDensity(socket);
   const plane = usePlane(socket);
   const { charges, calculating: calculatingCharges, progress: chargesProgress, requestCharges } = useCharges(socket);
@@ -194,6 +196,7 @@ export function useSession(client?: ChemistryApi): Session {
     requestScan,
     ...orbitals,
     ...potential,
+    ...contacts,
     ...density,
     ...plane,
     charges,

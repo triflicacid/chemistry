@@ -24,6 +24,7 @@ import {
     toKcalPerCharge,
     vertexColours
 } from "./esp";
+import {decodeNci, nciColours, nciSurface} from "./nci";
 import {answers, drawnOrbitals, fragmentsFor, isOrbitalSlice, resolveTargets, sliceTargets} from "./orbitals";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
@@ -43,7 +44,7 @@ export interface ViewportProps {
 }
 
 /** What each density is called in a label. */
-const FIELD_NAMES = { none: "", density: "density", esp: "density", spin: "spin density", difference: "difference density", potential: "potential", homo: "orbital", lumo: "orbital", frontier: "orbital" };
+const FIELD_NAMES = { none: "", density: "density", esp: "density", nci: "density", spin: "spin density", difference: "difference density", potential: "potential", homo: "orbital", lumo: "orbital", frontier: "orbital" };
 
 /** The colour of a surface of the electron density that is not coloured by anything. */
 const DENSITY_COLOUR = "#4aa3a0";
@@ -69,6 +70,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     orbitals,
     fields: orbitalFieldList,
     esp,
+    nci,
     density,
     spin,
     difference,
@@ -144,7 +146,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
 
   // atoms are coloured by what the server last calculated for them. A result a little behind the session is kept, so that
   // the colours do not flicker while an atom is dragged, and the Properties section says that it is updating
-  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface: surfaceKind, densityColour, surfaceIsovalue, surfaceOpacity, sliceField, sliceAxis, slicePosition, sliceContours } = useObservable(models.properties);
+  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface: surfaceKind, densityColour, surfaceIsovalue, nciLevel, surfaceOpacity, sliceField, sliceAxis, slicePosition, sliceContours } = useObservable(models.properties);
   const charged = useMemo(() => (colourBy === "charge" && charges?.session_id === state?.session_id ? chargeScale(charges) : null), [colourBy, charges, state?.session_id]);
   useEffect(() => {
     view?.colourAtoms(charged?.colours ?? null);
@@ -163,6 +165,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const atVersion = (result: { session_id: string; version: number } | null) =>
     result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decodedEsp = useMemo(() => (surfaceKind === "esp" && esp && atVersion(esp) ? decodeEsp(esp) : null), [surfaceKind, esp, state]); // eslint-disable-line react-hooks/exhaustive-deps
+  const decodedNci = useMemo(() => (surfaceKind === "nci" && nci && atVersion(nci) ? decodeNci(nci) : null), [surfaceKind, nci, state]); // eslint-disable-line react-hooks/exhaustive-deps
   // the density alone, the spin and the difference each come in a message of their own, and are decoded the same way
   const plain = surfaceKind === "density" ? density : surfaceKind === "spin" ? spin : surfaceKind === "difference" ? difference : null;
   const decodedDensity = useMemo(() => (plain && atVersion(plain) ? decodeDensity(plain) : null), [plain, state]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -171,6 +174,10 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     if (decodedEsp) {
       const made = espSurface(decodedEsp, surfaceIsovalue);
       return [{ surface: made.surface, colours: vertexColours(made.values, made.limit), colour: DENSITY_COLOUR }];
+    }
+    if (decodedNci) {
+      const made = nciSurface(decodedNci, nciLevel);
+      return [{ surface: made.surface, colours: nciColours(made.values), colour: DENSITY_COLOUR }];
     }
     if (!decodedDensity) {
       return [];
@@ -184,7 +191,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     }
     const made = densitySurface(decodedDensity, surfaceIsovalue);
     return [{ surface: made, colours: densityColour === "element" && state ? nearestAtomColours(made, state.atoms) : null, colour: DENSITY_COLOUR }];
-  }, [decodedEsp, decodedDensity, signed, surfaceIsovalue, densityColour, state]);
+  }, [decodedEsp, decodedNci, decodedDensity, signed, surfaceIsovalue, nciLevel, densityColour, state]);
   useEffect(() => {
     view?.showFieldSurface(drawn, surfaceOpacity);
   }, [view, drawn, surfaceOpacity]);
@@ -254,7 +261,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   const probed = decodedEsp ?? decodedDensity;
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!view || !canvas || !debug || (!(probed && drawn.length > 0) && !decodedSlice && !decodedPlane && !orbitalDrawing)) {
+    if (!view || !canvas || !debug || (!((probed || decodedNci) && drawn.length > 0) && !decodedSlice && !decodedPlane && !orbitalDrawing)) {
       setProbe(null);
       return;
     }
@@ -275,6 +282,10 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
         lines = [`potential ${Number.isNaN(potential) ? "n/a" : `${toKcalPerCharge(potential).toFixed(1)} kcal/mol/e`}`, `slice at ${decodedPlane.axis} = ${hit.at[decodedPlane.axis].toFixed(2)} Å`];
       } else if (hit.on === "slice" && decodedSlice) {
         lines = [`${FIELD_NAMES[sliceField]} ${sampleGrid(decodedSlice.density, decodedSlice.shape, x, y, z).toFixed(4)} e/bohr³`, `slice at ${sliceAxis} = ${hit.at[sliceAxis].toFixed(2)} Å`];
+      } else if (hit.on === "surface" && decodedNci) {
+        const signedDensity = sampleGrid(decodedNci.signed, decodedNci.shape, x, y, z);
+        const reduced = sampleGrid(decodedNci.gradient, decodedNci.shape, x, y, z);
+        lines = [`density ${Number.isNaN(signedDensity) ? "n/a" : Math.abs(signedDensity).toFixed(4)} e/bohr³`, `reduced gradient ${Number.isNaN(reduced) ? "n/a" : reduced.toFixed(3)}`, `curvature ${signedDensity < 0 ? "draws the density together (attractive)" : signedDensity > 0 ? "pushes the density apart (repulsive)" : "none"}`];
       } else if (hit.on === "surface" && probed) {
         lines = [`${FIELD_NAMES[surfaceKind]} ${sampleGrid(probed.density, probed.shape, x, y, z).toFixed(4)} e/bohr³`];
         if (decodedEsp) {
@@ -293,7 +304,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
       canvas.removeEventListener("pointerleave", leave);
       setProbe(null);
     };
-  }, [view, debug, probed, decodedEsp, decodedSlice, decodedPlane, orbitalDrawing, drawn, surfaceKind, sliceField, sliceAxis]);
+  }, [view, debug, probed, decodedNci, decodedEsp, decodedSlice, decodedPlane, orbitalDrawing, drawn, surfaceKind, sliceField, sliceAxis]);
 
   // the hydrogen bond the scan is on is drawn from where its atoms are now, so it is redrawn as they move
   const bond = useObservable(models.hydrogenBond);

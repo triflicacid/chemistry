@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 29;
+export const PROTOCOL_VERSION = 30;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -751,6 +751,11 @@ export interface EspRequestAck extends ServerEnvelope {
   type: "esp.request.ack";
 }
 
+/** The answer to a request for the non-covalent interaction fields, which says only that the request was understood: it follows as an `nci.result`. */
+export interface NciRequestAck extends ServerEnvelope {
+  type: "nci.request.ack";
+}
+
 /** The answer to a request for the electron density, which says only that the request was understood: it follows as a `density.result`. */
 export interface DensityRequestAck extends ServerEnvelope {
   type: "density.request.ack";
@@ -855,6 +860,28 @@ export interface EspResult extends ServerEnvelope {
   message: string | null;
 }
 
+/**
+ * The two fields a plot of non-covalent interactions is drawn from, on one grid, sent on the server's own initiative after a request. It
+ * describes the geometry at `version`.
+ */
+export interface NciResult extends ServerEnvelope {
+  type: "nci.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** An atom of the molecule it is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** Where the points are, or null if there is no field. */
+  grid: FieldGridMessage | null;
+  /** Every point's reduced density gradient, which has no unit, in the same form as an orbital's values; large where there is no density. */
+  gradient: string | null;
+  /** Every point's electron density in electrons per cubic bohr, negative where the middle eigenvalue of its Hessian is, in the same form. */
+  signed: string | null;
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
 /** One term of the geometry beyond its tolerance. */
 export interface GeometryFinding {
   kind: "bond" | "angle" | "clash";
@@ -948,6 +975,8 @@ export type ServerMessage =
   | InteractionResult
   | EspRequestAck
   | EspResult
+  | NciRequestAck
+  | NciResult
   | DensityRequestAck
   | PlaneRequestAck
   | PlaneResult
