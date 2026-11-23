@@ -200,14 +200,14 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   // bonding is worked out on a grid of its own as well, and read where the density surface is
   const decodedDeformation = useMemo(() => (deformationRange && deformation && atVersion(deformation) ? decodeScalarField(deformation) : null), [deformationRange, deformation, state]); // eslint-disable-line react-hooks/exhaustive-deps
   // a map of the frontier orbital reads the HOMO or the LUMO of each set where the density surface is, as the Orbitals tab calculates them
-  const { scope: mapScope } = useObservable(models.orbital);
+  const { kind: calcKind, scope: calcScope } = useObservable(models.calculation);
   // a plane through a frontier orbital reads them the same way
   const sliceMapSide = sliceField === "homoMap" ? "homo" : sliceField === "lumoMap" ? "lumo" : null;
   const frontierOrbitals = useMemo(() => {
     const read = (side: "homo" | "lumo") =>
-      answers(orbitals, models.orbital.get().kind, fragmentsFor(mapScope, state)) ? drawnOrbitals(orbitals, frontierTargets(orbitals, side), orbitalFieldList, state) : [];
+      answers(orbitals, calcKind, fragmentsFor(calcScope, state)) ? drawnOrbitals(orbitals, frontierTargets(orbitals, side), orbitalFieldList, state) : [];
     return { homo: mapSide === "homo" || sliceMapSide === "homo" || dual ? read("homo") : [], lumo: mapSide === "lumo" || sliceMapSide === "lumo" || dual ? read("lumo") : [] };
-  }, [mapSide, sliceMapSide, dual, mapScope, orbitals, orbitalFieldList, state, models.orbital]);
+  }, [mapSide, sliceMapSide, dual, calcKind, calcScope, orbitals, orbitalFieldList, state]);
   const mapOrbitals = mapSide === null ? NO_ORBITALS : frontierOrbitals[mapSide];
   const drawn = useMemo((): SurfacePart[] => {
     if (decodedEsp) {
@@ -262,14 +262,14 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   }, [view, drawn, surfaceOpacity]);
 
   // an orbital is drawn only for the version it was worked out at, since a surface that stays where the atoms were is worse than none
-  const { selected: shownOrbital, scope: shownScope, count: shownCount, colouring, isovalue, opacity, display: orbitalDisplay, levelBy, share, combine, style: orbitalStyle, sliceOrbital } = useObservable(models.orbital);
+  const { selected: shownOrbital, count: shownCount, colouring, isovalue, opacity, display: orbitalDisplay, levelBy, share, combine, style: orbitalStyle, sliceOrbital } = useObservable(models.orbital);
   const orbitalFields = useMemo(() => {
-    const asked = fragmentsFor(shownScope, state);
-    if (shownOrbital === null || !answers(orbitals, models.orbital.get().kind, asked)) {
+    const asked = fragmentsFor(calcScope, state);
+    if (shownOrbital === null || !answers(orbitals, calcKind, asked)) {
       return [];
     }
     return drawnOrbitals(orbitals, resolveTargets(orbitals, shownOrbital, shownCount), orbitalFieldList, state);
-  }, [shownOrbital, shownScope, shownCount, orbitals, orbitalFieldList, state, models.orbital]);
+  }, [shownOrbital, calcKind, calcScope, shownCount, orbitals, orbitalFieldList, state]);
   useEffect(() => {
     view?.showOrbitals(orbitalFields, { isovalue, opacity, colouring, debug, display: orbitalDisplay, levelBy, share, combine, style: orbitalStyle });
   }, [view, orbitalFields, isovalue, opacity, colouring, debug, orbitalDisplay, levelBy, share, combine, orbitalStyle]);
@@ -285,11 +285,11 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   // or orbitals, which are shown as the Orbitals tab shows them, with the same number from the gap, level, colours and way of showing several,
   // whether or not their surfaces are drawn
   const sliceOrbitals = useMemo(() => {
-    if (!isOrbitalSlice(sliceField) || !answers(orbitals, models.orbital.get().kind, fragmentsFor(shownScope, state))) {
+    if (!isOrbitalSlice(sliceField) || !answers(orbitals, calcKind, fragmentsFor(calcScope, state))) {
       return [];
     }
     return drawnOrbitals(orbitals, sliceTargets(orbitals, sliceField, shownCount), orbitalFieldList, state);
-  }, [sliceField, orbitals, shownScope, shownCount, orbitalFieldList, state, models.orbital]);
+  }, [sliceField, orbitals, calcKind, calcScope, shownCount, orbitalFieldList, state]);
   const orbitalDrawing = useMemo(
     () =>
       isOrbitalSlice(sliceField)

@@ -1,6 +1,5 @@
 import {type ReactNode, useEffect, useState} from "react";
 import type {Models} from "../models/models";
-import {ORBITAL_KINDS, type OrbitalKind} from "../models/OrbitalModel";
 import {
     CHARGE_MODELS,
     type ChargeModel,
@@ -23,7 +22,6 @@ import {
     MIN_POLAR_THRESHOLD,
     MIN_SURFACE_ISOVALUE,
     MIN_SURFACE_OPACITY,
-    MULTIPLICITIES,
     type PropertyGroup,
     type SliceField,
     type SurfaceKind,
@@ -113,7 +111,7 @@ const TICK_MS = 100;
  */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, deformationDisplay, elfDisplay, surfaceModel, multiplicity, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, nciLevel, elfLevel, surfaceOpacity, open, expanded } =
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, deformationDisplay, elfDisplay, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, nciLevel, elfLevel, surfaceOpacity, open, expanded } =
     useObservable(properties);
   const debug = useObservable(models.debug);
   // these surfaces are drawn where the field is a distance above and below zero, not at one value of a density
@@ -242,30 +240,6 @@ export function PropertiesOptions({ models }: { models: Models }) {
             summary={surface !== "none" ? <SurfaceSummary kind={surface} isovalue={surfaceIsovalue} deformationDisplay={deformationDisplay} elfDisplay={elfDisplay} /> : null}
             details={
               <>
-                <dt>Calculation</dt>
-                <dd>
-                  <select value={surfaceModel} aria-label="The kind of Hartree-Fock calculation the surfaces come from" onChange={(event) => properties.surfaceModelTo(event.target.value as OrbitalKind)}>
-                    {ORBITAL_KINDS.map(({ value, label, title }) => (
-                      <option key={value} value={value} title={title}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </dd>
-                <dt>Spin</dt>
-                <dd>
-                  <select
-                    value={multiplicity === null ? "" : String(multiplicity)}
-                    aria-label="The spin multiplicity the surfaces are calculated at"
-                    onChange={(event) => properties.multiplicityTo(event.target.value === "" ? null : Number(event.target.value))}
-                  >
-                    {MULTIPLICITIES.map(({ value, label, title }) => (
-                      <option key={String(value)} value={value === null ? "" : String(value)} title={title}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </dd>
                 {surface === "elf" && (
                   <>
                     <dt>Show</dt>

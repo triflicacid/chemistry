@@ -50,14 +50,10 @@ export interface OrbitalChoice {
 /** What colours an orbital's surfaces: the sign of each lobe, or what the orbital is made of, sigma or pi, whatever the sign. */
 export type OrbitalColouring = "phase" | "character" | "type" | "class" | "energy";
 
-/** Which orbital is drawn in the scene, of what and from which calculation, and how. */
+/** Which orbital is drawn in the scene, and how. */
 export interface OrbitalState {
   /** The orbital shown, or null if none is. */
   selected: OrbitalChoice | null;
-  /** The kind of calculation the orbitals come from. */
-  kind: OrbitalKind;
-  /** What the orbitals are of. */
-  scope: OrbitalScope;
   /** How many orbitals are drawn, counted outward from the one chosen, or null for every one on that side of the gap, up to {@link MAX_SHOWN}. */
   count: number | null;
   /** What the surfaces are coloured by. */
@@ -139,7 +135,7 @@ export type LevelBy = "isovalue" | "share";
 /** Which orbital is drawn in the scene, and how. It is not remembered between visits, since an orbital belongs to one structure. */
 export class OrbitalModel extends Observable<OrbitalState> {
   constructor() {
-    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE, combine: "separate", style: "solid", sliceOrbital: 0 });
+    super({ selected: null, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE, combine: "separate", style: "solid", sliceOrbital: 0 });
   }
 
   /**
@@ -162,28 +158,6 @@ export class OrbitalModel extends Observable<OrbitalState> {
     const state = this.get();
     if (!sameOrbital(state.selected, selected) || state.count !== 1) {
       this.set({ ...state, selected, count: 1 });
-    }
-  }
-
-  /**
-   * Changes the kind of calculation, which has other orbitals, so what was shown is put away.
-   *
-   * @param kind the kind of calculation
-   */
-  kindTo(kind: OrbitalKind): void {
-    if (this.get().kind !== kind) {
-      this.set({ ...this.get(), kind, selected: null });
-    }
-  }
-
-  /**
-   * Changes what the orbitals are of, which has other orbitals, so what was shown is put away.
-   *
-   * @param scope what the orbitals are of
-   */
-  scopeTo(scope: OrbitalScope): void {
-    if (!sameScope(this.get().scope, scope)) {
-      this.set({ ...this.get(), scope, selected: null });
     }
   }
 

@@ -1,4 +1,3 @@
-import {ORBITAL_KINDS, type OrbitalKind} from "./OrbitalModel";
 import type {OrbitalSliceKind} from "../layout/orbitals";
 import type {SliceAxis} from "../layout/slice";
 import {Observable} from "./observable";
@@ -11,24 +10,21 @@ export type ColourBy = "element" | "charge";
 
 const COLOURINGS: readonly ColourBy[] = ["element", "charge"];
 
-/** What the server calls a way of assigning partial charges. */
-export type ChargeModel = "mulliken" | "rhf" | "uhf" | "rohf" | "formal";
+/** Where partial charges come from: the Hartree-Fock calculation the Calculation menu chooses, or the formal charges, which need no calculation. */
+export type ChargeModel = "calculated" | "formal";
 
 /** The ways of assigning partial charges, in the order they are offered, with what each means. */
 export const CHARGE_MODELS: readonly { value: ChargeModel; label: string; title: string }[] = [
-  { value: "mulliken", label: "Hartree-Fock (automatic)", title: "Mulliken charges from Hartree-Fock: closed-shell where the electrons pair up, otherwise unrestricted as a doublet" },
-  { value: "rhf", label: "Hartree-Fock (RHF)", title: "Mulliken charges from closed-shell restricted Hartree-Fock, which needs an even number of electrons" },
-  { value: "uhf", label: "Hartree-Fock (UHF)", title: "Mulliken charges from unrestricted Hartree-Fock, as a singlet if the electrons pair up and otherwise a doublet" },
-  { value: "rohf", label: "Hartree-Fock (ROHF)", title: "Mulliken charges from restricted open-shell Hartree-Fock, as a singlet if the electrons pair up and otherwise a doublet" },
+  { value: "calculated", label: "Hartree-Fock", title: "Mulliken charges from the calculation the Calculation menu chooses" },
   { value: "formal", label: "Formal charges", title: "Each atom's formal charge, with no calculation, so instantly" },
 ];
 
 /**
  * @param value anything
- * @returns it if it is a charge model, and the automatic one otherwise
+ * @returns it if it is a charge model, and the calculated one otherwise, as a remembered choice of a particular kind of Hartree-Fock is
  */
 export function asChargeModel(value: unknown): ChargeModel {
-  return CHARGE_MODELS.find((model) => model.value === value)?.value ?? "mulliken";
+  return value === "formal" ? "formal" : "calculated";
 }
 
 /**
@@ -92,32 +88,6 @@ export type DensityColour = "single" | "element";
  */
 export function asDensityColour(value: unknown): DensityColour {
   return value === "element" ? "element" : "single";
-}
-
-/** The spin multiplicities a surface can be calculated at, with the name of each and how many electrons are unpaired; null leaves the choice to the electron count. */
-export const MULTIPLICITIES: readonly { value: number | null; label: string; title: string }[] = [
-  { value: null, label: "Automatic", title: "The lowest the electrons allow: a singlet where they pair up, otherwise a doublet" },
-  { value: 1, label: "Singlet", title: "All the electrons paired" },
-  { value: 2, label: "Doublet", title: "One unpaired electron, as in a radical" },
-  { value: 3, label: "Triplet", title: "Two unpaired electrons, as in oxygen" },
-  { value: 4, label: "Quartet", title: "Three unpaired electrons" },
-  { value: 5, label: "Quintet", title: "Four unpaired electrons" },
-];
-
-/**
- * @param value anything
- * @returns it if it is one of the multiplicities offered, and null, which leaves the choice to the electron count, otherwise
- */
-export function asMultiplicity(value: unknown): number | null {
-  return MULTIPLICITIES.find((each) => each.value === value)?.value ?? null;
-}
-
-/**
- * @param value anything
- * @returns it if it is a kind of calculation, and the automatic one otherwise
- */
-export function asSurfaceModel(value: unknown): OrbitalKind {
-  return ORBITAL_KINDS.find((kind) => kind.value === value)?.value ?? "mulliken";
 }
 
 /** What a slice plane shows: none, which draws no plane, one of the densities a surface can be drawn of, or the electrostatic potential. */
@@ -237,10 +207,6 @@ export interface PropertiesState {
   deformationDisplay: DeformationDisplay;
   /** How the electron localisation function is shown. */
   elfDisplay: ElfDisplay;
-  /** The kind of Hartree-Fock calculation the surfaces come from. */
-  surfaceModel: OrbitalKind;
-  /** The spin multiplicity it is calculated at, or null for the lowest the electron count allows. */
-  multiplicity: number | null;
   /** Which density the slice plane shows, if any. */
   sliceField: SliceField;
   /** The axis the slice plane is at right angles to. */
@@ -418,24 +384,6 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   /**
-   * @param surfaceModel the kind of Hartree-Fock calculation the surfaces come from
-   */
-  surfaceModelTo(surfaceModel: OrbitalKind): void {
-    if (this.get().surfaceModel !== surfaceModel) {
-      this.change({ ...this.get(), surfaceModel });
-    }
-  }
-
-  /**
-   * @param multiplicity the spin multiplicity to calculate at, or null for the lowest the electron count allows
-   */
-  multiplicityTo(multiplicity: number | null): void {
-    if (this.get().multiplicity !== multiplicity) {
-      this.change({ ...this.get(), multiplicity });
-    }
-  }
-
-  /**
    * @param isovalue the density the surface is at, in electrons per cubic bohr
    */
   surfaceIsovalueTo(isovalue: number): void {
@@ -508,7 +456,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", deformationDisplay: "levels", elfDisplay: "level", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, elfLevel: DEFAULT_ELF_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "calculated", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", deformationDisplay: "levels", elfDisplay: "level", sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, elfLevel: DEFAULT_ELF_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -532,12 +480,10 @@ export class PropertiesModel extends Observable<PropertiesState> {
       densityColour: asDensityColour(held.densityColour),
       deformationDisplay: asDeformationDisplay(held.deformationDisplay),
       elfDisplay: asElfDisplay(held.elfDisplay),
-      surfaceModel: asSurfaceModel(held.surfaceModel),
       sliceField: defaults.sliceField,
       sliceAxis: asSliceAxis(held.sliceAxis),
       slicePosition: typeof held.slicePosition === "number" && held.slicePosition >= 0 && held.slicePosition <= 1 ? held.slicePosition : defaults.slicePosition,
       sliceContours: typeof held.sliceContours === "boolean" ? held.sliceContours : defaults.sliceContours,
-      multiplicity: asMultiplicity(held.multiplicity),
       surfaceIsovalue: typeof held.surfaceIsovalue === "number" ? clampSurfaceIsovalue(held.surfaceIsovalue) : defaults.surfaceIsovalue,
       nciLevel: typeof held.nciLevel === "number" ? clampNciLevel(held.nciLevel) : defaults.nciLevel,
       elfLevel: typeof held.elfLevel === "number" ? clampElfLevel(held.elfLevel) : defaults.elfLevel,

@@ -4,7 +4,10 @@ import type {LayoutState, Panel} from "../layoutStore";
 import type {SessionPhase} from "../session/useSession";
 import {useSessionContext} from "../session/SessionContext";
 import {type Segment, Segmented} from "../controls/Segmented";
+import {CalculationMenu} from "../panels/CalculationMenu";
 import {HistoryMenu} from "../panels/HistoryMenu";
+import type {CalculationModel} from "../models/CalculationModel";
+import type {SessionState} from "../session/messages";
 
 /** What a left-drag does, one at a time. */
 const TOOLS: Segment<Tool>[] = [
@@ -41,9 +44,13 @@ export interface ToolbarProps {
   onCollapse: (panel: Panel, collapsed: boolean) => void;
   canUndo: boolean;
   canRedo: boolean;
+  /** How the electrons of the session are calculated. */
+  calculation: CalculationModel;
+  /** The session, whose molecules can be calculated on their own. */
+  state: SessionState | null;
 }
 
-export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo }: ToolbarProps) {
+export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onToggleLock, layout, onCollapse, canUndo, canRedo, calculation, state }: ToolbarProps) {
   const { optimising, optimise, cancelOptimise, undo, redo, history, goTo, clearHistory } = useSessionContext();
   const { tool } = useObservable(tools);
 
@@ -87,6 +94,7 @@ export function Toolbar({ phase, canOptimise, tools, canLock, lockPressed, onTog
         >
           {optimising ? `Stop · step ${optimising.iteration}` : "Optimise"}
         </button>
+        <CalculationMenu calculation={calculation} state={state} enabled={canOptimise} />
       </div>
 
       <div className="tool-group tool-group-end" role="group" aria-label="Panels">

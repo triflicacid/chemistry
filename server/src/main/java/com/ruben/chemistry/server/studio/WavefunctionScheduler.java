@@ -20,12 +20,14 @@ import com.ruben.chemistry.space.Vec3;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -131,6 +133,9 @@ public final class WavefunctionScheduler implements AutoCloseable
     private final Wavefunctions wavefunctions;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
     private final Object lock = new Object();
+    private volatile BiConsumer<StudioSession, CalculationReport> onCalculation = (session, report) ->
+    {
+    };
 
     /**
      * Calculates with Hartree-Fock in the basis the studio assigns its charges with.
@@ -179,7 +184,7 @@ public final class WavefunctionScheduler implements AutoCloseable
      * @param fragments the molecules to calculate each on its own, as an atom of each; empty or {@code null} for the whole session as one
      * @param deliver told the result, from another thread, only if it is not out of date
      */
-    public void levels(StudioSession session, String requested, List<String> fragments, Consumer<OrbitalReport> deliver)
+    public void levels(StudioSession session, String requested, List<String> fragments, Map<String, Integer> spins, Consumer<OrbitalReport> deliver)
     {
         String model = resolve(requested);
         List<String> asked = fragments == null ? List.of() : List.copyOf(fragments);
@@ -192,7 +197,7 @@ public final class WavefunctionScheduler implements AutoCloseable
                         // an empty list is the whole session, which is one calculation with no molecule named
                         for (String fragment : asked.isEmpty() ? Collections.<String>singletonList(null) : asked)
                         {
-                            Cached made = calculation(session, described, model, fragment, run);
+                            Cached made = calculation(session, described, model, fragment, spinOf(spins, fragment), run);
                             pieces.add(new OrbitalReport.Piece(fragment, made.model(), made.orbitals(), made.atoms(), positionsOf(made.structure())));
                         }
                         return OrbitalReport.of(session, described, model, asked, pieces).elapsed(run.elapsedMs());
@@ -215,7 +220,7 @@ public final class WavefunctionScheduler implements AutoCloseable
      * @param targets the orbitals to evaluate
      * @param deliver told the results, one for each target in order, from another thread, only if they are not out of date
      */
-    public void orbitals(StudioSession session, String requested, List<Target> targets, Consumer<List<FieldReport>> deliver)
+    public void orbitals(StudioSession session, String requested, List<Target> targets, Map<String, Integer> spins, Consumer<List<FieldReport>> deliver)
     {
         String model = resolve(requested);
         List<Target> asked = List.copyOf(targets);
@@ -225,7 +230,7 @@ public final class WavefunctionScheduler implements AutoCloseable
                     List<FieldReport> reports = new ArrayList<>();
                     for (Target target : asked)
                     {
-                        reports.add(field(session, described, model, target, run));
+                        reports.add(field(session, described, model, target, spinOf(spins, target.fragment()), run));
                     }
                     return List.copyOf(reports);
                 },
@@ -243,7 +248,7 @@ public final class WavefunctionScheduler implements AutoCloseable
      * @param requested the kind of calculation, as {@link #resolve} reads it
      * @param deliver told the result, from another thread, only if it is not out of date
      */
-    public void interaction(StudioSession session, String requested, Consumer<InteractionReport> deliver)
+    public void interaction(StudioSession session, String requested, Map<String, Integer> spins, Consumer<InteractionReport> deliver)
     {
         String model = resolve(requested);
         interactions.schedule(session,
@@ -257,11 +262,12 @@ public final class WavefunctionScheduler implements AutoCloseable
 
                     try
                     {
-                        Cached whole = calculation(session, described, model, null, run);
+                        Cached whole = calculation(session, described, model, null, spinOf(spins, null), run);
                         List<Cached> molecules = new ArrayList<>();
                         for (List<Integer> part : parts)
                         {
-                            molecules.add(calculation(session, described, model, described.sites().get(part.getFirst()), run));
+                            String molecule = described.sites().get(part.getFirst());
+                            molecules.add(calculation(session, described, model, molecule, spinOf(spins, molecule), run));
                         }
 
                         List<InteractionReport.Link> links = new ArrayList<>();
@@ -707,9 +713,9 @@ public final class WavefunctionScheduler implements AutoCloseable
      * @param run lets the work be stopped when it is out of date
      * @return the orbital's values on a grid, or a failure that says why it cannot be
      */
-    private FieldReport field(StudioSession session, StudioSession.Described described, String model, Target target, JobScheduler.Run run)
+    private FieldReport field(StudioSession session, StudioSession.Described described, String model, Target target, Integer multiplicity, JobScheduler.Run run)
     {
-        Cached made = calculation(session, described, model, target.fragment(), run);
+        Cached made = calculation(session, described, model, target.fragment(), multiplicity, run);
         MolecularOrbitals.Channel channel = made.orbitals().channel(target.spin());
         if (channel == null)
         {
@@ -767,6 +773,7 @@ public final class WavefunctionScheduler implements AutoCloseable
             List<Integer> part = fragment == null ? null : partOf(described, fragment);
             Structure3D structure = part == null ? described.structure() : ForceReport.alone(described.structure(), part);
             List<String> atoms = part == null ? described.sites() : part.stream().map(described.sites()::get).toList();
+            long started = System.nanoTime();
             MolecularOrbitals made = wavefunctions.calculate(model, structure, multiplicity, new ScfListener()
             {
                 @Override
@@ -783,6 +790,8 @@ public final class WavefunctionScheduler implements AutoCloseable
             });
             Cached fresh = new Cached(described.version(), made, kind(model, made), structure, atoms);
             cache.put(key, fresh);
+            onCalculation.accept(session, CalculationReport.of(session, described.version(), fragment, fresh.model(), multiplicityOf(made), electronsIn(made), made.iterations(),
+                    made.totalEnergy(), (System.nanoTime() - started) / 1_000_000));
             return fresh;
         }
     }
@@ -795,6 +804,98 @@ public final class WavefunctionScheduler implements AutoCloseable
     {
         List<Vec3> positions = structure.conformers().getFirst().positions();
         return structure.sites().stream().map(site -> positions.get(site.index())).toList();
+    }
+
+    /**
+     * Has the scheduler say what each calculation was when it has been made, which is not said for one that is already held.
+     *
+     * @param listener told the session and what was calculated, from the thread that made it
+     */
+    public void onCalculation(BiConsumer<StudioSession, CalculationReport> listener)
+    {
+        this.onCalculation = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Forgets the calculations kept for a session, so that the next request for anything of them makes them again.
+     *
+     * @param session the session
+     * @return how many calculations were forgotten
+     */
+    public int forget(StudioSession session)
+    {
+        synchronized (lock)
+        {
+            String prefix = session.sessionId() + "|";
+            int before = cache.size();
+            cache.keySet().removeIf(key -> key.startsWith(prefix));
+            return before - cache.size();
+        }
+    }
+
+    /**
+     * @param spins the spin multiplicity to calculate each molecule at, by an atom of it, with the whole session under the empty string; or {@code null}
+     * @param fragment an atom of the molecule, or {@code null} for the whole session
+     * @return the multiplicity asked for it, or {@code null} for the lowest the electron count allows
+     */
+    private static Integer spinOf(Map<String, Integer> spins, String fragment)
+    {
+        return spins == null ? null : spins.get(fragment == null ? "" : fragment);
+    }
+
+    /**
+     * @param orbitals a calculation
+     * @return the spin multiplicity it was made at: one more than the electrons that are not paired
+     */
+    static int multiplicityOf(MolecularOrbitals orbitals)
+    {
+        if (orbitals.channels().size() == 2)
+        {
+            return Math.abs(Arrays.stream(orbitals.channels().get(0).occupancy()).sum() - Arrays.stream(orbitals.channels().get(1).occupancy()).sum()) + 1;
+        }
+        return (int) Arrays.stream(orbitals.channels().getFirst().occupancy()).filter(occupancy -> occupancy == 1).count() + 1;
+    }
+
+    /**
+     * @param orbitals a calculation
+     * @return how many electrons it holds
+     */
+    static int electronsIn(MolecularOrbitals orbitals)
+    {
+        return orbitals.channels().stream().mapToInt(channel -> Arrays.stream(channel.occupancy()).sum()).sum();
+    }
+
+    /**
+     * How many electrons the session and each of its molecules has treated explicitly, from which the spins they can have follow.
+     *
+     * @param total the electrons of the whole session
+     * @param molecules the electrons of each molecule
+     */
+    public record Electrons(int total, List<Part> molecules)
+    {
+        /**
+         * @param atom an atom of the molecule
+         * @param electrons how many electrons it has
+         */
+        public record Part(String atom, int electrons)
+        {
+        }
+    }
+
+    /**
+     * @param session the session
+     * @return how many electrons the session has, and each of its molecules
+     */
+    public static Electrons electrons(StudioSession session)
+    {
+        StudioSession.Described described = session.describe();
+        BasisLibrary library = BasisLibrary.cep31g();
+        List<Electrons.Part> parts = new ArrayList<>();
+        for (List<Integer> part : ForceReport.connectedParts(described.structure()))
+        {
+            parts.add(new Electrons.Part(described.sites().get(part.getFirst()), ChargeModels.electrons(ForceReport.alone(described.structure(), part), library)));
+        }
+        return new Electrons(ChargeModels.electrons(described.structure(), library), List.copyOf(parts));
     }
 
     /**

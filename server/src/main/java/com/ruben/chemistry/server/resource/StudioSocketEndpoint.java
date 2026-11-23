@@ -47,7 +47,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 34;
+    private static final int PROTOCOL_VERSION = 35;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -155,6 +155,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges, ForceScheduler forces, ScanScheduler scans, WavefunctionScheduler wavefunctions)
     {
         this.wavefunctions = Objects.requireNonNull(wavefunctions, "wavefunctions");
+        this.wavefunctions.onCalculation((session, report) -> sendToHolder(session, report));
         this.scans = Objects.requireNonNull(scans, "scans");
         this.charges = Objects.requireNonNull(charges, "charges");
         this.forces = Objects.requireNonNull(forces, "forces");
@@ -716,7 +717,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        charges.schedule(session, model, progress -> sendToHolder(session, progress), report -> sendToHolder(session, report));
+        charges.schedule(session, model, request.multiplicity(), progress -> sendToHolder(session, progress), report -> sendToHolder(session, report));
 
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "charges.request.ack");
@@ -839,7 +840,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        wavefunctions.levels(session, request.model(), request.fragments(), report -> sendToHolder(session, report));
+        wavefunctions.levels(session, request.model(), request.fragments(), request.multiplicities(), report -> sendToHolder(session, report));
 
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "orbitals.request.ack");
@@ -888,7 +889,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         }
 
         wavefunctions.orbitals(session, request.model(),
-                targets.stream().map(target -> new WavefunctionScheduler.Target(target.fragment(), target.spin(), target.orbital())).toList(),
+                targets.stream().map(target -> new WavefunctionScheduler.Target(target.fragment(), target.spin(), target.orbital())).toList(), request.multiplicities(),
                 reports -> reports.forEach(report -> sendToHolder(session, report)));
 
         Map<String, Object> ack = new LinkedHashMap<>();
@@ -930,7 +931,7 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             return;
         }
 
-        wavefunctions.interaction(session, request.model(), report -> sendToHolder(session, report));
+        wavefunctions.interaction(session, request.model(), request.multiplicities(), report -> sendToHolder(session, report));
 
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "interaction.request.ack");
@@ -1017,6 +1018,86 @@ public final class StudioSocketEndpoint extends SocketEndpoint
         Map<String, Object> ack = new LinkedHashMap<>();
         ack.put("type", "nci.request.ack");
         ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Makes the server forget the calculations it has kept for a session, so that whatever is asked for next is calculated afresh. The answer is the
+     * acknowledgement, which says how many were forgotten.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void resetCalculations(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.GridRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.GridRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("calculation.reset", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("calculation.reset", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "calculation.reset.ack");
+        ack.put("sequence", sequence);
+        ack.put("forgotten", wavefunctions.forget(session));
+        context.sendJson(ack);
+    }
+
+    /**
+     * Says how many electrons a session has, and each of its molecules, which is what the spin it can be calculated at depends on. The answer is the
+     * acknowledgement itself, since it takes no calculation.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestElectrons(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.GridRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.GridRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("electrons.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("electrons.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        WavefunctionScheduler.Electrons electrons = WavefunctionScheduler.electrons(session);
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "electrons.request.ack");
+        ack.put("sequence", sequence);
+        ack.put("total", electrons.total());
+        ack.put("molecules", electrons.molecules());
         context.sendJson(ack);
     }
 
@@ -2041,6 +2122,8 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("interaction.request", endpoint::requestInteraction),
                     Map.entry("esp.request", endpoint::requestEsp),
                     Map.entry("nci.request", endpoint::requestNci),
+                    Map.entry("electrons.request", endpoint::requestElectrons),
+                    Map.entry("calculation.reset", endpoint::resetCalculations),
                     Map.entry("basins.request", endpoint::requestBasins),
                     Map.entry("scalar.request", endpoint::requestScalarField),
                     Map.entry("plane.request", endpoint::requestPlane),

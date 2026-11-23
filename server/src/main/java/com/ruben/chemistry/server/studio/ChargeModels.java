@@ -57,22 +57,53 @@ public final class ChargeModels
     /**
      * @param id the name of the model, one of {@link #IDS}
      * @param listener told how a quantum calculation is getting on, and able to stop it
-     * @return the model
+     * @return the model, at the lowest spin the electron count allows
      * @throws IllegalArgumentException if there is no model of that name
      */
     public static PartialChargeModel create(String id, ScfListener listener)
+    {
+        return create(id, null, listener);
+    }
+
+    /**
+     * @param id the name of the model, one of {@link #IDS}
+     * @param multiplicity the spin multiplicity to calculate at, or {@code null} for the lowest the electron count allows; it means nothing to the
+     *     formal charges, which are not calculated
+     * @param listener told how a quantum calculation is getting on, and able to stop it
+     * @return the model
+     * @throws IllegalArgumentException if there is no model of that name
+     */
+    public static PartialChargeModel create(String id, Integer multiplicity, ScfListener listener)
     {
         BasisLibrary library = BasisLibrary.cep31g();
         ScfSettings settings = ScfSettings.defaults().withListener(listener);
         return switch (id)
         {
-            case MULLIKEN -> covered(library, new Automatic(library, settings));
-            case RHF -> covered(library, new RhfMullikenCharges(library, settings));
-            case UHF -> covered(library, new Spin("uhf-mulliken", library, multiplicity -> new UhfMullikenCharges(library, multiplicity, settings)));
-            case ROHF -> covered(library, new Spin("rohf-mulliken", library, multiplicity -> new RohfMullikenCharges(library, multiplicity, settings)));
+            case MULLIKEN -> covered(library, new Automatic(library, settings, multiplicity));
+            case RHF -> covered(library, new Closed(library, new RhfMullikenCharges(library, settings), multiplicity));
+            case UHF -> covered(library, new Spin("uhf-mulliken", library, multiplicity, spin -> new UhfMullikenCharges(library, spin, settings)));
+            case ROHF -> covered(library, new Spin("rohf-mulliken", library, multiplicity, spin -> new RohfMullikenCharges(library, spin, settings)));
             case FORMAL -> new Formal();
             default -> throw new IllegalArgumentException("No charge model is called '" + id + "'");
         };
+    }
+
+    /**
+     * @param electrons how many electrons there are
+     * @param multiplicity the spin multiplicity asked for, or {@code null} for the lowest the electron count allows
+     * @return the multiplicity to calculate at
+     * @throws IllegalArgumentException if the electrons cannot have the multiplicity
+     */
+    static int multiplicityFor(int electrons, Integer multiplicity)
+    {
+        int chosen = multiplicity == null ? (electrons % 2 == 0 ? 1 : 2) : multiplicity;
+        // the unpaired electrons are the multiplicity less one, and the rest pair up, so they must be as many fewer than the electrons as is even
+        if (chosen < 1 || chosen > electrons + 1 || (chosen - 1) % 2 != electrons % 2)
+        {
+            throw new IllegalArgumentException("A multiplicity of " + chosen + " is not possible with " + electrons + " electrons; it must be "
+                    + (electrons % 2 == 0 ? "odd: 1, 3, 5…" : "even: 2, 4, 6…"));
+        }
+        return chosen;
     }
 
     private static PartialChargeModel covered(BasisLibrary library, PartialChargeModel model)
@@ -132,18 +163,61 @@ public final class ChargeModels
     }
 
     /**
-     * Gives the model the lowest spin the electron count allows.
+     * Closed-shell restricted Hartree-Fock, which is a singlet and so refuses any other spin.
+     */
+    private static final class Closed implements PartialChargeModel
+    {
+        private final BasisLibrary library;
+        private final PartialChargeModel model;
+        private final Integer multiplicity;
+
+        private Closed(BasisLibrary library, PartialChargeModel model, Integer multiplicity)
+        {
+            this.library = library;
+            this.model = model;
+            this.multiplicity = multiplicity;
+        }
+
+        @Override
+        public String name()
+        {
+            return model.name();
+        }
+
+        @Override
+        public ChargeConvention convention()
+        {
+            return model.convention();
+        }
+
+        @Override
+        public PartialCharges calculate(Structure3D structure, int conformer)
+        {
+            if (multiplicity != null && multiplicity != 1)
+            {
+                throw new IllegalArgumentException("Closed-shell restricted Hartree-Fock can only be a singlet; choose unrestricted or restricted open-shell for a multiplicity of "
+                        + multiplicity);
+            }
+            multiplicityFor(electrons(structure, library), multiplicity);
+            return model.calculate(structure, conformer);
+        }
+    }
+
+    /**
+     * Gives the model the spin it was asked for, or the lowest the electron count allows.
      */
     private static final class Spin implements PartialChargeModel
     {
         private final String name;
         private final BasisLibrary library;
+        private final Integer requested;
         private final IntFunction<PartialChargeModel> model;
 
-        private Spin(String name, BasisLibrary library, IntFunction<PartialChargeModel> model)
+        private Spin(String name, BasisLibrary library, Integer requested, IntFunction<PartialChargeModel> model)
         {
             this.name = name;
             this.library = library;
+            this.requested = requested;
             this.model = model;
         }
 
@@ -162,23 +236,24 @@ public final class ChargeModels
         @Override
         public PartialCharges calculate(Structure3D structure, int conformer)
         {
-            int multiplicity = electrons(structure, library) % 2 == 0 ? 1 : 2;
-            return model.apply(multiplicity).calculate(structure, conformer);
+            return model.apply(multiplicityFor(electrons(structure, library), requested)).calculate(structure, conformer);
         }
     }
 
     /**
-     * Restricted Hartree-Fock where the electrons pair up, and unrestricted where they do not.
+     * Restricted Hartree-Fock where the electrons pair up, and unrestricted where they do not or where another spin is asked for.
      */
     private static final class Automatic implements PartialChargeModel
     {
         private final BasisLibrary library;
         private final ScfSettings settings;
+        private final Integer requested;
 
-        private Automatic(BasisLibrary library, ScfSettings settings)
+        private Automatic(BasisLibrary library, ScfSettings settings, Integer requested)
         {
             this.library = library;
             this.settings = settings;
+            this.requested = requested;
         }
 
         @Override
@@ -196,9 +271,10 @@ public final class ChargeModels
         @Override
         public PartialCharges calculate(Structure3D structure, int conformer)
         {
-            return electrons(structure, library) % 2 == 0
+            int multiplicity = multiplicityFor(electrons(structure, library), requested);
+            return multiplicity == 1
                     ? new RhfMullikenCharges(library, settings).calculate(structure, conformer)
-                    : new UhfMullikenCharges(library, 2, settings).calculate(structure, conformer);
+                    : new UhfMullikenCharges(library, multiplicity, settings).calculate(structure, conformer);
         }
     }
 

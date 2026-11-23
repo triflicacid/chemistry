@@ -24,9 +24,10 @@ export interface Charges {
    * that comes while another is under way abandons it.
    *
    * @param model the name of the model to assign them with
+   * @param multiplicity the spin multiplicity to calculate the whole session at, or null for the lowest the electron count allows
    * @param automatic whether it is asked only because the session changed, so that an answer that says what the last did is not warned of again
    */
-  requestCharges: (model: string, automatic?: boolean) => void;
+  requestCharges: (model: string, multiplicity: number | null, automatic?: boolean) => void;
 }
 
 /**
@@ -75,7 +76,7 @@ export function useCharges({ socketRef, held, note, warn }: SessionLink): Charge
   }, [held, socketRef, warnOnce]);
 
   const requestCharges = useCallback(
-    (model: string, automatic = false) => {
+    (model: string, multiplicity: number | null, automatic = false) => {
       automatically.current = automatic;
       const socket = socketRef.current;
       const base = held.current;
@@ -86,7 +87,7 @@ export function useCharges({ socketRef, held, note, warn }: SessionLink): Charge
       asked.current = model;
       setCalculating({ model, startedAt: Date.now() });
       setProgress(null);
-      socket.requestCharges(base.session_id, model).catch((cause: unknown) => {
+      socket.requestCharges(base.session_id, model, multiplicity).catch((cause: unknown) => {
         setCalculating(null);
         note(reason(cause), true);
       });

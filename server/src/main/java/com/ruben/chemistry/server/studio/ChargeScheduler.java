@@ -36,6 +36,34 @@ public final class ChargeScheduler implements AutoCloseable
          * @throws IllegalArgumentException if there is no model of that name
          */
         PartialChargeModel create(String id, ScfListener listener);
+
+        /**
+         * @param id the name the client asked for the model by
+         * @param multiplicity the spin multiplicity to calculate at, or {@code null} for the lowest the electron count allows
+         * @param listener told how a quantum calculation is getting on, and able to stop it
+         * @return the model, which is the same whatever the spin for one that does not take it
+         * @throws IllegalArgumentException if there is no model of that name
+         */
+        default PartialChargeModel create(String id, Integer multiplicity, ScfListener listener)
+        {
+            return create(id, listener);
+        }
+    }
+
+    /** The models of {@link ChargeModels}, which can be made at a spin. */
+    private static final class Standard implements Models
+    {
+        @Override
+        public PartialChargeModel create(String id, ScfListener listener)
+        {
+            return ChargeModels.create(id, listener);
+        }
+
+        @Override
+        public PartialChargeModel create(String id, Integer multiplicity, ScfListener listener)
+        {
+            return ChargeModels.create(id, multiplicity, listener);
+        }
     }
 
     private final JobScheduler<ChargeReport> jobs;
@@ -48,7 +76,7 @@ public final class ChargeScheduler implements AutoCloseable
      */
     public ChargeScheduler(Duration debounce)
     {
-        this(new JobScheduler<>(debounce), ChargeModels::create);
+        this(new JobScheduler<>(debounce), new Standard());
     }
 
     /**
@@ -86,7 +114,7 @@ public final class ChargeScheduler implements AutoCloseable
      */
     public static ChargeScheduler disabled()
     {
-        return new ChargeScheduler(JobScheduler.disabled(), ChargeModels::create);
+        return new ChargeScheduler(JobScheduler.disabled(), new Standard());
     }
 
     /**
@@ -100,6 +128,20 @@ public final class ChargeScheduler implements AutoCloseable
      */
     public void schedule(StudioSession session, String requested, Consumer<ChargeProgress> progress, Consumer<ChargeReport> deliver)
     {
+        schedule(session, requested, null, progress, deliver);
+    }
+
+    /**
+     * Assigns the charges of the session once it has been left alone, at a spin that is asked for.
+     *
+     * @param session the session to calculate charges for
+     * @param requested the name of the model to assign them with
+     * @param multiplicity the spin multiplicity to calculate at, or {@code null} for the lowest the electron count allows
+     * @param progress told how the calculation is getting on, from another thread, while it is not out of date
+     * @param deliver told the result, from another thread, only if it is not out of date
+     */
+    public void schedule(StudioSession session, String requested, Integer multiplicity, Consumer<ChargeProgress> progress, Consumer<ChargeReport> deliver)
+    {
         jobs.schedule(session,
                 (described, run) ->
                 {
@@ -107,7 +149,7 @@ public final class ChargeScheduler implements AutoCloseable
                     // every Fock build is kept, where progress reports only as many as can be read
                     List<ChargeReport.ScfStep> steps = new ArrayList<>();
                     pace.stage("starting");
-                    PartialChargeModel model = models.create(requested, new ScfListener()
+                    PartialChargeModel model = models.create(requested, multiplicity, new ScfListener()
                     {
                         @Override
                         public void stage(String stage)

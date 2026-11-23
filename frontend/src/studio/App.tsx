@@ -4,6 +4,7 @@ import {createModels} from "./models/models";
 import {TOOL_ORDER} from "./models/ToolModel";
 import {useObservable} from "./models/observable";
 import {frontierTargets} from "./layout/reactivity";
+import {chargeModelFor, fragmentOf, spinOf} from "./layout/calculation";
 import {answers, fragmentsFor, isOrbitalSlice, resolveTargets, sliceTargets} from "./layout/orbitals";
 import {StateIndex} from "./geometry/StateIndex";
 import {useChemistry} from "./chemistry/useChemistry";
@@ -42,49 +43,58 @@ export function App() {
 
   // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
   // The server waits for the session to be left alone, so a drag asks many times and is answered once
-  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity, sliceField, deformationDisplay, elfDisplay } = useObservable(shared.properties);
+  const { colourBy, chargeModel, forceArrows, surface, sliceField, deformationDisplay, elfDisplay } = useObservable(shared.properties);
   const version = state?.version;
   const sessionId = state?.session_id;
-  useAsk(colourBy === "charge" && sessionId !== undefined, chargeModel, version, (automatic) => requestCharges(chargeModel, automatic));
+  // how the electrons are calculated is shared by the charges, the orbitals, the surfaces and the slices, with the spin chosen for what is calculated
+  const { kind: calcKind, scope: calcScope, spins, run } = useObservable(shared.calculation);
+  const subjectFragment = fragmentOf(calcScope);
+  const subjectSpin = spinOf(spins, calcScope);
+  const wholeSpin = spins[""] ?? null;
+  useAsk(colourBy === "charge" && sessionId !== undefined, `${chargeModel}|${calcKind}|${wholeSpin ?? ""}|${run}`, version, (automatic) => requestCharges(chargeModelFor(chargeModel, calcKind), wholeSpin, automatic));
 
   // forces are likewise only worked out while they are shown
   useAsk(forceArrows && sessionId !== undefined, "", version, requestForces);
 
-  // the density and the potential are likewise only worked out while a surface or a slice of them is shown, for the whole session, with the calculation and multiplicity chosen for surfaces
-  const calculation = `${surfaceModel}|${multiplicity}`;
-  useAsk(surface === "esp" && sessionId !== undefined, calculation, version, (automatic) => requestEsp(surfaceModel, null, multiplicity, automatic));
-  useAsk(surface === "nci" && sessionId !== undefined, calculation, version, (automatic) => requestNci(surfaceModel, null, multiplicity, automatic));
+  // the density and the potential are likewise only worked out while a surface or a slice of them is shown, of what the calculation is of
+  const calculation = `${calcKind}|${subjectFragment ?? ""}|${subjectSpin ?? ""}|${run}`;
+  useAsk(surface === "esp" && sessionId !== undefined, calculation, version, (automatic) => requestEsp(calcKind, subjectFragment, subjectSpin, automatic));
+  useAsk(surface === "nci" && sessionId !== undefined, calculation, version, (automatic) => requestNci(calcKind, subjectFragment, subjectSpin, automatic));
   const mapping = surface === "homoMap" || surface === "lumoMap" || surface === "frontierMap";
   // a map of a frontier orbital on the surface, or a plane through it, needs the orbitals of that side
   const wantHomo = surface === "homoMap" || surface === "frontierMap" || sliceField === "homoMap";
   const wantLumo = surface === "lumoMap" || surface === "frontierMap" || sliceField === "lumoMap";
   const frontier = wantHomo || wantLumo;
-  useAsk((surface === "density" || surface === "concentrationMap" || (surface === "deformation" && deformationDisplay === "range") || mapping || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
-  useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "density" || surface === "concentrationMap" || (surface === "deformation" && deformationDisplay === "range") || mapping || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(calcKind, subjectFragment, subjectSpin, automatic));
+  useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(calcKind, subjectFragment, subjectSpin, automatic));
   // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to
   const { sliceAxis, slicePosition } = useObservable(shared.properties);
-  useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(surfaceModel, null, multiplicity, sliceAxis, slicePosition, automatic), String(slicePosition));
-  useAsk((sliceField === "laplacian" || surface === "concentrationMap") && sessionId !== undefined, calculation, version, (automatic) => requestLaplacian(surfaceModel, null, multiplicity, automatic));
-  useAsk(((surface === "elf" && elfDisplay === "level") || sliceField === "elf") && sessionId !== undefined, calculation, version, (automatic) => requestElf(surfaceModel, null, multiplicity, automatic));
-  useAsk(surface === "elf" && elfDisplay !== "level" && sessionId !== undefined, calculation, version, (automatic) => requestBasins(surfaceModel, null, multiplicity, automatic));
-  useAsk((surface === "deformation" || sliceField === "deformation") && sessionId !== undefined, calculation, version, (automatic) => requestDeformation(surfaceModel, null, multiplicity, automatic));
-  useAsk((surface === "intermolecular" || sliceField === "intermolecular") && sessionId !== undefined, calculation, version, (automatic) => requestIntermolecular(surfaceModel, null, multiplicity, automatic));
+  useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(calcKind, subjectFragment, subjectSpin, sliceAxis, slicePosition, automatic), String(slicePosition));
+  useAsk((sliceField === "laplacian" || surface === "concentrationMap") && sessionId !== undefined, calculation, version, (automatic) => requestLaplacian(calcKind, subjectFragment, subjectSpin, automatic));
+  useAsk(((surface === "elf" && elfDisplay === "level") || sliceField === "elf") && sessionId !== undefined, calculation, version, (automatic) => requestElf(calcKind, subjectFragment, subjectSpin, automatic));
+  useAsk(surface === "elf" && elfDisplay !== "level" && sessionId !== undefined, calculation, version, (automatic) => requestBasins(calcKind, subjectFragment, subjectSpin, automatic));
+  useAsk((surface === "deformation" || sliceField === "deformation") && sessionId !== undefined, calculation, version, (automatic) => requestDeformation(calcKind, subjectFragment, subjectSpin, automatic));
+  useAsk((surface === "intermolecular" || sliceField === "intermolecular") && sessionId !== undefined, `${calcKind}|${wholeSpin ?? ""}|${run}`, version, (automatic) => requestIntermolecular(calcKind, null, wholeSpin, automatic));
 
   // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of
-  const { selected: shownOrbital, kind: orbitalKind, scope: orbitalScope, count: orbitalCount } = useObservable(shared.orbital);
+  const { selected: shownOrbital, count: orbitalCount } = useObservable(shared.orbital);
+  // another calculation has other orbitals, so what was shown is put away
+  useEffect(() => {
+    shared.orbital.select(null);
+  }, [calcKind, calcScope, spins, shared.orbital]);
   // the molecules are named by an atom each, which is a new list on every render, so the list is kept as one string
-  const orbitalFragments = fragmentsFor(orbitalScope, state);
+  const orbitalFragments = fragmentsFor(calcScope, state);
   const orbitalFragmentsKey = orbitalFragments.join(",");
   // a slice plane of orbitals needs them as much as the scene does, whether or not their surfaces are drawn
   const slicingOrbitals = isOrbitalSlice(sliceField);
   useEffect(() => {
     if ((shownOrbital !== null || slicingOrbitals || frontier) && sessionId !== undefined) {
-      requestOrbitals(orbitalKind, orbitalFragmentsKey === "" ? [] : orbitalFragmentsKey.split(","));
+      requestOrbitals(calcKind, orbitalFragmentsKey === "" ? [] : orbitalFragmentsKey.split(","), spins);
     }
-  }, [shownOrbital, slicingOrbitals, frontier, orbitalKind, orbitalFragmentsKey, sessionId, version, requestOrbitals]);
+  }, [shownOrbital, slicingOrbitals, frontier, calcKind, orbitalFragmentsKey, spins, run, sessionId, version, requestOrbitals]);
 
   // which orbitals to evaluate depends on the levels, so they are asked for once the levels for the structure as it is now arrive
-  const levelsCurrent = answers(orbitals, orbitalKind, orbitalFragments) && orbitals.status === "complete" && orbitals.version === version;
+  const levelsCurrent = answers(orbitals, calcKind, orbitalFragments) && orbitals.status === "complete" && orbitals.version === version;
   useEffect(() => {
     if ((shownOrbital !== null || isOrbitalSlice(sliceField) || frontier) && levelsCurrent && orbitals !== null) {
       // the orbitals the scene draws and those the slice shows are asked for together, since a newer request replaces an older
@@ -96,9 +106,13 @@ export function App() {
         ...(wantLumo ? frontierTargets(orbitals, "lumo") : []),
       ];
       const same = (a: (typeof wanted)[number], b: (typeof wanted)[number]) => a.fragment === b.fragment && a.spin === b.spin && a.orbital === b.orbital;
-      requestOrbital(orbitalKind, wanted.filter((target, at) => wanted.findIndex((other) => same(other, target)) === at));
+      requestOrbital(
+        calcKind,
+        wanted.filter((target, at) => wanted.findIndex((other) => same(other, target)) === at),
+        spins,
+      );
     }
-  }, [shownOrbital, sliceField, wantHomo, wantLumo, orbitalKind, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
+  }, [shownOrbital, sliceField, wantHomo, wantLumo, calcKind, spins, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
 
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {

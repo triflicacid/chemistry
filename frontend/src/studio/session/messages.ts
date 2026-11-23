@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 34;
+export const PROTOCOL_VERSION = 35;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -756,6 +756,40 @@ export interface NciRequestAck extends ServerEnvelope {
   type: "nci.request.ack";
 }
 
+/** How many electrons a session has, and each of its molecules, which is what the spin each can be calculated at depends on. The answer is the acknowledgement itself. */
+export interface ElectronsAck extends ServerEnvelope {
+  type: "electrons.request.ack";
+  /** The electrons of the whole session treated explicitly, after any core potentials. */
+  total: number;
+  /** The electrons of each molecule on its own, named by an atom of it. */
+  molecules: { atom: string; electrons: number }[];
+}
+
+/** The answer to a request to forget the calculations kept for a session, which says how many there were. */
+export interface CalculationResetAck extends ServerEnvelope {
+  type: "calculation.reset.ack";
+  forgotten: number;
+}
+
+/** What a Hartree-Fock calculation was, which the server says when it has made one, and not for one it already had. */
+export interface CalculationResult extends ServerEnvelope {
+  type: "calculation.result";
+  session_id: string;
+  version: number;
+  /** An atom of the molecule it is of, or null for the whole session as one. */
+  fragment: string | null;
+  /** The kind of calculation that was made. */
+  model: "rhf" | "uhf" | "rohf";
+  multiplicity: number;
+  /** How many electrons were treated explicitly. */
+  electrons: number;
+  /** How many iterations the SCF took. */
+  iterations: number;
+  /** The total energy, in hartree. */
+  energy: number;
+  elapsed_ms: number;
+}
+
 /** The answer to a request for the electron pairs, which says only that the request was understood: it follows as a `basins.result`. */
 export interface BasinsRequestAck extends ServerEnvelope {
   type: "basins.request.ack";
@@ -1016,6 +1050,9 @@ export type ServerMessage =
   | NciRequestAck
   | NciResult
   | ScalarRequestAck
+  | ElectronsAck
+  | CalculationResetAck
+  | CalculationResult
   | BasinsRequestAck
   | BasinsResult
   | PlaneRequestAck

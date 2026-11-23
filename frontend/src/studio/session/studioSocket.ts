@@ -5,10 +5,12 @@ import {
     type BasinsRequestAck,
     type BondEditAck,
     type BondOrder,
+    type CalculationResetAck,
     type CameraAck,
     type ChargesRequestAck,
     type EditApplied,
     type EditHistory,
+    type ElectronsAck,
     type EspRequestAck,
     type FieldRequestAck,
     type ForcesRequestAck,
@@ -503,9 +505,10 @@ export class StudioSocket {
    *
    * @param sessionId the session whose atoms to calculate charges for
    * @param model the name of the model to assign them with, such as `rhf`; the server's own choice if omitted
+   * @param multiplicity the spin multiplicity to calculate at, or null or omitted for the lowest the electron count allows
    */
-  requestCharges(sessionId: string, model?: string): Promise<ChargesRequestAck> {
-    return this.request<ChargesRequestAck>("charges.request", { session_id: sessionId, ...(model ? { model } : {}) }, "charges.request.ack");
+  requestCharges(sessionId: string, model?: string, multiplicity?: number | null): Promise<ChargesRequestAck> {
+    return this.request<ChargesRequestAck>("charges.request", { session_id: sessionId, ...(model ? { model } : {}), ...(multiplicity ? { multiplicity } : {}) }, "charges.request.ack");
   }
 
   /**
@@ -537,9 +540,10 @@ export class StudioSocket {
    * @param sessionId the session whose orbitals to calculate
    * @param model the kind of Hartree-Fock calculation: `rhf`, `uhf` or `rohf`, or `mulliken` for the server's own choice
    * @param fragments the molecules to calculate each on its own, as an atom of each; empty for the whole session as one
+   * @param spins the spin multiplicity to calculate each at, by an atom of the molecule, with the whole session under the empty string
    */
-  requestOrbitals(sessionId: string, model: string, fragments: readonly string[]): Promise<OrbitalsRequestAck> {
-    return this.request<OrbitalsRequestAck>("orbitals.request", { session_id: sessionId, model, fragments }, "orbitals.request.ack");
+  requestOrbitals(sessionId: string, model: string, fragments: readonly string[], spins: Readonly<Record<string, number>>): Promise<OrbitalsRequestAck> {
+    return this.request<OrbitalsRequestAck>("orbitals.request", { session_id: sessionId, model, fragments, multiplicities: spins }, "orbitals.request.ack");
   }
 
   /**
@@ -550,11 +554,12 @@ export class StudioSocket {
    * @param sessionId the session whose orbitals to evaluate
    * @param model the kind of calculation, as for {@link requestOrbitals}
    * @param targets the orbitals: which molecule (an atom of it, or null for the whole session), which set and which orbital
+   * @param spins the spin multiplicity to calculate each molecule at, as for {@link requestOrbitals}
    */
-  requestOrbital(sessionId: string, model: string, targets: readonly OrbitalTarget[]): Promise<FieldRequestAck> {
+  requestOrbital(sessionId: string, model: string, targets: readonly OrbitalTarget[], spins: Readonly<Record<string, number>>): Promise<FieldRequestAck> {
     return this.request<FieldRequestAck>(
       "field.request",
-      { session_id: sessionId, kind: "orbital", model, targets: targets.map(({ fragment, spin, orbital }) => ({ spin, orbital, ...(fragment ? { fragment } : {}) })) },
+      { session_id: sessionId, kind: "orbital", model, targets: targets.map(({ fragment, spin, orbital }) => ({ spin, orbital, ...(fragment ? { fragment } : {}) })), multiplicities: spins },
       "field.request.ack",
     );
   }
@@ -566,9 +571,10 @@ export class StudioSocket {
    *
    * @param sessionId the session whose orbitals to relate
    * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param spins the spin multiplicity to calculate each at, as for {@link requestOrbitals}
    */
-  requestInteraction(sessionId: string, model: string): Promise<InteractionRequestAck> {
-    return this.request<InteractionRequestAck>("interaction.request", { session_id: sessionId, model }, "interaction.request.ack");
+  requestInteraction(sessionId: string, model: string, spins: Readonly<Record<string, number>>): Promise<InteractionRequestAck> {
+    return this.request<InteractionRequestAck>("interaction.request", { session_id: sessionId, model, multiplicities: spins }, "interaction.request.ack");
   }
 
   /**
@@ -611,6 +617,25 @@ export class StudioSocket {
    */
   requestScalarField(sessionId: string, field: ScalarFieldName, model: string, fragment: string | null, multiplicity: number | null): Promise<ScalarRequestAck> {
     return this.request<ScalarRequestAck>("scalar.request", { session_id: sessionId, field, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "scalar.request.ack");
+  }
+
+  /**
+   * Asks how many electrons a session has, and each of its molecules, which sets the spins each can be calculated at. The answer is the
+   * acknowledgement, since it takes no calculation.
+   *
+   * @param sessionId the session
+   */
+  requestElectrons(sessionId: string): Promise<ElectronsAck> {
+    return this.request<ElectronsAck>("electrons.request", { session_id: sessionId }, "electrons.request.ack");
+  }
+
+  /**
+   * Makes the server forget the calculations it has kept for a session, so that whatever is asked for next is calculated afresh.
+   *
+   * @param sessionId the session
+   */
+  resetCalculations(sessionId: string): Promise<CalculationResetAck> {
+    return this.request<CalculationResetAck>("calculation.reset", { session_id: sessionId }, "calculation.reset.ack");
   }
 
   /**

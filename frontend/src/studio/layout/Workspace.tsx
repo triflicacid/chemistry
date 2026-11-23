@@ -65,6 +65,8 @@ export function Workspace(props: WorkspaceProps) {
         onCollapse={onCollapse}
         canUndo={state?.can_undo ?? false}
         canRedo={state?.can_redo ?? false}
+        calculation={models.calculation}
+        state={state}
       />
 
       <SmilesBar state={state} onSubmit={onSubmitSmiles} />

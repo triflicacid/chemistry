@@ -2,7 +2,6 @@ import {useState} from "react";
 import type {Models} from "../models/models";
 import {useObservable} from "../models/observable";
 import {
-    ALL,
     COUNTS,
     DEFAULT_ISOVALUE,
     DEFAULT_OPACITY,
@@ -13,13 +12,11 @@ import {
     MAX_SHOWN,
     MIN_ISOVALUE,
     MIN_SHARE,
-    ORBITAL_KINDS,
     type OrbitalChoice,
     type OrbitalColouring,
     type OrbitalCombine,
     type OrbitalDisplay,
     type OrbitalKind,
-    type OrbitalScope,
     type OrbitalStyle,
 } from "../models/OrbitalModel";
 import {type Bar, BarChart} from "../controls/BarChart";
@@ -64,34 +61,15 @@ import {
     SIGMA_COLOUR
 } from "../layout/orbitalColours";
 import {CORE_SHELL, NEGATIVE_LOBE, OUTER_SHELL, POSITIVE_LOBE} from "../viewport/scene/OrbitalSurface";
+import type {Spins} from "../layout/calculation";
 import {seconds} from "./PropertiesOptions";
 
 /** How many orbitals either side of the gap are drawn, unless all are asked for. */
 const NEAR_GAP = 6;
 
-/** The values of the choice of what the orbitals are of, which a dropdown holds as text. */
-const EACH = "each";
-const ONE = "one:";
-
 export interface OrbitalsPanelProps {
   state: SessionState | null;
   models: Models;
-}
-
-/**
- * @param scope what the orbitals are of
- * @returns the value that stands for it in the dropdown
- */
-function valueOf(scope: OrbitalScope): string {
-  return scope.kind === "all" ? "" : scope.kind === "each" ? EACH : `${ONE}${scope.atom}`;
-}
-
-/**
- * @param value what the dropdown holds
- * @returns the scope it stands for
- */
-function scopeOf(value: string): OrbitalScope {
-  return value === "" ? ALL : value === EACH ? { kind: "each" } : { kind: "one", atom: value.slice(ONE.length) };
 }
 
 /**
@@ -102,7 +80,8 @@ function scopeOf(value: string): OrbitalScope {
  */
 export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
   const { orbitals, orbitalsSince, requestOrbitals, fields, fieldsAsked } = useSessionContext();
-  const { selected, kind, scope, count, colouring, isovalue, opacity, display, levelBy, share, combine, style } = useObservable(models.orbital);
+  const { selected, count, colouring, isovalue, opacity, display, levelBy, share, combine, style } = useObservable(models.orbital);
+  const { kind, scope, spins: calculationSpins } = useObservable(models.calculation);
   const debug = useObservable(models.debug);
   const [everything, setEverything] = useState(false);
 
@@ -189,29 +168,7 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
   return (
     <div className="energy-plots">
       <div className="energy-actions">
-        <select value={kind} aria-label="How the orbitals are calculated" onChange={(event) => models.orbital.kindTo(event.target.value as OrbitalKind)}>
-          {ORBITAL_KINDS.map(({ value, label, title }) => (
-            <option key={value} value={value} title={title}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={valueOf(scope)}
-          aria-label="What the orbitals are of"
-          title="Everything together as one molecule, or each molecule on its own, or just one"
-          onChange={(event) => models.orbital.scopeTo(scopeOf(event.target.value))}
-        >
-          <option value="">All molecules together</option>
-          {(state?.fragments.length ?? 0) > 1 && <option value={EACH}>Each molecule</option>}
-          {(state?.fragments ?? []).map((each, i) => (
-            <option key={each.key} value={`${ONE}${each.atoms[0] ?? ""}`}>
-              {`${i + 1}. ${each.name} (${each.formula.molecular})`}
-            </option>
-          ))}
-        </select>
-        |
-        <button type="button" className="tool" disabled={asked || state === null} onClick={() => requestOrbitals(kind, fragments)}>
+        <button type="button" className="tool" disabled={asked || state === null} onClick={() => requestOrbitals(kind, fragments, calculationSpins)}>
           {asked ? "Calculating…" : complete ? "Calculate again" : "Calculate"}
         </button>
         <span className="segmented-captioned">
@@ -515,7 +472,7 @@ export function OrbitalsPanel({ state, models }: OrbitalsPanelProps) {
           <Localisation channels={drawn} selected={selected} count={count} state={state} nameOfMolecule={nameOfMolecule} onSelect={(choice) => models.orbital.pick(choice)} />
           <PiCharacter channels={drawn} selected={selected} count={count} nameOfMolecule={nameOfMolecule} onSelect={(choice) => models.orbital.pick(choice)} />
           <SpinSplitting channels={drawn} nameOfMolecule={nameOfMolecule} />
-          <InteractionSection state={state} kind={kind} everything={everything} nameOfMolecule={nameOfMolecule} />
+          <InteractionSection state={state} kind={kind} spins={calculationSpins} everything={everything} nameOfMolecule={nameOfMolecule} />
 
           {selected !== null && targets.length > 0 && <ShownOrbitals targets={targets} channels={channels} fields={fields} state={state} nameOfMolecule={nameOfMolecule} />}
           {selected !== null && targets.length > 0 && <OrbitalSites targets={targets} channels={channels} state={state} models={models} nameOfMolecule={nameOfMolecule} />}
@@ -943,6 +900,7 @@ function SpinSplitting({ channels, nameOfMolecule }: SpinSplittingProps) {
 interface InteractionSectionProps {
   state: SessionState | null;
   kind: OrbitalKind;
+  spins: Spins;
   /** Whether to draw every orbital, and not only those near the gap. */
   everything: boolean;
   nameOfMolecule: (atom: string | null) => string | null;
@@ -953,7 +911,7 @@ interface InteractionSectionProps {
  * lines from each of the whole's to the molecule orbitals it is made of. It is asked for with a button, since it needs the whole and every molecule
  * calculated.
  */
-function InteractionSection({ state, kind, everything, nameOfMolecule }: InteractionSectionProps) {
+function InteractionSection({ state, kind, spins: chosen, everything, nameOfMolecule }: InteractionSectionProps) {
   const { interaction, interactionSince, requestInteraction } = useSessionContext();
   const [spin, setSpin] = useState<"restricted" | "alpha" | "beta">("restricted");
   if ((state?.fragments.length ?? 0) < 2) {
@@ -971,7 +929,7 @@ function InteractionSection({ state, kind, everything, nameOfMolecule }: Interac
     <>
       <h3>Interaction diagram</h3>
       <div className="energy-actions">
-        <button type="button" className="tool" disabled={asked || state === null} onClick={() => requestInteraction(kind)}>
+        <button type="button" className="tool" disabled={asked || state === null} onClick={() => requestInteraction(kind, chosen)}>
           {asked ? "Calculating…" : complete ? "Calculate again" : "Calculate"}
         </button>
         {spins.length > 1 && (

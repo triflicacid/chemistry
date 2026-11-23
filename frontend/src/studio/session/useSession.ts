@@ -26,6 +26,7 @@ import {useScan} from "./useScan";
 import {type ScalarFields, useScalarFields} from "./useScalarFields";
 import {type Esp, useEsp} from "./useEsp";
 import {type Basins, useBasins} from "./useBasins";
+import {type CalculationInfo, useCalculation} from "./useCalculation";
 import {type Nci, useNci} from "./useNci";
 import {type Plane, usePlane} from "./usePlane";
 import {type Orbitals, useOrbitals} from "./useOrbitals";
@@ -35,7 +36,7 @@ import {type SocketEvents, useSocket} from "./useSocket";
 
 export type {Activity, EditResult, OptimisationOutcome, Optimising, SessionPhase, SubmitResult} from "./types";
 
-export interface Session extends Orbitals, Esp, Nci, Basins, ScalarFields, Plane {
+export interface Session extends Orbitals, Esp, Nci, Basins, ScalarFields, Plane, CalculationInfo {
   phase: SessionPhase;
   state: SessionState | null;
   /** The optimisation under way, or null if there is none. */
@@ -75,8 +76,9 @@ export interface Session extends Orbitals, Esp, Nci, Basins, ScalarFields, Plane
    * Asks the server for the partial charges of the session as it is now, which arrive as `charges`.
    *
    * @param model the name of the model to assign them with
+   * @param multiplicity the spin multiplicity to calculate at, or null for the lowest the electron count allows
    */
-  requestCharges: (model: string, automatic?: boolean) => void;
+  requestCharges: (model: string, multiplicity: number | null, automatic?: boolean) => void;
   activity: Activity[];
   /** Stores a molecule written as SMILES and opens a session on it. */
   openSmiles: (smiles: string) => void;
@@ -177,6 +179,7 @@ export function useSession(client?: ChemistryApi): Session {
   const potential = useEsp(socket);
   const contacts = useNci(socket);
   const pairs = useBasins(socket);
+  const calculationInfo = useCalculation(socket);
   const scalarFields = useScalarFields(socket);
   const plane = usePlane(socket);
   const { charges, calculating: calculatingCharges, progress: chargesProgress, requestCharges } = useCharges(socket);
@@ -200,6 +203,7 @@ export function useSession(client?: ChemistryApi): Session {
     ...potential,
     ...contacts,
     ...pairs,
+    ...calculationInfo,
     ...scalarFields,
     ...plane,
     charges,
