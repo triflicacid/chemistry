@@ -1,21 +1,21 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import type {DensityResult} from "./messages";
+import type {ScalarFieldName, ScalarFieldResult} from "./messages";
 import {reason} from "./errors";
-import type {StudioSocket} from "./studioSocket";
 import type {SessionLink} from "./useSocket";
 import {useWarner} from "./warnings";
 
-/** One density: the last the server sent, when it was asked for, and how to ask again. */
+/** One scalar field. */
 interface Held {
-  result: DensityResult | null;
+  result: ScalarFieldResult | null;
   /** When the calculation under way was asked for, as {@link Date.now}, or null if there is none. */
   since: number | null;
   request: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
 }
 
-export interface Density {
+/** The scalar fields the server works out on a grid,. */
+export interface ScalarFields {
   /** The electron density. */
-  density: DensityResult | null;
+  density: ScalarFieldResult | null;
   /** When the calculation under way was asked for, as {@link Date.now}, or null if there is none. */
   densitySince: number | null;
   /**
@@ -26,32 +26,35 @@ export interface Density {
    */
   requestDensity: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
   /** The spin density: the electrons of spin up less those of spin down. */
-  spin: DensityResult | null;
+  spin: ScalarFieldResult | null;
   spinSince: number | null;
   requestSpin: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
-  /** The difference density: everything together less its molecules each on its own. */
-  difference: DensityResult | null;
-  differenceSince: number | null;
-  requestDifference: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** The intermolecular density: everything together less its molecules each on its own. */
+  intermolecular: ScalarFieldResult | null;
+  intermolecularSince: number | null;
+  requestIntermolecular: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** The deformation density: the molecule less its atoms as free atoms, which is what bonding does to the electrons. */
+  deformation: ScalarFieldResult | null;
+  deformationSince: number | null;
+  requestDeformation: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
   /** Minus the Laplacian of the electron density: positive where charge is concentrated, negative where it is depleted. */
-  laplacian: DensityResult | null;
+  laplacian: ScalarFieldResult | null;
   laplacianSince: number | null;
   requestLaplacian: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
   /** The electron localisation function, from zero to one. */
-  elf: DensityResult | null;
+  elf: ScalarFieldResult | null;
   elfSince: number | null;
   requestElf: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
 }
 
 /**
- * Keeps one kind of density the server sends.
+ * Keeps one scalar field the server sends.
  *
  * @param link the connection to the session
- * @param type the type of message the density comes in
- * @param ask sends the request for it
+ * @param field which field
  */
-function useHeld({ socketRef, held, note, warn }: SessionLink, type: DensityResult["type"], ask: (socket: StudioSocket, sessionId: string, model: string, fragment: string | null, multiplicity: number | null) => Promise<unknown>): Held {
-  const [result, setResult] = useState<DensityResult | null>(null);
+function useHeld({ socketRef, held, note, warn }: SessionLink, field: ScalarFieldName): Held {
+  const [result, setResult] = useState<ScalarFieldResult | null>(null);
   const [since, setSince] = useState<number | null>(null);
   const warnOnce = useWarner(warn);
   const automatically = useRef(false);
@@ -62,16 +65,16 @@ function useHeld({ socketRef, held, note, warn }: SessionLink, type: DensityResu
       return;
     }
 
-    return socket.on<DensityResult>(type, (arrived) => {
-      if (held.current && held.current.session_id !== arrived.session_id) {
+    return socket.on<ScalarFieldResult>("scalar.result", (arrived) => {
+      if (arrived.field !== field || (held.current && held.current.session_id !== arrived.session_id)) {
         return;
       }
       setSince(null);
-      warnOnce(arrived.status === "complete" ? null : (arrived.message ?? "The density could not be calculated."), automatically.current);
+      warnOnce(arrived.status === "complete" ? null : (arrived.message ?? "The field could not be calculated."), automatically.current);
       // a result older than the one held is stale
       setResult((before) => (before && before.session_id === arrived.session_id && before.version > arrived.version ? before : arrived));
     });
-  }, [held, socketRef, type, warnOnce]);
+  }, [held, socketRef, field, warnOnce]);
 
   const request = useCallback(
     (model: string, fragment: string | null, multiplicity: number | null, automatic = false) => {
@@ -83,25 +86,24 @@ function useHeld({ socketRef, held, note, warn }: SessionLink, type: DensityResu
       }
 
       setSince(Date.now());
-      ask(socket, base.session_id, model, fragment, multiplicity).catch((cause: unknown) => {
+      socket.requestScalarField(base.session_id, field, model, fragment, multiplicity).catch((cause: unknown) => {
         setSince(null);
         note(reason(cause), true);
       });
     },
-    // the way of asking is fixed for each kind
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [held, note, socketRef],
+    [held, note, socketRef, field],
   );
 
   return { result, since, request };
 }
 
-export function useDensity(link: SessionLink): Density {
-  const density = useHeld(link, "density.result", (socket, id, model, fragment, multiplicity) => socket.requestDensity(id, model, fragment, multiplicity));
-  const spin = useHeld(link, "spin.result", (socket, id, model, fragment, multiplicity) => socket.requestSpin(id, model, fragment, multiplicity));
-  const difference = useHeld(link, "difference.result", (socket, id, model, fragment, multiplicity) => socket.requestDifference(id, model, fragment, multiplicity));
-  const elf = useHeld(link, "elf.result", (socket, id, model, fragment, multiplicity) => socket.requestElf(id, model, fragment, multiplicity));
-  const laplacian = useHeld(link, "laplacian.result", (socket, id, model, fragment, multiplicity) => socket.requestLaplacian(id, model, fragment, multiplicity));
+export function useScalarFields(link: SessionLink): ScalarFields {
+  const density = useHeld(link, "density");
+  const spin = useHeld(link, "spin");
+  const intermolecular = useHeld(link, "intermolecular");
+  const deformation = useHeld(link, "deformation");
+  const laplacian = useHeld(link, "laplacian");
+  const elf = useHeld(link, "elf");
 
   return {
     density: density.result,
@@ -110,9 +112,12 @@ export function useDensity(link: SessionLink): Density {
     spin: spin.result,
     spinSince: spin.since,
     requestSpin: spin.request,
-    difference: difference.result,
-    differenceSince: difference.since,
-    requestDifference: difference.request,
+    intermolecular: intermolecular.result,
+    intermolecularSince: intermolecular.since,
+    requestIntermolecular: intermolecular.request,
+    deformation: deformation.result,
+    deformationSince: deformation.since,
+    requestDeformation: deformation.request,
     laplacian: laplacian.result,
     laplacianSince: laplacian.since,
     requestLaplacian: laplacian.request,

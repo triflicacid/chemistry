@@ -1,6 +1,6 @@
 import {type GridShape, isosurface, type Surface} from "../../render/isosurface";
 import type {LevelBy, OrbitalColouring} from "../models/OrbitalModel";
-import {sampleGrid} from "./esp";
+import {sampleGrid} from "./gridField";
 import {amplitudeForShare, type DrawnOrbital, massLevel, nearestToGap} from "./orbitals";
 import {
     characterColour,

@@ -6,17 +6,13 @@ import {
   type BondOrder,
   type CameraAck,
   type ChargesRequestAck,
-  type DensityRequestAck,
-  type DifferenceRequestAck,
   type EditApplied,
   type EditHistory,
-  type ElfRequestAck,
   type EspRequestAck,
   type FieldRequestAck,
   type ForcesRequestAck,
   type GraphEditAck,
   type InteractionRequestAck,
-  type LaplacianRequestAck,
   type LockAck,
   type NciRequestAck,
   type OptimiseCancelAck,
@@ -27,13 +23,14 @@ import {
   type PlaneRequestAck,
   type Pose,
   PROTOCOL_VERSION,
+  type ScalarFieldName,
+  type ScalarRequestAck,
   type ScanRequestAck,
   type ServerEnvelope,
   type SessionCamera,
   type SessionConflict,
   type SessionReady,
   type SessionState,
-  type SpinRequestAck,
   type TransformAck,
 } from "./messages";
 
@@ -588,6 +585,20 @@ export class StudioSocket {
   }
 
   /**
+   * Asks for a scalar field of a session, or of one of its molecules, on a grid round its atoms. The answer says only that the request was
+   * understood: listen for `scalar.result`, which the server sends once the session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session to calculate for
+   * @param field which field
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestScalarField(sessionId: string, field: ScalarFieldName, model: string, fragment: string | null, multiplicity: number | null): Promise<ScalarRequestAck> {
+    return this.request<ScalarRequestAck>("scalar.request", { session_id: sessionId, field, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "scalar.request.ack");
+  }
+
+  /**
    * Asks for the fields a plot of non-covalent interactions is drawn from, the reduced density gradient and the density signed by its
    * curvature, of a session or of one of its molecules, on a grid round its atoms. The answer says only that the request was understood:
    * listen for `nci.result`, which the server sends once the session has been left alone and drops if it moves on first.
@@ -599,20 +610,6 @@ export class StudioSocket {
    */
   requestNci(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<NciRequestAck> {
     return this.request<NciRequestAck>("nci.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "nci.request.ack");
-  }
-
-  /**
-   * Asks for the electron density of a session, or of one of its molecules, on a grid round its atoms. The answer says only that the
-   * request was understood: listen for `density.result`, which the server sends once the session has been left alone and drops if it
-   * moves on first.
-   *
-   * @param sessionId the session to calculate for
-   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
-   * @param fragment an atom of the molecule to calculate, or null for the whole session
-   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
-   */
-  requestDensity(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<DensityRequestAck> {
-    return this.request<DensityRequestAck>("density.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "density.request.ack");
   }
 
   /**
@@ -633,61 +630,6 @@ export class StudioSocket {
       { session_id: sessionId, model, axis, position, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) },
       "plane.request.ack",
     );
-  }
-
-  /**
-   * Asks for the spin density of a session, or of one of its molecules: the electrons of spin up less those of spin down. The answer says
-   * only that the request was understood: listen for `spin.result`, which says why there is none for a calculation whose electrons all pair up.
-   *
-   * @param sessionId the session to calculate for
-   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
-   * @param fragment an atom of the molecule to calculate, or null for the whole session
-   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
-   */
-  requestSpin(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<SpinRequestAck> {
-    return this.request<SpinRequestAck>("spin.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "spin.request.ack");
-  }
-
-  /**
-   * Asks for the electron localisation function of a session, or of one of its molecules, on a grid round its atoms: from zero to one, and high
-   * where electrons are paired and apart from others, as in a bond or a lone pair. The answer says only that the request was understood: listen
-   * for `elf.result`, which the server sends once the session has been left alone and drops if it moves on first.
-   *
-   * @param sessionId the session to calculate for
-   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
-   * @param fragment an atom of the molecule to calculate, or null for the whole session
-   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
-   */
-  requestElf(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<ElfRequestAck> {
-    return this.request<ElfRequestAck>("elf.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "elf.request.ack");
-  }
-
-  /**
-   * Asks for minus the Laplacian of the electron density of a session, or of one of its molecules, on a grid round its atoms: positive where
-   * charge is concentrated, as in a bond or a lone pair, and negative where it is depleted. The answer says only that the request was
-   * understood: listen for `laplacian.result`, which the server sends once the session has been left alone and drops if it moves on first.
-   *
-   * @param sessionId the session to calculate for
-   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
-   * @param fragment an atom of the molecule to calculate, or null for the whole session
-   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
-   */
-  requestLaplacian(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<LaplacianRequestAck> {
-    return this.request<LaplacianRequestAck>("laplacian.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "laplacian.request.ack");
-  }
-
-  /**
-   * Asks for the difference density of a session: the electron density of everything together less those of its molecules each on its
-   * own. The answer says only that the request was understood: listen for `difference.result`, which says why there is none for a session
-   * of one molecule.
-   *
-   * @param sessionId the session to calculate for
-   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
-   * @param fragment ignored by the server, since the difference is of the whole session
-   * @param multiplicity the spin multiplicity to calculate the whole at, or null for the lowest the electron count allows
-   */
-  requestDifference(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<DifferenceRequestAck> {
-    return this.request<DifferenceRequestAck>("difference.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "difference.request.ack");
   }
 
   /**

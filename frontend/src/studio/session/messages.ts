@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 32;
+export const PROTOCOL_VERSION = 33;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -756,9 +756,9 @@ export interface NciRequestAck extends ServerEnvelope {
   type: "nci.request.ack";
 }
 
-/** The answer to a request for the electron density, which says only that the request was understood: it follows as a `density.result`. */
-export interface DensityRequestAck extends ServerEnvelope {
-  type: "density.request.ack";
+/** The answer to a request for a scalar field, which says only that the request was understood: it follows as a `scalar.result`. */
+export interface ScalarRequestAck extends ServerEnvelope {
+  type: "scalar.request.ack";
 }
 
 /** The answer to a request for the potential on a plane, which says only that the request was understood: it follows as a `plane.result`. */
@@ -799,34 +799,19 @@ export interface PlaneResult extends ServerEnvelope {
   message: string | null;
 }
 
-/** The answer to a request for the spin density, which says only that the request was understood: it follows as a `spin.result`. */
-export interface SpinRequestAck extends ServerEnvelope {
-  type: "spin.request.ack";
-}
-
-/** The answer to a request for the electron localisation function, which says only that the request was understood: it follows as an `elf.result`. */
-export interface ElfRequestAck extends ServerEnvelope {
-  type: "elf.request.ack";
-}
-
-/** The answer to a request for the Laplacian of the density, which says only that the request was understood: it follows as a `laplacian.result`. */
-export interface LaplacianRequestAck extends ServerEnvelope {
-  type: "laplacian.request.ack";
-}
-
-/** The answer to a request for the difference density, which says only that the request was understood: it follows as a `difference.result`. */
-export interface DifferenceRequestAck extends ServerEnvelope {
-  type: "difference.request.ack";
-}
+/** The scalar fields the server can work out on a grid, each of which comes in a `scalar.result`. */
+export type ScalarFieldName = "density" | "spin" | "intermolecular" | "deformation" | "laplacian" | "elf";
 
 /**
- * A density at every point of a grid, sent on the server's own initiative after a request. It describes the geometry at `version`.
- * A `density.result` is the electron density, which is never negative. A `spin.result` is the electrons of spin up less those of spin
- * down, and a `difference.result` the density of everything together less those of its molecules each on its own, which are positive
- * where there is more and negative where there is less.
+ * One scalar field at every point of a grid, sent on the server's own initiative after a request. It describes the geometry at `version`. The
+ * density is never negative; the spin density is the electrons of spin up less those of spin down; the intermolecular density is that of everything
+ * together less those of its molecules each on its own; the deformation density is that of a molecule less those of its atoms as free atoms; the Laplacian is minus the Laplacian of the density, which is positive where charge is
+ * concentrated; and the electron localisation function runs from zero to one.
  */
-export interface DensityResult extends ServerEnvelope {
-  type: "density.result" | "spin.result" | "difference.result" | "laplacian.result" | "elf.result";
+export interface ScalarFieldResult extends ServerEnvelope {
+  type: "scalar.result";
+  /** Which field it is. */
+  field: ScalarFieldName;
   session_id: string;
   version: number;
   status: "complete" | "failed";
@@ -834,8 +819,8 @@ export interface DensityResult extends ServerEnvelope {
   fragment: string | null;
   /** Where the points are, or null if there is no field. */
   grid: FieldGridMessage | null;
-  /** Every point's electron density, in electrons per cubic bohr, in the same form as an orbital's values. */
-  density: string | null;
+  /** Every point's value, in the unit of the field, in the same form as an orbital's values. */
+  values: string | null;
   min: number | null;
   max: number | null;
   elapsed_ms: number;
@@ -987,13 +972,9 @@ export type ServerMessage =
   | EspResult
   | NciRequestAck
   | NciResult
-  | DensityRequestAck
+  | ScalarRequestAck
   | PlaneRequestAck
   | PlaneResult
-  | SpinRequestAck
-  | DifferenceRequestAck
-  | LaplacianRequestAck
-  | ElfRequestAck
-  | DensityResult
+  | ScalarFieldResult
   | SocketError
   | Pong;

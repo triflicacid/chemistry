@@ -1,9 +1,9 @@
 import {Color} from "three";
 import type {Surface} from "../../render/isosurface";
 import {NEUTRAL_COLOUR} from "../../render/scale";
-import {type DecodedDensity, densitySurface, sampleGrid} from "./esp";
+import {fieldSurface, sampleGrid} from "./gridField";
 import type {OrbitalsResult, OrbitalTarget} from "../session/messages";
-import type {DrawnOrbital} from "./orbitals";
+import type {DecodedField, DrawnOrbital} from "./orbitals";
 
 /** Which frontier orbital a reactivity map shows: the HOMO, for where an electrophile attacks, or the LUMO, for where a nucleophile does. */
 export type FrontierSide = "homo" | "lumo";
@@ -54,8 +54,8 @@ export interface ReactivitySurface {
  * @param orbitals the orbitals to read, on whatever grids they were worked out on
  * @returns the surface, the orbitals' probability density at each vertex, and the value the colours reach
  */
-export function reactivitySurface(density: DecodedDensity, isovalue: number, orbitals: readonly DrawnOrbital[]): ReactivitySurface {
-  const surface = densitySurface(density, isovalue);
+export function reactivitySurface(density: DecodedField, isovalue: number, orbitals: readonly DrawnOrbital[]): ReactivitySurface {
+  const surface = fieldSurface(density, isovalue);
   const values = probabilityAt(surface, orbitals);
   return { surface, values, limit: strongest(values) };
 }
@@ -98,8 +98,8 @@ export interface DualSurface {
  * @param lumo the orbitals of the LUMO level
  * @returns the surface and the probability density of each at every vertex
  */
-export function dualSurface(density: DecodedDensity, isovalue: number, homo: readonly DrawnOrbital[], lumo: readonly DrawnOrbital[]): DualSurface {
-  const surface = densitySurface(density, isovalue);
+export function dualSurface(density: DecodedField, isovalue: number, homo: readonly DrawnOrbital[], lumo: readonly DrawnOrbital[]): DualSurface {
+  const surface = fieldSurface(density, isovalue);
   const homoValues = probabilityAt(surface, homo);
   const lumoValues = probabilityAt(surface, lumo);
   return { surface, homo: homoValues, lumo: lumoValues, homoLimit: strongest(homoValues), lumoLimit: strongest(lumoValues) };
@@ -150,7 +150,7 @@ export function isFrontierMap(field: string): field is "homoMap" | "lumoMap" {
  * @param orbitals the orbitals to add, each counted as one electron
  * @returns the probability density at each point of the grid, in electrons per cubic bohr, or null if there are no orbitals
  */
-export function reactivityField(orbitals: readonly DrawnOrbital[]): DecodedDensity | null {
+export function reactivityField(orbitals: readonly DrawnOrbital[]): DecodedField | null {
   const first = orbitals[0];
   if (!first) {
     return null;
@@ -172,7 +172,7 @@ export function reactivityField(orbitals: readonly DrawnOrbital[]): DecodedDensi
       }
     }
   }
-  return { density, shape };
+  return { values: density, shape };
 }
 
 /**

@@ -1,7 +1,7 @@
 import {Color} from "three";
 import {type GridShape, isosurface, type Surface} from "../../render/isosurface";
 import type {NciResult} from "../session/messages";
-import {sampleGrid} from "./esp";
+import {sampleGrid} from "./gridField";
 import {decodeFloats} from "./orbitals";
 
 /** The density, in electrons per cubic bohr, above which a point is left out of a plot of non-covalent interactions. */

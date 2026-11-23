@@ -12,9 +12,9 @@ import java.util.stream.IntStream;
 /**
  * The electron density of a molecule, its spin density and its electrostatic potential, evaluated on a grid.
  */
-public final class ElectronDensity
+public final class ElectronFields
 {
-    private ElectronDensity()
+    private ElectronFields()
     {
     }
 
@@ -88,8 +88,53 @@ public final class ElectronDensity
     }
 
     /**
-     * The negative of the Laplacian of the electron density, which is positive where charge is concentrated, as in a bond, a lone pair or an
-     * inner shell, and negative where it is depleted.
+     * The deformation density: the electron density of a molecule less the densities of its atoms as free atoms in the same places, which shows what
+     * bonding does to the electrons. It is positive where electrons have gathered, as in a bond or a lone pair, and negative where they have left.
+     *
+     * @param orbitals the calculation of the molecule
+     * @param centres where its atoms are, in ångström, in the order of {@code atoms}
+     * @param atoms the density of each atom as a free atom
+     * @param grid the points to evaluate it at, in ångström
+     * @param check called once for each slice of the grid, and able to stop the evaluation by throwing
+     * @return the molecule's density less its atoms', in electrons per cubic bohr, running along x fastest, then y, then z
+     * @throws IllegalArgumentException if there is not a density for each centre
+     */
+    public static float[] deformation(MolecularOrbitals orbitals, List<Vec3> centres, List<AtomicDensity> atoms, FieldGrid grid, Runnable check)
+    {
+        if (centres.size() != atoms.size())
+        {
+            throw new IllegalArgumentException("expected an atomic density for each of " + centres.size() + " centres, but got " + atoms.size());
+        }
+
+        float[] values = evaluate(orbitals, grid, check);
+        IntStream.range(0, grid.nz()).parallel().forEach(k ->
+        {
+            check.run();
+            double z = Units.toBohr(grid.origin().z() + k * grid.spacing());
+            for (int j = 0; j < grid.ny(); j++)
+            {
+                double y = Units.toBohr(grid.origin().y() + j * grid.spacing());
+                for (int i = 0; i < grid.nx(); i++)
+                {
+                    double x = Units.toBohr(grid.origin().x() + i * grid.spacing());
+                    double free = 0.0;
+                    for (int atom = 0; atom < atoms.size(); atom++)
+                    {
+                        Vec3 centre = centres.get(atom);
+                        double dx = x - Units.toBohr(centre.x());
+                        double dy = y - Units.toBohr(centre.y());
+                        double dz = z - Units.toBohr(centre.z());
+                        free += atoms.get(atom).at(Math.sqrt(dx * dx + dy * dy + dz * dz));
+                    }
+                    values[grid.indexOf(i, j, k)] -= (float) free;
+                }
+            }
+        });
+        return values;
+    }
+
+    /**
+     * The negative of the Laplacian of the electron density, which is positive where charge is concentrated.
      *
      * @param orbitals the calculation, whose density matrix holds all the electrons
      * @param grid the points to evaluate it at, in ångström

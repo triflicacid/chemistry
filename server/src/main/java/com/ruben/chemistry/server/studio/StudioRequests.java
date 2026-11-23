@@ -158,12 +158,12 @@ public final class StudioRequests
     }
 
     /**
-     * @param sessionId the session whose electrostatic potential to calculate
+     * @param sessionId the session to calculate something on a grid round
      * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
      * @param fragment an atom of the molecule to calculate, or absent for the whole session
      * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
      */
-    public record EspRequest(String sessionId, String model, String fragment, Integer multiplicity)
+    public record GridRequest(String sessionId, String model, String fragment, Integer multiplicity)
     {
     }
 
@@ -180,12 +180,13 @@ public final class StudioRequests
     }
 
     /**
-     * @param sessionId the session whose density to calculate
+     * @param sessionId the session whose field to calculate
+     * @param field which scalar field, one of {@link WavefunctionScheduler#SCALAR_FIELDS}
      * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
      * @param fragment an atom of the molecule to calculate, or absent for the whole session
      * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
      */
-    public record DensityRequest(String sessionId, String model, String fragment, Integer multiplicity)
+    public record ScalarFieldRequest(String sessionId, String field, String model, String fragment, Integer multiplicity)
     {
     }
 

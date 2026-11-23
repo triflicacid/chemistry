@@ -22,7 +22,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestDifference, requestLaplacian, requestElf, requestPlane } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestIntermolecular, requestDeformation, requestLaplacian, requestElf, requestPlane } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -42,7 +42,7 @@ export function App() {
 
   // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
   // The server waits for the session to be left alone, so a drag asks many times and is answered once
-  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity, sliceField } = useObservable(shared.properties);
+  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity, sliceField, deformationDisplay } = useObservable(shared.properties);
   const version = state?.version;
   const sessionId = state?.session_id;
   useAsk(colourBy === "charge" && sessionId !== undefined, chargeModel, version, (automatic) => requestCharges(chargeModel, automatic));
@@ -59,14 +59,15 @@ export function App() {
   const wantHomo = surface === "homoMap" || surface === "frontierMap" || sliceField === "homoMap";
   const wantLumo = surface === "lumoMap" || surface === "frontierMap" || sliceField === "lumoMap";
   const frontier = wantHomo || wantLumo;
-  useAsk((surface === "density" || surface === "concentrationMap" || mapping || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "density" || surface === "concentrationMap" || (surface === "deformation" && deformationDisplay === "range") || mapping || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(surfaceModel, null, multiplicity, automatic));
   // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to
   const { sliceAxis, slicePosition } = useObservable(shared.properties);
   useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(surfaceModel, null, multiplicity, sliceAxis, slicePosition, automatic), String(slicePosition));
   useAsk((sliceField === "laplacian" || surface === "concentrationMap") && sessionId !== undefined, calculation, version, (automatic) => requestLaplacian(surfaceModel, null, multiplicity, automatic));
   useAsk(surface === "elf" && sessionId !== undefined, calculation, version, (automatic) => requestElf(surfaceModel, null, multiplicity, automatic));
-  useAsk((surface === "difference" || sliceField === "difference") && sessionId !== undefined, calculation, version, (automatic) => requestDifference(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "deformation" || sliceField === "deformation") && sessionId !== undefined, calculation, version, (automatic) => requestDeformation(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "intermolecular" || sliceField === "intermolecular") && sessionId !== undefined, calculation, version, (automatic) => requestIntermolecular(surfaceModel, null, multiplicity, automatic));
 
   // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of
   const { selected: shownOrbital, kind: orbitalKind, scope: orbitalScope, count: orbitalCount } = useObservable(shared.orbital);

@@ -52,11 +52,22 @@ export function clampForceScale(scale: number): number {
 
 /**
  * What is drawn as a surface: nothing, the electron density alone, the density coloured by the electrostatic potential, the spin density,
- * the difference density, which is what the molecules in the session do to one another's electrons, or the non-covalent contacts,
+ * the intermolecular density, which is what the molecules in the session do to one another's electrons, or the non-covalent contacts,
  * where atoms that are not bonded touch, or the density coloured by how much of the HOMO (where an electrophile attacks) or the LUMO
  * (where a nucleophile does) is there.
  */
-export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference" | "nci" | "homoMap" | "lumoMap" | "frontierMap" | "concentrationMap" | "elf";
+export type SurfaceKind = "none" | "density" | "esp" | "spin" | "intermolecular" | "deformation" | "nci" | "homoMap" | "lumoMap" | "frontierMap" | "concentrationMap" | "elf";
+
+/** How the density change on bonding is shown: as surfaces where it is gained and lost, or as a range of it on the density surface. */
+export type DeformationDisplay = "levels" | "range";
+
+/**
+ * @param value anything
+ * @returns it if it is a way of showing the density change on bonding, and surfaces where it is gained and lost otherwise
+ */
+export function asDeformationDisplay(value: unknown): DeformationDisplay {
+  return value === "range" ? "range" : "levels";
+}
 
 /** What colours a surface of the electron density alone: nothing, or the element of the atom each part of it is nearest. */
 export type DensityColour = "single" | "element";
@@ -96,9 +107,9 @@ export function asSurfaceModel(value: unknown): OrbitalKind {
 }
 
 /** What a slice plane shows: none, which draws no plane, one of the densities a surface can be drawn of, or the electrostatic potential. */
-export type SliceField = "none" | "density" | "spin" | "difference" | "laplacian" | "potential" | "homoMap" | "lumoMap" | OrbitalSliceKind;
+export type SliceField = "none" | "density" | "spin" | "intermolecular" | "deformation" | "laplacian" | "potential" | "homoMap" | "lumoMap" | OrbitalSliceKind;
 
-const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "laplacian", "potential", "homoMap", "lumoMap", "homo", "lumo", "frontier"];
+const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "intermolecular", "deformation", "laplacian", "potential", "homoMap", "lumoMap", "homo", "lumo", "frontier"];
 const SLICE_AXES: readonly SliceAxis[] = ["x", "y", "z"];
 
 /**
@@ -119,8 +130,8 @@ export function asSliceAxis(value: unknown): SliceAxis {
 
 export const MIN_SURFACE_ISOVALUE = 0.001;
 export const MAX_SURFACE_ISOVALUE = 0.02;
-/** The greatest density the charge concentration map can be drawn at, which is near enough the atoms for a lone pair to show. */
-export const MAX_CONCENTRATION_ISOVALUE = 0.1;
+/** The greatest density a surface coloured by another field can be drawn at, which is near enough the atoms for a lone pair or a bond to show. */
+export const MAX_MAPPED_ISOVALUE = 0.1;
 export const DEFAULT_SURFACE_ISOVALUE = 0.004;
 export const MIN_NCI_LEVEL = 0.1;
 export const MAX_NCI_LEVEL = 2;
@@ -133,10 +144,11 @@ export const DEFAULT_SURFACE_OPACITY = 0.9;
 
 /**
  * @param kind what is drawn as a surface
+ * @param deformation how the density change on bonding is shown, if that is what is drawn
  * @returns the greatest density it can be drawn at, in electrons per cubic bohr
  */
-export function maxSurfaceIsovalue(kind: SurfaceKind): number {
-  return kind === "concentrationMap" ? MAX_CONCENTRATION_ISOVALUE : MAX_SURFACE_ISOVALUE;
+export function maxSurfaceIsovalue(kind: SurfaceKind, deformation: DeformationDisplay = "levels"): number {
+  return kind === "concentrationMap" || (kind === "deformation" && deformation === "range") ? MAX_MAPPED_ISOVALUE : MAX_SURFACE_ISOVALUE;
 }
 
 /**
@@ -207,6 +219,8 @@ export interface PropertiesState {
   /** The density, in electrons per cubic bohr, that the surface is at. */
   /** What colours the density surface when it is not coloured by the potential. */
   densityColour: DensityColour;
+  /** How the density change on bonding is shown. */
+  deformationDisplay: DeformationDisplay;
   /** The kind of Hartree-Fock calculation the surfaces come from. */
   surfaceModel: OrbitalKind;
   /** The spin multiplicity it is calculated at, or null for the lowest the electron count allows. */
@@ -317,8 +331,18 @@ export class PropertiesModel extends Observable<PropertiesState> {
    */
   surfaceTo(surface: SurfaceKind): void {
     if (this.get().surface !== surface) {
-      // a level only the charge concentration map reaches is brought back to what the new surface can be drawn at
-      this.change({ ...this.get(), surface, surfaceIsovalue: clampSurfaceIsovalue(this.get().surfaceIsovalue, maxSurfaceIsovalue(surface)) });
+      // a level only the surfaces coloured by another field reach is brought back to what the new surface can be drawn at
+      this.change({ ...this.get(), surface, surfaceIsovalue: clampSurfaceIsovalue(this.get().surfaceIsovalue, maxSurfaceIsovalue(surface, this.get().deformationDisplay)) });
+    }
+  }
+
+  /**
+   * @param deformationDisplay how the density change on bonding is shown
+   */
+  deformationDisplayTo(deformationDisplay: DeformationDisplay): void {
+    if (this.get().deformationDisplay !== deformationDisplay) {
+      // a level only the range reaches is brought back to what surfaces where it is gained and lost can be drawn at
+      this.change({ ...this.get(), deformationDisplay, surfaceIsovalue: clampSurfaceIsovalue(this.get().surfaceIsovalue, maxSurfaceIsovalue(this.get().surface, deformationDisplay)) });
     }
   }
 
@@ -390,7 +414,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
    * @param isovalue the density the surface is at, in electrons per cubic bohr
    */
   surfaceIsovalueTo(isovalue: number): void {
-    const surfaceIsovalue = clampSurfaceIsovalue(isovalue, maxSurfaceIsovalue(this.get().surface));
+    const surfaceIsovalue = clampSurfaceIsovalue(isovalue, maxSurfaceIsovalue(this.get().surface, this.get().deformationDisplay));
     if (this.get().surfaceIsovalue !== surfaceIsovalue) {
       this.change({ ...this.get(), surfaceIsovalue });
     }
@@ -459,7 +483,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
   }
 
   private static read(): PropertiesState {
-    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, elfLevel: DEFAULT_ELF_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
+    const defaults: PropertiesState = { colourBy: "element", chargeModel: "mulliken", polarLabels: false, polarThreshold: DEFAULT_POLAR_THRESHOLD, forceArrows: false, forceScale: 1, netForces: true, surface: "none", densityColour: "single", deformationDisplay: "levels", surfaceModel: "mulliken", multiplicity: null, sliceField: "none", sliceAxis: "z", slicePosition: 0.5, sliceContours: true, surfaceIsovalue: DEFAULT_SURFACE_ISOVALUE, nciLevel: DEFAULT_NCI_LEVEL, elfLevel: DEFAULT_ELF_LEVEL, surfaceOpacity: DEFAULT_SURFACE_OPACITY, open: false, expanded: { atoms: false, forces: false, surface: false, slice: false } };
     let stored: unknown;
     try {
       stored = JSON.parse(localStorage.getItem(PROPERTIES_KEY) ?? "null");
@@ -481,6 +505,7 @@ export class PropertiesModel extends Observable<PropertiesState> {
       polarThreshold: typeof held.polarThreshold === "number" ? clampPolarThreshold(held.polarThreshold) : defaults.polarThreshold,
       surface: defaults.surface,
       densityColour: asDensityColour(held.densityColour),
+      deformationDisplay: asDeformationDisplay(held.deformationDisplay),
       surfaceModel: asSurfaceModel(held.surfaceModel),
       sliceField: defaults.sliceField,
       sliceAxis: asSliceAxis(held.sliceAxis),
