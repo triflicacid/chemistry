@@ -33,6 +33,10 @@ export interface Density {
   difference: DensityResult | null;
   differenceSince: number | null;
   requestDifference: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** Minus the Laplacian of the electron density: positive where charge is concentrated, negative where it is depleted. */
+  laplacian: DensityResult | null;
+  laplacianSince: number | null;
+  requestLaplacian: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
 }
 
 /**
@@ -92,6 +96,7 @@ export function useDensity(link: SessionLink): Density {
   const density = useHeld(link, "density.result", (socket, id, model, fragment, multiplicity) => socket.requestDensity(id, model, fragment, multiplicity));
   const spin = useHeld(link, "spin.result", (socket, id, model, fragment, multiplicity) => socket.requestSpin(id, model, fragment, multiplicity));
   const difference = useHeld(link, "difference.result", (socket, id, model, fragment, multiplicity) => socket.requestDifference(id, model, fragment, multiplicity));
+  const laplacian = useHeld(link, "laplacian.result", (socket, id, model, fragment, multiplicity) => socket.requestLaplacian(id, model, fragment, multiplicity));
 
   return {
     density: density.result,
@@ -103,5 +108,8 @@ export function useDensity(link: SessionLink): Density {
     difference: difference.result,
     differenceSince: difference.since,
     requestDifference: difference.request,
+    laplacian: laplacian.result,
+    laplacianSince: laplacian.since,
+    requestLaplacian: laplacian.request,
   };
 }

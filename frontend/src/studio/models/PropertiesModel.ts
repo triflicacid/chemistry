@@ -96,9 +96,9 @@ export function asSurfaceModel(value: unknown): OrbitalKind {
 }
 
 /** What a slice plane shows: none, which draws no plane, one of the densities a surface can be drawn of, or the electrostatic potential. */
-export type SliceField = "none" | "density" | "spin" | "difference" | "potential" | "homoMap" | "lumoMap" | OrbitalSliceKind;
+export type SliceField = "none" | "density" | "spin" | "difference" | "laplacian" | "potential" | "homoMap" | "lumoMap" | OrbitalSliceKind;
 
-const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "potential", "homoMap", "lumoMap", "homo", "lumo", "frontier"];
+const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "laplacian", "potential", "homoMap", "lumoMap", "homo", "lumo", "frontier"];
 const SLICE_AXES: readonly SliceAxis[] = ["x", "y", "z"];
 
 /**

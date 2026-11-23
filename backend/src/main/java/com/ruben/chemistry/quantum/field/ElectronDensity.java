@@ -88,6 +88,75 @@ public final class ElectronDensity
     }
 
     /**
+     * The negative of the Laplacian of the electron density, which is positive where charge is concentrated, as in a bond, a lone pair or an
+     * inner shell, and negative where it is depleted.
+     *
+     * @param orbitals the calculation, whose density matrix holds all the electrons
+     * @param grid the points to evaluate it at, in ångström
+     * @param check called once for each slice of the grid, and able to stop the evaluation by throwing
+     * @return minus the sum of the second derivatives of the density at each point, in electrons per fifth power of a bohr, running along x
+     *     fastest, then y, then z
+     */
+    public static float[] negativeLaplacian(MolecularOrbitals orbitals, FieldGrid grid, Runnable check)
+    {
+        List<ContractedGaussian> functions = orbitals.basis().functions();
+        Matrix density = orbitals.density();
+        int n = functions.size();
+        double[][] p = new double[n][n];
+        for (int row = 0; row < n; row++)
+        {
+            for (int column = 0; column < n; column++)
+            {
+                p[row][column] = density.get(row, column);
+            }
+        }
+
+        float[] values = new float[grid.size()];
+        IntStream.range(0, grid.nz()).parallel().forEach(k ->
+        {
+            check.run();
+            double z = Units.toBohr(grid.origin().z() + k * grid.spacing());
+            double[][] chi = new double[ContractedGaussian.DERIVATIVES][n];
+            double[] at = new double[ContractedGaussian.DERIVATIVES];
+            for (int j = 0; j < grid.ny(); j++)
+            {
+                double y = Units.toBohr(grid.origin().y() + j * grid.spacing());
+                for (int i = 0; i < grid.nx(); i++)
+                {
+                    double x = Units.toBohr(grid.origin().x() + i * grid.spacing());
+                    for (int mu = 0; mu < n; mu++)
+                    {
+                        functions.get(mu).derivativesAt(x, y, z, at);
+                        for (int d = 0; d < ContractedGaussian.DERIVATIVES; d++)
+                        {
+                            chi[d][mu] = at[d];
+                        }
+                    }
+
+                    // the Laplacian of the density is 2 (the sum over x, y and z of slope · P slope, plus (P value) · the Laplacian of each function)
+                    double laplacian = 0.0;
+                    for (int mu = 0; mu < n; mu++)
+                    {
+                        double value = 0.0;
+                        double[] slope = new double[3];
+                        for (int nu = 0; nu < n; nu++)
+                        {
+                            value += p[mu][nu] * chi[0][nu];
+                            for (int a = 0; a < 3; a++)
+                            {
+                                slope[a] += p[mu][nu] * chi[1 + a][nu];
+                            }
+                        }
+                        laplacian += 2.0 * (chi[1][mu] * slope[0] + chi[2][mu] * slope[1] + chi[3][mu] * slope[2] + value * (chi[4][mu] + chi[5][mu] + chi[6][mu]));
+                    }
+                    values[grid.indexOf(i, j, k)] = (float) -laplacian;
+                }
+            }
+        });
+        return values;
+    }
+
+    /**
      * The electrostatic potential at every point of a flat grid, wherever the plane is.
      *
      * @param orbitals the calculation

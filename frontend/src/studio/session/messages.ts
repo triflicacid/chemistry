@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 30;
+export const PROTOCOL_VERSION = 31;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -804,6 +804,11 @@ export interface SpinRequestAck extends ServerEnvelope {
   type: "spin.request.ack";
 }
 
+/** The answer to a request for the Laplacian of the density, which says only that the request was understood: it follows as a `laplacian.result`. */
+export interface LaplacianRequestAck extends ServerEnvelope {
+  type: "laplacian.request.ack";
+}
+
 /** The answer to a request for the difference density, which says only that the request was understood: it follows as a `difference.result`. */
 export interface DifferenceRequestAck extends ServerEnvelope {
   type: "difference.request.ack";
@@ -816,7 +821,7 @@ export interface DifferenceRequestAck extends ServerEnvelope {
  * where there is more and negative where there is less.
  */
 export interface DensityResult extends ServerEnvelope {
-  type: "density.result" | "spin.result" | "difference.result";
+  type: "density.result" | "spin.result" | "difference.result" | "laplacian.result";
   session_id: string;
   version: number;
   status: "complete" | "failed";
@@ -982,6 +987,7 @@ export type ServerMessage =
   | PlaneResult
   | SpinRequestAck
   | DifferenceRequestAck
+  | LaplacianRequestAck
   | DensityResult
   | SocketError
   | Pong;

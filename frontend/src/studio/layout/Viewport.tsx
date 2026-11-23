@@ -62,7 +62,7 @@ export interface ViewportProps {
 }
 
 /** What each density is called in a label. */
-const FIELD_NAMES = { none: "", density: "density", esp: "density", nci: "density", homoMap: "density", lumoMap: "density", frontierMap: "density", spin: "spin density", difference: "difference density", potential: "potential", homo: "orbital", lumo: "orbital", frontier: "orbital" };
+const FIELD_NAMES = { none: "", density: "density", esp: "density", nci: "density", homoMap: "density", lumoMap: "density", frontierMap: "density", laplacian: "−∇²ρ", spin: "spin density", difference: "difference density", potential: "potential", homo: "orbital", lumo: "orbital", frontier: "orbital" };
 
 /** No orbitals. */
 const NO_ORBITALS: DrawnOrbital[] = [];
@@ -95,6 +95,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     density,
     spin,
     difference,
+    laplacian,
     plane,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -252,13 +253,13 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   }, [view, orbitalFields, isovalue, opacity, colouring, debug, orbitalDisplay, levelBy, share, combine, orbitalStyle]);
 
   // a slice plane shows one of the densities, whether or not a surface of it is drawn, and is drawn only for the version it was worked out at
-  const sliced = sliceField === "density" ? density : sliceField === "spin" ? spin : sliceField === "difference" ? difference : null;
+  const sliced = sliceField === "density" ? density : sliceField === "spin" ? spin : sliceField === "difference" ? difference : sliceField === "laplacian" ? laplacian : null;
   const slicedDensity = useMemo(() => (sliced && atVersion(sliced) ? decodeDensity(sliced) : null), [sliced, state]); // eslint-disable-line react-hooks/exhaustive-deps
   // or a frontier orbital, with its degenerate partners, as a probability
   const sliceFrontier = sliceMapSide === null ? NO_ORBITALS : frontierOrbitals[sliceMapSide];
   const frontierSlice = useMemo(() => reactivityField(sliceFrontier), [sliceFrontier]);
   const decodedSlice = frontierSlice ?? slicedDensity;
-  const signedSlice = sliceField === "spin" || sliceField === "difference";
+  const signedSlice = sliceField === "spin" || sliceField === "difference" || sliceField === "laplacian";
   // or orbitals, which are shown as the Orbitals tab shows them, with the same number from the gap, level, colours and way of showing several,
   // whether or not their surfaces are drawn
   const sliceOrbitals = useMemo(() => {
@@ -327,7 +328,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
         const potential = planeValueAt(decodedPlane, x, y, z);
         lines = [`potential ${Number.isNaN(potential) ? "n/a" : `${toKcalPerCharge(potential).toFixed(1)} kcal/mol/e`}`, `slice at ${decodedPlane.axis} = ${hit.at[decodedPlane.axis].toFixed(2)} Å`];
       } else if (hit.on === "slice" && decodedSlice) {
-        lines = [`${isFrontierMap(sliceField) ? (sliceField === "homoMap" ? "HOMO" : "LUMO") : FIELD_NAMES[sliceField]} ${sampleGrid(decodedSlice.density, decodedSlice.shape, x, y, z).toFixed(4)} e/bohr³`, `slice at ${sliceAxis} = ${hit.at[sliceAxis].toFixed(2)} Å`];
+        lines = [`${isFrontierMap(sliceField) ? (sliceField === "homoMap" ? "HOMO" : "LUMO") : FIELD_NAMES[sliceField]} ${sampleGrid(decodedSlice.density, decodedSlice.shape, x, y, z).toFixed(4)} ${sliceField === "laplacian" ? "e/bohr⁵" : "e/bohr³"}`, `slice at ${sliceAxis} = ${hit.at[sliceAxis].toFixed(2)} Å`];
       } else if (hit.on === "surface" && decodedNci) {
         const signedDensity = sampleGrid(decodedNci.signed, decodedNci.shape, x, y, z);
         const reduced = sampleGrid(decodedNci.gradient, decodedNci.shape, x, y, z);

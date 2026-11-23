@@ -15,6 +15,7 @@ import {
     type ForcesRequestAck,
     type GraphEditAck,
     type InteractionRequestAck,
+    type LaplacianRequestAck,
     type LockAck,
     type NciRequestAck,
     type OptimiseCancelAck,
@@ -644,6 +645,20 @@ export class StudioSocket {
    */
   requestSpin(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<SpinRequestAck> {
     return this.request<SpinRequestAck>("spin.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "spin.request.ack");
+  }
+
+  /**
+   * Asks for minus the Laplacian of the electron density of a session, or of one of its molecules, on a grid round its atoms: positive where
+   * charge is concentrated, as in a bond or a lone pair, and negative where it is depleted. The answer says only that the request was
+   * understood: listen for `laplacian.result`, which the server sends once the session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestLaplacian(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<LaplacianRequestAck> {
+    return this.request<LaplacianRequestAck>("laplacian.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "laplacian.request.ack");
   }
 
   /**

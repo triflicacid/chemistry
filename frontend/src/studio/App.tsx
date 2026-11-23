@@ -22,7 +22,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestDifference, requestPlane } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestNci, requestDensity, requestSpin, requestDifference, requestLaplacian, requestPlane } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -64,6 +64,7 @@ export function App() {
   // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to
   const { sliceAxis, slicePosition } = useObservable(shared.properties);
   useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(surfaceModel, null, multiplicity, sliceAxis, slicePosition, automatic), String(slicePosition));
+  useAsk(sliceField === "laplacian" && sessionId !== undefined, calculation, version, (automatic) => requestLaplacian(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "difference" || sliceField === "difference") && sessionId !== undefined, calculation, version, (automatic) => requestDifference(surfaceModel, null, multiplicity, automatic));
 
   // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of

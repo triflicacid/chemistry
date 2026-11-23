@@ -3,9 +3,9 @@ package com.ruben.chemistry.server.studio;
 import com.ruben.chemistry.quantum.field.FieldGrid;
 
 /**
- * A density at every point of a grid: the electron density, the spin density, or what bonding changes in the electron density.
+ * A field at every point of a grid: the electron density, the spin density, what bonding changes in the electron density, or minus its Laplacian.
  *
- * @param type {@link #DENSITY}, {@link #SPIN} or {@link #DIFFERENCE}
+ * @param type {@link #DENSITY}, {@link #SPIN}, {@link #DIFFERENCE} or {@link #LAPLACIAN}
  * @param sessionId the session this describes
  * @param version the version of the session whose geometry it was calculated from
  * @param status {@code complete} or {@code failed}
@@ -39,6 +39,9 @@ public record DensityReport(
 
     /** The type of the difference density: the density of the whole less the densities of its molecules each on its own. */
     public static final String DIFFERENCE = "difference.result";
+
+    /** The type of minus the Laplacian of the electron density, which is positive where charge is concentrated and negative where it is depleted. */
+    public static final String LAPLACIAN = "laplacian.result";
 
     /**
      * @param type what the density is
