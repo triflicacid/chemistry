@@ -119,7 +119,34 @@ export function sliceLimit(field: DecodedDensity, signed: boolean): number {
 
 /** The scales as a table of red, green and blue. */
 const SIGNED_TABLE = Array.from({ length: 2 * STEPS + 1 }, (_, i) => new Color(diverging((i - STEPS) / STEPS, 1)));
-const SEQUENTIAL_TABLE = Array.from({ length: STEPS + 1 }, (_, i) => new Color(NEUTRAL_COLOUR).lerp(new Color(SEQUENTIAL_COLOUR), i / STEPS));
+const SEQUENTIAL_TABLE = sequentialTable(SEQUENTIAL_COLOUR);
+
+/** The scales of a field that is never negative in other colours, which are made when they are first asked for. */
+const TINTED_TABLES = new Map<string, Color[]>();
+
+/**
+ * @param tint the colour of the strongest part, as hex
+ * @returns the colours from near white to that, as a table
+ */
+function sequentialTable(tint: string): Color[] {
+  return Array.from({ length: STEPS + 1 }, (_, i) => new Color(NEUTRAL_COLOUR).lerp(new Color(tint), i / STEPS));
+}
+
+/**
+ * @param tint the colour of the strongest part, as hex, or undefined for the usual deep blue
+ * @returns the table of colours to draw a field that is never negative in
+ */
+function tableFor(tint: string | undefined): Color[] {
+  if (tint === undefined || tint === SEQUENTIAL_COLOUR) {
+    return SEQUENTIAL_TABLE;
+  }
+  let table = TINTED_TABLES.get(tint);
+  if (!table) {
+    table = sequentialTable(tint);
+    TINTED_TABLES.set(tint, table);
+  }
+  return table;
+}
 
 /**
  * Colours the samples of a slice. A field that is never negative is shown on a scale from near white to deep blue that rises faster at
@@ -128,9 +155,11 @@ const SEQUENTIAL_TABLE = Array.from({ length: STEPS + 1 }, (_, i) => new Color(N
  * @param values the samples
  * @param signed whether the field has both signs
  * @param limit the magnitude at which the colour is as strong as it gets
+ * @param tint the colour of the strongest part of a field that is never negative, as hex, or undefined for the usual deep blue
  * @returns the red, green, blue and alpha of each sample, from 0 to 255, which is clear where there is no value
  */
-export function sliceColours(values: ArrayLike<number>, signed: boolean, limit: number): Uint8ClampedArray {
+export function sliceColours(values: ArrayLike<number>, signed: boolean, limit: number, tint?: string): Uint8ClampedArray {
+  const table = tableFor(tint);
   const pixels = new Uint8ClampedArray(values.length * 4);
   for (let at = 0; at < values.length; at++) {
     const value = values[at] as number;
@@ -139,7 +168,7 @@ export function sliceColours(values: ArrayLike<number>, signed: boolean, limit: 
     }
     const colour = signed
       ? (SIGNED_TABLE[Math.round((Math.max(-1, Math.min(1, value / limit)) + 1) * STEPS)] as Color)
-      : (SEQUENTIAL_TABLE[Math.round(Math.sqrt(Math.max(0, Math.min(1, value / limit))) * STEPS)] as Color);
+      : (table[Math.round(Math.sqrt(Math.max(0, Math.min(1, value / limit))) * STEPS)] as Color);
     pixels[at * 4] = Math.round(colour.r * 255);
     pixels[at * 4 + 1] = Math.round(colour.g * 255);
     pixels[at * 4 + 2] = Math.round(colour.b * 255);
@@ -247,13 +276,14 @@ const JOINS: readonly (readonly (readonly [number, number])[])[] = [
  * @param fraction how far along the field's extent in that axis the plane is, from 0 to 1
  * @param signed whether the field has both signs, as the spin density and the difference density do
  * @param contours whether to find the lines of constant value across the plane
+ * @param tint the colour of the strongest part of a field that is never negative, as hex, or undefined for the usual deep blue
  * @returns the drawing
  */
-export function sliceDrawing(field: DecodedDensity, axis: SliceAxis, fraction: number, signed: boolean, contours: boolean): SliceDrawing {
+export function sliceDrawing(field: DecodedDensity, axis: SliceAxis, fraction: number, signed: boolean, contours: boolean, tint?: string): SliceDrawing {
   const samples = sliceSamples(field, axis, fraction);
   const limit = sliceLimit(field, signed);
   return {
-    pixels: sliceColours(samples.values, signed, limit),
+    pixels: sliceColours(samples.values, signed, limit, tint),
     width: samples.width,
     height: samples.height,
     corners: samples.corners,

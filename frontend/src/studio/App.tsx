@@ -3,6 +3,7 @@ import {Workspace} from "./layout/Workspace";
 import {createModels} from "./models/models";
 import {TOOL_ORDER} from "./models/ToolModel";
 import {useObservable} from "./models/observable";
+import {frontierTargets} from "./layout/reactivity";
 import {answers, fragmentsFor, isOrbitalSlice, resolveTargets, sliceTargets} from "./layout/orbitals";
 import {StateIndex} from "./geometry/StateIndex";
 import {useChemistry} from "./chemistry/useChemistry";
@@ -53,7 +54,12 @@ export function App() {
   const calculation = `${surfaceModel}|${multiplicity}`;
   useAsk(surface === "esp" && sessionId !== undefined, calculation, version, (automatic) => requestEsp(surfaceModel, null, multiplicity, automatic));
   useAsk(surface === "nci" && sessionId !== undefined, calculation, version, (automatic) => requestNci(surfaceModel, null, multiplicity, automatic));
-  useAsk((surface === "density" || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
+  const mapping = surface === "homoMap" || surface === "lumoMap" || surface === "frontierMap";
+  // a map of a frontier orbital on the surface, or a plane through it, needs the orbitals of that side
+  const wantHomo = surface === "homoMap" || surface === "frontierMap" || sliceField === "homoMap";
+  const wantLumo = surface === "lumoMap" || surface === "frontierMap" || sliceField === "lumoMap";
+  const frontier = wantHomo || wantLumo;
+  useAsk((surface === "density" || mapping || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
   useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(surfaceModel, null, multiplicity, automatic));
   // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to
   const { sliceAxis, slicePosition } = useObservable(shared.properties);
@@ -68,21 +74,27 @@ export function App() {
   // a slice plane of orbitals needs them as much as the scene does, whether or not their surfaces are drawn
   const slicingOrbitals = isOrbitalSlice(sliceField);
   useEffect(() => {
-    if ((shownOrbital !== null || slicingOrbitals) && sessionId !== undefined) {
+    if ((shownOrbital !== null || slicingOrbitals || frontier) && sessionId !== undefined) {
       requestOrbitals(orbitalKind, orbitalFragmentsKey === "" ? [] : orbitalFragmentsKey.split(","));
     }
-  }, [shownOrbital, slicingOrbitals, orbitalKind, orbitalFragmentsKey, sessionId, version, requestOrbitals]);
+  }, [shownOrbital, slicingOrbitals, frontier, orbitalKind, orbitalFragmentsKey, sessionId, version, requestOrbitals]);
 
   // which orbitals to evaluate depends on the levels, so they are asked for once the levels for the structure as it is now arrive
   const levelsCurrent = answers(orbitals, orbitalKind, orbitalFragments) && orbitals.status === "complete" && orbitals.version === version;
   useEffect(() => {
-    if ((shownOrbital !== null || isOrbitalSlice(sliceField)) && levelsCurrent && orbitals !== null) {
+    if ((shownOrbital !== null || isOrbitalSlice(sliceField) || frontier) && levelsCurrent && orbitals !== null) {
       // the orbitals the scene draws and those the slice shows are asked for together, since a newer request replaces an older
-      const wanted = [...(shownOrbital !== null ? resolveTargets(orbitals, shownOrbital, orbitalCount) : []), ...(isOrbitalSlice(sliceField) ? sliceTargets(orbitals, sliceField, orbitalCount) : [])];
+      // a map of the frontier orbital on the density surface needs the HOMO or the LUMO of each set, whatever else is drawn
+      const wanted = [
+        ...(shownOrbital !== null ? resolveTargets(orbitals, shownOrbital, orbitalCount) : []),
+        ...(isOrbitalSlice(sliceField) ? sliceTargets(orbitals, sliceField, orbitalCount) : []),
+        ...(wantHomo ? frontierTargets(orbitals, "homo") : []),
+        ...(wantLumo ? frontierTargets(orbitals, "lumo") : []),
+      ];
       const same = (a: (typeof wanted)[number], b: (typeof wanted)[number]) => a.fragment === b.fragment && a.spin === b.spin && a.orbital === b.orbital;
       requestOrbital(orbitalKind, wanted.filter((target, at) => wanted.findIndex((other) => same(other, target)) === at));
     }
-  }, [shownOrbital, sliceField, orbitalKind, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
+  }, [shownOrbital, sliceField, wantHomo, wantLumo, orbitalKind, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
 
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {

@@ -53,9 +53,10 @@ export function clampForceScale(scale: number): number {
 /**
  * What is drawn as a surface: nothing, the electron density alone, the density coloured by the electrostatic potential, the spin density,
  * the difference density, which is what the molecules in the session do to one another's electrons, or the non-covalent contacts,
- * where atoms that are not bonded touch.
+ * where atoms that are not bonded touch, or the density coloured by how much of the HOMO (where an electrophile attacks) or the LUMO
+ * (where a nucleophile does) is there.
  */
-export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference" | "nci";
+export type SurfaceKind = "none" | "density" | "esp" | "spin" | "difference" | "nci" | "homoMap" | "lumoMap" | "frontierMap";
 
 /** What colours a surface of the electron density alone: nothing, or the element of the atom each part of it is nearest. */
 export type DensityColour = "single" | "element";
@@ -95,9 +96,9 @@ export function asSurfaceModel(value: unknown): OrbitalKind {
 }
 
 /** What a slice plane shows: none, which draws no plane, one of the densities a surface can be drawn of, or the electrostatic potential. */
-export type SliceField = "none" | "density" | "spin" | "difference" | "potential" | OrbitalSliceKind;
+export type SliceField = "none" | "density" | "spin" | "difference" | "potential" | "homoMap" | "lumoMap" | OrbitalSliceKind;
 
-const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "potential", "homo", "lumo", "frontier"];
+const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "potential", "homoMap", "lumoMap", "homo", "lumo", "frontier"];
 const SLICE_AXES: readonly SliceAxis[] = ["x", "y", "z"];
 
 /**

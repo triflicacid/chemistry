@@ -25,6 +25,7 @@ import {
 } from "../models/PropertiesModel";
 import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
 import {ATTRACTIVE, REPULSIVE, WEAK} from "../layout/nci";
+import {dualGradient, isFrontierMap, reactivityGradient} from "../layout/reactivity";
 import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArrows";
 import {useObservable} from "../models/observable";
 import {divergingGradient} from "../../render/scale";
@@ -50,6 +51,9 @@ const SURFACE_OPTIONS: { value: SurfaceKind; label: string; title: string }[] = 
   { value: "spin", label: "Spin density", title: "Where the unpaired electrons are: blue where spin up is in excess, red where spin down is. A molecule whose electrons all pair up has none" },
   { value: "difference", label: "Difference density", title: "The density of everything together less the densities of its molecules each on its own: blue where electrons gather as the molecules meet, red where they leave. Needs two or more molecules" },
   { value: "nci", label: "Non-covalent contacts", title: "Where atoms that are not bonded touch: the reduced density gradient is low there. Blue where the density is drawn together across the contact, as in a hydrogen bond, green where the atoms only touch, as in van der Waals contact, and red where they clash or are shut in a ring" },
+  { value: "homoMap", label: "HOMO on density", title: "The density surface coloured by how much of the HOMO is there, which is where an electrophile, wanting electrons, attacks: the frontier-orbital view of reactivity. Uses the Orbitals tab's calculation and molecule choice" },
+  { value: "lumoMap", label: "LUMO on density", title: "The density surface coloured by how much of the LUMO is there, which is where a nucleophile, giving electrons, attacks. Uses the Orbitals tab's calculation and molecule choice" },
+  { value: "frontierMap", label: "HOMO & LUMO on density", title: "Both frontier orbitals on the density surface: orange where the HOMO is more, which is where an electrophile attacks, and blue where the LUMO is more, where a nucleophile does. Each is first scaled to its own strongest value, and where both are as strong as each other, or neither is there, the surface is grey. Uses the Orbitals tab's calculation and molecule choice" },
   { value: "esp", label: "Potential on density", title: "The same surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive" },
 ];
 
@@ -59,6 +63,8 @@ const SLICE_OPTIONS: { value: SliceField; label: string; title: string }[] = [
   { value: "density", label: "Electron density", title: "The electron density across a plane through the molecule, which shows the inside of what a surface only encloses" },
   { value: "spin", label: "Spin density", title: "The spin density across a plane: blue where spin up is in excess, red where spin down is" },
   { value: "difference", label: "Difference density", title: "What the molecules do to one another's electrons, across a plane: blue where electrons gather, red where they leave" },
+  { value: "homoMap", label: "HOMO probability", title: "A plane through where the HOMO is, with the orbitals that share its energy added in, as in a degenerate pair, so that a ring's HOMO shows all the way round: where an electrophile attacks. Uses the Orbitals tab's calculation and molecule choice" },
+  { value: "lumoMap", label: "LUMO probability", title: "A plane through where the LUMO is, with the orbitals that share its energy added in: where a nucleophile attacks. Uses the Orbitals tab's calculation and molecule choice" },
   { value: "homo", label: "HOMO orbitals", title: "A plane through the HOMO and the orbitals below it, as many as the Orbitals tab's Show says, shown as the Orbitals tab shows its surfaces: the same level, colours and way of showing several. They need not be drawn in the scene" },
   { value: "lumo", label: "LUMO orbitals", title: "A plane through the LUMO and the orbitals above it, as many as the Orbitals tab's Show says, shown as the Orbitals tab shows its surfaces" },
   { value: "frontier", label: "Frontier orbitals", title: "A plane through the HOMO and the orbitals below it together with the LUMO and those above it, as many each as the Orbitals tab's Show says" },
@@ -73,6 +79,9 @@ const WORKING: Record<SurfaceKind, string> = {
   spin: "working out the spin density…",
   difference: "working out the difference density, which takes a calculation for each molecule…",
   nci: "working out the non-covalent contacts…",
+  homoMap: "working out the density…",
+  lumoMap: "working out the density…",
+  frontierMap: "working out the density…",
 };
 
 /** How often the running timer is redrawn. */
@@ -367,8 +376,9 @@ function SliceSummary({ field, models }: { field: SliceField; models: Models }) 
   const { density, densitySince, spin, spinSince, difference, differenceSince, plane, planeSince, state, orbitalsSince, fieldsAsked } = useSessionContext();
   const { colouring, display, combine } = useObservable(models.orbital);
   const orbitalSlice = isOrbitalSlice(field);
-  const result = orbitalSlice ? null : { density, spin, difference, potential: plane, none: null }[field];
-  const since = orbitalSlice ? (orbitalsSince !== null || fieldsAsked ? 0 : null) : { density: densitySince, spin: spinSince, difference: differenceSince, potential: planeSince, none: null }[field];
+  const frontierSlice = isFrontierMap(field);
+  const result = orbitalSlice || frontierSlice ? null : { density, spin, difference, potential: plane, none: null }[field];
+  const since = orbitalSlice || frontierSlice ? (orbitalsSince !== null || fieldsAsked ? 0 : null) : { density: densitySince, spin: spinSince, difference: differenceSince, potential: planeSince, none: null }[field];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = current && result && result.type !== "plane.result" ? decodeDensity(result) : null;
   const flat = current && plane && field === "potential" ? decodePlane(plane) : null;
@@ -381,8 +391,18 @@ function SliceSummary({ field, models }: { field: SliceField; models: Models }) 
 
   return (
     <>
-      {since !== null && orbitalSlice && <>working out the orbitals…</>}
-      {since !== null && !orbitalSlice && <Running startedAt={since} detail={field === "potential" ? "working out the potential on the plane…" : WORKING[field as SurfaceKind]} />}
+      {since !== null && (orbitalSlice || frontierSlice) && <>working out the orbitals…</>}
+      {since !== null && !orbitalSlice && !frontierSlice && <Running startedAt={since} detail={field === "potential" ? "working out the potential on the plane…" : WORKING[field as SurfaceKind]} />}
+      {frontierSlice && (
+        <div className="legend">
+          <div className="legend-bar" style={{ background: reactivityGradient(field === "homoMap" ? "homo" : "lumo") }} role="img" aria-label={`From where the ${field === "homoMap" ? "HOMO" : "LUMO"} is not to where it is most`} />
+          <div className="legend-labels">
+            <span>none</span>
+            <span>{field === "homoMap" ? "HOMO" : "LUMO"}</span>
+            <span>most</span>
+          </div>
+        </div>
+      )}
       {bySign && <Scale limit="2" unit="× surface level" label="From minus twice to plus twice the level the surface is drawn at" />}
       {potentialLimit !== null && <Scale limit={potentialLimit} unit="kcal/mol/e" label={`From minus ${potentialLimit} to plus ${potentialLimit} kilocalories per mole per charge`} />}
       {limit !== null && signed && <Scale limit={shown} unit="e/bohr³" label={`From minus ${shown} to plus ${shown} electrons per cubic bohr`} />}
@@ -513,8 +533,8 @@ function ChargeDetails() {
 /** How the calculation behind a surface is getting on, and for the potential what the colours mean. */
 function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: number }) {
   const { esp, espSince, nci, nciSince, density, densitySince, spin, spinSince, difference, differenceSince, state } = useSessionContext();
-  const result = { esp, nci, density, spin, difference, none: null }[kind];
-  const since = { esp: espSince, nci: nciSince, density: densitySince, spin: spinSince, difference: differenceSince, none: null }[kind];
+  const result = { esp, nci, density, homoMap: density, lumoMap: density, frontierMap: density, spin, difference, none: null }[kind];
+  const since = { esp: espSince, nci: nciSince, density: densitySince, homoMap: densitySince, lumoMap: densitySince, frontierMap: densitySince, spin: spinSince, difference: differenceSince, none: null }[kind];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = kind === "esp" && current && esp ? decodeEsp(esp) : null;
   const limit = decoded ? makeEspSurface(decoded, isovalue).limit : null;
@@ -538,6 +558,34 @@ function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: numbe
             <span style={{ color: NEGATIVE_LOBE }}>●</span> {kind === "spin" ? "spin down" : "lost"}
           </span>
           <Took milliseconds={result.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && (kind === "homoMap" || kind === "lumoMap") && density?.status === "complete" && (
+        <>
+          <div className="legend">
+            <div className="legend-bar" style={{ background: reactivityGradient(kind === "homoMap" ? "homo" : "lumo") }} role="img" aria-label={`From where the ${kind === "homoMap" ? "HOMO" : "LUMO"} is not to where it is most`} />
+            <div className="legend-labels">
+              <span>none</span>
+              <span>{kind === "homoMap" ? "HOMO" : "LUMO"}</span>
+              <span>most</span>
+            </div>
+          </div>
+          <Took milliseconds={density.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && kind === "frontierMap" && density?.status === "complete" && (
+        <>
+          <div className="legend">
+            <div className="legend-bar" style={{ background: dualGradient() }} role="img" aria-label="From where the HOMO is more, through where both or neither is, to where the LUMO is more" />
+            <div className="legend-labels">
+              <span>HOMO</span>
+              <span>both or neither</span>
+              <span>LUMO</span>
+            </div>
+          </div>
+          <Took milliseconds={density.elapsed_ms} />
           {current ? "" : " (updating…)"}
         </>
       )}
