@@ -1,11 +1,11 @@
 import type {GridShape} from "../../render/isosurface";
 import type {
-  FieldResult,
-  OrbitalChannel,
-  OrbitalLevel,
-  OrbitalsResult,
-  OrbitalTarget,
-  SessionState
+    FieldResult,
+    OrbitalChannel,
+    OrbitalLevel,
+    OrbitalsResult,
+    OrbitalTarget,
+    SessionState
 } from "../session/messages";
 import {MAX_SHOWN, type OrbitalChoice, type OrbitalScope} from "../models/OrbitalModel";
 
@@ -230,6 +230,33 @@ export function covers(choice: OrbitalChoice | null, count: number | null, place
   }
   const away = (place.offset - choice.offset) * outward(choice);
   return away >= 0 && away < Math.min(count ?? MAX_SHOWN, MAX_SHOWN);
+}
+
+/** Which orbitals a slice plane shows: the HOMO and those below it, the LUMO and those above it, or both. */
+export type OrbitalSliceKind = "homo" | "lumo" | "frontier";
+
+/**
+ * @param field what a slice plane shows
+ * @returns whether it shows orbitals
+ */
+export function isOrbitalSlice(field: string): field is OrbitalSliceKind {
+  return field === "homo" || field === "lumo" || field === "frontier";
+}
+
+/**
+ * Finds the orbitals a slice plane shows, in every set and molecule: as many from the gap as the number drawn says, on the side it is of.
+ *
+ * @param result the levels the server last said
+ * @param kind the HOMO and those below it, the LUMO and those above it, or both
+ * @param count how many orbitals, counted outward from the gap on each side, or null for every one up to {@link MAX_SHOWN}
+ * @returns the orbitals to evaluate
+ */
+export function sliceTargets(result: OrbitalsResult, kind: OrbitalSliceKind, count: number | null): OrbitalTarget[] {
+  if (kind === "frontier") {
+    return resolveTargets(result, { spin: result.channels[0]?.spin ?? "restricted", offset: 0, frontier: true }, count);
+  }
+  const offset = kind === "homo" ? 0 : 1;
+  return [...new Set(result.channels.map((channel) => channel.spin))].flatMap((spin) => resolveTargets(result, { spin, offset }, count));
 }
 
 /**

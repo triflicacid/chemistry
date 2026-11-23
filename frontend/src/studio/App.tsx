@@ -3,7 +3,7 @@ import {Workspace} from "./layout/Workspace";
 import {createModels} from "./models/models";
 import {TOOL_ORDER} from "./models/ToolModel";
 import {useObservable} from "./models/observable";
-import {answers, fragmentsFor, resolveTargets} from "./layout/orbitals";
+import {answers, fragmentsFor, isOrbitalSlice, resolveTargets, sliceTargets} from "./layout/orbitals";
 import {StateIndex} from "./geometry/StateIndex";
 import {useChemistry} from "./chemistry/useChemistry";
 import {useAsk} from "./session/warnings";
@@ -64,19 +64,24 @@ export function App() {
   // the molecules are named by an atom each, which is a new list on every render, so the list is kept as one string
   const orbitalFragments = fragmentsFor(orbitalScope, state);
   const orbitalFragmentsKey = orbitalFragments.join(",");
+  // a slice plane of orbitals needs them as much as the scene does, whether or not their surfaces are drawn
+  const slicingOrbitals = isOrbitalSlice(sliceField);
   useEffect(() => {
-    if (shownOrbital !== null && sessionId !== undefined) {
+    if ((shownOrbital !== null || slicingOrbitals) && sessionId !== undefined) {
       requestOrbitals(orbitalKind, orbitalFragmentsKey === "" ? [] : orbitalFragmentsKey.split(","));
     }
-  }, [shownOrbital, orbitalKind, orbitalFragmentsKey, sessionId, version, requestOrbitals]);
+  }, [shownOrbital, slicingOrbitals, orbitalKind, orbitalFragmentsKey, sessionId, version, requestOrbitals]);
 
   // which orbitals to evaluate depends on the levels, so they are asked for once the levels for the structure as it is now arrive
   const levelsCurrent = answers(orbitals, orbitalKind, orbitalFragments) && orbitals.status === "complete" && orbitals.version === version;
   useEffect(() => {
-    if (shownOrbital !== null && levelsCurrent && orbitals !== null) {
-      requestOrbital(orbitalKind, resolveTargets(orbitals, shownOrbital, orbitalCount));
+    if ((shownOrbital !== null || isOrbitalSlice(sliceField)) && levelsCurrent && orbitals !== null) {
+      // the orbitals the scene draws and those the slice shows are asked for together, since a newer request replaces an older
+      const wanted = [...(shownOrbital !== null ? resolveTargets(orbitals, shownOrbital, orbitalCount) : []), ...(isOrbitalSlice(sliceField) ? sliceTargets(orbitals, sliceField, orbitalCount) : [])];
+      const same = (a: (typeof wanted)[number], b: (typeof wanted)[number]) => a.fragment === b.fragment && a.spin === b.spin && a.orbital === b.orbital;
+      requestOrbital(orbitalKind, wanted.filter((target, at) => wanted.findIndex((other) => same(other, target)) === at));
     }
-  }, [shownOrbital, orbitalKind, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
+  }, [shownOrbital, sliceField, orbitalKind, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
 
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {

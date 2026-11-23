@@ -1,4 +1,5 @@
 import {ORBITAL_KINDS, type OrbitalKind} from "./OrbitalModel";
+import type {OrbitalSliceKind} from "../layout/orbitals";
 import type {SliceAxis} from "../layout/slice";
 import {Observable} from "./observable";
 
@@ -93,9 +94,9 @@ export function asSurfaceModel(value: unknown): OrbitalKind {
 }
 
 /** What a slice plane shows: none, which draws no plane, one of the densities a surface can be drawn of, or the electrostatic potential. */
-export type SliceField = "none" | "density" | "spin" | "difference" | "potential";
+export type SliceField = "none" | "density" | "spin" | "difference" | "potential" | OrbitalSliceKind;
 
-const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "potential"];
+const SLICE_FIELDS: readonly SliceField[] = ["none", "density", "spin", "difference", "potential", "homo", "lumo", "frontier"];
 const SLICE_AXES: readonly SliceAxis[] = ["x", "y", "z"];
 
 /**

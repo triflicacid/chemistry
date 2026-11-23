@@ -76,6 +76,8 @@ export interface OrbitalState {
   combine: OrbitalCombine;
   /** Whether the surfaces are drawn as solid skins or as outlines. */
   style: OrbitalStyle;
+  /** Which of the orbitals the slice plane takes, where it is shown one at a time, by its place among them. */
+  sliceOrbital: number;
 }
 
 /**
@@ -137,7 +139,7 @@ export type LevelBy = "isovalue" | "share";
 /** Which orbital is drawn in the scene, and how. It is not remembered between visits, since an orbital belongs to one structure. */
 export class OrbitalModel extends Observable<OrbitalState> {
   constructor() {
-    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE, combine: "separate", style: "solid" });
+    super({ selected: null, kind: "mulliken", scope: ALL, count: 1, colouring: "phase", isovalue: DEFAULT_ISOVALUE, opacity: DEFAULT_OPACITY, display: "amplitude", levelBy: "isovalue", share: DEFAULT_SHARE, combine: "separate", style: "solid", sliceOrbital: 0 });
   }
 
   /**
@@ -219,6 +221,15 @@ export class OrbitalModel extends Observable<OrbitalState> {
   displayTo(display: OrbitalDisplay): void {
     if (this.get().display !== display) {
       this.set({ ...this.get(), display });
+    }
+  }
+
+  /**
+   * @param sliceOrbital which of the orbitals drawn the slice plane cuts, by its place among them
+   */
+  sliceOrbitalTo(sliceOrbital: number): void {
+    if (this.get().sliceOrbital !== sliceOrbital) {
+      this.set({ ...this.get(), sliceOrbital });
     }
   }
 

@@ -2,7 +2,7 @@ import {Color} from "three";
 import {diverging, NEUTRAL_COLOUR} from "../../render/scale";
 import type {PlaneResult} from "../session/messages";
 import {autoLimit, type DecodedDensity, sampleGrid} from "./esp";
-import {decodeFloats} from "./orbitals";
+import {decodeFloats, type DrawnOrbital} from "./orbitals";
 
 /** The axis a slice plane is at right angles to. */
 export type SliceAxis = "x" | "y" | "z";
@@ -327,6 +327,34 @@ export function planeValueAt(plane: DecodedPlane, x: number, y: number, z: numbe
   const [di, dj] = [column - i, row - j];
   const at4 = (a: number, b: number) => plane.values[b * plane.width + a] as number;
   return (1 - dj) * ((1 - di) * at4(i, j) + di * at4(i + 1, j)) + dj * ((1 - di) * at4(i, j + 1) + di * at4(i + 1, j + 1));
+}
+
+/** What each orbital was made into a field of: its amplitude, and its probability. */
+const orbitalFields = new WeakMap<Float32Array, { amplitude?: DecodedDensity; probability?: DecodedDensity }>();
+
+/**
+ * Makes a field a slice can show of one of the orbitals drawn.
+ *
+ * @param drawn the orbitals drawn
+ * @param index which of them, by its place among them, held to the ones there are
+ * @param probability whether to show its probability, the squared amplitude, which is never negative, in place of its amplitude, which has a sign
+ * @returns the field, or null if there is no orbital drawn
+ */
+export function orbitalSliceField(drawn: readonly Pick<DrawnOrbital, "field">[], index: number, probability: boolean): DecodedDensity | null {
+  const picked = drawn[Math.max(0, Math.min(index, drawn.length - 1))];
+  if (!picked) {
+    return null;
+  }
+
+  const { values, shape } = picked.field;
+  const held = orbitalFields.get(values) ?? {};
+  orbitalFields.set(values, held);
+  if (probability) {
+    held.probability ??= { density: Float32Array.from(values, (value) => value * value), shape };
+    return held.probability;
+  }
+  held.amplitude ??= { density: values, shape };
+  return held.amplitude;
 }
 
 /**

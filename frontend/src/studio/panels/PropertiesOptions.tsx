@@ -25,10 +25,11 @@ import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArr
 import {useObservable} from "../models/observable";
 import {divergingGradient} from "../../render/scale";
 import {chargeScale} from "../layout/chargeScale";
-import type {ChargesProgress} from "../session/messages";
+import type {ChargesProgress, OrbitalTarget} from "../session/messages";
 import {useSessionContext} from "../session/SessionContext";
 import {ForceDebug} from "./ForceDebug";
 import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../layout/orbitalColours";
+import {isOrbitalSlice, nameOf, sliceTargets} from "../layout/orbitals";
 import {autoLimit, decodeDensity, decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
 import {decodePlane, sequentialGradient, type SliceAxis, sliceLimit} from "../layout/slice";
 
@@ -53,6 +54,9 @@ const SLICE_OPTIONS: { value: SliceField; label: string; title: string }[] = [
   { value: "density", label: "Electron density", title: "The electron density across a plane through the molecule, which shows the inside of what a surface only encloses" },
   { value: "spin", label: "Spin density", title: "The spin density across a plane: blue where spin up is in excess, red where spin down is" },
   { value: "difference", label: "Difference density", title: "What the molecules do to one another's electrons, across a plane: blue where electrons gather, red where they leave" },
+  { value: "homo", label: "HOMO orbitals", title: "A plane through the HOMO and the orbitals below it, as many as the Orbitals tab's Show says, shown as the Orbitals tab shows its surfaces: the same level, colours and way of showing several. They need not be drawn in the scene" },
+  { value: "lumo", label: "LUMO orbitals", title: "A plane through the LUMO and the orbitals above it, as many as the Orbitals tab's Show says, shown as the Orbitals tab shows its surfaces" },
+  { value: "frontier", label: "Frontier orbitals", title: "A plane through the HOMO and the orbitals below it together with the LUMO and those above it, as many each as the Orbitals tab's Show says" },
   { value: "potential", label: "Potential", title: "The electrostatic potential across a plane, worked out for the plane itself wherever it is slid to: red where it is negative, which attracts positive charge, and blue where it is positive" },
 ];
 
@@ -285,9 +289,10 @@ export function PropertiesOptions({ models }: { models: Models }) {
                 ))}
               </select>
             }
-            summary={sliceField !== "none" ? <SliceSummary field={sliceField} /> : null}
+            summary={sliceField !== "none" ? <SliceSummary field={sliceField} models={models} /> : null}
             details={
               <>
+                {isOrbitalSlice(sliceField) && <SliceOrbital models={models} field={sliceField} />}
                 <dt>Axis</dt>
                 <dd>
                   <select value={sliceAxis} aria-label="The axis the plane is at right angles to" onChange={(event) => properties.sliceAxisTo(event.target.value as SliceAxis)}>
@@ -329,10 +334,12 @@ export function PropertiesOptions({ models }: { models: Models }) {
 }
 
 /** How the calculation behind a slice is getting on, and what its colours mean. */
-function SliceSummary({ field }: { field: SliceField }) {
-  const { density, densitySince, spin, spinSince, difference, differenceSince, plane, planeSince, state } = useSessionContext();
-  const result = { density, spin, difference, potential: plane, none: null }[field];
-  const since = { density: densitySince, spin: spinSince, difference: differenceSince, potential: planeSince, none: null }[field];
+function SliceSummary({ field, models }: { field: SliceField; models: Models }) {
+  const { density, densitySince, spin, spinSince, difference, differenceSince, plane, planeSince, state, orbitalsSince, fieldsAsked } = useSessionContext();
+  const { colouring, display, combine } = useObservable(models.orbital);
+  const orbitalSlice = isOrbitalSlice(field);
+  const result = orbitalSlice ? null : { density, spin, difference, potential: plane, none: null }[field];
+  const since = orbitalSlice ? (orbitalsSince !== null || fieldsAsked ? 0 : null) : { density: densitySince, spin: spinSince, difference: differenceSince, potential: planeSince, none: null }[field];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = current && result && result.type !== "plane.result" ? decodeDensity(result) : null;
   const flat = current && plane && field === "potential" ? decodePlane(plane) : null;
@@ -340,10 +347,14 @@ function SliceSummary({ field }: { field: SliceField }) {
   const limit = decoded ? sliceLimit(decoded, signed) : null;
   const shown = limit === null ? "" : limit.toFixed(3);
   const potentialLimit = flat ? toKcalPerCharge(autoLimit(flat.values)).toFixed(0) : null;
+  // orbitals are coloured as the Orbitals tab colours them, so its key says what the colours are; only the sign has a scale of its own here
+  const bySign = orbitalSlice && colouring === "phase" && display === "amplitude" && combine !== "sum";
 
   return (
     <>
-      {since !== null && <Running startedAt={since} detail={field === "potential" ? "working out the potential on the plane…" : WORKING[field]} />}
+      {since !== null && orbitalSlice && <>working out the orbitals…</>}
+      {since !== null && !orbitalSlice && <Running startedAt={since} detail={field === "potential" ? "working out the potential on the plane…" : WORKING[field as SurfaceKind]} />}
+      {bySign && <Scale limit="2" unit="× surface level" label="From minus twice to plus twice the level the surface is drawn at" />}
       {potentialLimit !== null && <Scale limit={potentialLimit} unit="kcal/mol/e" label={`From minus ${potentialLimit} to plus ${potentialLimit} kilocalories per mole per charge`} />}
       {limit !== null && signed && <Scale limit={shown} unit="e/bohr³" label={`From minus ${shown} to plus ${shown} electrons per cubic bohr`} />}
       {limit !== null && !signed && (
@@ -355,6 +366,47 @@ function SliceSummary({ field }: { field: SliceField }) {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * Which of the orbitals a slice plane takes where it takes one at a time, or, for a sum, which side of the gap, since the filled and the empty
+ * are not summed together.
+ */
+function SliceOrbital({ models, field }: { models: Models; field: SliceField & ("homo" | "lumo" | "frontier") }) {
+  const { orbitals, state } = useSessionContext();
+  const { count, combine, sliceOrbital } = useObservable(models.orbital);
+  const targets = orbitals?.status === "complete" ? sliceTargets(orbitals, field, count) : [];
+  const spins = new Set(orbitals?.channels.map((channel) => channel.spin));
+  const homoOf = (target: OrbitalTarget) => orbitals?.channels.find((channel) => channel.fragment === target.fragment && channel.spin === target.spin)?.homo ?? -1;
+  const bothSides = targets.some((target) => target.orbital <= homoOf(target)) && targets.some((target) => target.orbital > homoOf(target));
+  const label = (target: OrbitalTarget) => {
+    const molecule = (state?.fragments.length ?? 0) > 1 ? `${(state?.fragments.findIndex((fragment) => target.fragment !== null && fragment.atoms.includes(target.fragment)) ?? 0) + 1}. ` : "";
+    return `${molecule}${spins.size > 1 ? (target.spin === "alpha" ? "↑ " : "↓ ") : ""}${nameOf(target.orbital, homoOf(target))}`;
+  };
+  // one at a time there is one to pick; merged there is nothing to pick unless both sides of the gap are in it, and a union takes everything
+  if (targets.length < 2 || combine === "union" || (combine !== "separate" && !bothSides)) {
+    return null;
+  }
+
+  return (
+    <>
+      <dt>{combine === "separate" ? "Orbital" : "Side"}</dt>
+      <dd>
+        <select
+          value={Math.min(sliceOrbital, targets.length - 1)}
+          aria-label={combine === "separate" ? "Which orbital the plane takes" : "Which side of the gap the plane sums"}
+          title={combine === "separate" ? "Which of the orbitals the plane takes, one at a time. Merge them with Combine in the Orbitals tab" : "Which side of the gap is summed: the filled and the empty orbitals are not summed together"}
+          onChange={(event) => models.orbital.sliceOrbitalTo(Number(event.target.value))}
+        >
+          {targets.map((target, at) => (
+            <option key={`${target.fragment}${target.spin}${target.orbital}`} value={at}>
+              {label(target)}
+            </option>
+          ))}
+        </select>
+      </dd>
     </>
   );
 }
