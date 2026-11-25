@@ -12,8 +12,8 @@ export interface Segment<T extends string> {
 export interface SegmentedProps<T extends string> {
   /** What the choices are a choice of, for anyone who cannot see the control. */
   label: string;
-  /** The choice that is selected. Exactly one is. */
-  value: T;
+  /** The choice that is selected, or null if none is, as when something that is not one of the choices has been chosen another way. */
+  value: T | null;
   options: readonly Segment<T>[];
   onChange: (value: T) => void;
 }
@@ -53,8 +53,8 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
             className="segment"
             data-value={option.value}
             aria-checked={selected}
-            // only the selected section is in the tab order, as for radio buttons
-            tabIndex={selected ? 0 : -1}
+            // only the selected section is in the tab order, as for radio buttons, or the first that can be chosen if none is selected
+            tabIndex={selected || (value === null && option === options.find((each) => !each.disabled)) ? 0 : -1}
             disabled={option.disabled}
             title={option.title}
             onClick={() => onChange(option.value)}

@@ -3,8 +3,10 @@ import {Workspace} from "./layout/Workspace";
 import {createModels} from "./models/models";
 import {TOOL_ORDER} from "./models/ToolModel";
 import {useObservable} from "./models/observable";
+import {answers, fragmentsFor, isOrbitalSlice, resolveTargets, sliceTargets} from "./layout/orbitals";
 import {StateIndex} from "./geometry/StateIndex";
 import {useChemistry} from "./chemistry/useChemistry";
+import {useAsk} from "./session/warnings";
 import {useSession} from "./session/useSession";
 import {SessionProvider} from "./session/SessionContext";
 import {KEYS} from "./keys/keymap";
@@ -19,7 +21,7 @@ export function App() {
   const store = useMemo(() => new LayoutStore(), []);
   const [layout, setLayout] = useState(store.layout);
   const session = useSession();
-  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo } = session;
+  const { phase, state, geometry, activity, submitSmiles, lockAtoms, undo, redo, requestCharges, requestForces, requestOrbitals, requestOrbital, orbitals, requestEsp, requestDensity, requestSpin, requestDifference, requestPlane } = session;
 
   const shared = useMemo(createModels, []);
   const chemistry = useChemistry(state);
@@ -36,6 +38,50 @@ export function App() {
       shared.hover.hover(null);
     }
   }, [index, shared]);
+
+  // charges are only worked out while something is coloured by them, and again whenever the session changes under them.
+  // The server waits for the session to be left alone, so a drag asks many times and is answered once
+  const { colourBy, chargeModel, forceArrows, surface, surfaceModel, multiplicity, sliceField } = useObservable(shared.properties);
+  const version = state?.version;
+  const sessionId = state?.session_id;
+  useAsk(colourBy === "charge" && sessionId !== undefined, chargeModel, version, (automatic) => requestCharges(chargeModel, automatic));
+
+  // forces are likewise only worked out while they are shown
+  useAsk(forceArrows && sessionId !== undefined, "", version, requestForces);
+
+  // the density and the potential are likewise only worked out while a surface or a slice of them is shown, for the whole session, with the calculation and multiplicity chosen for surfaces
+  const calculation = `${surfaceModel}|${multiplicity}`;
+  useAsk(surface === "esp" && sessionId !== undefined, calculation, version, (automatic) => requestEsp(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "density" || sliceField === "density") && sessionId !== undefined, calculation, version, (automatic) => requestDensity(surfaceModel, null, multiplicity, automatic));
+  useAsk((surface === "spin" || sliceField === "spin") && sessionId !== undefined, calculation, version, (automatic) => requestSpin(surfaceModel, null, multiplicity, automatic));
+  // the potential on a plane is worked out for the plane, so it is asked for again wherever the plane is slid to
+  const { sliceAxis, slicePosition } = useObservable(shared.properties);
+  useAsk(sliceField === "potential" && sessionId !== undefined, `${calculation}|${sliceAxis}`, version, (automatic) => requestPlane(surfaceModel, null, multiplicity, sliceAxis, slicePosition, automatic), String(slicePosition));
+  useAsk((surface === "difference" || sliceField === "difference") && sessionId !== undefined, calculation, version, (automatic) => requestDifference(surfaceModel, null, multiplicity, automatic));
+
+  // an orbital that is shown is worked out again whenever the session changes under it, as are the levels it is one of
+  const { selected: shownOrbital, kind: orbitalKind, scope: orbitalScope, count: orbitalCount } = useObservable(shared.orbital);
+  // the molecules are named by an atom each, which is a new list on every render, so the list is kept as one string
+  const orbitalFragments = fragmentsFor(orbitalScope, state);
+  const orbitalFragmentsKey = orbitalFragments.join(",");
+  // a slice plane of orbitals needs them as much as the scene does, whether or not their surfaces are drawn
+  const slicingOrbitals = isOrbitalSlice(sliceField);
+  useEffect(() => {
+    if ((shownOrbital !== null || slicingOrbitals) && sessionId !== undefined) {
+      requestOrbitals(orbitalKind, orbitalFragmentsKey === "" ? [] : orbitalFragmentsKey.split(","));
+    }
+  }, [shownOrbital, slicingOrbitals, orbitalKind, orbitalFragmentsKey, sessionId, version, requestOrbitals]);
+
+  // which orbitals to evaluate depends on the levels, so they are asked for once the levels for the structure as it is now arrive
+  const levelsCurrent = answers(orbitals, orbitalKind, orbitalFragments) && orbitals.status === "complete" && orbitals.version === version;
+  useEffect(() => {
+    if ((shownOrbital !== null || isOrbitalSlice(sliceField)) && levelsCurrent && orbitals !== null) {
+      // the orbitals the scene draws and those the slice shows are asked for together, since a newer request replaces an older
+      const wanted = [...(shownOrbital !== null ? resolveTargets(orbitals, shownOrbital, orbitalCount) : []), ...(isOrbitalSlice(sliceField) ? sliceTargets(orbitals, sliceField, orbitalCount) : [])];
+      const same = (a: (typeof wanted)[number], b: (typeof wanted)[number]) => a.fragment === b.fragment && a.spin === b.spin && a.orbital === b.orbital;
+      requestOrbital(orbitalKind, wanted.filter((target, at) => wanted.findIndex((other) => same(other, target)) === at));
+    }
+  }, [shownOrbital, sliceField, orbitalKind, orbitalCount, levelsCurrent, orbitals, requestOrbital]);
 
   // a drag changes the size at pointer rate, so the write waits for it to stop
   useEffect(() => {

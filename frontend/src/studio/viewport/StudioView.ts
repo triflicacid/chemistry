@@ -27,6 +27,16 @@ import {PointerRouter} from "./input/PointerRouter";
 import {RollRingInteraction} from "./input/RollRingInteraction";
 import {TriadInteraction} from "./input/TriadInteraction";
 import {Annotations} from "./scene/Annotations";
+import {ForceArrows, type ForceOptions} from "./scene/ForceArrows";
+import {HydrogenBondGuide} from "./scene/HydrogenBondGuide";
+import {MoleculeNumbers} from "./scene/MoleculeNumbers";
+import {FieldSurfaceMesh, type SurfacePart} from "./scene/FieldSurfaceMesh";
+import {SlicePlane} from "./scene/SlicePlane";
+import type {SliceDrawing} from "../layout/slice";
+import {type OrbitalDrawn, type OrbitalOptions, OrbitalSurface} from "./scene/OrbitalSurface";
+import type {DrawnOrbital} from "../layout/orbitals";
+import type {NumberedMolecule} from "../models/MoleculeNumbersModel";
+import type {HydrogenBondMark} from "../models/HydrogenBondModel";
 import {PanGuide} from "./scene/PanGuide";
 import {RingGuide} from "./scene/RingGuide";
 import {MoleculeScene, structureKeyOf} from "./scene/MoleculeScene";
@@ -34,7 +44,7 @@ import type {Emphasis} from "../models/items";
 import type {SystemView} from "../geometry/conjugation";
 import {ReferenceLayer} from "./scene/ReferenceLayer";
 import type {StudioViewListener} from "./StudioViewListener";
-import type {GeometryResult, SessionState} from "../session/messages";
+import type {ForcesResult, GeometryResult, SessionState} from "../session/messages";
 import type {AngleView, Pivot, Space, Tool, TorsionView} from "../models/ToolModel";
 import type {CameraEdit, CameraState} from "../models/CameraModel";
 import {type Binding, dispatchKey} from "../keys/binding";
@@ -57,6 +67,12 @@ export class StudioView {
   private readonly scene: MoleculeScene;
   /** What is marked on the molecule: strain, lengths, torsions and angles. */
   private readonly annotations: Annotations;
+  private readonly forceArrows: ForceArrows;
+  private readonly bondGuide: HydrogenBondGuide;
+  private readonly numbers: MoleculeNumbers;
+  private readonly orbital: OrbitalSurface;
+  private readonly fieldSurface: FieldSurfaceMesh;
+  private readonly slicePlane: SlicePlane;
   /** The camera, and the anchor the view is held on. */
   private readonly rig: CameraRig;
   /** The scene's axes, the grid and the guide for a move. */
@@ -106,6 +122,12 @@ export class StudioView {
     this.scene = new MoleculeScene(this.stage, this.kit);
     this.lock = new CameraLock(this.stage);
     this.annotations = new Annotations(this.stage, this.kit, this.scene);
+    this.forceArrows = new ForceArrows(this.stage, this.kit, this.scene);
+    this.bondGuide = new HydrogenBondGuide(this.stage, this.kit, this.scene);
+    this.numbers = new MoleculeNumbers(this.stage, this.kit, this.scene);
+    this.orbital = new OrbitalSurface(this.stage, this.scene);
+    this.fieldSurface = new FieldSurfaceMesh(this.stage, this.scene);
+    this.slicePlane = new SlicePlane(this.stage, this.scene);
     this.rig = new CameraRig(this.stage, this.scene, () => {
       this.reference.placeReferences();
       this.molecule.sync();
@@ -256,6 +278,12 @@ export class StudioView {
     this.scene.structureKey = structureKey;
     this.scene.clear();
     this.annotations.forget();
+    this.forceArrows.forget();
+    this.bondGuide.forget();
+    this.numbers.forget();
+    this.orbital.forget();
+    this.fieldSurface.forget();
+    this.slicePlane.forget();
     this.scene.build(state);
     this.annotations.drawSystem();
     this.scene.refreshLocks();
@@ -368,6 +396,97 @@ export class StudioView {
       this.scene.measured = measured;
       this.annotations.drawLengths();
     }
+  }
+
+  /**
+   * Draws atoms, and the halves of the bonds that join them, in colours of their own in place of their elements'.
+   *
+   * @param colours the colour of each atom to draw differently, by atom, or null to draw every atom as its element
+   */
+  colourAtoms(colours: ReadonlyMap<string, string> | null): void {
+    this.scene.colourAtoms(colours);
+  }
+
+  /**
+   * Labels the atoms that are strongly positive (δ+) or negative (δ−), except those with a formal charge.
+   *
+   * @param charges each atom's partial charge, by atom, or null to label none
+   * @param threshold how far from zero a partial charge must be, in elementary charges, to be labelled
+   */
+  labelPolarity(charges: ReadonlyMap<string, number> | null, threshold: number): void {
+    this.scene.labelPolarity(charges, threshold);
+  }
+
+  /**
+   * Draws the forces the other molecules put on each atom as arrows.
+   *
+   * @param result what the session said of the forces, which must be of the structure now shown, or null to show none
+   * @param options how to draw them
+   */
+  showForces(result: ForcesResult | null, options: ForceOptions): void {
+    this.forceArrows.show(result, options);
+  }
+
+  /**
+   * Draws a hydrogen bond as a dashed line with a note beside it.
+   *
+   * @param mark the bond, which must be between atoms of the structure now shown, or null to show none
+   */
+  showHydrogenBond(mark: HydrogenBondMark | null): void {
+    this.bondGuide.show(mark);
+  }
+
+  /**
+   * Writes a number at the middle of each of some molecules.
+   *
+   * @param molecules the molecules to number, which must be of the structure now shown, or none to number none
+   */
+  showMoleculeNumbers(molecules: readonly NumberedMolecule[]): void {
+    this.numbers.show(molecules);
+  }
+
+  /**
+   * Draws molecular orbitals as surfaces, two for each, one for each sign.
+   *
+   * @param orbitals the orbitals, with their values on grids in the structure's frame, which must be of the structure now shown, or none to show none
+   * @param options how to draw them
+   * @returns how many triangles the lobes have all together, or null if nothing is shown
+   */
+  showOrbitals(orbitals: readonly DrawnOrbital[], options: OrbitalOptions): OrbitalDrawn | null {
+    return this.orbital.show(orbitals, options);
+  }
+
+  /**
+   * Draws surfaces of a density, each in one colour or coloured at each vertex by something such as the electrostatic potential.
+   *
+   * @param parts the surfaces, in the structure's frame, which must be of the structure now shown, or none to show none
+   * @param opacity how opaque they are
+   */
+  showFieldSurface(parts: readonly SurfacePart[], opacity: number): void {
+    this.fieldSurface.show(parts, opacity);
+  }
+
+  /**
+   * Draws a field on a plane through the molecule, as a colour picture with lines of constant value across it.
+   *
+   * @param drawing the plane, in the structure's frame, which must be of the structure now shown, or null to show none
+   */
+  showSlice(drawing: SliceDrawing | null): void {
+    this.slicePlane.show(drawing);
+  }
+
+  /**
+   * @param event where the pointer is
+   * @returns what the pointer is over of a field, the surface or the slice plane, whichever is nearer the camera, and where, in the
+   *     structure's frame; or null if it is over neither
+   */
+  probeField(event: { clientX: number; clientY: number }): { on: "surface" | "slice"; at: { x: number; y: number; z: number } } | null {
+    const surface = this.fieldSurface.probe(event);
+    const slice = this.slicePlane.probe(event);
+    if (surface && (!slice || surface.distance <= slice.distance)) {
+      return { on: "surface", at: surface.point };
+    }
+    return slice ? { on: "slice", at: slice.point } : null;
   }
 
   /**

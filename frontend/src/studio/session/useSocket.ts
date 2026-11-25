@@ -23,6 +23,8 @@ export interface SessionLink {
   held: RefObject<SessionState | null>;
   adopt: (next: SessionState) => void;
   note: (message: string, failed?: boolean, preformatted?: boolean) => void;
+  /** Says that what was asked for cannot be done, as a warning rather than an error. */
+  warn: (message: string) => void;
 }
 
 export interface Socket extends SessionLink {
@@ -52,6 +54,10 @@ export function useSocket(api: ChemistryApi, events: RefObject<SocketEvents>): S
 
   const note = useCallback((message: string, failed = false, preformatted = false) => {
     setActivity((before) => [...before, { at: Date.now(), message, failed, preformatted }].slice(-HISTORY));
+  }, []);
+
+  const warn = useCallback((message: string) => {
+    setActivity((before) => [...before, { at: Date.now(), message, failed: false, warning: true }].slice(-HISTORY));
   }, []);
 
   const adopt = useCallback(
@@ -213,5 +219,5 @@ export function useSocket(api: ChemistryApi, events: RefObject<SocketEvents>): S
     [openSmiles],
   );
 
-  return { phase, state, geometry, activity, socketRef, held, adopt, note, openSmiles: submit };
+  return { phase, state, geometry, activity, socketRef, held, adopt, note, warn, openSmiles: submit };
 }

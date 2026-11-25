@@ -13,6 +13,25 @@ import com.ruben.chemistry.quantum.basis.ContractedGaussian;
 record HermitePair(double exponent, double[] centre, double[][] expansion, int order)
 {
     /**
+     * @return the product over the axes of the largest magnitude of any coefficient on that axis, which says how much
+     *     the product of primitives can matter
+     */
+    double magnitude()
+    {
+        double product = 1.0;
+        for (double[] axis : expansion)
+        {
+            double top = 0.0;
+            for (double coefficient : axis)
+            {
+                top = Math.max(top, Math.abs(coefficient));
+            }
+            product *= top;
+        }
+        return product;
+    }
+
+    /**
      * @param a the function the first primitive belongs to
      * @param i the index of the first primitive within {@code a}
      * @param b the function the second primitive belongs to

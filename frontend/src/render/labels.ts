@@ -1,4 +1,5 @@
-import { CanvasTexture, Object3D, Sprite, SpriteMaterial, Vector3 } from "three";
+import {CanvasTexture, Object3D, Sprite, SpriteMaterial, Vector3} from "three";
+import {NEGATIVE_COLOUR, POSITIVE_COLOUR} from "./scale";
 
 /** Makes text sprites */
 export class LabelFactory {
@@ -38,6 +39,23 @@ export class LabelFactory {
   }
 
   /**
+   * Makes a badge that says an atom is a little positive (δ+) or a little negative (δ−), which sits above the atom on
+   * screen, however the view is turned.
+   *
+   * @param parent the object the badge will be added to, whose transform maps `at` into the scene
+   * @param positive whether the atom is the positive end of a polar bond, rather than the negative
+   * @param at where the atom is, in `parent`'s space
+   * @param radius the radius the atom is drawn with
+   * @returns a sprite that the caller adds to `parent`
+   */
+  polarBadge(parent: Object3D, positive: boolean, at: Vector3, radius: number): Sprite {
+    const sprite = this.label(positive ? "δ+" : "δ−", positive ? POSITIVE_COLOUR : NEGATIVE_COLOUR, 0.4, true);
+    // anchoring the sprite's lower middle at the atom's centre, then pulling the anchor back, puts it above the atom on screen
+    sprite.center.set(0.5, -Math.max(radius, 0.15) * 0.9 / sprite.scale.y);
+    return this.follow(sprite, parent, at, radius);
+  }
+
+  /**
    * Makes a padlock badge that sits at the lower right of an atom on screen, however the view is turned.
    *
    * @param parent the object the badge will be added to, whose transform maps `at` into the scene
@@ -68,6 +86,19 @@ export class LabelFactory {
     // anchoring its upper left instead puts it at the lower right
     const pull = Math.max(radius, 0.15) * 0.75;
     sprite.center.set(-pull / sprite.scale.x, above ? -pull / sprite.scale.y : 1 + pull / sprite.scale.y);
+    return this.follow(sprite, parent, at, radius);
+  }
+
+  /**
+   * Keeps a sprite at an atom, moved out towards the camera so that it is in front of the atom whichever way it looks.
+   *
+   * @param sprite the badge, whose anchor the caller has set
+   * @param parent the object the badge will be added to, whose transform maps `at` into the scene
+   * @param at where the atom is, in `parent`'s space
+   * @param radius the radius the atom is drawn with
+   * @returns the sprite
+   */
+  private follow(sprite: Sprite, parent: Object3D, at: Vector3, radius: number): Sprite {
     sprite.position.copy(at);
     const lift = radius * 1.05;
     const toCamera = new Vector3();

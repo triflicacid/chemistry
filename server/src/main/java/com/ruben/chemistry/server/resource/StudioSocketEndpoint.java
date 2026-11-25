@@ -10,8 +10,14 @@ import com.ruben.chemistry.server.molecule.MoleculeStore;
 import com.ruben.chemistry.server.molecule.ParsedMolecule;
 import com.ruben.chemistry.server.molecule.StoredMolecule;
 import com.ruben.chemistry.server.molecule.StudioSnapshot;
+import com.ruben.chemistry.server.studio.ChargeModels;
+import com.ruben.chemistry.server.studio.ChargeScheduler;
+import com.ruben.chemistry.server.studio.FieldReport;
+import com.ruben.chemistry.server.studio.ForceScheduler;
 import com.ruben.chemistry.server.studio.GeometryScheduler;
 import com.ruben.chemistry.server.studio.OptimisationRunner;
+import com.ruben.chemistry.server.studio.OrbitalScheduler;
+import com.ruben.chemistry.server.studio.ScanScheduler;
 import com.ruben.chemistry.server.studio.StudioEditException;
 import com.ruben.chemistry.server.studio.StudioRequests;
 import com.ruben.chemistry.server.studio.StudioSession;
@@ -30,6 +36,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -41,7 +48,7 @@ import static com.ruben.chemistry.server.ws.WebSocketServer.DEFAULT_MAX_MESSAGE;
 public final class StudioSocketEndpoint extends SocketEndpoint
 {
     /** Bumped when a message type changes shape, so a stale client can be told to reload. */
-    private static final int PROTOCOL_VERSION = 14;
+    private static final int PROTOCOL_VERSION = 29;
 
     /** Which session a connection is holding, if any. */
     private static final String HELD = "studio.session";
@@ -50,6 +57,10 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     private final StudioSessionStore sessions;
     private final GeometryScheduler geometry;
     private final OptimisationRunner optimiser;
+    private final ChargeScheduler charges;
+    private final ForceScheduler forces;
+    private final ScanScheduler scans;
+    private final OrbitalScheduler orbitals;
     private final MoleculeParser parser = new MoleculeParser();
 
     /** The connection each session's results are sent to, which is the one holding it. */
@@ -90,6 +101,64 @@ public final class StudioSocketEndpoint extends SocketEndpoint
      */
     public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser)
     {
+        this(molecules, sessions, geometry, optimiser, new ChargeScheduler(ChargeScheduler.DEFAULT_DEBOUNCE));
+    }
+
+    /**
+     * @param molecules the molecules a session can be opened on
+     * @param sessions where to hold the open sessions
+     * @param geometry what examines a session's geometry once it has been left alone
+     * @param optimiser what relaxes a session's geometry when asked to
+     * @param charges what works out the partial charges of a session's atoms when asked to
+     */
+    public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges)
+    {
+        this(molecules, sessions, geometry, optimiser, charges, new ForceScheduler(ForceScheduler.DEFAULT_DEBOUNCE));
+    }
+
+    /**
+     * @param molecules the molecules a session can be opened on
+     * @param sessions where to hold the open sessions
+     * @param geometry what examines a session's geometry once it has been left alone
+     * @param optimiser what relaxes a session's geometry when asked to
+     * @param charges what works out the partial charges of a session's atoms when asked to
+     * @param forces what works out the forces on a session's atoms when asked to
+     */
+    public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges, ForceScheduler forces)
+    {
+        this(molecules, sessions, geometry, optimiser, charges, forces, new ScanScheduler(ScanScheduler.DEFAULT_DEBOUNCE));
+    }
+
+    /**
+     * @param molecules the molecules a session can be opened on
+     * @param sessions where to hold the open sessions
+     * @param geometry what examines a session's geometry once it has been left alone
+     * @param optimiser what relaxes a session's geometry when asked to
+     * @param charges what works out the partial charges of a session's atoms when asked to
+     * @param forces what works out the forces on a session's atoms when asked to
+     * @param scans what scans two of a session's molecules along a hydrogen bond when asked to
+     */
+    public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges, ForceScheduler forces, ScanScheduler scans)
+    {
+        this(molecules, sessions, geometry, optimiser, charges, forces, scans, new OrbitalScheduler(OrbitalScheduler.DEFAULT_DEBOUNCE));
+    }
+
+    /**
+     * @param molecules the molecules a session can be opened on
+     * @param sessions where to hold the open sessions
+     * @param geometry what examines a session's geometry once it has been left alone
+     * @param optimiser what relaxes a session's geometry when asked to
+     * @param charges what works out the partial charges of a session's atoms when asked to
+     * @param forces what works out the forces on a session's atoms when asked to
+     * @param scans what scans two of a session's molecules along a hydrogen bond when asked to
+     * @param orbitals what works out a session's molecular orbitals when asked to
+     */
+    public StudioSocketEndpoint(MoleculeStore molecules, StudioSessionStore sessions, GeometryScheduler geometry, OptimisationRunner optimiser, ChargeScheduler charges, ForceScheduler forces, ScanScheduler scans, OrbitalScheduler orbitals)
+    {
+        this.orbitals = Objects.requireNonNull(orbitals, "orbitals");
+        this.scans = Objects.requireNonNull(scans, "scans");
+        this.charges = Objects.requireNonNull(charges, "charges");
+        this.forces = Objects.requireNonNull(forces, "forces");
         this.molecules = Objects.requireNonNull(molecules, "molecules");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.geometry = Objects.requireNonNull(geometry, "geometry");
@@ -608,6 +677,437 @@ public final class StudioSocketEndpoint extends SocketEndpoint
     }
 
     /**
+     * Asks for the partial charges of a session's atoms, as the geometry is when they have been calculated. The answer
+     * says only that the request was understood; {@code charges.progress} follows while they are worked out, and the
+     * charges as {@code charges.result}, from another thread. Both are dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestCharges(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.ChargesRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.ChargesRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("charges.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("charges.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        String model = request.model() == null ? ChargeModels.DEFAULT : request.model();
+        if (!ChargeModels.exists(model))
+        {
+            context.error("charges.request", sequence, "UNKNOWN_MODEL",
+                    "No charge model is called '" + model + "'; use one of " + ChargeModels.IDS);
+            return;
+        }
+
+        charges.schedule(session, model, progress -> sendToHolder(session, progress), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "charges.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for the forces on a session's atoms, as the geometry is when they have been calculated. The answer says only
+     * that the request was understood; the forces follow, from another thread, as {@code forces.result}, which is dropped
+     * if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestForces(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.ForcesRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.ForcesRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("forces.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("forces.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        forces.schedule(session, report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "forces.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for a scan of two of a session's molecules along a hydrogen bond, as the geometry is when it has been calculated.
+     * The answer says only that the request was understood; the scan follows, from another thread, as {@code scan.result},
+     * which is dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestScan(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.ScanRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.ScanRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("scan.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("scan.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        scans.schedule(session, report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "scan.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for the energy levels of a session's molecular orbitals, as the geometry is when they have been calculated. The
+     * answer says only that the request was understood; the levels follow, from another thread, as {@code orbitals.result},
+     * which is dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestOrbitals(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.OrbitalsRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.OrbitalsRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("orbitals.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("orbitals.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        orbitals.levels(session, request.model(), request.fragments(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "orbitals.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for a field over a session's space, such as the values of one orbital, as the geometry is when it has been
+     * calculated. The answer says only that the request was understood; the field follows, from another thread, as
+     * {@code field.result}, which is dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestField(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.FieldRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.FieldRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("field.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("field.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+        List<StudioRequests.FieldTarget> targets = request.targets() == null ? List.of() : request.targets();
+        if (!FieldReport.ORBITAL.equals(request.kind()) || targets.isEmpty() || targets.stream().anyMatch(target -> target.orbital() == null || target.spin() == null))
+        {
+            context.error("field.request", sequence, "UNKNOWN_FIELD",
+                    "Only fields of kind '" + FieldReport.ORBITAL + "' can be calculated, and each target needs an orbital index and a spin");
+            return;
+        }
+
+        orbitals.orbitals(session, request.model(),
+                targets.stream().map(target -> new OrbitalScheduler.Target(target.fragment(), target.spin(), target.orbital())).toList(),
+                reports -> reports.forEach(report -> sendToHolder(session, report)));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "field.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for how the orbitals of everything in a session together are made of those of its molecules on their own. The answer
+     * says only that the request was understood; the diagram follows, from another thread, as {@code interaction.result}, which is
+     * dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestInteraction(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.InteractionRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.InteractionRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("interaction.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("interaction.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        orbitals.interaction(session, request.model(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "interaction.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for the electron density of a session, with its electrostatic potential, on a grid round its atoms. The answer says only that the
+     * request was understood; the field follows, from another thread, as {@code esp.result}, which is dropped if the
+     * session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestEsp(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.EspRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.EspRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("esp.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("esp.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        orbitals.potential(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "esp.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Asks for the electron density of a session, on a grid round its atoms. The answer says only that the request was understood; the
+     * field follows, from another thread, as {@code density.result}, which is dropped if the session has moved on by then.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestDensity(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        densityRequest(context, body, sequence, "density.request",
+                (session, request) -> orbitals.density(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report)));
+    }
+
+    /**
+     * Asks for the spin density of a session, on a grid round its atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestSpin(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        densityRequest(context, body, sequence, "spin.request",
+                (session, request) -> orbitals.spin(session, request.model(), request.fragment(), request.multiplicity(), report -> sendToHolder(session, report)));
+    }
+
+    /**
+     * Asks for the difference density of a session, on a grid round its atoms.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestDifference(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        densityRequest(context, body, sequence, "difference.request",
+                (session, request) -> orbitals.difference(session, request.model(), request.multiplicity(), report -> sendToHolder(session, report)));
+    }
+
+    /**
+     * Asks for the electrostatic potential of a session on a flat grid across its molecules. The answer says only that the request was
+     * understood; the field follows, from another thread, as {@code plane.result}, which is dropped if the session has moved on by then or
+     * a newer request for a plane has been made.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @throws IOException if the connection cannot be written
+     */
+    private void requestPlane(WebSocketContext context, Map<String, Object> body, Long sequence) throws IOException
+    {
+        StudioRequests.PlaneRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.PlaneRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error("plane.request", sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error("plane.request", sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        orbitals.plane(session, request.model(), request.fragment(), request.multiplicity(), request.axis(),
+                request.position() == null ? 0.5 : request.position(), report -> sendToHolder(session, report));
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", "plane.request.ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
+     * Reads a request for some density.
+     *
+     * @param context the connection that asked
+     * @param body the message
+     * @param sequence the message's sequence number, if it had one
+     * @param requestType the type of the message, whose acknowledgement is the same with {@code .ack} after it
+     * @param schedule asks the scheduler for the density
+     * @throws IOException if the connection cannot be written
+     */
+    private void densityRequest(WebSocketContext context, Map<String, Object> body, Long sequence, String requestType,
+                                BiConsumer<StudioSession, StudioRequests.DensityRequest> schedule) throws IOException
+    {
+        StudioRequests.DensityRequest request;
+        try
+        {
+            request = payload(body, StudioRequests.DensityRequest.class);
+        }
+        catch (JsonException malformed)
+        {
+            context.error(requestType, sequence, "INVALID_MESSAGE", malformed.getMessage());
+            return;
+        }
+
+        StudioSession session = request.sessionId() == null
+                ? null
+                : sessions.find(request.sessionId()).orElse(null);
+        if (session == null)
+        {
+            context.error(requestType, sequence, "NO_SESSION",
+                    "No session is open as '" + request.sessionId() + "'; open one on a molecule");
+            return;
+        }
+
+        schedule.accept(session, request);
+
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("type", requestType + ".ack");
+        ack.put("sequence", sequence);
+        context.sendJson(ack);
+    }
+
+    /**
      * Stops the session's optimisation, which then ends with a {@code cancelled} result.
      *
      * @param context the connection that asked
@@ -677,6 +1177,9 @@ public final class StudioSocketEndpoint extends SocketEndpoint
             reply.put("strain_before", result.strainBefore());
             reply.put("strain_after", result.strainAfter());
             reply.put("iterations", result.iterations());
+            reply.put("energy_history", result.history().stream()
+                    .map(step -> Map.of("iteration", step.iteration(), "energy", step.energy()))
+                    .toList());
             reply.put("warnings", result.warnings());
             reply.put("message", result.message());
             sendToHolder(session, reply);
@@ -1489,6 +1992,17 @@ public final class StudioSocketEndpoint extends SocketEndpoint
                     Map.entry("bond.order", endpoint::bondOrder),
                     Map.entry("optimise.start", endpoint::optimise),
                     Map.entry("optimise.cancel", endpoint::cancelOptimise),
+                    Map.entry("charges.request", endpoint::requestCharges),
+                    Map.entry("forces.request", endpoint::requestForces),
+                    Map.entry("scan.request", endpoint::requestScan),
+                    Map.entry("orbitals.request", endpoint::requestOrbitals),
+                    Map.entry("field.request", endpoint::requestField),
+                    Map.entry("interaction.request", endpoint::requestInteraction),
+                    Map.entry("esp.request", endpoint::requestEsp),
+                    Map.entry("density.request", endpoint::requestDensity),
+                    Map.entry("spin.request", endpoint::requestSpin),
+                    Map.entry("difference.request", endpoint::requestDifference),
+                    Map.entry("plane.request", endpoint::requestPlane),
                     Map.entry("edit.undo", endpoint::undo),
                     Map.entry("edit.redo", endpoint::redo),
                     Map.entry("history.list", endpoint::history),

@@ -12,6 +12,7 @@ import com.ruben.chemistry.quantum.linalg.Orthogonaliser;
 import com.ruben.chemistry.quantum.linalg.SymmetricEigen;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 /**
  * Unrestricted Hartree-Fock, the Pople-Nesbet equations: spin-up and spin-down electrons occupy different
@@ -99,6 +100,7 @@ public final class UnrestrictedScf
             throw new IllegalArgumentException("give the spin with more electrons first: " + alphaElectrons + " spin-up and " + betaElectrons + " spin-down");
         }
 
+        settings.listener().stage(ScfListener.INTEGRALS);
         Matrix overlap = OneElectronIntegrals.overlapMatrix(basis);
         Matrix core = OneElectronIntegrals.coreHamiltonian(basis, nuclei);
         if (!cores.isEmpty())
@@ -116,7 +118,7 @@ public final class UnrestrictedScf
         }
 
         // the core guess ignores electron repulsion, so both spins fill the same lowest orbitals of the core Hamiltonian
-        Matrix start = guess == null ? diagonalise(core, transform).coefficients() : checkedGuess(guess, overlap.rows(), alphaElectrons);
+        Matrix start = guess == null ? diagonalise(InitialGuess.fock(core, overlap), transform).coefficients() : checkedGuess(guess, overlap.rows(), alphaElectrons);
         Orbitals alpha;
         Orbitals beta;
         Matrix alphaDensity = density(start, alphaElectrons);
@@ -127,6 +129,7 @@ public final class UnrestrictedScf
         }
         Matrix betaDensity = density(betaCoefficients, betaElectrons);
 
+        settings.listener().stage(ScfListener.ITERATING);
         Diis diis = new Diis(Math.max(settings.diisSize(), 1));
         double previousEnergy = 0.0;
         for (int iteration = 1; iteration <= settings.maxIterations(); iteration++)
@@ -148,6 +151,7 @@ public final class UnrestrictedScf
             Matrix errorBeta = transform.transpose().times(commutator(fockBeta, betaDensity, overlap)).times(transform);
             double rms = Math.max(errorAlpha.frobeniusNorm(), errorBeta.frobeniusNorm()) / errorAlpha.rows();
 
+            settings.listener().iteration(iteration, totalEnergy, rms);
             boolean converged = iteration > 1 && Math.abs(totalEnergy - previousEnergy) < settings.energyTolerance() && rms < settings.errorTolerance();
             if (converged || iteration == settings.maxIterations())
             {
@@ -279,7 +283,8 @@ public final class UnrestrictedScf
     static void twoElectron(ElectronRepulsionTensor repulsion, Matrix total, Matrix alpha, Matrix beta, Matrix coulomb, Matrix exchangeAlpha, Matrix exchangeBeta)
     {
         int n = total.rows();
-        for (int mu = 0; mu < n; mu++)
+        // each row of the three results is made on its own
+        IntStream.range(0, n).parallel().forEach(mu ->
         {
             for (int nu = 0; nu < n; nu++)
             {
@@ -300,6 +305,6 @@ public final class UnrestrictedScf
                 exchangeAlpha.set(mu, nu, kAlpha);
                 exchangeBeta.set(mu, nu, kBeta);
             }
-        }
+        });
     }
 }

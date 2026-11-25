@@ -843,6 +843,28 @@ public final class StudioSession
     }
 
     /**
+     * The working geometry at one version, with which atom each of its sites is, taken together so that they agree.
+     *
+     * @param version the version of the session this describes
+     * @param structure the working geometry as the structure that saving stores
+     * @param sites the atom each site of {@code structure} is, in site order
+     */
+    public record Described(long version, Structure3D structure, List<String> sites)
+    {
+    }
+
+    /**
+     * Takes the geometry as it is now, so that something calculated from it can be given back to the atoms it is of.
+     *
+     * @return the geometry, which atom each site of it is, and the version it is at
+     */
+    public synchronized Described describe()
+    {
+        StructureExport stored = export();
+        return new Described(version, stored.structure(geometry), List.copyOf(stored.sites()));
+    }
+
+    /**
      * Says which atoms are locked in the terms a stored structure uses, which survive the session's own identifiers
      * being issued afresh.
      *

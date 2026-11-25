@@ -14,6 +14,7 @@
   --accent: #0969da;
   --hover: #d4a017;
   --bad: #b42318;
+  --warn: #b54708;
   --selected-fill: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
@@ -474,6 +475,18 @@ body.resizing {
   justify-content: flex-end;
 }
 
+.field-probe {
+  position: absolute;
+  pointer-events: none;
+  padding: 0.15rem 0.4rem;
+  font: 0.75rem/1.3 ui-monospace, monospace;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
 .viewport-hint {
   font-size: 0.8rem;
   color: var(--ink-soft);
@@ -659,7 +672,7 @@ body.resizing {
 }
 
 .ring-smiles {
-  font-family: var(--mono, monospace);
+  font-family: ui-monospace, monospace;
   word-break: break-all;
 }
 
@@ -727,6 +740,7 @@ body.resizing {
 
 /* a choice from a list looks like the buttons beside it */
 .properties select,
+.energy-actions select,
 .viewport-tools select {
   font: inherit;
   font-family: ui-monospace, monospace;
@@ -740,18 +754,21 @@ body.resizing {
 }
 
 .properties select:hover:not(:disabled),
+.energy-actions select:hover:not(:disabled),
 .viewport-tools select:hover:not(:disabled) {
   border-color: var(--hover);
   background-color: color-mix(in srgb, var(--hover) 25%, transparent);
 }
 
 .properties select:focus-visible,
+.energy-actions select:focus-visible,
 .viewport-tools select:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 
 .properties select:disabled,
+.energy-actions select:disabled,
 .viewport-tools select:disabled {
   color: var(--ink-soft);
   cursor: default;
@@ -760,7 +777,9 @@ body.resizing {
 /* the open list is drawn by the browser, so it needs a solid background that follows the theme */
 .properties select option,
 .properties select optgroup,
+.energy-actions select option,
 .viewport-tools select option,
+.energy-actions select optgroup,
 .viewport-tools select optgroup {
   color: var(--ink);
   background-color: var(--panel);
@@ -911,6 +930,10 @@ body.resizing {
   color: var(--bad);
 }
 
+.activity .warning {
+  color: var(--warn);
+}
+
 .analysis-tabs {
   margin-bottom: 0.4rem;
 }
@@ -1043,6 +1066,10 @@ body.resizing {
   border-left-color: var(--accent);
 }
 
+.popup-warn {
+  border-left-color: var(--warn);
+}
+
 .optimise-bad,
 .popup-bad {
   border-left-color: var(--bad);
@@ -1133,8 +1160,103 @@ body.resizing {
   cursor: pointer;
 }
 
+/* the groups of the Properties section: a row with the switch, a line of status under it, and the settings folded away */
+.properties-groups {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.15rem;
+  /* several groups unfolded at once must not push the Outliner out of the window */
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.prop-group {
+  padding: 0.25rem 0;
+  font-size: 0.8rem;
+}
+
+.prop-group + .prop-group {
+  border-top: 1px solid var(--edge);
+}
+
+.prop-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.prop-twisty {
+  flex: none;
+  width: 1rem;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.prop-title {
+  flex: none;
+  width: 3.4rem;
+  color: var(--ink-soft);
+}
+
+.prop-control {
+  flex: 1;
+  min-width: 0;
+}
+
+.prop-control select {
+  width: 100%;
+}
+
+.prop-summary {
+  margin: 0.2rem 0 0 1.3rem;
+}
+
+.prop-details {
+  margin: 0.25rem 0 0 1.3rem;
+}
+
 .render-body {
   margin: 0.15rem 0 0;
+}
+
+/* the colour scale of a calculated property, and the words under it */
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.legend-bar {
+  height: 0.6rem;
+  border-radius: 3px;
+  border: 1px solid var(--edge);
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted, inherit);
+}
+
+.legend-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.legend-key {
+  margin-right: 0.5rem;
+  white-space: nowrap;
+}
+
+.legend-note {
+  font-size: 0.8rem;
 }
 
 .render-slider {
@@ -1147,4 +1269,326 @@ body.resizing {
 .render-value {
   min-width: 2.6rem;
   text-align: right;
+}
+
+/* charts */
+.line-chart {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+  position: relative;
+  user-select: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .line-chart {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #0ca30c;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+
+.line-chart svg {
+  display: block;
+  touch-action: none;
+}
+
+.line-chart-draggable {
+  cursor: ew-resize;
+}
+
+.line-chart-empty {
+  height: 0;
+}
+
+.chart-grid {
+  stroke: var(--edge);
+  stroke-width: 1;
+}
+
+.chart-axis {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.chart-tick,
+.chart-title {
+  fill: var(--ink-soft);
+  font-size: 10px;
+}
+
+.chart-reference {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-series path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-series circle,
+.chart-hover circle {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.chart-series-1 { stroke: var(--series-1); fill: var(--series-1); color: var(--series-1); }
+.chart-series-2 { stroke: var(--series-2); fill: var(--series-2); color: var(--series-2); }
+.chart-series-3 { stroke: var(--series-3); fill: var(--series-3); color: var(--series-3); }
+.chart-series-4 { stroke: var(--series-4); fill: var(--series-4); color: var(--series-4); }
+.chart-series-5 { stroke: var(--series-5); fill: var(--series-5); color: var(--series-5); }
+.chart-series-6 { stroke: var(--series-6); fill: var(--series-6); color: var(--series-6); }
+.chart-series-7 { stroke: var(--series-7); fill: var(--series-7); color: var(--series-7); }
+.chart-series-8 { stroke: var(--series-8); fill: var(--series-8); color: var(--series-8); }
+
+.chart-muted {
+  opacity: 0.4;
+}
+
+.chart-muted path {
+  stroke-width: 1.5;
+}
+
+.chart-marker line,
+.chart-hover line {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.chart-marker circle {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--panel);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.chart-key {
+  stroke: none;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  margin: 0;
+  padding: 0 0 0 56px;
+  list-style: none;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.energy-plots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.energy-plots h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.energy-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.energy-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.debug-note {
+  color: var(--ink-soft);
+  font-family: ui-monospace, monospace;
+}
+
+.debug-table {
+  border-collapse: collapse;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+.debug-table th,
+.debug-table td {
+  padding: 0 0.5rem 0 0;
+  text-align: right;
+}
+
+.debug-table th:first-child,
+.debug-table td:first-child {
+  text-align: left;
+}
+
+.debug-table th {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.debug-table tr[data-hidden="true"] {
+  opacity: 0.5;
+}
+
+.debug-table-cell {
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.chart-bar {
+  stroke: none;
+}
+
+.chart-name {
+  fill: var(--ink);
+  font-size: 11px;
+}
+
+.chart-net {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.chart-zero {
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+
+.chart-net-key {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.chart-legend-flush {
+  padding-left: 12px;
+}
+
+/* orbital energy levels */
+.level {
+  cursor: pointer;
+  outline: none;
+}
+
+.level-hit {
+  fill: transparent;
+}
+
+.level-line {
+  stroke: var(--ink-soft);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+  stroke-linecap: round;
+}
+
+.level-occupied .level-line {
+  stroke: var(--ink);
+  stroke-dasharray: none;
+}
+
+.level:hover .level-line,
+.level:focus-visible .level-line {
+  stroke: var(--accent);
+}
+
+.level-selected .level-line {
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-dasharray: none;
+}
+
+.level-electrons {
+  fill: var(--ink-soft);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.orbital-buttons {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.debug-table td[data-best="true"] {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* bars and the lines of an interaction diagram */
+.bar-hit {
+  fill: transparent;
+}
+
+.bar-clickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.bar-clickable:hover .chart-bar,
+.bar-clickable:focus-visible .chart-bar {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.bar-picked .chart-bar {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.link {
+  fill: none;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.link:hover {
+  opacity: 1;
+}
+
+.level-pi .level-line {
+  stroke: var(--series-2);
+}
+
+.level-selected.level-pi .level-line {
+  stroke: var(--accent);
+}
+
+/* the key of orbitals coloured by energy: a bar along the energy axis, a line saying what it means, and each orbital's energy under it */
+.energy-scale {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.25rem;
+}
+
+.energy-explained {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--ink-soft);
+  white-space: normal;
 }

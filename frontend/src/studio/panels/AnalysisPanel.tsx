@@ -6,6 +6,8 @@ import {useSessionContext} from "../session/SessionContext";
 import {describeFinding, isCurrent} from "../layout/findings";
 import {describeOutcome} from "./optimisation";
 import {type Segment, Segmented} from "../controls/Segmented";
+import {EnergyPlots} from "./EnergyPlots";
+import {OrbitalsPanel} from "./OrbitalsPanel";
 
 export interface AnalysisPanelProps {
   activity: Activity[];
@@ -15,10 +17,12 @@ export interface AnalysisPanelProps {
   models: Models;
 }
 
-type Tab = "geometry" | "activity";
+type Tab = "geometry" | "energy" | "orbitals" | "activity";
 
 const TABS: Segment<Tab>[] = [
   { value: "geometry", label: "Geometry" },
+  { value: "energy", label: "Energy" },
+  { value: "orbitals", label: "Orbitals" },
   { value: "activity", label: "Activity" },
 ];
 
@@ -37,6 +41,10 @@ export function AnalysisPanel({ activity, state, geometry, models }: AnalysisPan
           {outcome && <LastOptimisation outcome={outcome} />}
           <GeometryView state={state} geometry={geometry} models={models} />
         </>
+      ) : tab === "energy" ? (
+        <EnergyPlots state={state} models={models} />
+      ) : tab === "orbitals" ? (
+        <OrbitalsPanel state={state} models={models} />
       ) : (
         <ActivityLog activity={activity} />
       )}
@@ -124,7 +132,7 @@ function ActivityLog({ activity }: { activity: Activity[] }) {
   return (
     <ol className="activity" ref={end}>
       {activity.map((line) => (
-        <li key={`${line.at}-${line.message}`} className={line.failed ? "failed" : undefined}>
+        <li key={`${line.at}-${line.message}`} className={line.failed ? "failed" : line.warning ? "warning" : undefined}>
           <time>{clock(line.at)}</time>
           <pre>{line.message}</pre>
         </li>

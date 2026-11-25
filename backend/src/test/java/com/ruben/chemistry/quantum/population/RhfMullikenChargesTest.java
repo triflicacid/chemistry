@@ -57,6 +57,18 @@ class RhfMullikenChargesTest
     }
 
     @Test
+    void should_converge_for_triflic_acid_whose_core_hamiltonian_guess_never_settles()
+    {
+        Structure3D acid = structure("OS(=O)(=O)C(F)(F)F");
+
+        PartialCharges charges = MODEL.calculate(acid, 0);
+
+        assertThat(charges.total()).isCloseTo(0.0, within(1e-6));
+        assertThat(charges.bySite().get(indexOf(acid, "S"))).isPositive();
+        assertThat(charges.bySite().get(indexOf(acid, "F"))).isNegative();
+    }
+
+    @Test
     void should_make_methane_nearly_apolar_compared_with_water()
     {
         PartialCharges methane = MODEL.calculate(structure("C"), 0);

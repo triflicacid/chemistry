@@ -86,6 +86,7 @@ public final class RestrictedOpenShellScf
         int closed = betaElectrons;
         int open = alphaElectrons - betaElectrons;
 
+        settings.listener().stage(ScfListener.INTEGRALS);
         Matrix overlap = OneElectronIntegrals.overlapMatrix(basis);
         Matrix core = OneElectronIntegrals.coreHamiltonian(basis, nuclei);
         if (!cores.isEmpty())
@@ -103,13 +104,14 @@ public final class RestrictedOpenShellScf
         }
         Matrix transformTransposeOverlap = transform.transpose().times(overlap);
 
-        // the core guess ignores electron repulsion
-        Matrix coefficients = guess == null ? UnrestrictedScf.diagonalise(core, transform).coefficients() : guess;
+        // the guess needs no density, so it does not depend on electron repulsion
+        Matrix coefficients = guess == null ? UnrestrictedScf.diagonalise(InitialGuess.fock(core, overlap), transform).coefficients() : guess;
         if (coefficients.rows() != overlap.rows() || coefficients.columns() < alphaElectrons)
         {
             throw new IllegalArgumentException("the guess is " + coefficients.rows() + " by " + coefficients.columns() + ", the basis has " + overlap.rows() + " functions and " + alphaElectrons + " spin-up electrons");
         }
 
+        settings.listener().stage(ScfListener.ITERATING);
         Diis diis = new Diis(Math.max(settings.diisSize(), 1));
         double previousEnergy = 0.0;
         for (int iteration = 1; iteration <= settings.maxIterations(); iteration++)
@@ -177,6 +179,7 @@ public final class RestrictedOpenShellScf
             Matrix error = orthonormal.times(gradient).times(orthonormal.transpose());
             double rms = error.frobeniusNorm() / m;
 
+            settings.listener().iteration(iteration, totalEnergy, rms);
             boolean converged = iteration > 1 && Math.abs(totalEnergy - previousEnergy) < settings.energyTolerance() && rms < settings.errorTolerance();
             if (converged || iteration == settings.maxIterations())
             {

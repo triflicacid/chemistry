@@ -1,4 +1,4 @@
-import type {OptimiseResult} from "./messages";
+import type {EnergyStep, OptimiseResult} from "./messages";
 
 /** How far the session has got towards being editable. */
 export type SessionPhase =
@@ -14,6 +14,8 @@ export interface Activity {
   at: number;
   message: string;
   failed: boolean;
+  /** Whether it says that something asked for cannot be done, which is not an error: a surface of the difference density of one molecule, say. */
+  warning?: boolean;
   /** Whether the message has line breaks and spacing that mean something, as a SMILES error's caret does. */
   preformatted?: boolean;
 }
@@ -32,6 +34,8 @@ export type EditResult =
 /** An optimisation the server is running. */
 export interface Optimising {
   iteration: number;
+  /** The value being minimised at each step the server has reported, which is only some of them. */
+  history: EnergyStep[];
 }
 
 export interface OptimisationOutcome {
@@ -42,6 +46,8 @@ export interface OptimisationOutcome {
   /** How many atoms it moved. */
   atoms: number;
   iterations: number;
+  /** The value that was minimised at every step. */
+  history: EnergyStep[];
   message: string | null;
   warnings: string[];
 }

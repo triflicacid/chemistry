@@ -8,6 +8,7 @@ import {AnalysisPanel} from "../panels/AnalysisPanel";
 import {Inspector} from "../panels/Inspector";
 import {ErrorToast} from "../panels/popups/ErrorToast";
 import {OptimiseNotice} from "../panels/popups/OptimiseNotice";
+import {PropertiesOptions} from "../panels/PropertiesOptions";
 import {RenderOptions} from "../panels/RenderOptions";
 import {Outliner} from "../panels/Outliner";
 import {SmilesBar} from "../controls/SmilesBar";
@@ -68,7 +69,7 @@ export function Workspace(props: WorkspaceProps) {
 
       <SmilesBar state={state} onSubmit={onSubmitSmiles} />
 
-      <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} footer={<RenderOptions models={models} />}>
+      <Side panel="outliner" name="Outliner" collapsed={layout.outlinerCollapsed} onCollapse={onCollapse} footer={<><PropertiesOptions models={models} /><RenderOptions models={models} /></>}>
         <Outliner state={state} models={models} />
       </Side>
 
@@ -102,8 +103,8 @@ export function Workspace(props: WorkspaceProps) {
         </div>
       )}
 
-      <section className={`panel panel-analysis${layout.analysisCollapsed ? " collapsed" : ""}`} aria-label="Activity">
-        <Header name="Activity" panel="analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
+      <section className={`panel panel-analysis${layout.analysisCollapsed ? " collapsed" : ""}`} aria-label="Analysis">
+        <Header name="Analysis" panel="analysis" collapsed={layout.analysisCollapsed} onCollapse={onCollapse} />
         {!layout.analysisCollapsed && (
           <div className="panel-body">
             <AnalysisPanel activity={activity} state={state} geometry={geometry} models={models} />

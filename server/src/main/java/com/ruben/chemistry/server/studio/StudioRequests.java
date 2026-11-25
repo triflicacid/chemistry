@@ -118,6 +118,99 @@ public final class StudioRequests
     }
 
     /**
+     * @param sessionId the session whose atoms' partial charges to calculate
+     * @param model the name of the model to assign them with (optional; {@link ChargeModels#DEFAULT} if absent)
+     */
+    public record ChargesRequest(String sessionId, String model)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose atoms' forces to calculate
+     */
+    public record ForcesRequest(String sessionId)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose molecules to scan along a hydrogen bond
+     */
+    public record ScanRequest(String sessionId)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose molecular orbitals to calculate
+     * @param model the kind of Hartree-Fock calculation: {@code rhf}, {@code uhf} or {@code rohf}; or {@code mulliken} or absent for
+     *     the studio's automatic choice, which is closed-shell where the electrons pair up and unrestricted where they do not
+     * @param fragments the molecules to calculate each on its own, as an atom of each; absent or empty for the whole session as one
+     */
+    public record OrbitalsRequest(String sessionId, String model, List<String> fragments)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose orbitals to relate to those of its molecules on their own
+     * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     */
+    public record InteractionRequest(String sessionId, String model)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose electrostatic potential to calculate
+     * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     * @param fragment an atom of the molecule to calculate, or absent for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
+     */
+    public record EspRequest(String sessionId, String model, String fragment, Integer multiplicity)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose electrostatic potential to calculate on a plane
+     * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     * @param fragment an atom of the molecule to calculate, or absent for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
+     * @param axis the axis the plane is at right angles to: {@code x}, {@code y} or {@code z}
+     * @param position how far along the molecule's box in that axis the plane is, from 0 to 1
+     */
+    public record PlaneRequest(String sessionId, String model, String fragment, Integer multiplicity, String axis, Double position)
+    {
+    }
+
+    /**
+     * @param sessionId the session whose density to calculate
+     * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     * @param fragment an atom of the molecule to calculate, or absent for the whole session
+     * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
+     */
+    public record DensityRequest(String sessionId, String model, String fragment, Integer multiplicity)
+    {
+    }
+
+    /**
+     * One orbital to evaluate.
+     *
+     * @param fragment an atom of the molecule it is of, or absent for the whole session calculated as one
+     * @param spin which set of orbitals: {@code restricted}, {@code alpha} or {@code beta}, as the levels named it
+     * @param orbital which orbital of that set, counting from the lowest in energy at zero
+     */
+    public record FieldTarget(String fragment, String spin, Integer orbital)
+    {
+    }
+
+    /**
+     * @param sessionId the session to calculate fields of
+     * @param kind what the fields are; only {@code orbital} is supported
+     * @param model the kind of calculation, as for {@link OrbitalsRequest}
+     * @param targets the orbitals to evaluate, each of which is answered by a field
+     */
+    public record FieldRequest(String sessionId, String kind, String model, List<FieldTarget> targets)
+    {
+    }
+
+    /**
      * @param sessionId the session whose optimisation to stop
      */
     public record CancelOptimiseRequest(String sessionId)

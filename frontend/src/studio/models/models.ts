@@ -1,7 +1,12 @@
 import type {ChemistryStatus} from "../chemistry/useChemistry";
 import {CameraModel} from "./CameraModel";
+import {DebugModel} from "./DebugModel";
 import {FocusModel} from "./FocusModel";
 import {HoverModel} from "./HoverModel";
+import {HydrogenBondModel} from "./HydrogenBondModel";
+import {MoleculeNumbersModel} from "./MoleculeNumbersModel";
+import {OrbitalModel} from "./OrbitalModel";
+import {PropertiesModel} from "./PropertiesModel";
 import {RenderModel} from "./RenderModel";
 import {RevealModel} from "./RevealModel";
 import type {StateIndex} from "../geometry/StateIndex";
@@ -25,6 +30,16 @@ export interface Models {
   reveal: RevealModel;
   /** How the molecule is drawn. */
   render: RenderModel;
+  /** Which calculated properties are shown on it. */
+  properties: PropertiesModel;
+  /** Whether debug mode is on, in which what is shown comes with the numbers behind it. */
+  debug: DebugModel;
+  /** The hydrogen bond the scan is on, which the viewport draws while debug mode is on. */
+  hydrogenBond: HydrogenBondModel;
+  /** The molecules to number in the scene, which the viewport draws while debug mode is on. */
+  numbers: MoleculeNumbersModel;
+  /** Which orbital is drawn in the scene, and how. */
+  orbital: OrbitalModel;
   /** Looks identifiers up in the state the surfaces are showing; null until a session opens. */
   index: StateIndex | null;
   /** The molecule's chemistry. */
@@ -37,7 +52,7 @@ export interface Models {
  * @returns a selection and a hover model, with nothing selected, a tool model on the select tool, and a camera model
  *     that knows nothing until a viewport reports
  */
-export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render"> {
+export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render" | "properties" | "debug" | "hydrogenBond" | "numbers" | "orbital"> {
   return {
     selection: new SelectionModel(),
     hover: new HoverModel(),
@@ -46,5 +61,10 @@ export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "
     focus: new FocusModel(),
     reveal: new RevealModel(),
     render: new RenderModel(),
+    properties: new PropertiesModel(),
+    debug: new DebugModel(),
+    hydrogenBond: new HydrogenBondModel(),
+    numbers: new MoleculeNumbersModel(),
+    orbital: new OrbitalModel(),
   };
 }

@@ -1,6 +1,8 @@
 import {
     type ColorRepresentation,
+    ConeGeometry,
     CylinderGeometry,
+    Group,
     Mesh,
     MeshBasicMaterial,
     MeshStandardMaterial,
@@ -18,6 +20,9 @@ export const UP = new Vector3(0, 1, 0);
 export class Primitives {
   /** A cylinder of radius 1 and height 1, along the y axis, centred on the origin. */
   readonly cylinderGeometry = new CylinderGeometry(1, 1, 1, 12, 1, false);
+
+  /** A cone of base radius 1 and height 1, its tip along +y, centred on the origin. */
+  readonly coneGeometry = new ConeGeometry(1, 1, 16, 1);
 
   /** A sphere of radius 1 centred on the origin. */
   readonly sphereGeometry = new SphereGeometry(1, 24, 16);
@@ -58,9 +63,43 @@ export class Primitives {
     return mesh;
   }
 
+  /**
+   * Makes an arrow that runs from one point to another, with its head at the second.
+   *
+   * @param from where the shaft starts
+   * @param to where the tip of the head is
+   * @param radius the radius of the shaft, which the head is twice as wide as
+   * @param material what to draw it with
+   * @returns the shaft and the head; a short arrow is all head
+   */
+  arrow(from: Vector3, to: Vector3, radius: number, material: MeshStandardMaterial | MeshBasicMaterial): Group {
+    const group = new Group();
+    const along = to.clone().sub(from);
+    const length = along.length();
+    if (length < 1e-9) {
+      return group;
+    }
+
+    const direction = along.clone().normalize();
+    // the head is up to a third of the arrow, and never longer than it takes to be about as long as it is wide
+    const head = Math.min(length / 3, radius * 6);
+    const neck = to.clone().addScaledVector(direction, -head);
+    if (length > head) {
+      group.add(this.cylinder(from, neck, radius, material));
+    }
+
+    const cone = new Mesh(this.coneGeometry, material);
+    cone.position.copy(to).addScaledVector(direction, -head / 2);
+    cone.quaternion.copy(new Quaternion().setFromUnitVectors(UP, direction));
+    cone.scale.set(radius * 2, head, radius * 2);
+    group.add(cone);
+    return group;
+  }
+
   /** Frees the geometry and label textures. */
   dispose(): void {
     this.cylinderGeometry.dispose();
+    this.coneGeometry.dispose();
     this.sphereGeometry.dispose();
     this.labels.dispose();
   }

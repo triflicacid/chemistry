@@ -5,20 +5,32 @@ import {
   type BondEditAck,
   type BondOrder,
   type CameraAck,
+  type ChargesRequestAck,
+  type DensityRequestAck,
+  type DifferenceRequestAck,
   type EditApplied,
   type EditHistory,
+  type EspRequestAck,
+  type FieldRequestAck,
+  type ForcesRequestAck,
   type GraphEditAck,
+  type InteractionRequestAck,
   type LockAck,
   type OptimiseCancelAck,
   type OptimiseStarted,
+  type OrbitalsRequestAck,
+  type OrbitalTarget,
   type PatchAck,
+  type PlaneRequestAck,
   type Pose,
   PROTOCOL_VERSION,
+  type ScanRequestAck,
   type ServerEnvelope,
   type SessionCamera,
   type SessionConflict,
   type SessionReady,
   type SessionState,
+  type SpinRequestAck,
   type TransformAck,
 } from "./messages";
 
@@ -481,6 +493,156 @@ export class StudioSocket {
       { session_id: sessionId, base_version: baseVersion },
       ["optimise.started", "conflict"],
     );
+  }
+
+  /**
+   * Asks for the partial charge of every atom of a session. The answer says only that the request was understood: listen
+   * for `charges.progress` while they are worked out and `charges.result` for the charges, which the server sends once the
+   * session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose atoms to calculate charges for
+   * @param model the name of the model to assign them with, such as `rhf`; the server's own choice if omitted
+   */
+  requestCharges(sessionId: string, model?: string): Promise<ChargesRequestAck> {
+    return this.request<ChargesRequestAck>("charges.request", { session_id: sessionId, ...(model ? { model } : {}) }, "charges.request.ack");
+  }
+
+  /**
+   * Asks for the force on every atom of a session from the other molecules in it. The answer says only that the request
+   * was understood: listen for `forces.result` for the forces, which the server sends once the session has been left alone
+   * and drops if it moves on first.
+   *
+   * @param sessionId the session whose atoms to calculate forces for
+   */
+  requestForces(sessionId: string): Promise<ForcesRequestAck> {
+    return this.request<ForcesRequestAck>("forces.request", { session_id: sessionId }, "forces.request.ack");
+  }
+
+  /**
+   * Asks for the interaction energy of two of a session's molecules along a hydrogen bond between them. The answer says only
+   * that the request was understood: listen for `scan.result` for the scan, which the server sends once the session has been
+   * left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose molecules to scan
+   */
+  requestScan(sessionId: string): Promise<ScanRequestAck> {
+    return this.request<ScanRequestAck>("scan.request", { session_id: sessionId }, "scan.request.ack");
+  }
+
+  /**
+   * Asks for the energy levels of a session's molecular orbitals. The answer says only that the request was understood:
+   * listen for `orbitals.result`, which the server sends once the session has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose orbitals to calculate
+   * @param model the kind of Hartree-Fock calculation: `rhf`, `uhf` or `rohf`, or `mulliken` for the server's own choice
+   * @param fragments the molecules to calculate each on its own, as an atom of each; empty for the whole session as one
+   */
+  requestOrbitals(sessionId: string, model: string, fragments: readonly string[]): Promise<OrbitalsRequestAck> {
+    return this.request<OrbitalsRequestAck>("orbitals.request", { session_id: sessionId, model, fragments }, "orbitals.request.ack");
+  }
+
+  /**
+   * Asks for the values of some orbitals on grids round the molecules they are of. The answer says only that the request was
+   * understood: listen for `field.result`, once for each orbital asked for, which the server sends once the session has been
+   * left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose orbitals to evaluate
+   * @param model the kind of calculation, as for {@link requestOrbitals}
+   * @param targets the orbitals: which molecule (an atom of it, or null for the whole session), which set and which orbital
+   */
+  requestOrbital(sessionId: string, model: string, targets: readonly OrbitalTarget[]): Promise<FieldRequestAck> {
+    return this.request<FieldRequestAck>(
+      "field.request",
+      { session_id: sessionId, kind: "orbital", model, targets: targets.map(({ fragment, spin, orbital }) => ({ spin, orbital, ...(fragment ? { fragment } : {}) })) },
+      "field.request.ack",
+    );
+  }
+
+  /**
+   * Asks for how the orbitals of everything in a session together are made of those of its molecules on their own. The answer
+   * says only that the request was understood: listen for `interaction.result`, which the server sends once the session has
+   * been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session whose orbitals to relate
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   */
+  requestInteraction(sessionId: string, model: string): Promise<InteractionRequestAck> {
+    return this.request<InteractionRequestAck>("interaction.request", { session_id: sessionId, model }, "interaction.request.ack");
+  }
+
+  /**
+   * Asks for the electron density of a session, or of one of its molecules, with its electrostatic potential, on a grid round its atoms.
+   * The answer says only that the request was understood: listen for `esp.result`, which the server sends once the session
+   * has been left alone and drops if it moves on first.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestEsp(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<EspRequestAck> {
+    return this.request<EspRequestAck>("esp.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "esp.request.ack");
+  }
+
+  /**
+   * Asks for the electron density of a session, or of one of its molecules, on a grid round its atoms. The answer says only that the
+   * request was understood: listen for `density.result`, which the server sends once the session has been left alone and drops if it
+   * moves on first.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestDensity(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<DensityRequestAck> {
+    return this.request<DensityRequestAck>("density.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "density.request.ack");
+  }
+
+  /**
+   * Asks for the electrostatic potential of a session, or of one of its molecules, on a flat grid across it. The answer says only that the
+   * request was understood: listen for `plane.result`. A newer request abandons one still being worked out, so that sliding the plane
+   * asks for each place it stops at.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   * @param axis the axis the plane is at right angles to
+   * @param position how far along the box in that axis the plane is, from 0 to 1
+   */
+  requestPlane(sessionId: string, model: string, fragment: string | null, multiplicity: number | null, axis: "x" | "y" | "z", position: number): Promise<PlaneRequestAck> {
+    return this.request<PlaneRequestAck>(
+      "plane.request",
+      { session_id: sessionId, model, axis, position, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) },
+      "plane.request.ack",
+    );
+  }
+
+  /**
+   * Asks for the spin density of a session, or of one of its molecules: the electrons of spin up less those of spin down. The answer says
+   * only that the request was understood: listen for `spin.result`, which says why there is none for a calculation whose electrons all pair up.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   */
+  requestSpin(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<SpinRequestAck> {
+    return this.request<SpinRequestAck>("spin.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "spin.request.ack");
+  }
+
+  /**
+   * Asks for the difference density of a session: the electron density of everything together less those of its molecules each on its
+   * own. The answer says only that the request was understood: listen for `difference.result`, which says why there is none for a session
+   * of one molecule.
+   *
+   * @param sessionId the session to calculate for
+   * @param model the kind of Hartree-Fock calculation, as for {@link requestOrbitals}
+   * @param fragment ignored by the server, since the difference is of the whole session
+   * @param multiplicity the spin multiplicity to calculate the whole at, or null for the lowest the electron count allows
+   */
+  requestDifference(sessionId: string, model: string, fragment: string | null, multiplicity: number | null): Promise<DifferenceRequestAck> {
+    return this.request<DifferenceRequestAck>("difference.request", { session_id: sessionId, model, ...(fragment ? { fragment } : {}), ...(multiplicity !== null ? { multiplicity } : {}) }, "difference.request.ack");
   }
 
   /**

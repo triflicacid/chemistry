@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import type {SystemView} from "../geometry/conjugation";
 import {type Item, type PartItem, selectsEveryMolecule} from "../models/items";
 import type {Models, PickScope} from "../models/models";
@@ -12,10 +12,27 @@ import {useSessionContext} from "../session/SessionContext";
 import type {GridKind, GridPlaneChoice} from "../viewport/grid";
 import {StudioView} from "../viewport/StudioView";
 import type {ScreenRect} from "../viewport/StudioViewListener";
+import {chargeScale} from "./chargeScale";
+import {
+    decodeDensity,
+    decodeEsp,
+    densitySurface,
+    espSurface,
+    nearestAtomColours,
+    sampleGrid,
+    signedDensitySurfaces,
+    toKcalPerCharge,
+    vertexColours
+} from "./esp";
+import {answers, drawnOrbitals, fragmentsFor, isOrbitalSlice, resolveTargets, sliceTargets} from "./orbitals";
 import {isCurrent} from "./findings";
 import {OpenMolecule} from "../controls/OpenMolecule";
 import {useStructureActions} from "./useStructureActions";
 import {ActionTools, DisplayTools} from "./ViewportOverlay";
+import {decodePlane, planeDrawing, planeValueAt, sliceDrawing} from "./slice";
+import {orbitalSliceDrawing} from "./orbitalSlice";
+import type {SurfacePart} from "../viewport/scene/FieldSurfaceMesh";
+import {NEGATIVE_LOBE, POSITIVE_LOBE} from "./orbitalColours";
 
 export interface ViewportProps {
   phase: SessionPhase;
@@ -24,6 +41,12 @@ export interface ViewportProps {
   geometry: GeometryResult | null;
   models: Models;
 }
+
+/** What each density is called in a label. */
+const FIELD_NAMES = { none: "", density: "density", esp: "density", spin: "spin density", difference: "difference density", potential: "potential", homo: "orbital", lumo: "orbital", frontier: "orbital" };
+
+/** The colour of a surface of the electron density that is not coloured by anything. */
+const DENSITY_COLOUR = "#4aa3a0";
 
 /** The canvas, which fills whatever space the workspace leaves it, and the molecule drawn on it. */
 export function Viewport({ phase, state, geometry, models }: ViewportProps) {
@@ -41,17 +64,26 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
     cancelBondDrag,
     addAtom,
     addBond,
+    charges,
+    forces,
+    orbitals,
+    fields: orbitalFieldList,
+    esp,
+    density,
+    spin,
+    difference,
+    plane,
   } = useSessionContext();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [view, setView] = useState<StudioView | null>(null);
   const [axes, setAxes] = useState(false);
   const [grid, setGrid] = useState<GridKind | "off">("off");
   const [gridPlane, setGridPlane] = useState<GridPlaneChoice>("xz");
-  const [debug, setDebug] = useState(false);
   const [look, setLook] = useState(false);
   const [selectionArea, setSelectionArea] = useState<ScreenRect | null>(null);
   const [mode, setMode] = useState<PickScope>("item");
   const { selection, hover, tools, index } = models;
+  const debug = useObservable(models.debug);
   const toolState = useObservable(tools);
   const { tool, constraint, space, rotateTarget, pivot, point, strain, carryHydrogens, snap, torsion, angle, system, hold, axis, editClick, ringSize, bondOrder } = toolState;
   // turning something inside a molecule is done on single atoms and bonds, whatever else is picked
@@ -109,6 +141,171 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   useEffect(() => {
     view?.setGrid(grid === "off" ? null : grid, gridPlane);
   }, [view, grid, gridPlane]);
+
+  // atoms are coloured by what the server last calculated for them. A result a little behind the session is kept, so that
+  // the colours do not flicker while an atom is dragged, and the Properties section says that it is updating
+  const { colourBy, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface: surfaceKind, densityColour, surfaceIsovalue, surfaceOpacity, sliceField, sliceAxis, slicePosition, sliceContours } = useObservable(models.properties);
+  const charged = useMemo(() => (colourBy === "charge" && charges?.session_id === state?.session_id ? chargeScale(charges) : null), [colourBy, charges, state?.session_id]);
+  useEffect(() => {
+    view?.colourAtoms(charged?.colours ?? null);
+  }, [view, charged]);
+  useEffect(() => {
+    view?.labelPolarity(polarLabels && charged ? charged.charges : null, polarThreshold);
+  }, [view, charged, polarLabels, polarThreshold]);
+
+  // forces are drawn only for the version they were made from, since an arrow that stays where an atom was is worse than none
+  const forceable = forceArrows && forces !== null && state !== null && forces.session_id === state.session_id && forces.version === state.version;
+  useEffect(() => {
+    view?.showForces(forceable ? forces : null, { scale: forceScale, net: netForces, debug });
+  }, [view, forceable, forces, forceScale, netForces, debug]);
+
+  // a surface is drawn only for the version it was worked out at, since one that stays where the atoms were is worse than none
+  const atVersion = (result: { session_id: string; version: number } | null) =>
+    result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
+  const decodedEsp = useMemo(() => (surfaceKind === "esp" && esp && atVersion(esp) ? decodeEsp(esp) : null), [surfaceKind, esp, state]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the density alone, the spin and the difference each come in a message of their own, and are decoded the same way
+  const plain = surfaceKind === "density" ? density : surfaceKind === "spin" ? spin : surfaceKind === "difference" ? difference : null;
+  const decodedDensity = useMemo(() => (plain && atVersion(plain) ? decodeDensity(plain) : null), [plain, state]); // eslint-disable-line react-hooks/exhaustive-deps
+  const signed = surfaceKind === "spin" || surfaceKind === "difference";
+  const drawn = useMemo((): SurfacePart[] => {
+    if (decodedEsp) {
+      const made = espSurface(decodedEsp, surfaceIsovalue);
+      return [{ surface: made.surface, colours: vertexColours(made.values, made.limit), colour: DENSITY_COLOUR }];
+    }
+    if (!decodedDensity) {
+      return [];
+    }
+    if (signed) {
+      const { positive, negative } = signedDensitySurfaces(decodedDensity, surfaceIsovalue);
+      return [
+        { surface: positive, colours: null, colour: POSITIVE_LOBE },
+        { surface: negative, colours: null, colour: NEGATIVE_LOBE },
+      ];
+    }
+    const made = densitySurface(decodedDensity, surfaceIsovalue);
+    return [{ surface: made, colours: densityColour === "element" && state ? nearestAtomColours(made, state.atoms) : null, colour: DENSITY_COLOUR }];
+  }, [decodedEsp, decodedDensity, signed, surfaceIsovalue, densityColour, state]);
+  useEffect(() => {
+    view?.showFieldSurface(drawn, surfaceOpacity);
+  }, [view, drawn, surfaceOpacity]);
+
+  // an orbital is drawn only for the version it was worked out at, since a surface that stays where the atoms were is worse than none
+  const { selected: shownOrbital, scope: shownScope, count: shownCount, colouring, isovalue, opacity, display: orbitalDisplay, levelBy, share, combine, style: orbitalStyle, sliceOrbital } = useObservable(models.orbital);
+  const orbitalFields = useMemo(() => {
+    const asked = fragmentsFor(shownScope, state);
+    if (shownOrbital === null || !answers(orbitals, models.orbital.get().kind, asked)) {
+      return [];
+    }
+    return drawnOrbitals(orbitals, resolveTargets(orbitals, shownOrbital, shownCount), orbitalFieldList, state);
+  }, [shownOrbital, shownScope, shownCount, orbitals, orbitalFieldList, state, models.orbital]);
+  useEffect(() => {
+    view?.showOrbitals(orbitalFields, { isovalue, opacity, colouring, debug, display: orbitalDisplay, levelBy, share, combine, style: orbitalStyle });
+  }, [view, orbitalFields, isovalue, opacity, colouring, debug, orbitalDisplay, levelBy, share, combine, orbitalStyle]);
+
+  // a slice plane shows one of the densities, whether or not a surface of it is drawn, and is drawn only for the version it was worked out at
+  const sliced = sliceField === "density" ? density : sliceField === "spin" ? spin : sliceField === "difference" ? difference : null;
+  const decodedSlice = useMemo(() => (sliced && atVersion(sliced) ? decodeDensity(sliced) : null), [sliced, state]); // eslint-disable-line react-hooks/exhaustive-deps
+  const signedSlice = sliceField === "spin" || sliceField === "difference";
+  // or orbitals, which are shown as the Orbitals tab shows them, with the same number from the gap, level, colours and way of showing several,
+  // whether or not their surfaces are drawn
+  const sliceOrbitals = useMemo(() => {
+    if (!isOrbitalSlice(sliceField) || !answers(orbitals, models.orbital.get().kind, fragmentsFor(shownScope, state))) {
+      return [];
+    }
+    return drawnOrbitals(orbitals, sliceTargets(orbitals, sliceField, shownCount), orbitalFieldList, state);
+  }, [sliceField, orbitals, shownScope, shownCount, orbitalFieldList, state, models.orbital]);
+  const orbitalDrawing = useMemo(
+    () =>
+      isOrbitalSlice(sliceField)
+        ? orbitalSliceDrawing(sliceOrbitals, {
+            axis: sliceAxis,
+            fraction: slicePosition,
+            contours: sliceContours,
+            display: orbitalDisplay,
+            colouring,
+            combine,
+            levelBy,
+            isovalue,
+            share,
+            pick: sliceOrbital,
+          })
+        : null,
+    [sliceField, sliceOrbitals, sliceAxis, slicePosition, sliceContours, orbitalDisplay, colouring, combine, levelBy, isovalue, share, sliceOrbital],
+  );
+  // the potential is worked out for the plane itself, which stays where it was worked out until the next result arrives
+  const decodedPlane = useMemo(() => (sliceField === "potential" && plane && atVersion(plane) ? decodePlane(plane) : null), [sliceField, plane, state]); // eslint-disable-line react-hooks/exhaustive-deps
+  const slice = useMemo(
+    () =>
+      orbitalDrawing
+        ? orbitalDrawing
+        : decodedPlane
+          ? planeDrawing(decodedPlane, sliceContours)
+          : decodedSlice
+          ? sliceDrawing(decodedSlice, sliceAxis, slicePosition, signedSlice, sliceContours)
+          : null,
+    [orbitalDrawing, decodedPlane, decodedSlice, signedSlice, sliceAxis, slicePosition, sliceContours],
+  );
+  useEffect(() => {
+    view?.showSlice(slice);
+  }, [view, slice]);
+
+  // with Debug on, the value of the field is read where the pointer is on the surface, or on the slice plane if that is nearer
+  const [probe, setProbe] = useState<{ left: number; top: number; lines: string[] } | null>(null);
+  const probed = decodedEsp ?? decodedDensity;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!view || !canvas || !debug || (!(probed && drawn.length > 0) && !decodedSlice && !decodedPlane && !orbitalDrawing)) {
+      setProbe(null);
+      return;
+    }
+    const move = (event: PointerEvent) => {
+      const hit = event.buttons === 0 ? view.probeField(event) : null;
+      if (!hit) {
+        setProbe(null);
+        return;
+      }
+
+      const { x, y, z } = hit.at;
+      let lines: string[] = [];
+      if (hit.on === "slice" && orbitalDrawing) {
+        const read = orbitalDrawing.read(x, y, z);
+        lines = [read ? `${read.name} ${read.value.toFixed(4)} ${read.unit}` : "orbital n/a", `slice at ${sliceAxis} = ${hit.at[sliceAxis].toFixed(2)} Å`];
+      } else if (hit.on === "slice" && decodedPlane) {
+        const potential = planeValueAt(decodedPlane, x, y, z);
+        lines = [`potential ${Number.isNaN(potential) ? "n/a" : `${toKcalPerCharge(potential).toFixed(1)} kcal/mol/e`}`, `slice at ${decodedPlane.axis} = ${hit.at[decodedPlane.axis].toFixed(2)} Å`];
+      } else if (hit.on === "slice" && decodedSlice) {
+        lines = [`${FIELD_NAMES[sliceField]} ${sampleGrid(decodedSlice.density, decodedSlice.shape, x, y, z).toFixed(4)} e/bohr³`, `slice at ${sliceAxis} = ${hit.at[sliceAxis].toFixed(2)} Å`];
+      } else if (hit.on === "surface" && probed) {
+        lines = [`${FIELD_NAMES[surfaceKind]} ${sampleGrid(probed.density, probed.shape, x, y, z).toFixed(4)} e/bohr³`];
+        if (decodedEsp) {
+          const potential = sampleGrid(decodedEsp.potential, decodedEsp.shape, x, y, z);
+          lines.push(`potential ${Number.isNaN(potential) ? "n/a" : `${toKcalPerCharge(potential).toFixed(1)} kcal/mol/e`}`);
+        }
+      }
+      const box = canvas.getBoundingClientRect();
+      setProbe(lines.length > 0 ? { left: event.clientX - box.left, top: event.clientY - box.top, lines } : null);
+    };
+    const leave = () => setProbe(null);
+    canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerleave", leave);
+    return () => {
+      canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerleave", leave);
+      setProbe(null);
+    };
+  }, [view, debug, probed, decodedEsp, decodedSlice, decodedPlane, orbitalDrawing, drawn, surfaceKind, sliceField, sliceAxis]);
+
+  // the hydrogen bond the scan is on is drawn from where its atoms are now, so it is redrawn as they move
+  const bond = useObservable(models.hydrogenBond);
+  useEffect(() => {
+    view?.showHydrogenBond(debug ? bond : null);
+  }, [view, debug, bond, state]);
+
+  // molecules are numbered where they are now, so the numbers are redrawn as they move
+  const numbered = useObservable(models.numbers);
+  useEffect(() => {
+    view?.showMoleculeNumbers(debug ? numbered : []);
+  }, [view, debug, numbered, state]);
 
   // a result says where the strain was at the version it was made from, so it is only drawn while the session is still there
   const markable = strain && isCurrent(geometry, state);
@@ -354,6 +551,13 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
   return (
     <section className="viewport" aria-label="3D viewport">
       <canvas ref={canvasRef} className="viewport-canvas" />
+      {probe && (
+        <div className="field-probe" style={{ left: probe.left + 14, top: probe.top + 14 }} aria-hidden="true">
+          {probe.lines.map((line, at) => (
+            <div key={at}>{line}</div>
+          ))}
+        </div>
+      )}
       {selectionArea && <div className="marquee" style={{ left: selectionArea.x, top: selectionArea.y, width: selectionArea.width, height: selectionArea.height }} aria-hidden="true" />}
       {state && (
         <>
@@ -367,7 +571,7 @@ export function Viewport({ phase, state, geometry, models }: ViewportProps) {
             strain={strain}
             tools={tools}
             debug={debug}
-            onDebug={setDebug}
+            onDebug={(on) => models.debug.to(on)}
             onScreenshot={screenshot}
           />
 

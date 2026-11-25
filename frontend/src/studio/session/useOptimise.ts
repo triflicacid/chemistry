@@ -48,7 +48,7 @@ export function useOptimise({ socketRef, held, adopt, note }: SessionLink, { ser
         return;
       }
       // a report that arrives after the result, or on a connection that never asked, has nothing to update
-      setOptimising((before) => (before ? { iteration: progress.iteration } : before));
+      setOptimising((before) => (before ? { iteration: progress.iteration, history: [...before.history, { iteration: progress.iteration, energy: progress.energy }] } : before));
     });
 
     const hearResult = socket.on<OptimiseResult>("optimise.result", (result) => {
@@ -65,6 +65,7 @@ export function useOptimise({ socketRef, held, adopt, note }: SessionLink, { ser
         strainAfter: result.strain_after,
         atoms: result.atoms.length,
         iterations: result.iterations,
+        history: result.energy_history,
         message: result.message,
         warnings: result.warnings,
       });
@@ -115,7 +116,7 @@ export function useOptimise({ socketRef, held, adopt, note }: SessionLink, { ser
         }
 
         // set before asking, because a small molecule can finish before the server's answer to the request arrives
-        setOptimising({ iteration: 0 });
+        setOptimising({ iteration: 0, history: [] });
         setOutcome(null);
         try {
           const reply = await socket.optimise(base.session_id, base.version);

@@ -1,4 +1,16 @@
-import {Box3, Color, Group, Mesh, MeshBasicMaterial, type Object3D, Ray, Raycaster, type Sprite, Vector3} from "three";
+import {
+    Box3,
+    Color,
+    Group,
+    Mesh,
+    MeshBasicMaterial,
+    MeshStandardMaterial,
+    type Object3D,
+    Ray,
+    Raycaster,
+    type Sprite,
+    Vector3
+} from "three";
 import type {Vec3} from "../../../api/types/structure";
 import {aromaticCentres} from "../../../render/aromatic";
 import {type BondEnds, buildBond, type Style} from "../../../render/bonds";
@@ -60,6 +72,12 @@ export class MoleculeScene {
   structureKey = "";
   /** How atoms and bonds are drawn. A change is shown by drawing the state afresh. */
   style: Style = "ball_and_stick";
+  /** The colour to draw each atom with in place of its element's, by atom, or null to draw every atom as its element. */
+  private atomColours: ReadonlyMap<string, string> | null = null;
+  /** The charges that decide which atoms are labelled as polar, and how big a charge has to be, or null to label none. */
+  private polarity: { charges: ReadonlyMap<string, number>; threshold: number } | null = null;
+  /** The δ+ and δ− labels drawn now. */
+  private polarBadges: Sprite[] = [];
 
   private readonly registry = new PartRegistry();
   private readonly raycaster = new Raycaster();
@@ -109,13 +127,14 @@ export class MoleculeScene {
       }
       this.redraw(bond);
     }
+    this.drawPolarity();
     this.refreshEmphasis();
   }
 
   private drawAtom(atom: SessionAtom, index: number, bonded: boolean): AtomNode {
     const at = new Vector3(atom.position.x, atom.position.y, atom.position.z);
     const radius = atomRadius(atom.radius, this.style, bonded);
-    const ball = new Mesh(this.kit.sphereGeometry, this.kit.solid(new Color(atom.colour)));
+    const ball = new Mesh(this.kit.sphereGeometry, this.kit.solid(new Color(this.atomColours?.get(atom.id) ?? atom.colour)));
     ball.position.copy(at);
     ball.scale.setScalar(radius);
     ball.visible = radius > 0;
@@ -140,6 +159,61 @@ export class MoleculeScene {
     return { atom, index, at, ball, radius, pick, badge, neighbours: [] };
   }
 
+  /**
+   * Draws atoms in colours of their own in place of their elements', and keeps doing so when the state is drawn afresh.
+   *
+   * @param colours the colour of each atom to draw differently, by atom; an atom it does not name keeps its element's
+   *     colour. Null draws every atom as its element.
+   */
+  colourAtoms(colours: ReadonlyMap<string, string> | null): void {
+    this.atomColours = colours;
+    for (const node of this.atoms) {
+      const material = node.ball.material;
+      if (material instanceof MeshStandardMaterial) {
+        material.color.set(colours?.get(node.atom.id) ?? node.atom.colour);
+      }
+    }
+
+    // a bond is drawn half in the colour of each atom it joins, so it is drawn again, which also drops its tint
+    this.bonds.forEach((bond) => this.redraw(bond));
+    this.refreshEmphasis();
+  }
+
+  /**
+   * Labels the atoms that are strongly positive (δ+) or negative (δ−), and keeps doing so when the state is drawn afresh.
+   * An atom with a formal charge is left alone, since its badge says that already.
+   *
+   * @param charges each atom's partial charge, by atom, or null to label none
+   * @param threshold how far from zero a partial charge must be, in elementary charges, to be labelled
+   */
+  labelPolarity(charges: ReadonlyMap<string, number> | null, threshold: number): void {
+    this.polarity = charges ? { charges, threshold } : null;
+    this.drawPolarity();
+  }
+
+  /** Draws the polarity labels afresh, taking away the ones drawn before. */
+  private drawPolarity(): void {
+    for (const badge of this.polarBadges) {
+      this.content.remove(badge);
+      badge.material.dispose();
+    }
+    this.polarBadges = [];
+
+    if (this.polarity) {
+      const { charges, threshold } = this.polarity;
+      for (const node of this.atoms) {
+        const charge = charges.get(node.atom.id);
+        if (node.atom.charge !== 0 || charge === undefined || Math.abs(charge) < threshold) {
+          continue;
+        }
+        const badge = this.kit.labels.polarBadge(this.content, charge > 0, node.at, this.radiusOf(node));
+        this.content.add(badge);
+        this.polarBadges.push(badge);
+      }
+    }
+    this.stage.requestRender();
+  }
+
   radiusOf(node: AtomNode): number {
     return Math.max(node.radius, isThin(this.style) ? BEAD : 0);
   }
@@ -156,7 +230,7 @@ export class MoleculeScene {
     const group = buildBond(
       this.kit,
       bond.link,
-      this.atoms.map((node) => node.atom),
+      this.atoms.map((node) => ({ ...node.atom, colour: this.atomColours?.get(node.atom.id) ?? node.atom.colour })),
       this.style,
       this.point,
       this.neighbourMap,
@@ -184,6 +258,7 @@ export class MoleculeScene {
     this.atoms = [];
     this.bonds = [];
     this.lockBadges = new Map();
+    this.polarBadges = [];
     this.atomById = new Map();
     this.bondsOf = new Map();
     this.ringCentres = new Map();
