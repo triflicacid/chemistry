@@ -211,6 +211,37 @@ body.resizing {
   box-shadow: 0 4px 14px rgb(0 0 0 / 0.2);
 }
 
+.calculation {
+  position: relative;
+}
+
+.calculation-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 19rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: default;
+  user-select: none;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.2);
+}
+
+.calculation-last {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--edge);
+}
+
+.calculation-actions {
+  margin-top: 0.4rem;
+}
+
 .history-menu ol {
   margin: 0;
   padding: 0.2rem;
@@ -740,6 +771,7 @@ body.resizing {
 
 /* a choice from a list looks like the buttons beside it */
 .properties select,
+.prop-control select,
 .energy-actions select,
 .viewport-tools select {
   font: inherit;
@@ -754,6 +786,7 @@ body.resizing {
 }
 
 .properties select:hover:not(:disabled),
+.prop-control select:hover:not(:disabled),
 .energy-actions select:hover:not(:disabled),
 .viewport-tools select:hover:not(:disabled) {
   border-color: var(--hover);
@@ -761,6 +794,7 @@ body.resizing {
 }
 
 .properties select:focus-visible,
+.prop-control select:focus-visible,
 .energy-actions select:focus-visible,
 .viewport-tools select:focus-visible {
   outline: 1px solid var(--accent);
@@ -768,6 +802,7 @@ body.resizing {
 }
 
 .properties select:disabled,
+.prop-control select:disabled,
 .energy-actions select:disabled,
 .viewport-tools select:disabled {
   color: var(--ink-soft);
@@ -777,6 +812,8 @@ body.resizing {
 /* the open list is drawn by the browser, so it needs a solid background that follows the theme */
 .properties select option,
 .properties select optgroup,
+.prop-control select option,
+.prop-control select optgroup,
 .energy-actions select option,
 .viewport-tools select option,
 .energy-actions select optgroup,

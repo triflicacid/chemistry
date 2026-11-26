@@ -5,7 +5,7 @@ import type {Vec3} from "../../api/types/structure";
  * a message that names another, so it is raised whenever a message changes in a way an older server or client would
  * misread. The server raises its own to match.
  */
-export const PROTOCOL_VERSION = 29;
+export const PROTOCOL_VERSION = 35;
 
 /** A message the server sent. Every one carries a type; a reply carries the sequence it answers. */
 export interface ServerEnvelope {
@@ -751,9 +751,53 @@ export interface EspRequestAck extends ServerEnvelope {
   type: "esp.request.ack";
 }
 
-/** The answer to a request for the electron density, which says only that the request was understood: it follows as a `density.result`. */
-export interface DensityRequestAck extends ServerEnvelope {
-  type: "density.request.ack";
+/** The answer to a request for the non-covalent interaction fields, which says only that the request was understood: it follows as an `nci.result`. */
+export interface NciRequestAck extends ServerEnvelope {
+  type: "nci.request.ack";
+}
+
+/** How many electrons a session has, and each of its molecules, which is what the spin each can be calculated at depends on. The answer is the acknowledgement itself. */
+export interface ElectronsAck extends ServerEnvelope {
+  type: "electrons.request.ack";
+  /** The electrons of the whole session treated explicitly, after any core potentials. */
+  total: number;
+  /** The electrons of each molecule on its own, named by an atom of it. */
+  molecules: { atom: string; electrons: number }[];
+}
+
+/** The answer to a request to forget the calculations kept for a session, which says how many there were. */
+export interface CalculationResetAck extends ServerEnvelope {
+  type: "calculation.reset.ack";
+  forgotten: number;
+}
+
+/** What a Hartree-Fock calculation was, which the server says when it has made one, and not for one it already had. */
+export interface CalculationResult extends ServerEnvelope {
+  type: "calculation.result";
+  session_id: string;
+  version: number;
+  /** An atom of the molecule it is of, or null for the whole session as one. */
+  fragment: string | null;
+  /** The kind of calculation that was made. */
+  model: "rhf" | "uhf" | "rohf";
+  multiplicity: number;
+  /** How many electrons were treated explicitly. */
+  electrons: number;
+  /** How many iterations the SCF took. */
+  iterations: number;
+  /** The total energy, in hartree. */
+  energy: number;
+  elapsed_ms: number;
+}
+
+/** The answer to a request for the electron pairs, which says only that the request was understood: it follows as a `basins.result`. */
+export interface BasinsRequestAck extends ServerEnvelope {
+  type: "basins.request.ack";
+}
+
+/** The answer to a request for a scalar field, which says only that the request was understood: it follows as a `scalar.result`. */
+export interface ScalarRequestAck extends ServerEnvelope {
+  type: "scalar.request.ack";
 }
 
 /** The answer to a request for the potential on a plane, which says only that the request was understood: it follows as a `plane.result`. */
@@ -794,24 +838,27 @@ export interface PlaneResult extends ServerEnvelope {
   message: string | null;
 }
 
-/** The answer to a request for the spin density, which says only that the request was understood: it follows as a `spin.result`. */
-export interface SpinRequestAck extends ServerEnvelope {
-  type: "spin.request.ack";
-}
-
-/** The answer to a request for the difference density, which says only that the request was understood: it follows as a `difference.result`. */
-export interface DifferenceRequestAck extends ServerEnvelope {
-  type: "difference.request.ack";
+/** One electron pair: a basin of the electron localisation function, which is a lone pair or a bond. */
+export interface BasinMessage {
+  /** Which basin it is, as it is numbered in the labels. */
+  id: number;
+  /** Where its maximum is, in the frame of the structure, in angstroms. */
+  attractor: { x: number; y: number; z: number };
+  /** The value of the function at its maximum. */
+  elf: number;
+  /** How many electrons it holds. */
+  population: number;
+  kind: "lone pair" | "bond" | "multicentre bond" | "unattached";
+  /** The identifiers of the atoms it is attached to. */
+  atoms: string[];
 }
 
 /**
- * A density at every point of a grid, sent on the server's own initiative after a request. It describes the geometry at `version`.
- * A `density.result` is the electron density, which is never negative. A `spin.result` is the electrons of spin up less those of spin
- * down, and a `difference.result` the density of everything together less those of its molecules each on its own, which are positive
- * where there is more and negative where there is less.
+ * The electron localisation function split into its basins, which are its electron pairs, sent on the server's own initiative after a request. It
+ * describes the geometry at `version`.
  */
-export interface DensityResult extends ServerEnvelope {
-  type: "density.result" | "spin.result" | "difference.result";
+export interface BasinsResult extends ServerEnvelope {
+  type: "basins.result";
   session_id: string;
   version: number;
   status: "complete" | "failed";
@@ -819,8 +866,38 @@ export interface DensityResult extends ServerEnvelope {
   fragment: string | null;
   /** Where the points are, or null if there is no field. */
   grid: FieldGridMessage | null;
-  /** Every point's electron density, in electrons per cubic bohr, in the same form as an orbital's values. */
-  density: string | null;
+  /** The function at every point, from zero to one, in the same form as an orbital's values. */
+  values: string | null;
+  /** The basin each point is in, as a whole number from one, or zero for a point that is in none, in the same form. */
+  labels: string | null;
+  basins: BasinMessage[];
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
+/** The scalar fields the server can work out on a grid, each of which comes in a `scalar.result`. */
+export type ScalarFieldName = "density" | "spin" | "intermolecular" | "deformation" | "laplacian" | "elf";
+
+/**
+ * One scalar field at every point of a grid, sent on the server's own initiative after a request. It describes the geometry at `version`. The
+ * density is never negative; the spin density is the electrons of spin up less those of spin down; the intermolecular density is that of everything
+ * together less those of its molecules each on its own; the deformation density is that of a molecule less those of its atoms as free atoms; the Laplacian is minus the Laplacian of the density, which is positive where charge is
+ * concentrated; and the electron localisation function runs from zero to one.
+ */
+export interface ScalarFieldResult extends ServerEnvelope {
+  type: "scalar.result";
+  /** Which field it is. */
+  field: ScalarFieldName;
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** An atom of the molecule it is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** Where the points are, or null if there is no field. */
+  grid: FieldGridMessage | null;
+  /** Every point's value, in the unit of the field, in the same form as an orbital's values. */
+  values: string | null;
   min: number | null;
   max: number | null;
   elapsed_ms: number;
@@ -850,6 +927,28 @@ export interface EspResult extends ServerEnvelope {
   potential: string | null;
   min: number | null;
   max: number | null;
+  elapsed_ms: number;
+  /** Why there is no field. */
+  message: string | null;
+}
+
+/**
+ * The two fields a plot of non-covalent interactions is drawn from, on one grid, sent on the server's own initiative after a request. It
+ * describes the geometry at `version`.
+ */
+export interface NciResult extends ServerEnvelope {
+  type: "nci.result";
+  session_id: string;
+  version: number;
+  status: "complete" | "failed";
+  /** An atom of the molecule it is of, as the client asked, or null for the whole session. */
+  fragment: string | null;
+  /** Where the points are, or null if there is no field. */
+  grid: FieldGridMessage | null;
+  /** Every point's reduced density gradient, which has no unit, in the same form as an orbital's values; large where there is no density. */
+  gradient: string | null;
+  /** Every point's electron density in electrons per cubic bohr, negative where the middle eigenvalue of its Hessian is, in the same form. */
+  signed: string | null;
   elapsed_ms: number;
   /** Why there is no field. */
   message: string | null;
@@ -948,11 +1047,16 @@ export type ServerMessage =
   | InteractionResult
   | EspRequestAck
   | EspResult
-  | DensityRequestAck
+  | NciRequestAck
+  | NciResult
+  | ScalarRequestAck
+  | ElectronsAck
+  | CalculationResetAck
+  | CalculationResult
+  | BasinsRequestAck
+  | BasinsResult
   | PlaneRequestAck
   | PlaneResult
-  | SpinRequestAck
-  | DifferenceRequestAck
-  | DensityResult
+  | ScalarFieldResult
   | SocketError
   | Pong;

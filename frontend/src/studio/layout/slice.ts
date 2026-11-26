@@ -1,8 +1,9 @@
 import {Color} from "three";
 import {diverging, NEUTRAL_COLOUR} from "../../render/scale";
 import type {PlaneResult} from "../session/messages";
-import {autoLimit, type DecodedDensity, sampleGrid} from "./esp";
-import {decodeFloats, type DrawnOrbital} from "./orbitals";
+import {autoLimit} from "./esp";
+import {sampleGrid} from "./gridField";
+import {type DecodedField, decodeFloats, type DrawnOrbital} from "./orbitals";
 
 /** The axis a slice plane is at right angles to. */
 export type SliceAxis = "x" | "y" | "z";
@@ -61,7 +62,7 @@ export interface SliceDrawing {
  * @param fraction how far along the field's extent in that axis the plane is, from 0 to 1
  * @returns the field on the plane
  */
-export function sliceSamples(field: DecodedDensity, axis: SliceAxis, fraction: number): SliceSamples {
+export function sliceSamples(field: DecodedField, axis: SliceAxis, fraction: number): SliceSamples {
   const { shape } = field;
   const counts = { x: shape.nx, y: shape.ny, z: shape.nz };
   // the plane's two axes are the other two, in the order that goes round: x then y, y then z, z then x
@@ -86,21 +87,21 @@ export function sliceSamples(field: DecodedDensity, axis: SliceAxis, fraction: n
   for (let j = 0; j < height; j++) {
     for (let i = 0; i < width; i++) {
       const point = place(i / (width - 1), j / (height - 1));
-      values[j * width + i] = sampleGrid(field.density, shape, point.x, point.y, point.z);
+      values[j * width + i] = sampleGrid(field.values, shape, point.x, point.y, point.z);
     }
   }
   return { values, width, height, corners: [place(0, 0), place(1, 0), place(1, 1), place(0, 1)] };
 }
 
 /** What each field's scale was worked out as. */
-const limits = new WeakMap<DecodedDensity, Map<boolean, number>>();
+const limits = new WeakMap<DecodedField, Map<boolean, number>>();
 
 /**
  * @param field the field
  * @param signed whether the field is positive in some places and negative in others, so the scale goes either side of zero
  * @returns how far from zero the colours reach
  */
-export function sliceLimit(field: DecodedDensity, signed: boolean): number {
+export function sliceLimit(field: DecodedField, signed: boolean): number {
   let held = limits.get(field);
   if (!held) {
     held = new Map();
@@ -111,7 +112,7 @@ export function sliceLimit(field: DecodedDensity, signed: boolean): number {
     return known;
   }
 
-  const sizes = Float32Array.from(field.density, (value) => (Number.isFinite(value) ? Math.abs(value) : 0)).sort();
+  const sizes = Float32Array.from(field.values, (value) => (Number.isFinite(value) ? Math.abs(value) : 0)).sort();
   const limit = Math.max(signed ? 1.0e-4 : 1.0e-3, sizes[Math.min(sizes.length - 1, Math.floor(sizes.length * 0.99))] ?? 0);
   held.set(signed, limit);
   return limit;
@@ -119,7 +120,34 @@ export function sliceLimit(field: DecodedDensity, signed: boolean): number {
 
 /** The scales as a table of red, green and blue. */
 const SIGNED_TABLE = Array.from({ length: 2 * STEPS + 1 }, (_, i) => new Color(diverging((i - STEPS) / STEPS, 1)));
-const SEQUENTIAL_TABLE = Array.from({ length: STEPS + 1 }, (_, i) => new Color(NEUTRAL_COLOUR).lerp(new Color(SEQUENTIAL_COLOUR), i / STEPS));
+const SEQUENTIAL_TABLE = sequentialTable(SEQUENTIAL_COLOUR);
+
+/** The scales of a field that is never negative in other colours, which are made when they are first asked for. */
+const TINTED_TABLES = new Map<string, Color[]>();
+
+/**
+ * @param tint the colour of the strongest part, as hex
+ * @returns the colours from near white to that, as a table
+ */
+function sequentialTable(tint: string): Color[] {
+  return Array.from({ length: STEPS + 1 }, (_, i) => new Color(NEUTRAL_COLOUR).lerp(new Color(tint), i / STEPS));
+}
+
+/**
+ * @param tint the colour of the strongest part, as hex, or undefined for the usual deep blue
+ * @returns the table of colours to draw a field that is never negative in
+ */
+function tableFor(tint: string | undefined): Color[] {
+  if (tint === undefined || tint === SEQUENTIAL_COLOUR) {
+    return SEQUENTIAL_TABLE;
+  }
+  let table = TINTED_TABLES.get(tint);
+  if (!table) {
+    table = sequentialTable(tint);
+    TINTED_TABLES.set(tint, table);
+  }
+  return table;
+}
 
 /**
  * Colours the samples of a slice. A field that is never negative is shown on a scale from near white to deep blue that rises faster at
@@ -128,9 +156,11 @@ const SEQUENTIAL_TABLE = Array.from({ length: STEPS + 1 }, (_, i) => new Color(N
  * @param values the samples
  * @param signed whether the field has both signs
  * @param limit the magnitude at which the colour is as strong as it gets
+ * @param tint the colour of the strongest part of a field that is never negative, as hex, or undefined for the usual deep blue
  * @returns the red, green, blue and alpha of each sample, from 0 to 255, which is clear where there is no value
  */
-export function sliceColours(values: ArrayLike<number>, signed: boolean, limit: number): Uint8ClampedArray {
+export function sliceColours(values: ArrayLike<number>, signed: boolean, limit: number, tint?: string): Uint8ClampedArray {
+  const table = tableFor(tint);
   const pixels = new Uint8ClampedArray(values.length * 4);
   for (let at = 0; at < values.length; at++) {
     const value = values[at] as number;
@@ -139,7 +169,7 @@ export function sliceColours(values: ArrayLike<number>, signed: boolean, limit: 
     }
     const colour = signed
       ? (SIGNED_TABLE[Math.round((Math.max(-1, Math.min(1, value / limit)) + 1) * STEPS)] as Color)
-      : (SEQUENTIAL_TABLE[Math.round(Math.sqrt(Math.max(0, Math.min(1, value / limit))) * STEPS)] as Color);
+      : (table[Math.round(Math.sqrt(Math.max(0, Math.min(1, value / limit))) * STEPS)] as Color);
     pixels[at * 4] = Math.round(colour.r * 255);
     pixels[at * 4 + 1] = Math.round(colour.g * 255);
     pixels[at * 4 + 2] = Math.round(colour.b * 255);
@@ -245,15 +275,16 @@ const JOINS: readonly (readonly (readonly [number, number])[])[] = [
  * @param field the field
  * @param axis the axis the plane is at right angles to
  * @param fraction how far along the field's extent in that axis the plane is, from 0 to 1
- * @param signed whether the field has both signs, as the spin density and the difference density do
+ * @param signed whether the field has both signs, as the spin density and the interaction density do
  * @param contours whether to find the lines of constant value across the plane
+ * @param tint the colour of the strongest part of a field that is never negative, as hex, or undefined for the usual deep blue
  * @returns the drawing
  */
-export function sliceDrawing(field: DecodedDensity, axis: SliceAxis, fraction: number, signed: boolean, contours: boolean): SliceDrawing {
+export function sliceDrawing(field: DecodedField, axis: SliceAxis, fraction: number, signed: boolean, contours: boolean, tint?: string): SliceDrawing {
   const samples = sliceSamples(field, axis, fraction);
   const limit = sliceLimit(field, signed);
   return {
-    pixels: sliceColours(samples.values, signed, limit),
+    pixels: sliceColours(samples.values, signed, limit, tint),
     width: samples.width,
     height: samples.height,
     corners: samples.corners,
@@ -330,7 +361,7 @@ export function planeValueAt(plane: DecodedPlane, x: number, y: number, z: numbe
 }
 
 /** What each orbital was made into a field of: its amplitude, and its probability. */
-const orbitalFields = new WeakMap<Float32Array, { amplitude?: DecodedDensity; probability?: DecodedDensity }>();
+const orbitalFields = new WeakMap<Float32Array, { amplitude?: DecodedField; probability?: DecodedField }>();
 
 /**
  * Makes a field a slice can show of one of the orbitals drawn.
@@ -340,7 +371,7 @@ const orbitalFields = new WeakMap<Float32Array, { amplitude?: DecodedDensity; pr
  * @param probability whether to show its probability, the squared amplitude, which is never negative, in place of its amplitude, which has a sign
  * @returns the field, or null if there is no orbital drawn
  */
-export function orbitalSliceField(drawn: readonly Pick<DrawnOrbital, "field">[], index: number, probability: boolean): DecodedDensity | null {
+export function orbitalSliceField(drawn: readonly Pick<DrawnOrbital, "field">[], index: number, probability: boolean): DecodedField | null {
   const picked = drawn[Math.max(0, Math.min(index, drawn.length - 1))];
   if (!picked) {
     return null;
@@ -350,10 +381,10 @@ export function orbitalSliceField(drawn: readonly Pick<DrawnOrbital, "field">[],
   const held = orbitalFields.get(values) ?? {};
   orbitalFields.set(values, held);
   if (probability) {
-    held.probability ??= { density: Float32Array.from(values, (value) => value * value), shape };
+    held.probability ??= { values: Float32Array.from(values, (value) => value * value), shape };
     return held.probability;
   }
-  held.amplitude ??= { density: values, shape };
+  held.amplitude ??= { values, shape };
   return held.amplitude;
 }
 

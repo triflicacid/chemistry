@@ -15,8 +15,9 @@ export interface Orbitals {
   /**
    * @param model the kind of Hartree-Fock calculation
    * @param fragments the molecules to calculate each on its own, as an atom of each; empty for the whole session as one
+   * @param spins the spin multiplicity to calculate each at, by an atom of the molecule, with the whole session under the empty string
    */
-  requestOrbitals: (model: string, fragments: readonly string[]) => void;
+  requestOrbitals: (model: string, fragments: readonly string[], spins: Readonly<Record<string, number>>) => void;
   /** The values of orbitals on grids as the server last said, one for each orbital asked for, which may be several at once. */
   fields: readonly FieldResult[];
   /** Whether orbitals have been asked for and have not yet arrived. */
@@ -24,8 +25,9 @@ export interface Orbitals {
   /**
    * @param model the kind of Hartree-Fock calculation
    * @param targets the orbitals to evaluate
+   * @param spins the spin multiplicity to calculate each molecule at, as for {@link requestOrbitals}
    */
-  requestOrbital: (model: string, targets: readonly OrbitalTarget[]) => void;
+  requestOrbital: (model: string, targets: readonly OrbitalTarget[], spins: Readonly<Record<string, number>>) => void;
   /** How the orbitals of everything together are made of those of each molecule on its own, as the server last said, or null if it has not. */
   interaction: InteractionResult | null;
   /** When the calculation of it under way was asked for, as {@link Date.now} says, or null if there is none. */
@@ -34,8 +36,9 @@ export interface Orbitals {
    * Asks the server for how the orbitals of everything together are made of those of each molecule.
    *
    * @param model the kind of Hartree-Fock calculation
+   * @param spins the spin multiplicity to calculate each at, as for {@link requestOrbitals}
    */
-  requestInteraction: (model: string) => void;
+  requestInteraction: (model: string, spins: Readonly<Record<string, number>>) => void;
 }
 
 /**
@@ -107,7 +110,7 @@ export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbit
   }, [held, socketRef, warnLevels, warnField, warnInteraction]);
 
   const requestOrbitals = useCallback(
-    (model: string, fragments: readonly string[]) => {
+    (model: string, fragments: readonly string[], spins: Readonly<Record<string, number>>) => {
       const socket = socketRef.current;
       const base = held.current;
       if (!socket || !base) {
@@ -115,7 +118,7 @@ export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbit
       }
 
       setOrbitalsSince(Date.now());
-      socket.requestOrbitals(base.session_id, model, fragments).catch((cause: unknown) => {
+      socket.requestOrbitals(base.session_id, model, fragments, spins).catch((cause: unknown) => {
         setOrbitalsSince(null);
         note(reason(cause), true);
       });
@@ -124,7 +127,7 @@ export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbit
   );
 
   const requestOrbital = useCallback(
-    (model: string, targets: readonly OrbitalTarget[]) => {
+    (model: string, targets: readonly OrbitalTarget[], spins: Readonly<Record<string, number>>) => {
       const socket = socketRef.current;
       const base = held.current;
       if (!socket || !base || targets.length === 0) {
@@ -132,7 +135,7 @@ export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbit
       }
 
       setFieldsAsked(true);
-      socket.requestOrbital(base.session_id, model, targets).catch((cause: unknown) => {
+      socket.requestOrbital(base.session_id, model, targets, spins).catch((cause: unknown) => {
         setFieldsAsked(false);
         note(reason(cause), true);
       });
@@ -141,7 +144,7 @@ export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbit
   );
 
   const requestInteraction = useCallback(
-    (model: string) => {
+    (model: string, spins: Readonly<Record<string, number>>) => {
       const socket = socketRef.current;
       const base = held.current;
       if (!socket || !base) {
@@ -149,7 +152,7 @@ export function useOrbitals({ socketRef, held, note, warn }: SessionLink): Orbit
       }
 
       setInteractionSince(Date.now());
-      socket.requestInteraction(base.session_id, model).catch((cause: unknown) => {
+      socket.requestInteraction(base.session_id, model, spins).catch((cause: unknown) => {
         setInteractionSince(null);
         note(reason(cause), true);
       });

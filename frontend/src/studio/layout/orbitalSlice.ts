@@ -1,7 +1,7 @@
 import {Color} from "three";
 import type {LevelBy, OrbitalColouring, OrbitalCombine, OrbitalDisplay} from "../models/OrbitalModel";
 import {NEUTRAL_COLOUR as SCALE_NEUTRAL} from "../../render/scale";
-import {sampleGrid} from "./esp";
+import {sampleGrid} from "./gridField";
 import {characterColour, energyColour, isRole, roleColour} from "./orbitalColours";
 import {amplitudeForShare, type DrawnOrbital, massLevel, nearestToGap} from "./orbitals";
 import {
@@ -116,7 +116,7 @@ export function orbitalSliceDrawing(orbitals: readonly DrawnOrbital[], options: 
       return null;
     }
     sumField = { values: sum, level, shape: members[0]!.orbital.field.shape };
-    const over = sliceSamples({ density: sum, shape: sumField.shape }, options.axis, options.fraction);
+    const over = sliceSamples({ values: sum, shape: sumField.shape }, options.axis, options.fraction);
     const nearest = nearestToGap(members.map(({ orbital }) => orbital));
     for (let at = 0; at < count; at++) {
       intensity[at] = (over.values[at] as number) / level;

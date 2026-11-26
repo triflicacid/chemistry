@@ -1,0 +1,128 @@
+import {useCallback, useEffect, useRef, useState} from "react";
+import type {ScalarFieldName, ScalarFieldResult} from "./messages";
+import {reason} from "./errors";
+import type {SessionLink} from "./useSocket";
+import {useWarner} from "./warnings";
+
+/** One scalar field. */
+interface Held {
+  result: ScalarFieldResult | null;
+  /** When the calculation under way was asked for, as {@link Date.now}, or null if there is none. */
+  since: number | null;
+  request: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+}
+
+/** The scalar fields the server works out on a grid,. */
+export interface ScalarFields {
+  /** The electron density. */
+  density: ScalarFieldResult | null;
+  /** When the calculation under way was asked for, as {@link Date.now}, or null if there is none. */
+  densitySince: number | null;
+  /**
+   * @param model the kind of Hartree-Fock calculation
+   * @param fragment an atom of the molecule to calculate, or null for the whole session
+   * @param multiplicity the spin multiplicity to calculate it at, or null for the lowest the electron count allows
+   * @param automatic whether it is asked only because the session changed, so that an answer that says what the last did is not warned of again
+   */
+  requestDensity: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** The spin density: the electrons of spin up less those of spin down. */
+  spin: ScalarFieldResult | null;
+  spinSince: number | null;
+  requestSpin: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** The intermolecular density: everything together less its molecules each on its own. */
+  intermolecular: ScalarFieldResult | null;
+  intermolecularSince: number | null;
+  requestIntermolecular: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** The deformation density: the molecule less its atoms as free atoms, which is what bonding does to the electrons. */
+  deformation: ScalarFieldResult | null;
+  deformationSince: number | null;
+  requestDeformation: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** Minus the Laplacian of the electron density: positive where charge is concentrated, negative where it is depleted. */
+  laplacian: ScalarFieldResult | null;
+  laplacianSince: number | null;
+  requestLaplacian: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+  /** The electron localisation function, from zero to one. */
+  elf: ScalarFieldResult | null;
+  elfSince: number | null;
+  requestElf: (model: string, fragment: string | null, multiplicity: number | null, automatic?: boolean) => void;
+}
+
+/**
+ * Keeps one scalar field the server sends.
+ *
+ * @param link the connection to the session
+ * @param field which field
+ */
+function useHeld({ socketRef, held, note, warn }: SessionLink, field: ScalarFieldName): Held {
+  const [result, setResult] = useState<ScalarFieldResult | null>(null);
+  const [since, setSince] = useState<number | null>(null);
+  const warnOnce = useWarner(warn);
+  const automatically = useRef(false);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) {
+      return;
+    }
+
+    return socket.on<ScalarFieldResult>("scalar.result", (arrived) => {
+      if (arrived.field !== field || (held.current && held.current.session_id !== arrived.session_id)) {
+        return;
+      }
+      setSince(null);
+      warnOnce(arrived.status === "complete" ? null : (arrived.message ?? "The field could not be calculated."), automatically.current);
+      // a result older than the one held is stale
+      setResult((before) => (before && before.session_id === arrived.session_id && before.version > arrived.version ? before : arrived));
+    });
+  }, [held, socketRef, field, warnOnce]);
+
+  const request = useCallback(
+    (model: string, fragment: string | null, multiplicity: number | null, automatic = false) => {
+      automatically.current = automatic;
+      const socket = socketRef.current;
+      const base = held.current;
+      if (!socket || !base) {
+        return;
+      }
+
+      setSince(Date.now());
+      socket.requestScalarField(base.session_id, field, model, fragment, multiplicity).catch((cause: unknown) => {
+        setSince(null);
+        note(reason(cause), true);
+      });
+    },
+    [held, note, socketRef, field],
+  );
+
+  return { result, since, request };
+}
+
+export function useScalarFields(link: SessionLink): ScalarFields {
+  const density = useHeld(link, "density");
+  const spin = useHeld(link, "spin");
+  const intermolecular = useHeld(link, "intermolecular");
+  const deformation = useHeld(link, "deformation");
+  const laplacian = useHeld(link, "laplacian");
+  const elf = useHeld(link, "elf");
+
+  return {
+    density: density.result,
+    densitySince: density.since,
+    requestDensity: density.request,
+    spin: spin.result,
+    spinSince: spin.since,
+    requestSpin: spin.request,
+    intermolecular: intermolecular.result,
+    intermolecularSince: intermolecular.since,
+    requestIntermolecular: intermolecular.request,
+    deformation: deformation.result,
+    deformationSince: deformation.since,
+    requestDeformation: deformation.request,
+    laplacian: laplacian.result,
+    laplacianSince: laplacian.since,
+    requestLaplacian: laplacian.request,
+    elf: elf.result,
+    elfSince: elf.since,
+    requestElf: elf.request,
+  };
+}

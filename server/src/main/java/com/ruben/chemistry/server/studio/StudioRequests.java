@@ -8,6 +8,7 @@ import com.ruben.chemistry.space.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public final class StudioRequests
 {
@@ -120,8 +121,9 @@ public final class StudioRequests
     /**
      * @param sessionId the session whose atoms' partial charges to calculate
      * @param model the name of the model to assign them with (optional; {@link ChargeModels#DEFAULT} if absent)
+     * @param multiplicity the spin multiplicity to calculate the whole session at, or absent for the lowest the electron count allows
      */
-    public record ChargesRequest(String sessionId, String model)
+    public record ChargesRequest(String sessionId, String model, Integer multiplicity)
     {
     }
 
@@ -144,26 +146,29 @@ public final class StudioRequests
      * @param model the kind of Hartree-Fock calculation: {@code rhf}, {@code uhf} or {@code rohf}; or {@code mulliken} or absent for
      *     the studio's automatic choice, which is closed-shell where the electrons pair up and unrestricted where they do not
      * @param fragments the molecules to calculate each on its own, as an atom of each; absent or empty for the whole session as one
+     * @param multiplicities the spin multiplicity to calculate each at, by an atom of the molecule, with the whole session under the empty string; a
+     *     calculation with none is made at the lowest the electron count allows
      */
-    public record OrbitalsRequest(String sessionId, String model, List<String> fragments)
+    public record OrbitalsRequest(String sessionId, String model, List<String> fragments, Map<String, Integer> multiplicities)
     {
     }
 
     /**
      * @param sessionId the session whose orbitals to relate to those of its molecules on their own
      * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
+     * @param multiplicities the spin multiplicity to calculate each at, as for {@link OrbitalsRequest}
      */
-    public record InteractionRequest(String sessionId, String model)
+    public record InteractionRequest(String sessionId, String model, Map<String, Integer> multiplicities)
     {
     }
 
     /**
-     * @param sessionId the session whose electrostatic potential to calculate
+     * @param sessionId the session to calculate something on a grid round
      * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
      * @param fragment an atom of the molecule to calculate, or absent for the whole session
      * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
      */
-    public record EspRequest(String sessionId, String model, String fragment, Integer multiplicity)
+    public record GridRequest(String sessionId, String model, String fragment, Integer multiplicity)
     {
     }
 
@@ -180,12 +185,13 @@ public final class StudioRequests
     }
 
     /**
-     * @param sessionId the session whose density to calculate
+     * @param sessionId the session whose field to calculate
+     * @param field which scalar field, one of {@link WavefunctionScheduler#SCALAR_FIELDS}
      * @param model the kind of Hartree-Fock calculation, as for {@link OrbitalsRequest}
      * @param fragment an atom of the molecule to calculate, or absent for the whole session
      * @param multiplicity the spin multiplicity to calculate it at, or absent for the lowest the electron count allows
      */
-    public record DensityRequest(String sessionId, String model, String fragment, Integer multiplicity)
+    public record ScalarFieldRequest(String sessionId, String field, String model, String fragment, Integer multiplicity)
     {
     }
 
@@ -205,8 +211,9 @@ public final class StudioRequests
      * @param kind what the fields are; only {@code orbital} is supported
      * @param model the kind of calculation, as for {@link OrbitalsRequest}
      * @param targets the orbitals to evaluate, each of which is answered by a field
+     * @param multiplicities the spin multiplicity to calculate each molecule at, as for {@link OrbitalsRequest}
      */
-    public record FieldRequest(String sessionId, String kind, String model, List<FieldTarget> targets)
+    public record FieldRequest(String sessionId, String kind, String model, List<FieldTarget> targets, Map<String, Integer> multiplicities)
     {
     }
 

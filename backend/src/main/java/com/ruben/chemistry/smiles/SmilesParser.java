@@ -42,6 +42,9 @@ public final class SmilesParser
     /** Collects the double bonds and directional bonds parsed so far, and declares their stereo. */
     private final StereoTracker<Atom> stereo = new StereoTracker<>(builder::setDoubleBondStereo);
 
+    /** Each stereocentre's chirality, held until its ring bonds are closed and their order is known. */
+    private final Map<Atom, Chirality> stereocentres = new IdentityHashMap<>();
+
     /** Ring-closure digits still waiting for their second occurrence, in the order they were opened. */
     private final Map<String, PendingRingClosure> openRingBonds = new LinkedHashMap<>();
 
@@ -137,6 +140,7 @@ public final class SmilesParser
             throw new InvalidNotationException("Unpaired ring closure digit", source, firstUnpaired.position());
         }
 
+        declareChirality();
         Molecule molecule = demoteAcyclicAromaticBonds();
         resolveBondSpans(molecule);
         return molecule;
@@ -288,7 +292,7 @@ public final class SmilesParser
 
         if (asWritten != null)
         {
-            builder.setChirality(atom, normaliseForStorage(asWritten, hydrogenCount));
+            stereocentres.put(atom, normaliseForStorage(asWritten, hydrogenCount));
         }
 
         return atom;
@@ -307,6 +311,16 @@ public final class SmilesParser
         boolean hasPrecedingAtom = previousAtom != null;
         boolean hasImplicitHydrogen = hydrogenCount.orElse(0) > 0;
         return hasPrecedingAtom && hasImplicitHydrogen ? asWritten.flip() : asWritten;
+    }
+
+    /**
+     * Declares each stereocentre's chirality, reversed where its bonds are stored an odd reordering away from how
+     * they were written.
+     */
+    private void declareChirality()
+    {
+        stereocentres.forEach((atom, chirality) ->
+            builder.setChirality(atom, stereo.isOddlyReordered(atom) ? chirality.flip() : chirality));
     }
 
     /**
@@ -524,7 +538,8 @@ public final class SmilesParser
         PendingRingClosure opened = openRingBonds.remove(token.text());
         if (opened == null)
         {
-            openRingBonds.put(token.text(), new PendingRingClosure(previousAtom, symbolHere, writtenHere, token.position()));
+            int place = stereo.openRingBond(previousAtom);
+            openRingBonds.put(token.text(), new PendingRingClosure(previousAtom, place, symbolHere, writtenHere, token.position()));
             return;
         }
 
@@ -535,7 +550,7 @@ public final class SmilesParser
 
         BondOrder order = resolveRingBondOrder(opened.bondSymbol(), symbolHere, opened.atom(), previousAtom, token);
         builder.addBond(opened.atom(), previousAtom, order);
-        stereo.recordBond(opened.atom(), previousAtom, order == BondOrder.DOUBLE);
+        stereo.recordRingBond(opened.atom(), opened.place(), previousAtom, order == BondOrder.DOUBLE);
         // a ring bond is written at both of its ends, as the digits that pair them up
         recordWrittenBond(opened.atom(), previousAtom, opened.writtenSpan());
         recordWrittenBond(opened.atom(), previousAtom, writtenHere);
@@ -625,11 +640,12 @@ public final class SmilesParser
      * An as-yet-unmatched ring-closure digit, recorded at the atom it was opened on.
      *
      * @param atom the atom the ring closure was opened on
+     * @param place where the ring bond falls among that atom's bonds
      * @param bondSymbol the bond symbol written immediately before the digit when it was opened, or {@code null}
      * @param writtenSpan where this end of the bond was written: its digits, with any symbol before them
      * @param position the opening digit's source position, for error reporting if it's never closed
      */
-    private record PendingRingClosure(Atom atom, String bondSymbol, Span writtenSpan, int position)
+    private record PendingRingClosure(Atom atom, int place, String bondSymbol, Span writtenSpan, int position)
     {
     }
 

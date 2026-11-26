@@ -40,6 +40,12 @@ public final class StereoTracker<A>
     /** The other endpoint of each double bond, by either of its atoms. */
     private final Map<A, A> doubleBondPartnerOf = new IdentityHashMap<>();
 
+    /** Where each of an atom's bonds was written among its others, listed in the order the bonds were recorded. */
+    private final Map<A, List<Integer>> writtenPlacesOf = new IdentityHashMap<>();
+
+    /** How many places among its bonds each atom has had written so far. */
+    private final Map<A, Integer> placesTakenBy = new IdentityHashMap<>();
+
     /** The directional bond recorded against each atom, as one half of a double bond's stereo. */
     private final Map<A, DirectionalEdge<A>> directionalEdgeOf = new IdentityHashMap<>();
 
@@ -60,14 +66,50 @@ public final class StereoTracker<A>
      */
     public void recordBond(A writtenFirst, A writtenSecond, boolean isDoubleBond)
     {
-        recordSubstituent(writtenFirst, writtenSecond);
-        recordSubstituent(writtenSecond, writtenFirst);
+        record(writtenFirst, takePlace(writtenFirst), writtenSecond, isDoubleBond);
+    }
 
-        if (isDoubleBond)
+    /**
+     * Notes that a ring bond has been opened at an atom, which fixes where it falls among that atom's bonds.
+     *
+     * @param atom the atom the ring bond was opened on
+     * @return the bond's place among the atom's bonds, to be given back when it closes
+     */
+    public int openRingBond(A atom)
+    {
+        return takePlace(atom);
+    }
+
+    /**
+     * Records a ring bond just closed between two atoms.
+     *
+     * @param opening the atom the ring bond was opened on
+     * @param openingPlace what {@link #openRingBond} returned for it
+     * @param closing the atom it was closed on
+     * @param isDoubleBond whether this is a double bond, and so one a configuration can be declared for
+     */
+    public void recordRingBond(A opening, int openingPlace, A closing, boolean isDoubleBond)
+    {
+        record(opening, openingPlace, closing, isDoubleBond);
+    }
+
+    /**
+     * @param atom an atom of the parsed structure
+     * @return whether going from the order the atom's bonds were written in to the order they were recorded in
+     *     takes an odd number of swaps, which reverses any chirality written there
+     */
+    public boolean isOddlyReordered(A atom)
+    {
+        List<Integer> places = writtenPlacesOf.getOrDefault(atom, List.of());
+        boolean odd = false;
+        for (int first = 0; first < places.size(); first++)
         {
-            doubleBondPartnerOf.put(writtenFirst, writtenSecond);
-            doubleBondPartnerOf.put(writtenSecond, writtenFirst);
+            for (int second = first + 1; second < places.size(); second++)
+            {
+                odd ^= places.get(first) > places.get(second);
+            }
         }
+        return odd;
     }
 
     /**
@@ -151,14 +193,45 @@ public final class StereoTracker<A>
     }
 
     /**
-     * Records {@code other} as one of {@code atom}'s substituents, in the order its bonds are parsed.
+     * Records a bond at both of its atoms, as the latest written among the second one's bonds.
+     *
+     * @param writtenFirst the earlier-written of the bond's two atoms
+     * @param firstPlace where the bond was written among the first atom's bonds
+     * @param writtenSecond the later-written of the bond's two atoms
+     * @param isDoubleBond whether this is a double bond
+     */
+    private void record(A writtenFirst, int firstPlace, A writtenSecond, boolean isDoubleBond)
+    {
+        recordSubstituent(writtenFirst, writtenSecond, firstPlace);
+        recordSubstituent(writtenSecond, writtenFirst, takePlace(writtenSecond));
+
+        if (isDoubleBond)
+        {
+            doubleBondPartnerOf.put(writtenFirst, writtenSecond);
+            doubleBondPartnerOf.put(writtenSecond, writtenFirst);
+        }
+    }
+
+    /**
+     * Records {@code other} as one of {@code atom}'s substituents, in the order its bonds are recorded.
      *
      * @param atom the atom to record a substituent for
      * @param other the atom just bonded to it
+     * @param place where the bond was written among the atom's bonds
      */
-    private void recordSubstituent(A atom, A other)
+    private void recordSubstituent(A atom, A other, int place)
     {
         substituentOrderOf.computeIfAbsent(atom, ignored -> new ArrayList<>()).add(other);
+        writtenPlacesOf.computeIfAbsent(atom, ignored -> new ArrayList<>()).add(place);
+    }
+
+    /**
+     * @param atom an atom with a bond being written
+     * @return the next place among its bonds, counting from zero
+     */
+    private int takePlace(A atom)
+    {
+        return placesTakenBy.merge(atom, 1, Integer::sum) - 1;
     }
 
     /**

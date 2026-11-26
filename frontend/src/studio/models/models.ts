@@ -1,4 +1,5 @@
 import type {ChemistryStatus} from "../chemistry/useChemistry";
+import {CalculationModel} from "./CalculationModel";
 import {CameraModel} from "./CameraModel";
 import {DebugModel} from "./DebugModel";
 import {FocusModel} from "./FocusModel";
@@ -40,6 +41,8 @@ export interface Models {
   numbers: MoleculeNumbersModel;
   /** Which orbital is drawn in the scene, and how. */
   orbital: OrbitalModel;
+  /** How the electrons of the session are calculated, which charges, orbitals, surfaces and slices all share. */
+  calculation: CalculationModel;
   /** Looks identifiers up in the state the surfaces are showing; null until a session opens. */
   index: StateIndex | null;
   /** The molecule's chemistry. */
@@ -52,7 +55,7 @@ export interface Models {
  * @returns a selection and a hover model, with nothing selected, a tool model on the select tool, and a camera model
  *     that knows nothing until a viewport reports
  */
-export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render" | "properties" | "debug" | "hydrogenBond" | "numbers" | "orbital"> {
+export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "camera" | "focus" | "reveal" | "render" | "properties" | "debug" | "hydrogenBond" | "numbers" | "orbital" | "calculation"> {
   return {
     selection: new SelectionModel(),
     hover: new HoverModel(),
@@ -66,5 +69,6 @@ export function createModels(): Pick<Models, "selection" | "hover" | "tools" | "
     hydrogenBond: new HydrogenBondModel(),
     numbers: new MoleculeNumbersModel(),
     orbital: new OrbitalModel(),
+    calculation: new CalculationModel(),
   };
 }

@@ -1,26 +1,36 @@
 import {type ReactNode, useEffect, useState} from "react";
 import type {Models} from "../models/models";
-import {ORBITAL_KINDS, type OrbitalKind} from "../models/OrbitalModel";
 import {
     CHARGE_MODELS,
     type ChargeModel,
     type ColourBy,
+    DEFAULT_ELF_LEVEL,
+    DEFAULT_NCI_LEVEL,
     DEFAULT_POLAR_THRESHOLD,
     DEFAULT_SURFACE_ISOVALUE,
+    type DeformationDisplay,
     type DensityColour,
+    type ElfDisplay,
+    MAX_ELF_LEVEL,
     MAX_FORCE_SCALE,
+    MAX_NCI_LEVEL,
     MAX_POLAR_THRESHOLD,
-    MAX_SURFACE_ISOVALUE,
+    maxSurfaceIsovalue,
+    MIN_ELF_LEVEL,
     MIN_FORCE_SCALE,
+    MIN_NCI_LEVEL,
     MIN_POLAR_THRESHOLD,
     MIN_SURFACE_ISOVALUE,
     MIN_SURFACE_OPACITY,
-    MULTIPLICITIES,
     type PropertyGroup,
     type SliceField,
     type SurfaceKind,
 } from "../models/PropertiesModel";
 import {KCAL_PER_HARTREE, largest, toKcalPerAngstrom} from "../layout/forceArrows";
+import {ATTRACTIVE, REPULSIVE, WEAK} from "../layout/nci";
+import {BASIN_COLOURS, type PairsShown, pairsShown} from "../layout/basins";
+import {elfGradient, fieldOnSurface} from "../layout/surfaceMap";
+import {dualGradient, isFrontierMap, reactivityGradient} from "../layout/reactivity";
 import {ATOM_COLOUR, NET_COLOUR, TORQUE_COLOUR} from "../viewport/scene/ForceArrows";
 import {useObservable} from "../models/observable";
 import {divergingGradient} from "../../render/scale";
@@ -30,7 +40,8 @@ import {useSessionContext} from "../session/SessionContext";
 import {ForceDebug} from "./ForceDebug";
 import {NEGATIVE_LOBE, POSITIVE_LOBE} from "../layout/orbitalColours";
 import {isOrbitalSlice, nameOf, sliceTargets} from "../layout/orbitals";
-import {autoLimit, decodeDensity, decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
+import {autoLimit, decodeEsp, espSurface as makeEspSurface, toKcalPerCharge} from "../layout/esp";
+import {decodeScalarField} from "../layout/gridField";
 import {decodePlane, sequentialGradient, type SliceAxis, sliceLimit} from "../layout/slice";
 
 /** What the atoms can be coloured by, with what each means. */
@@ -42,22 +53,34 @@ const COLOUR_OPTIONS: { value: ColourBy; label: string; title: string }[] = [
 /** What can be drawn as a surface of the electron density, with what each means. */
 const SURFACE_OPTIONS: { value: SurfaceKind; label: string; title: string }[] = [
   { value: "none", label: "None", title: "Draw no surface" },
-  { value: "density", label: "Electron density", title: "A surface where the electron density has a chosen value, from Hartree-Fock" },
-  { value: "spin", label: "Spin density", title: "Where the unpaired electrons are: blue where spin up is in excess, red where spin down is. A molecule whose electrons all pair up has none" },
-  { value: "difference", label: "Difference density", title: "The density of everything together less the densities of its molecules each on its own: blue where electrons gather as the molecules meet, red where they leave. Needs two or more molecules" },
-  { value: "esp", label: "Potential on density", title: "The same surface coloured by the electrostatic potential: red where it is negative, which attracts positive charge, and blue where it is positive" },
+  { value: "density", label: "Electron density (ρ)", title: "A surface of constant electron density" },
+  { value: "spin", label: "Spin density (ρα − ρβ)", title: "Where unpaired electrons are: blue for spin up, red for spin down" },
+  { value: "intermolecular", label: "Density change on interaction (Δρ)", title: "Electrons gained (blue) and lost (red) when the molecules interact" },
+  { value: "deformation", label: "Density change on bonding (Δρ)", title: "Electrons gained (blue) and lost (red) when the atoms bond into the molecule" },
+  { value: "nci", label: "Non-covalent contacts (RDG)", title: "Where unbonded atoms touch: blue for hydrogen-bond-like, green for van der Waals, red for clashes" },
+  { value: "homoMap", label: "HOMO on density (electrophilic sites)", title: "The density surface coloured by how much of the HOMO is there" },
+  { value: "lumoMap", label: "LUMO on density (nucleophilic sites)", title: "The density surface coloured by how much of the LUMO is there" },
+  { value: "frontierMap", label: "HOMO & LUMO on density", title: "The density surface coloured orange where the HOMO is stronger and blue where the LUMO is" },
+  { value: "concentrationMap", label: "Charge concentration on density (−∇²ρ)", title: "The density surface coloured by charge concentration: blue where concentrated (lone pairs, bonds), red where depleted" },
+  { value: "elf", label: "Electron localisation (ELF)", title: "A surface of constant electron localisation: bonds, lone pairs and cores show as separate lobes" },
+  { value: "esp", label: "Electrostatic potential on density (ESP)", title: "The density surface coloured by electrostatic potential: red where negative, blue where positive" },
 ];
 
 /** What a slice plane can show, with what each means. */
 const SLICE_OPTIONS: { value: SliceField; label: string; title: string }[] = [
   { value: "none", label: "None", title: "Draw no plane" },
-  { value: "density", label: "Electron density", title: "The electron density across a plane through the molecule, which shows the inside of what a surface only encloses" },
-  { value: "spin", label: "Spin density", title: "The spin density across a plane: blue where spin up is in excess, red where spin down is" },
-  { value: "difference", label: "Difference density", title: "What the molecules do to one another's electrons, across a plane: blue where electrons gather, red where they leave" },
-  { value: "homo", label: "HOMO orbitals", title: "A plane through the HOMO and the orbitals below it, as many as the Orbitals tab's Show says, shown as the Orbitals tab shows its surfaces: the same level, colours and way of showing several. They need not be drawn in the scene" },
-  { value: "lumo", label: "LUMO orbitals", title: "A plane through the LUMO and the orbitals above it, as many as the Orbitals tab's Show says, shown as the Orbitals tab shows its surfaces" },
-  { value: "frontier", label: "Frontier orbitals", title: "A plane through the HOMO and the orbitals below it together with the LUMO and those above it, as many each as the Orbitals tab's Show says" },
-  { value: "potential", label: "Potential", title: "The electrostatic potential across a plane, worked out for the plane itself wherever it is slid to: red where it is negative, which attracts positive charge, and blue where it is positive" },
+  { value: "density", label: "Electron density (ρ)", title: "The electron density across a plane" },
+  { value: "spin", label: "Spin density (ρα − ρβ)", title: "The spin density across a plane: blue for spin up, red for spin down" },
+  { value: "intermolecular", label: "Density change on interaction (Δρ)", title: "Electrons gained (blue) and lost (red) when the molecules interact, across a plane" },
+  { value: "deformation", label: "Density change on bonding (Δρ)", title: "Electrons gained (blue) and lost (red) when the atoms bond into the molecule, across a plane" },
+  { value: "elf", label: "Electron localisation (ELF)", title: "The electron localisation function across a plane: high where electrons are paired and apart from others" },
+  { value: "laplacian", label: "Charge concentration (−∇²ρ)", title: "Charge concentration across a plane: blue where concentrated, red where depleted" },
+  { value: "homoMap", label: "HOMO probability (|ψ|²)", title: "The probability of the HOMO across a plane, with any orbitals of equal energy" },
+  { value: "lumoMap", label: "LUMO probability (|ψ|²)", title: "The probability of the LUMO across a plane, with any orbitals of equal energy" },
+  { value: "homo", label: "HOMO orbitals", title: "The HOMO and the orbitals below it, across a plane" },
+  { value: "lumo", label: "LUMO orbitals", title: "The LUMO and the orbitals above it, across a plane" },
+  { value: "frontier", label: "Frontier orbitals", title: "The HOMO and LUMO sides together, across a plane" },
+  { value: "potential", label: "Electrostatic potential (ESP)", title: "The electrostatic potential across a plane: red where negative, blue where positive" },
 ];
 
 /** What is said while each surface is being worked out. */
@@ -66,8 +89,18 @@ const WORKING: Record<SurfaceKind, string> = {
   density: "working out the density…",
   esp: "working out the potential…",
   spin: "working out the spin density…",
-  difference: "working out the difference density, which takes a calculation for each molecule…",
+  intermolecular: "working out the interaction density, which takes a calculation for each molecule…",
+  deformation: "working out the density and the density of each atom on its own…",
+  nci: "working out the non-covalent contacts…",
+  homoMap: "working out the density…",
+  lumoMap: "working out the density…",
+  frontierMap: "working out the density…",
+  concentrationMap: "working out the density and its Laplacian…",
+  elf: "working out the electron localisation…",
 };
+
+/** What the key calls each kind of electron pair. */
+const PAIR_NAMES = { bond: "bonds", "lone pair": "lone pairs", "multicentre bond": "multicentre bonds" } as const;
 
 /** How often the running timer is redrawn. */
 const TICK_MS = 100;
@@ -78,9 +111,11 @@ const TICK_MS = 100;
  */
 export function PropertiesOptions({ models }: { models: Models }) {
   const { properties } = models;
-  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, surfaceModel, multiplicity, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, surfaceOpacity, open, expanded } =
+  const { colourBy, chargeModel, polarLabels, polarThreshold, forceArrows, forceScale, netForces, surface, densityColour, deformationDisplay, elfDisplay, sliceField, sliceAxis, slicePosition, sliceContours, surfaceIsovalue, nciLevel, elfLevel, surfaceOpacity, open, expanded } =
     useObservable(properties);
   const debug = useObservable(models.debug);
+  // these surfaces are drawn where the field is a distance above and below zero, not at one value of a density
+  const signedLevel = surface === "spin" || surface === "intermolecular" || (surface === "deformation" && deformationDisplay === "levels");
   const fold = (group: PropertyGroup) => ({ open: expanded[group], onToggle: () => properties.expandTo(group, !expanded[group]) });
 
   return (
@@ -202,38 +237,35 @@ export function PropertiesOptions({ models }: { models: Models }) {
                 ))}
               </select>
             }
-            summary={surface !== "none" ? <SurfaceSummary kind={surface} isovalue={surfaceIsovalue} /> : null}
+            summary={surface !== "none" ? <SurfaceSummary kind={surface} isovalue={surfaceIsovalue} deformationDisplay={deformationDisplay} elfDisplay={elfDisplay} /> : null}
             details={
               <>
-                <dt>Calculation</dt>
-                <dd>
-                  <select value={surfaceModel} aria-label="The kind of Hartree-Fock calculation the surfaces come from" onChange={(event) => properties.surfaceModelTo(event.target.value as OrbitalKind)}>
-                    {ORBITAL_KINDS.map(({ value, label, title }) => (
-                      <option key={value} value={value} title={title}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </dd>
-                <dt>Spin</dt>
-                <dd>
-                  <select
-                    value={multiplicity === null ? "" : String(multiplicity)}
-                    aria-label="The spin multiplicity the surfaces are calculated at"
-                    onChange={(event) => properties.multiplicityTo(event.target.value === "" ? null : Number(event.target.value))}
-                  >
-                    {MULTIPLICITIES.map(({ value, label, title }) => (
-                      <option key={String(value)} value={value === null ? "" : String(value)} title={title}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </dd>
-                {surface === "density" && (
+                {surface === "elf" && (
+                  <>
+                    <dt>Show</dt>
+                    <dd>
+                      <select value={elfDisplay} aria-label="How the electron localisation is shown" onChange={(event) => properties.elfDisplayTo(event.target.value as ElfDisplay)}>
+                        <option value="level" title="A surface where the localisation has the chosen value">
+                          Level surface
+                        </option>
+                        <option value="pairs" title="Each lone pair and bond as a lobe of its own">
+                          Electron pairs
+                        </option>
+                        <option value="lone" title="Only the lone pairs, each as a lobe of its own">
+                          Lone pairs
+                        </option>
+                        <option value="bonds" title="Only the electrons in bonds, each bond as a lobe of its own">
+                          Bond electrons
+                        </option>
+                      </select>
+                    </dd>
+                  </>
+                )}
+                {(surface === "density" || (surface === "elf" && elfDisplay === "level")) && (
                   <>
                     <dt>Colour</dt>
                     <dd>
-                      <select value={densityColour} aria-label="What colours the density surface" onChange={(event) => properties.densityColourTo(event.target.value as DensityColour)}>
+                      <select value={densityColour} aria-label="What colours the surface" onChange={(event) => properties.densityColourTo(event.target.value as DensityColour)}>
                         <option value="single" title="The whole surface in one colour">
                           One colour
                         </option>
@@ -244,22 +276,79 @@ export function PropertiesOptions({ models }: { models: Models }) {
                     </dd>
                   </>
                 )}
-                <dt>{surface === "spin" || surface === "difference" ? "Level" : "Density"}</dt>
-                <dd className="position">
-                  <input
-                    type="range"
-                    className="render-slider"
-                    min={Math.round(MIN_SURFACE_ISOVALUE * 1000)}
-                    max={Math.round(MAX_SURFACE_ISOVALUE * 1000)}
-                    step={1}
-                    value={Math.round(surfaceIsovalue * 1000)}
-                    aria-label="The electron density at the surface, in electrons per cubic bohr"
-                    title="The electron density the surface is at: lower is a larger, looser surface. Double-click to put it back"
-                    onChange={(event) => properties.surfaceIsovalueTo(Number(event.target.value) / 1000)}
-                    onDoubleClick={() => properties.surfaceIsovalueTo(DEFAULT_SURFACE_ISOVALUE)}
-                  />
-                  <span className="unit render-value">{surfaceIsovalue.toFixed(3)}</span>
-                </dd>
+                {surface === "deformation" && (
+                  <>
+                    <dt>Show</dt>
+                    <dd>
+                      <select value={deformationDisplay} aria-label="How the density change on bonding is shown" onChange={(event) => properties.deformationDisplayTo(event.target.value as DeformationDisplay)}>
+                        <option value="levels" title="Surfaces where electrons are gained (blue) and lost (red)">
+                          Gained and lost
+                        </option>
+                        <option value="range" title="The density surface coloured by how much is gained or lost at each point">
+                          Range on density
+                        </option>
+                      </select>
+                    </dd>
+                  </>
+                )}
+                {surface === "nci" ? (
+                  <>
+                    <dt>Gradient</dt>
+                    <dd className="position">
+                      <input
+                        type="range"
+                        className="render-slider"
+                        min={Math.round(MIN_NCI_LEVEL * 100)}
+                        max={Math.round(MAX_NCI_LEVEL * 100)}
+                        step={5}
+                        value={Math.round(nciLevel * 100)}
+                        aria-label="The reduced density gradient the contact surfaces are drawn at"
+                        title="The reduced density gradient the surface is drawn at. Double-click to put it back"
+                        onChange={(event) => properties.nciLevelTo(Number(event.target.value) / 100)}
+                        onDoubleClick={() => properties.nciLevelTo(DEFAULT_NCI_LEVEL)}
+                      />
+                      <span className="unit render-value">{nciLevel.toFixed(2)}</span>
+                    </dd>
+                  </>
+                ) : surface === "elf" ? (
+                  <>
+                    <dt>ELF value</dt>
+                    <dd className="position">
+                      <input
+                        type="range"
+                        className="render-slider"
+                        min={Math.round(MIN_ELF_LEVEL * 100)}
+                        max={Math.round(MAX_ELF_LEVEL * 100)}
+                        step={1}
+                        value={Math.round(elfLevel * 100)}
+                        aria-label="The value of the electron localisation function the surface is drawn at"
+                        title="The surface encloses where the localisation is above this value, which runs from 0 to 1 and has no unit. Double-click to put it back"
+                        onChange={(event) => properties.elfLevelTo(Number(event.target.value) / 100)}
+                        onDoubleClick={() => properties.elfLevelTo(DEFAULT_ELF_LEVEL)}
+                      />
+                      <span className="unit render-value">{elfLevel.toFixed(2)} of 1</span>
+                    </dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>{signedLevel ? "Density ±" : "Density"}</dt>
+                    <dd className="position">
+                      <input
+                        type="range"
+                        className="render-slider"
+                        min={Math.round(MIN_SURFACE_ISOVALUE * 1000)}
+                        max={Math.round(maxSurfaceIsovalue(surface, deformationDisplay) * 1000)}
+                        step={1}
+                        value={Math.round(surfaceIsovalue * 1000)}
+                        aria-label={signedLevel ? "How far from zero the gained and lost surfaces are, in electrons per cubic bohr" : "The electron density at the surface, in electrons per cubic bohr"}
+                        title={signedLevel ? "How far from zero the gained and lost surfaces are drawn, in electrons per cubic bohr. Double-click to put it back" : "The electron density the surface is drawn at, in electrons per cubic bohr. Double-click to put it back"}
+                        onChange={(event) => properties.surfaceIsovalueTo(Number(event.target.value) / 1000)}
+                        onDoubleClick={() => properties.surfaceIsovalueTo(DEFAULT_SURFACE_ISOVALUE)}
+                      />
+                      <span className="unit render-value">{surfaceIsovalue.toFixed(3)} e/bohr³</span>
+                    </dd>
+                  </>
+                )}
                 <dt>Opacity</dt>
                 <dd className="position">
                   <input
@@ -335,15 +424,17 @@ export function PropertiesOptions({ models }: { models: Models }) {
 
 /** How the calculation behind a slice is getting on, and what its colours mean. */
 function SliceSummary({ field, models }: { field: SliceField; models: Models }) {
-  const { density, densitySince, spin, spinSince, difference, differenceSince, plane, planeSince, state, orbitalsSince, fieldsAsked } = useSessionContext();
+  const { density, densitySince, spin, spinSince, intermolecular, intermolecularSince, deformation, deformationSince, laplacian, laplacianSince, elf, elfSince, plane, planeSince, state, orbitalsSince, fieldsAsked } = useSessionContext();
   const { colouring, display, combine } = useObservable(models.orbital);
   const orbitalSlice = isOrbitalSlice(field);
-  const result = orbitalSlice ? null : { density, spin, difference, potential: plane, none: null }[field];
-  const since = orbitalSlice ? (orbitalsSince !== null || fieldsAsked ? 0 : null) : { density: densitySince, spin: spinSince, difference: differenceSince, potential: planeSince, none: null }[field];
+  const frontierSlice = isFrontierMap(field);
+  const result = orbitalSlice || frontierSlice ? null : { density, spin, intermolecular, deformation, laplacian, elf, potential: plane, none: null }[field];
+  const since = orbitalSlice || frontierSlice ? (orbitalsSince !== null || fieldsAsked ? 0 : null) : { density: densitySince, spin: spinSince, intermolecular: intermolecularSince, deformation: deformationSince, laplacian: laplacianSince, elf: elfSince, potential: planeSince, none: null }[field];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
-  const decoded = current && result && result.type !== "plane.result" ? decodeDensity(result) : null;
+  const decoded = current && result && result.type !== "plane.result" ? decodeScalarField(result) : null;
   const flat = current && plane && field === "potential" ? decodePlane(plane) : null;
-  const signed = field === "spin" || field === "difference";
+  const signed = field === "spin" || field === "intermolecular" || field === "deformation" || field === "laplacian";
+  const unit = field === "laplacian" ? "e/bohr⁵" : "e/bohr³";
   const limit = decoded ? sliceLimit(decoded, signed) : null;
   const shown = limit === null ? "" : limit.toFixed(3);
   const potentialLimit = flat ? toKcalPerCharge(autoLimit(flat.values)).toFixed(0) : null;
@@ -352,12 +443,31 @@ function SliceSummary({ field, models }: { field: SliceField; models: Models }) 
 
   return (
     <>
-      {since !== null && orbitalSlice && <>working out the orbitals…</>}
-      {since !== null && !orbitalSlice && <Running startedAt={since} detail={field === "potential" ? "working out the potential on the plane…" : WORKING[field as SurfaceKind]} />}
+      {since !== null && (orbitalSlice || frontierSlice) && <>working out the orbitals…</>}
+      {since !== null && !orbitalSlice && !frontierSlice && <Running startedAt={since} detail={field === "potential" ? "working out the potential on the plane…" : field === "laplacian" ? "working out the Laplacian…" : WORKING[field as SurfaceKind]} />}
+      {frontierSlice && (
+        <div className="legend">
+          <div className="legend-bar" style={{ background: reactivityGradient(field === "homoMap" ? "homo" : "lumo") }} role="img" aria-label={`From where the ${field === "homoMap" ? "HOMO" : "LUMO"} is not to where it is most`} />
+          <div className="legend-labels">
+            <span>none</span>
+            <span>{field === "homoMap" ? "HOMO" : "LUMO"}</span>
+            <span>most</span>
+          </div>
+        </div>
+      )}
       {bySign && <Scale limit="2" unit="× surface level" label="From minus twice to plus twice the level the surface is drawn at" />}
       {potentialLimit !== null && <Scale limit={potentialLimit} unit="kcal/mol/e" label={`From minus ${potentialLimit} to plus ${potentialLimit} kilocalories per mole per charge`} />}
-      {limit !== null && signed && <Scale limit={shown} unit="e/bohr³" label={`From minus ${shown} to plus ${shown} electrons per cubic bohr`} />}
-      {limit !== null && !signed && (
+      {limit !== null && signed && <Scale limit={shown} unit={unit} label={`From minus ${shown} to plus ${shown} ${field === "laplacian" ? "electrons per fifth power of a bohr" : "electrons per cubic bohr"}`} />}
+      {limit !== null && field === "elf" && (
+        <div className="legend">
+          <div className="legend-bar" style={{ background: elfGradient() }} role="img" aria-label="From electrons as free as in a uniform gas to electrons fully localised" />
+          <div className="legend-labels">
+            <span>0 free</span>
+            <span>1 localised</span>
+          </div>
+        </div>
+      )}
+      {limit !== null && !signed && field !== "elf" && (
         <div className="legend">
           <div className="legend-bar" style={{ background: sequentialGradient() }} role="img" aria-label={`From zero to ${shown} electrons per cubic bohr`} />
           <div className="legend-labels">
@@ -482,13 +592,20 @@ function ChargeDetails() {
 }
 
 /** How the calculation behind a surface is getting on, and for the potential what the colours mean. */
-function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: number }) {
-  const { esp, espSince, density, densitySince, spin, spinSince, difference, differenceSince, state } = useSessionContext();
-  const result = { esp, density, spin, difference, none: null }[kind];
-  const since = { esp: espSince, density: densitySince, spin: spinSince, difference: differenceSince, none: null }[kind];
+function SurfaceSummary({ kind, isovalue, deformationDisplay, elfDisplay }: { kind: SurfaceKind; isovalue: number; deformationDisplay: DeformationDisplay; elfDisplay: ElfDisplay }) {
+  const { esp, espSince, nci, nciSince, density, densitySince, spin, spinSince, intermolecular, intermolecularSince, deformation, deformationSince, laplacian, laplacianSince, elf, elfSince, basins, basinsSince, state } = useSessionContext();
+  const result = { esp, nci, density, homoMap: density, lumoMap: density, frontierMap: density, concentrationMap: density, elf: elfDisplay !== "level" ? basins : elf, spin, intermolecular, deformation, none: null }[kind];
+  const since = { esp: espSince, nci: nciSince, density: densitySince, homoMap: densitySince, lumoMap: densitySince, frontierMap: densitySince, concentrationMap: densitySince ?? laplacianSince, elf: elfDisplay !== "level" ? basinsSince : elfSince, spin: spinSince, intermolecular: intermolecularSince, deformation: deformationDisplay === "range" ? (deformationSince ?? densitySince) : deformationSince, none: null }[kind];
   const current = result !== null && state !== null && result.session_id === state.session_id && result.version === state.version;
   const decoded = kind === "esp" && current && esp ? decodeEsp(esp) : null;
   const limit = decoded ? makeEspSurface(decoded, isovalue).limit : null;
+  const laplacianCurrent = laplacian !== null && state !== null && laplacian.session_id === state.session_id && laplacian.version === state.version;
+  const deformationCurrent = deformation !== null && state !== null && deformation.session_id === state.session_id && deformation.version === state.version;
+  const densityCurrent = density !== null && state !== null && density.session_id === state.session_id && density.version === state.version;
+  const mapped = kind === "concentrationMap" || (kind === "deformation" && deformationDisplay === "range");
+  const flatDensity = mapped && densityCurrent && density ? decodeScalarField(density) : null;
+  const flatField = kind === "concentrationMap" && laplacianCurrent && laplacian ? decodeScalarField(laplacian) : kind === "deformation" && mapped && deformationCurrent && deformation ? decodeScalarField(deformation) : null;
+  const concentrated = flatDensity && flatField ? fieldOnSurface(flatDensity, isovalue, flatField, kind === "deformation" ? "zero" : "median") : null;
 
   return (
     <>
@@ -500,7 +617,7 @@ function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: numbe
           {current ? "" : " (updating…)"}
         </>
       )}
-      {since === null && (kind === "spin" || kind === "difference") && result?.status === "complete" && (
+      {since === null && (kind === "spin" || kind === "intermolecular" || (kind === "deformation" && deformationDisplay === "levels")) && result?.status === "complete" && (
         <>
           <span className="legend-key">
             <span style={{ color: POSITIVE_LOBE }}>●</span> {kind === "spin" ? "spin up" : "gained"}
@@ -509,6 +626,81 @@ function SurfaceSummary({ kind, isovalue }: { kind: SurfaceKind; isovalue: numbe
             <span style={{ color: NEGATIVE_LOBE }}>●</span> {kind === "spin" ? "spin down" : "lost"}
           </span>
           <Took milliseconds={result.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && (kind === "homoMap" || kind === "lumoMap") && density?.status === "complete" && (
+        <>
+          <div className="legend">
+            <div className="legend-bar" style={{ background: reactivityGradient(kind === "homoMap" ? "homo" : "lumo") }} role="img" aria-label={`From where the ${kind === "homoMap" ? "HOMO" : "LUMO"} is not to where it is most`} />
+            <div className="legend-labels">
+              <span>none</span>
+              <span>{kind === "homoMap" ? "HOMO" : "LUMO"}</span>
+              <span>most</span>
+            </div>
+          </div>
+          <Took milliseconds={density.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && kind === "elf" && elfDisplay !== "level" && basins?.status === "complete" && (
+        <>
+          {(["bond", "lone pair", "multicentre bond"] as const)
+            .filter((pair) => pairsShown(basins.basins, elfDisplay as PairsShown).some((basin) => basin.kind === pair))
+            .map((pair) => (
+              <span key={pair} className="legend-key">
+                <span style={{ color: BASIN_COLOURS[pair] }}>●</span> {PAIR_NAMES[pair]}
+              </span>
+            ))}
+          {basins.basins.length === 0 && "no electron pairs found"}
+          <Took milliseconds={basins.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && kind === "elf" && elfDisplay === "level" && elf?.status === "complete" && (
+        <>
+          electron localisation
+          <Took milliseconds={elf.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && concentrated !== null && (
+        <Scale
+          limit={concentrated.limit.toFixed(3)}
+          unit={kind === "deformation" ? "Δρ e/bohr³" : `from ${concentrated.centre.toFixed(3)} e/bohr⁵`}
+          label={
+            kind === "deformation"
+              ? `From minus ${concentrated.limit.toFixed(3)} to plus ${concentrated.limit.toFixed(3)} electrons per cubic bohr`
+              : `Minus the Laplacian from ${concentrated.limit.toFixed(3)} below to ${concentrated.limit.toFixed(3)} above its middle value of ${concentrated.centre.toFixed(3)} electrons per fifth power of a bohr`
+          }
+        />
+      )}
+      {since === null && kind === "frontierMap" && density?.status === "complete" && (
+        <>
+          <div className="legend">
+            <div className="legend-bar" style={{ background: dualGradient() }} role="img" aria-label="From where the HOMO is more, through where both or neither is, to where the LUMO is more" />
+            <div className="legend-labels">
+              <span>HOMO</span>
+              <span>both or neither</span>
+              <span>LUMO</span>
+            </div>
+          </div>
+          <Took milliseconds={density.elapsed_ms} />
+          {current ? "" : " (updating…)"}
+        </>
+      )}
+      {since === null && kind === "nci" && nci?.status === "complete" && (
+        <>
+          <span className="legend-key">
+            <span style={{ color: ATTRACTIVE }}>●</span> attractive
+          </span>
+          <span className="legend-key">
+            <span style={{ color: WEAK }}>●</span> van der Waals
+          </span>
+          <span className="legend-key">
+            <span style={{ color: REPULSIVE }}>●</span> repulsive
+          </span>
+          <Took milliseconds={nci.elapsed_ms} />
           {current ? "" : " (updating…)"}
         </>
       )}

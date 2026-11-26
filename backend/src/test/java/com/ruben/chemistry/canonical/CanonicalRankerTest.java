@@ -7,6 +7,7 @@ import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
 import com.ruben.chemistry.core.NeighbourReference;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,7 +18,6 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.ToIntFunction;
-import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -372,8 +372,8 @@ class CanonicalRankerTest
                 "C[C@H](Br)[C@@H](Br)C",            // chiral 2,3-dibromobutane
                 "OC(=O)[C@H](O)[C@H](O)C(=O)O",     // meso-tartaric acid
                 "OC(=O)[C@H](O)[C@@H](O)C(=O)O",    // chiral tartaric acid
-                "O[C@H]1CCCC[C@@H]1O",              // cis-cyclohexane-1,2-diol
-                "O[C@H]1CCCC[C@H]1O",               // trans-cyclohexane-1,2-diol
+                "O[C@H]1CCCC[C@H]1O",               // cis-cyclohexane-1,2-diol
+                "O[C@H]1CCCC[C@@H]1O",              // trans-cyclohexane-1,2-diol
                 "C/C=C/C",                          // (E)-but-2-ene
                 "C/C=C/C=C\\C",                     // (2E,4Z)-hexa-2,4-diene
                 "C/C=C/CC/C=C\\C"                   // (2E,6Z)-octa-2,6-diene

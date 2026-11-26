@@ -5,12 +5,12 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -174,8 +174,8 @@ class MoleculeComparatorTest
         @Test
         void treats_an_achiral_ring_as_equal_to_its_mirror_image()
         {
-            Molecule cis = Molecule.fromSmiles("O[C@H]1CCCC[C@@H]1O");
-            Molecule reflected = Molecule.fromSmiles("O[C@@H]1CCCC[C@H]1O");
+            Molecule cis = Molecule.fromSmiles("O[C@H]1CCCC[C@H]1O");
+            Molecule reflected = Molecule.fromSmiles("O[C@@H]1CCCC[C@@H]1O");
 
             assertThat(compare(cis, reflected)).isZero();
         }

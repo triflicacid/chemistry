@@ -5,6 +5,7 @@ import {type Segment, Segmented} from "../controls/Segmented";
 import {BreakdownChart} from "../controls/BreakdownChart";
 import {type ChartSeries, LineChart} from "../controls/LineChart";
 import {stack} from "../layout/breakdown";
+import {chargeModelFor} from "../layout/calculation";
 import {apart} from "../layout/chart";
 import {bondDescribes, energyAt, positionsOf, toKcal} from "../layout/scan";
 import type {EnergyStep, ScanBond, ScanPoint, ScanResult, ScfStep, SessionState} from "../session/messages";
@@ -51,6 +52,7 @@ interface PlotProps {
 function ScfPlot({ state, models, debug }: PlotProps) {
   const { charges, calculatingCharges, chargesProgress, requestCharges } = useSessionContext();
   const { chargeModel } = useObservable(models.properties);
+  const { kind } = useObservable(models.calculation);
   const steps: ScfStep[] = charges?.convergence ?? [];
   const last = steps.at(-1);
   const stale = charges !== null && state !== null && charges.version !== state.version;
@@ -58,7 +60,7 @@ function ScfPlot({ state, models, debug }: PlotProps) {
   return (
     <>
       <div className="energy-actions">
-        <button type="button" className="tool" disabled={calculatingCharges !== null || state === null} onClick={() => requestCharges(chargeModel)}>
+        <button type="button" className="tool" disabled={calculatingCharges !== null || state === null} onClick={() => requestCharges(chargeModelFor(chargeModel, kind), models.calculation.get().spins[""] ?? null)}>
           {steps.length === 0 ? "Calculate" : "Calculate again"}
         </button>
         {calculatingCharges && <span role="status">{describeProgress(chargesProgress)}</span>}
