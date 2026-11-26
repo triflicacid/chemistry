@@ -6,6 +6,7 @@ import com.ruben.chemistry.core.BondOrder;
 import com.ruben.chemistry.core.Chirality;
 import com.ruben.chemistry.core.DoubleBondStereo;
 import com.ruben.chemistry.core.Molecule;
+import com.ruben.chemistry.core.NeighbourReference;
 import com.ruben.chemistry.notation.InvalidNotationException;
 import com.ruben.chemistry.util.Span;
 import org.junit.jupiter.api.Nested;
@@ -619,6 +620,51 @@ class SmilesParserTest
 
             Atom c = molecule.atoms().getFirst();
             assertThat(molecule.chiralityOf(c)).contains(Chirality.CLOCKWISE);
+        }
+
+        @Test
+        void should_order_a_ring_opening_neighbour_where_its_digit_is_written()
+        {
+            Molecule molecule = parse("N[C@H]1CCO1");
+
+            List<Atom> atoms = molecule.atoms();
+            Atom centre = atoms.get(1);
+            List<NeighbourReference> written = List.of(
+                molecule.bondBetween(centre, atoms.get(0)).orElseThrow(),
+                Molecule.IMPLICIT_HYDROGEN,
+                molecule.bondBetween(centre, atoms.get(4)).orElseThrow(),
+                molecule.bondBetween(centre, atoms.get(2)).orElseThrow());
+            assertThat(molecule.chiralityOf(centre, written)).contains(Chirality.ANTICLOCKWISE);
+        }
+
+        @Test
+        void should_order_two_ring_openings_by_their_digits_when_they_close_in_reverse()
+        {
+            Molecule molecule = parse("N[C@]12CCC2CC1");
+
+            List<Atom> atoms = molecule.atoms();
+            Atom centre = atoms.get(1);
+            List<NeighbourReference> written = List.of(
+                molecule.bondBetween(centre, atoms.get(0)).orElseThrow(),
+                molecule.bondBetween(centre, atoms.get(6)).orElseThrow(),
+                molecule.bondBetween(centre, atoms.get(4)).orElseThrow(),
+                molecule.bondBetween(centre, atoms.get(2)).orElseThrow());
+            assertThat(molecule.chiralityOf(centre, written)).contains(Chirality.ANTICLOCKWISE);
+        }
+
+        @Test
+        void should_read_a_ring_opening_stereocentre_the_same_as_its_branched_spelling()
+        {
+            String opening = SmilesWriter.writeCanonical(parse("N[C@H]1CCO1"));
+            String branched = SmilesWriter.writeCanonical(parse("N[C@H](O1)CC1"));
+
+            assertThat(opening).isEqualTo(branched);
+        }
+
+        @Test
+        void should_write_a_ring_opening_stereocentre_back_unchanged()
+        {
+            assertThat(SmilesWriter.write(parse("N[C@H]1CCO1"))).isEqualTo("N[C@H]1CCO1");
         }
 
         @Test

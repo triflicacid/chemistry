@@ -15,8 +15,10 @@ import com.ruben.chemistry.query.QueryAtom;
 import com.ruben.chemistry.util.CallGuard;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -44,6 +46,9 @@ public final class SmartsParser
 
     /** Collects the double bonds and directional bonds parsed so far, and declares their stereo. */
     private final StereoTracker<QueryAtom> stereo = new StereoTracker<>(builder::setDoubleBondStereo);
+
+    /** Each stereocentre's chirality, held until its ring bonds are closed and their order is known. */
+    private final List<Stereocentre> stereocentres = new ArrayList<>();
 
     /** Ring-closure digits still waiting for their second occurrence, in the order they were opened. */
     private final Map<String, PendingRingClosure> openRingBonds = new LinkedHashMap<>();
@@ -132,6 +137,7 @@ public final class SmartsParser
             throw new InvalidNotationException("Unpaired ring closure digit", source, firstUnpaired.position());
         }
 
+        declareChirality();
         return builder.build();
     }
 
@@ -203,8 +209,8 @@ public final class SmartsParser
 
         QueryAtom atom = new QueryAtom(result.predicate());
         builder.addAtom(atom);
-        result.chirality().ifPresent(chirality -> builder.setChirality(
-            atom, normaliseForStorage(chirality, result.hasImplicitHydrogen()), result.hasImplicitHydrogen()));
+        result.chirality().ifPresent(chirality -> stereocentres.add(new Stereocentre(
+            atom, normaliseForStorage(chirality, result.hasImplicitHydrogen()), result.hasImplicitHydrogen())));
         return atom;
     }
 
@@ -219,6 +225,19 @@ public final class SmartsParser
     private Chirality normaliseForStorage(Chirality asWritten, boolean hasImplicitHydrogen)
     {
         return previousAtom != null && hasImplicitHydrogen ? asWritten.flip() : asWritten;
+    }
+
+    /**
+     * Declares each stereocentre's chirality, reversed where its bonds are stored an odd reordering away from how
+     * they were written.
+     */
+    private void declareChirality()
+    {
+        for (Stereocentre centre : stereocentres)
+        {
+            Chirality chirality = stereo.isOddlyReordered(centre.atom()) ? centre.chirality().flip() : centre.chirality();
+            builder.setChirality(centre.atom(), chirality, centre.hasImplicitHydrogen());
+        }
     }
 
     /**
@@ -331,7 +350,8 @@ public final class SmartsParser
         PendingRingClosure opened = openRingBonds.remove(token.text());
         if (opened == null)
         {
-            openRingBonds.put(token.text(), new PendingRingClosure(previousAtom, bondResultHere, isDoubleHere, token.position()));
+            int place = stereo.openRingBond(previousAtom);
+            openRingBonds.put(token.text(), new PendingRingClosure(previousAtom, place, bondResultHere, isDoubleHere, token.position()));
             return;
         }
 
@@ -342,7 +362,7 @@ public final class SmartsParser
 
         BondPredicate predicate = resolveRingBondPredicate(opened.bondResult(), bondResultHere);
         builder.addBond(opened.atom(), previousAtom, predicate);
-        stereo.recordBond(opened.atom(), previousAtom, opened.isDoubleBond() || isDoubleHere);
+        stereo.recordRingBond(opened.atom(), opened.place(), previousAtom, opened.isDoubleBond() || isDoubleHere);
 
         registerRingClosureDirectionalEdges(opened.atom(), previousAtom, opened.bondResult(), bondResultHere, token);
     }
@@ -417,11 +437,23 @@ public final class SmartsParser
      * An as-yet-unmatched ring-closure digit, recorded at the atom it was opened on.
      *
      * @param atom the atom the ring closure was opened on
+     * @param place where the ring bond falls among that atom's bonds
      * @param bondResult the bond expression result written immediately before the digit when it was opened, or {@code null}
      * @param isDoubleBond {@code true} if {@code bondResult} denotes a literal double bond
      * @param position the opening digit's source position, for error reporting if it's never closed
      */
-    private record PendingRingClosure(QueryAtom atom, BondExpressionParser.Result bondResult, boolean isDoubleBond, int position)
+    private record PendingRingClosure(QueryAtom atom, int place, BondExpressionParser.Result bondResult, boolean isDoubleBond, int position)
+    {
+    }
+
+    /**
+     * A chiral atom position not yet declared to the builder.
+     *
+     * @param atom the atom position
+     * @param chirality its chirality, with any implicit hydrogen already accounted for
+     * @param hasImplicitHydrogen whether its expression counts an implicit hydrogen
+     */
+    private record Stereocentre(QueryAtom atom, Chirality chirality, boolean hasImplicitHydrogen)
     {
     }
 

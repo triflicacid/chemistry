@@ -8,8 +8,6 @@ import com.ruben.chemistry.query.Match;
 import com.ruben.chemistry.query.Query;
 import com.ruben.chemistry.query.QueryBond;
 import com.ruben.chemistry.query.SubstructureMatcher;
-import com.ruben.chemistry.smiles.SmilesParser;
-
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -228,6 +226,16 @@ class SmartsParserTest
 
             assertThat(new SubstructureMatcher(target).matches(parse("N[C@H](F)Cl"))).isTrue();
             assertThat(new SubstructureMatcher(target).matches(parse("N[C@@H](F)Cl"))).isFalse();
+        }
+
+        @Test
+        void should_order_a_ring_opening_neighbour_where_its_digit_is_written()
+        {
+            // both strings list the centre's neighbours as N, H, O, C
+            Molecule target = molecule("N[C@H](O1)CC1");
+
+            assertThat(new SubstructureMatcher(target).matches(parse("N[C@H]1CCO1"))).isTrue();
+            assertThat(new SubstructureMatcher(target).matches(parse("N[C@@H]1CCO1"))).isFalse();
         }
 
         @Test
